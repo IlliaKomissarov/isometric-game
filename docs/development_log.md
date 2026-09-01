@@ -21,8 +21,18 @@
 ### Repo
 - gh CLI installed via winget; device-flow login (keyring token unreadable
   cross-process on this Windows → re-login `--insecure-storage`;
-  `gh auth setup-git` for pushes). Private repo:
-  https://github.com/IlliaKomissarov/isometric-game (main, commit 3a262ef).
+  `gh auth setup-git` for pushes). Repo:
+  https://github.com/IlliaKomissarov/isometric-game (main).
+- Windows gotchas fixed in deploy: `core.longpaths true` (LOP pack paths
+  overflow MAX_PATH in gh-pages' internal clone); the gh-pages npm package
+  replaced with native git plumbing (15k paths on one command line →
+  spawn ENAMETOOLONG).
+- Pages on a PRIVATE repo → HTTP 422 on the Free plan; user chose to make
+  the repo PUBLIC. Pages enabled from gh-pages branch, LIVE and verified
+  in-browser (game boots and plays):
+  https://illiakomissarov.github.io/isometric-game/
+  Note: a cold-CDN 503 on first-ever load skipped the big pack for that
+  one session (graceful guard); warm reload was clean.
 
 ## 2026-09-01 (iteration 30) — Final boss: 3 forms, 3 hp pools, death/rebirth
 

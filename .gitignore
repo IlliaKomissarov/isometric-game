@@ -121,7 +121,7 @@ public/assets/320x320/*
 !public/assets/320x320/Hit/
 !public/assets/320x320/Death/
 
-# Big pack: only the 8 registered models (PNG frames; BMP twins skipped)
+# Big pack: registered models + the mage-hero paperdoll layers (it.32)
 !public/assets/big pack 8 moves/
 public/assets/big pack 8 moves/*
 !public/assets/big pack 8 moves/SkeletonWarrior1/
@@ -132,7 +132,50 @@ public/assets/big pack 8 moves/*
 !public/assets/big pack 8 moves/SkeletonWarrior4/
 !public/assets/big pack 8 moves/SkeletonWarrior7/
 !public/assets/big pack 8 moves/SkeletonWarrior10/
+!public/assets/big pack 8 moves/BaseHumanMale/
+!public/assets/big pack 8 moves/RobesMage1/
+!public/assets/big pack 8 moves/MageHood2/
+!public/assets/big pack 8 moves/MageStaff1/
 public/assets/big pack 8 moves/**/*.bmp
+
+# Rogue hero (it.32): hero1's used anim folders, Body only
+!public/assets/Frames_320x320 hero1/
+public/assets/Frames_320x320 hero1/*
+!public/assets/Frames_320x320 hero1/Idle_Stand/
+!public/assets/Frames_320x320 hero1/Run_Forward/
+!public/assets/Frames_320x320 hero1/Attack_01/
+!public/assets/Frames_320x320 hero1/Attack_03/
+!public/assets/Frames_320x320 hero1/Attack_05/
+!public/assets/Frames_320x320 hero1/Hit_01/
+!public/assets/Frames_320x320 hero1/Death_01/
+
+# Crimson Hydra (it.32): used anims, Body_Only
+!public/assets/512x512/
+public/assets/512x512/*
+!public/assets/512x512/Idle1/
+public/assets/512x512/Idle1/*
+!public/assets/512x512/Idle1/Body_Only/
+!public/assets/512x512/Walk/
+public/assets/512x512/Walk/*
+!public/assets/512x512/Walk/Body_Only/
+!public/assets/512x512/Attack1/
+public/assets/512x512/Attack1/*
+!public/assets/512x512/Attack1/Body_Only/
+!public/assets/512x512/Hit/
+public/assets/512x512/Hit/*
+!public/assets/512x512/Hit/Body_Only/
+!public/assets/512x512/Death/
+public/assets/512x512/Death/*
+!public/assets/512x512/Death/Body_Only/
+
+# Risen Villager (it.32): used sheet folders
+!public/assets/x256_Spritesheets/
+public/assets/x256_Spritesheets/*
+!public/assets/x256_Spritesheets/Idle/
+!public/assets/x256_Spritesheets/Walk/
+!public/assets/x256_Spritesheets/Attack1/
+!public/assets/x256_Spritesheets/Hit1/
+!public/assets/x256_Spritesheets/Death1/
 
 # Audio: root tracks, boss music, TomMusic OGG set, mapped horror files
 !public/assets/audio/

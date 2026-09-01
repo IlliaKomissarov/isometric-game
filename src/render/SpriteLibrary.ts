@@ -20,7 +20,7 @@
  * screen, fix KNIGHT_ROW_FOR_DIR only.
  */
 
-import { Assets, Rectangle, Sprite, Texture, type Renderer } from 'pixi.js';
+import { Assets, Container, Rectangle, Sprite, Texture, type Renderer } from 'pixi.js';
 
 /** Canonical direction order (math angles 0°,45°,…,315° in screen space). */
 export const DIRS = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'] as const;
@@ -130,6 +130,27 @@ export type AnimName =
   | 'hollow2_walk'
   | 'hollow2_attack'
   | 'hollow2_death'
+  | 'mage_idle'
+  | 'mage_walk'
+  | 'mage_cast'
+  | 'mage_death'
+  | 'rogue_idle'
+  | 'rogue_run'
+  | 'rogue_attack'
+  | 'rogue_attack2'
+  | 'rogue_attack3'
+  | 'rogue_hit'
+  | 'rogue_death'
+  | 'hydra_idle'
+  | 'hydra_walk'
+  | 'hydra_attack'
+  | 'hydra_hit'
+  | 'hydra_death'
+  | 'shambler_idle'
+  | 'shambler_walk'
+  | 'shambler_attack'
+  | 'shambler_hit'
+  | 'shambler_death'
   | 'shaman_idle'
   | 'shaman_walk'
   | 'shaman_cast'
@@ -581,8 +602,108 @@ export class SpriteLibrary {
       reg('hollow2_walk', await camAnim('SkeletonWarrior10', '5_Walk', F.walk), F.walk.length);
       reg('hollow2_attack', await camAnim('SkeletonWarrior10', '2_Attack', F.attack), F.attack.length);
       reg('hollow2_death', await camAnim('SkeletonWarrior10', '7_Death', F.death), F.death.length);
+
+      // THE MAGE HERO (it.32): the big pack is a PAPERDOLL system — the
+      // robed caster is COMPOSITED per frame from four aligned layers
+      // (base body, robes, hood, staff; all size-audited healthy — the
+      // sub-2KB hood/staff frames are legitimately tiny accessories) and
+      // baked into single textures at load.
+      const MAGE_LAYERS = ['BaseHumanMale', 'RobesMage1', 'MageHood2', 'MageStaff1'];
+      const compositeCamAnim = async (seqAnim: string, frameNums: number[]): Promise<Texture[][]> => {
+        const urlOf = (model: string, cam: number, f: number) =>
+          encodeURI(`${BP}/${model}/${seqAnim}_CAM${cam}_${f}.png`);
+        const urls: string[] = [];
+        for (const m of MAGE_LAYERS) {
+          for (let cam = 0; cam < 8; cam++) for (const f of frameNums) urls.push(urlOf(m, cam, f));
+        }
+        const loaded = (await Assets.load(urls)) as Record<string, Texture>;
+        const out = CAM_FOR_DIR.map((cam) =>
+          frameNums.map((f) => {
+            const stack = new Container();
+            for (const m of MAGE_LAYERS) stack.addChild(new Sprite(loaded[urlOf(m, cam, f)]));
+            const baked = this.renderer.generateTexture({ target: stack, antialias: true });
+            baked.source.scaleMode = 'nearest';
+            stack.destroy({ children: true });
+            return baked;
+          }),
+        );
+        await Assets.unload(urls);
+        return out;
+      };
+      reg('mage_idle', await compositeCamAnim('1_Idle', F.idle), F.idle.length);
+      reg('mage_walk', await compositeCamAnim('5_Walk', F.walk), F.walk.length);
+      reg('mage_cast', await compositeCamAnim('4_Cast', F.cast), F.cast.length);
+      reg('mage_death', await compositeCamAnim('7_Death', F.death), F.death.length);
     } catch (err) {
       console.warn('[SpriteLibrary] big pack 8 moves unavailable:', err);
+    }
+
+    // THE ROGUE HERO (it.32): "Frames_320x320 hero1" — a scrappy leather
+    // swordsman with a HUGE moveset (8 attacks, 4 deaths). Same vendor
+    // convention as the lizard pack → same half-turn angle rotation.
+    try {
+      const H_ANGLES = ['180', '225', '270', '315', '000', '045', '090', '135'];
+      const heroAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
+        rebakeAnglePack(
+          (angle, f) => `${ROOT}/Frames_320x320 hero1/${folder}/Body/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
+          H_ANGLES,
+          SpriteLibrary.picks(total, count),
+          0.46,
+        );
+      this.anims.set('rogue_idle', { frames: await heroAnim('Idle_Stand', 16, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('rogue_run', { frames: await heroAnim('Run_Forward', 15, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('rogue_attack', { frames: await heroAnim('Attack_01', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('rogue_attack2', { frames: await heroAnim('Attack_03', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('rogue_attack3', { frames: await heroAnim('Attack_05', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('rogue_hit', { frames: await heroAnim('Hit_01', 12, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('rogue_death', { frames: await heroAnim('Death_01', 16, 10), frameCount: 10, dirCount: 8 });
+    } catch (err) {
+      console.warn('[SpriteLibrary] hero1 pack unavailable:', err);
+    }
+
+    // THE CRIMSON HYDRA (it.32): 512x512 pack — a three-headed red horror
+    // for the ember depths. Naga-style per-frame angle folders (0-based),
+    // 16 angles on disk; the 8 diagonals are loaded, half-turn rotated.
+    try {
+      const HY_ANGLES = ['180', '225', '270', '315', '0', '45', '90', '135'];
+      const hyAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
+        rebakeAnglePack(
+          (angle, f) => `${ROOT}/512x512/${folder}/Body_Only/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
+          HY_ANGLES,
+          SpriteLibrary.picks(total, count).map((n) => n - 1),
+          0.35,
+        );
+      this.anims.set('hydra_idle', { frames: await hyAnim('Idle1', 16, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('hydra_walk', { frames: await hyAnim('Walk', 16, 8), frameCount: 8, dirCount: 8 });
+      this.anims.set('hydra_attack', { frames: await hyAnim('Attack1', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('hydra_hit', { frames: await hyAnim('Hit', 12, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('hydra_death', { frames: await hyAnim('Death', 24, 10), frameCount: 10, dirCount: 8 });
+    } catch (err) {
+      console.warn('[SpriteLibrary] hydra pack unavailable:', err);
+    }
+
+    // THE RISEN VILLAGER (it.32): x256_Spritesheets — a shambling dead
+    // townsman. 16 grid sheets per anim (one per 22.5°); 8 diagonal picks,
+    // half-turn rotated; audited zero empty cells.
+    try {
+      const SH_ANGLES = ['180', '225', '270', '315', '0', '045', '090', '135'];
+      const shAnim = async (name: string, total: number, count: number): Promise<Texture[][]> => {
+        const framesPerDir: Texture[][] = [];
+        for (const angle of SH_ANGLES) {
+          const url = encodeURI(`${ROOT}/x256_Spritesheets/${name}/${name} Body ${angle}.png`);
+          framesPerDir.push(
+            await this.rebakeSheet(url, 256, SpriteLibrary.picks(total, count).map((n) => n - 1), 0.4),
+          );
+        }
+        return framesPerDir;
+      };
+      this.anims.set('shambler_idle', { frames: await shAnim('Idle', 20, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('shambler_walk', { frames: await shAnim('Walk', 20, 8), frameCount: 8, dirCount: 8 });
+      this.anims.set('shambler_attack', { frames: await shAnim('Attack1', 20, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('shambler_hit', { frames: await shAnim('Hit1', 16, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('shambler_death', { frames: await shAnim('Death1', 24, 10), frameCount: 10, dirCount: 8 });
+    } catch (err) {
+      console.warn('[SpriteLibrary] shambler pack unavailable:', err);
     }
 
     // NOTE (it.16): the Stairs pack was DELETED — every variant ASCENDS,

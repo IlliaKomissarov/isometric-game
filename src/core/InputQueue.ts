@@ -30,7 +30,9 @@ export type InputCommand =
   /** Walk to and open a lootable chest. */
   | { type: 'OPEN_CHEST'; playerId: number; chestId: number }
   | { type: 'EQUIP'; playerId: number; backpackIndex: number }
-  | { type: 'UNEQUIP'; playerId: number; slot: EquipmentSlot };
+  | { type: 'UNEQUIP'; playerId: number; slot: EquipmentSlot }
+  /** Active skill hotkeys 1–4 (it.32): cast the class skill in `slot`. */
+  | { type: 'SKILL'; playerId: number; slot: number };
 
 export class InputQueue {
   private queue: InputCommand[] = [];

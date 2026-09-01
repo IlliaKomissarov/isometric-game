@@ -50,7 +50,17 @@ export type SfxName =
   | 'chest'
   | 'stairs'
   | 'ui'
-  | 'victory';
+  | 'victory'
+  | 'skillWhirl'
+  | 'skillDash'
+  | 'skillShout'
+  | 'skillBuff'
+  | 'skillFire'
+  | 'skillArrows'
+  | 'skillTrap'
+  | 'skillTrapSet'
+  | 'skillPoison'
+  | 'skillVanish';
 
 // Base-aware root (it.31): '/' in dev, '/isometric-game/' on GitHub Pages.
 const AUDIO_BASE = `${import.meta.env.BASE_URL}assets/audio`;
@@ -730,6 +740,49 @@ export class AudioManager {
         this.blip('triangle', 659, 659, 0.14, 0.5, 0.14);
         this.blip('triangle', 784, 784, 0.14, 0.5, 0.28);
         this.blip('triangle', 1047, 1047, 0.4, 0.55, 0.42);
+        break;
+      // ---- ACTIVE SKILLS (it.32): every cast speaks from the packs ----
+      case 'skillWhirl':
+        // Three fast sword whooshes fanning around the spin.
+        this.playVariant('swordAttack', 0.55, 1.05, 0.08, 0);
+        this.playVariant('swordAttack', 0.5, 0.95, 0.08, 0.09);
+        this.playVariant('swordAttack', 0.45, 1.12, 0.08, 0.18);
+        break;
+      case 'skillDash':
+        this.playVariant('stoneRun', 0.55, 1.25, 0.08, 0);
+        this.playVariant('stoneRun', 0.45, 1.15, 0.08, 0.08);
+        this.playVariant('swordAttack', 0.35, 1.3, 0.08, 0.05);
+        break;
+      case 'skillShout':
+        this.playVariant('hRoar', 0.7, 1.25, 0.08);
+        this.playBuffer('chant', 0.4);
+        break;
+      case 'skillBuff':
+        this.playVariant('firebuff', 0.75, 1.0, 0.06);
+        break;
+      case 'skillFire':
+        if (!this.playVariant('fireball', 0.8, 1.0, 0.08)) this.blip('sawtooth', 300, 60, 0.3, 0.5);
+        this.playVariant('spellImpact', 0.6, 0.95, 0.08, 0.12);
+        break;
+      case 'skillArrows':
+        this.playVariant('bowAttack', 0.55, 1.05, 0.1, 0);
+        this.playVariant('bowAttack', 0.5, 0.95, 0.1, 0.07);
+        this.playVariant('bowAttack', 0.45, 1.1, 0.1, 0.14);
+        break;
+      case 'skillTrap':
+        // Detonation: fireball crack + a wet gore tail.
+        this.playVariant('fireball', 0.85, 0.9, 0.06);
+        this.playVariant('hGore', 0.45, 1.0, 0.1, 0.08);
+        break;
+      case 'skillTrapSet':
+        this.playVariant('coin', 0.4, 0.8, 0.08); // A metallic click into the floor.
+        break;
+      case 'skillPoison':
+        this.playVariant('hHiss', 0.6, 1.15, 0.1);
+        this.playVariant('unsheath', 0.4, 1.0, 0.06, 0.05);
+        break;
+      case 'skillVanish':
+        this.playVariant('iceFreeze', 0.45, 1.5, 0.08); // A cold shimmer out of sight.
         break;
     }
   }

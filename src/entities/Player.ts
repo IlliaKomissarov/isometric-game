@@ -37,19 +37,101 @@ export interface WeaponProfile {
   color: number;
 }
 
-/** Archetype base stats — tuning surface for the balance sub-task. */
+/** Archetype base stats — tuning surface for the balance sub-task (it.32). */
 export interface ArchetypeDef {
   hpMax: number;
   /** Movement speed multiplier applied on top of PLAYER_SPEED. */
   speedMult: number;
   markerTexture: string;
+  /** Flat armor the class body brings before equipment. */
+  armorBase: number;
+  /** Added to the weapon family's crit chance. */
+  critBonus: number;
+  /** <1 = faster swings (rogue); applied to weapon windup/recover. */
+  attackSpeedMult: number;
+  /** Base chance to fully evade an enemy strike. */
+  dodgeChance: number;
+  /** Skill resource pool (mana for the mage, stamina otherwise). */
+  resourceName: 'MANA' | 'STAMINA';
+  resourceMax: number;
+  /** Resource points regenerated per simulation tick. */
+  resourceRegen: number;
+  /** Unarmed class weapon: what the hero fights with before any drop. */
+  defaultWeapon: WeaponKind;
+  baseDamage: { min: number; max: number };
 }
 
 export const ARCHETYPES: Record<ClassArchetype, ArchetypeDef> = {
-  warrior: { hpMax: 140, speedMult: 0.95, markerTexture: 'marker_warrior' },
-  mage: { hpMax: 80, speedMult: 1.0, markerTexture: 'marker_mage' },
-  ranger: { hpMax: 100, speedMult: 1.1, markerTexture: 'marker_ranger' },
-  rogue: { hpMax: 90, speedMult: 1.15, markerTexture: 'marker_rogue' },
+  warrior: {
+    hpMax: 150, speedMult: 0.95, markerTexture: 'marker_warrior',
+    armorBase: 3, critBonus: 0, attackSpeedMult: 1, dodgeChance: 0,
+    resourceName: 'STAMINA', resourceMax: 100, resourceRegen: 0.05,
+    defaultWeapon: 'blade', baseDamage: { min: 3, max: 6 },
+  },
+  mage: {
+    hpMax: 90, speedMult: 1.0, markerTexture: 'marker_mage',
+    armorBase: 0, critBonus: 0.04, attackSpeedMult: 1, dodgeChance: 0,
+    resourceName: 'MANA', resourceMax: 120, resourceRegen: 0.09,
+    defaultWeapon: 'wand', baseDamage: { min: 4, max: 8 },
+  },
+  ranger: {
+    hpMax: 110, speedMult: 1.12, markerTexture: 'marker_ranger',
+    armorBase: 1, critBonus: 0.12, attackSpeedMult: 1, dodgeChance: 0.05,
+    resourceName: 'STAMINA', resourceMax: 100, resourceRegen: 0.06,
+    defaultWeapon: 'bow', baseDamage: { min: 3, max: 6 },
+  },
+  rogue: {
+    hpMax: 100, speedMult: 1.15, markerTexture: 'marker_rogue',
+    armorBase: 1, critBonus: 0.1, attackSpeedMult: 0.75, dodgeChance: 0.12,
+    resourceName: 'STAMINA', resourceMax: 110, resourceRegen: 0.07,
+    defaultWeapon: 'katana', baseDamage: { min: 2, max: 5 },
+  },
+};
+
+/** Per-class body: which loaded animation set renders the hero (it.32). */
+interface HeroRig {
+  idle: AnimName;
+  run: AnimName;
+  /** Melee swing variants, cycled per swing. */
+  attacks: AnimName[];
+  /** Anim for ranged/spell attacks (falls back to attacks[0]). */
+  rangedAttack?: AnimName;
+  hit?: AnimName;
+  death: AnimName;
+  scale: number;
+  anchorY: number;
+  /** Rebaked packs carry no baked shadow — show the procedural one. */
+  ownShadow: boolean;
+  /** Equipment armor tints the body (the knight's HD sheets only). */
+  equipmentTint: boolean;
+}
+
+const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
+  warrior: {
+    idle: 'knight_idle', run: 'knight_run',
+    attacks: ['knight_melee', 'knight_melee2'], rangedAttack: 'knight_cast',
+    hit: 'knight_hit', death: 'knight_die',
+    scale: 0.92, anchorY: 0.8, ownShadow: false, equipmentTint: true,
+  },
+  mage: {
+    idle: 'mage_idle', run: 'mage_walk',
+    attacks: ['mage_cast'], rangedAttack: 'mage_cast', death: 'mage_death',
+    scale: 1.1, anchorY: 0.8, ownShadow: true, equipmentTint: false,
+  },
+  ranger: {
+    idle: 'ranger_idle', run: 'ranger_run',
+    attacks: ['ranger_attack'], rangedAttack: 'ranger_attack',
+    hit: 'ranger_hit', death: 'ranger_death',
+    // The archer MOB renders these same rebaked sheets at 0.36 — the hero
+    // stands a touch taller (measured live, it.32).
+    scale: 0.42, anchorY: 0.72, ownShadow: true, equipmentTint: false,
+  },
+  rogue: {
+    idle: 'rogue_idle', run: 'rogue_run',
+    attacks: ['rogue_attack', 'rogue_attack2', 'rogue_attack3'],
+    hit: 'rogue_hit', death: 'rogue_death',
+    scale: 1.0, anchorY: 0.78, ownShadow: true, equipmentTint: false,
+  },
 };
 
 /** Paperdoll layer draw order, back to front. */
@@ -94,8 +176,55 @@ export class Player extends Entity {
     this.slowTicks = Math.max(this.slowTicks, ticks);
   }
 
-  // Knight sprite mode (external HD art) — render-only state.
+  // Hero sprite mode (external art per class, it.32) — render-only state.
   private useKnight = false;
+  private heroRig: HeroRig = CLASS_RIGS.warrior;
+
+  // ---- Skill resource + timed buffs (it.32, simulation state) ----
+  resource = 100;
+  resourceMax = 100;
+  private resourceRegen = 0.05;
+  /** War Cry / Arcane Intellect: damage multiplier while ticks remain. */
+  dmgBuffTicks = 0;
+  dmgBuffMult = 1;
+  /** Stone Skin: fraction of incoming damage absorbed while ticks remain. */
+  drTicks = 0;
+  drFrac = 0;
+  /** Shadow Step haste. */
+  hasteTicks = 0;
+  hasteMult = 1;
+  /** Vanish: perfect evasion + enemies cannot see you. */
+  stealthTicks = 0;
+  /** Poison Blade: melee hits coat targets while ticks remain. */
+  poisonBladeTicks = 0;
+
+  get damageMult(): number {
+    return this.dmgBuffTicks > 0 ? this.dmgBuffMult : 1;
+  }
+
+  get damageReduction(): number {
+    return this.drTicks > 0 ? this.drFrac : 0;
+  }
+
+  get dodgeChance(): number {
+    if (this.stealthTicks > 0) return 1; // Vanished: untouchable.
+    return ARCHETYPES[this.archetype].dodgeChance;
+  }
+
+  get stealthed(): boolean {
+    return this.stealthTicks > 0;
+  }
+
+  get resourceName(): 'MANA' | 'STAMINA' {
+    return ARCHETYPES[this.archetype].resourceName;
+  }
+
+  /** Try to pay a skill cost. Returns false (and no deduction) if short. */
+  spendResource(cost: number): boolean {
+    if (this.resource < cost) return false;
+    this.resource -= cost;
+    return true;
+  }
   private animClock = 0;
   private runClock = 0;
   private hitClock = 0;
@@ -152,6 +281,10 @@ export class Player extends Entity {
     const def = ARCHETYPES[archetype];
     this.hpMax = def.hpMax;
     this.hp = def.hpMax;
+    this.resourceMax = def.resourceMax;
+    this.resource = def.resourceMax;
+    this.resourceRegen = def.resourceRegen;
+    this.heroRig = CLASS_RIGS[archetype];
 
     // Grounded shadow: NEVER animated with the body — it stays planted on
     // the floor while the body hops, which is what sells physical weight.
@@ -198,21 +331,24 @@ export class Player extends Entity {
   }
 
   /**
-   * Switch the world rig to the HD Knight sheets (call once after the
-   * SpriteLibrary loads). The knight has baked shadows and a modeled
-   * sword/shield, so our shadow sprite and world paperdoll overlays hide;
-   * equipment shows through armor TINTS + weapon-specific attack anims
-   * (and the schematic paperdoll stays in the inventory panel).
+   * Switch the world rig to the class's external animation set (call once
+   * after the SpriteLibrary loads — it.32: knight/mage/ranger/rogue). The
+   * schematic paperdoll overlays hide; the warrior's HD knight also hides
+   * our shadow (his sheets bake one) and tints by worn armor.
    */
   enableKnightRig(): void {
     if (!spriteLib.loaded) return;
+    const rig = CLASS_RIGS[this.archetype];
+    // Body fallback: a class pack that failed to load falls back to the
+    // knight (never an invisible hero).
+    this.heroRig = spriteLib.hasAnim(rig.idle) ? rig : CLASS_RIGS.warrior;
     this.useKnight = true;
-    this.shadow.visible = false;
-    this.body.anchor.set(0.5, 0.8);
+    this.shadow.visible = this.heroRig.ownShadow;
+    this.body.anchor.set(0.5, this.heroRig.anchorY);
     this.body.position.set(0, 2);
-    this.body.scale.set(0.92);
+    this.body.scale.set(this.heroRig.scale);
     for (const layer of this.paperdollLayers.values()) layer.visible = false;
-    this.body.texture = spriteLib.frame('knight_idle', 6, 0);
+    this.body.texture = spriteLib.frame(this.heroRig.idle, 6, 0);
   }
 
   /** Scene-light tint for the hero (wired from Lighting in main's render loop). */
@@ -237,15 +373,19 @@ export class Player extends Entity {
     return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
   }
 
-  /** Attack animation for the wielded weapon (great weapons spin!). */
+  /** Attack animation: the class rig's set (warrior keeps weapon flavor). */
   private attackAnim(): AnimName {
+    const rig = this.heroRig;
     const profile = this.weaponProfile;
-    if (profile.ranged) return 'knight_cast';
-    const id = this.getEquipped('mainHand');
-    if (id === 'doombringer' || id === 'gravecleaver' || profile.kind === 'polearm') {
-      return 'knight_spin'; // Sweeping arcs for the big reach/rare cleavers.
+    if (profile.ranged) return rig.rangedAttack ?? rig.attacks[0];
+    if (rig.attacks[0] === 'knight_melee') {
+      // The knight's weapon-flavored swings (great weapons spin!).
+      const id = this.getEquipped('mainHand');
+      if (id === 'doombringer' || id === 'gravecleaver' || profile.kind === 'polearm') {
+        return 'knight_spin';
+      }
     }
-    return this.swingVariant % 2 === 0 ? 'knight_melee' : 'knight_melee2';
+    return rig.attacks[this.swingVariant % rig.attacks.length];
   }
 
   /** Damage feedback hook (wired to `entity:damaged` in main). */
@@ -296,6 +436,14 @@ export class Player extends Entity {
     this.breathPhase += dt * 2.1;
     if (this.slowTicks > 0) this.slowTicks--;
     if (this.flashTicks > 0 && --this.flashTicks === 0) this.body.tint = 0xffffff;
+
+    // Skill economy (it.32): resource trickles back; timed buffs burn down.
+    this.resource = Math.min(this.resourceMax, this.resource + this.resourceRegen);
+    if (this.dmgBuffTicks > 0) this.dmgBuffTicks--;
+    if (this.drTicks > 0) this.drTicks--;
+    if (this.hasteTicks > 0) this.hasteTicks--;
+    if (this.stealthTicks > 0) this.stealthTicks--;
+    if (this.poisonBladeTicks > 0) this.poisonBladeTicks--;
   }
 
   override syncRender(alpha: number): void {
@@ -411,7 +559,8 @@ export class Player extends Entity {
     this.syncSlash();
   }
 
-  /** HD knight sheet animation: pick anim + frame from the action state. */
+  /** Class-rig sheet animation: pick anim + frame from the action state.
+   *  It.32: frame counts come from each loaded animation (rigs differ). */
   private syncKnight(): void {
     // Entry transitions (render-side counters).
     if (this.action !== this.prevActionSeen) {
@@ -420,45 +569,53 @@ export class Player extends Entity {
       this.prevActionSeen = this.action;
     }
 
+    const rig = this.heroRig;
     const dir = stableDir(this.facing.x, this.facing.y, this.lastDir);
     this.lastDir = dir;
     let animName: AnimName;
     let frame: number;
+    const fcOf = (name: AnimName): number => spriteLib.anim(name).frameCount;
 
     if (this.action === 'dead') {
-      // The Die sheet plays out before main respawns us (PLAYER_DEATH_TICKS).
-      animName = 'knight_die';
-      frame = Math.min(14, Math.floor((this.actionTicks / PLAYER_DEATH_TICKS) * 15));
+      // The death anim plays out before main respawns us (PLAYER_DEATH_TICKS).
+      animName = rig.death;
+      const fc = fcOf(animName);
+      frame = Math.min(fc - 1, Math.floor((this.actionTicks / PLAYER_DEATH_TICKS) * fc));
     } else if (this.action === 'attack') {
       const profile = this.weaponProfile;
       const total = profile.windupTicks + profile.recoverTicks;
       animName = this.attackAnim();
-      frame = Math.min(14, Math.floor((this.actionTicks / total) * 15));
-    } else if (this.action === 'hit') {
+      const fc = fcOf(animName);
+      frame = Math.min(fc - 1, Math.floor((this.actionTicks / total) * fc));
+    } else if (this.action === 'hit' && rig.hit) {
       this.hitClock += 0.4;
-      animName = 'knight_hit';
-      frame = Math.min(14, Math.floor(this.hitClock));
+      animName = rig.hit;
+      frame = Math.min(fcOf(animName) - 1, Math.floor(this.hitClock));
+    } else if (this.action === 'hit') {
+      animName = rig.idle; // Rigless flinch (mage): idle + the recoil below.
+      frame = 0;
     } else if (this.moving) {
-      animName = 'knight_run';
+      animName = rig.run;
       frame = Math.floor(this.runClock); // Distance-coupled (see update()).
     } else {
       this.animClock += 0.12; // Slow, breathing idle — deliberate weight.
-      animName = 'knight_idle';
+      animName = rig.idle;
       frame = Math.floor(this.animClock);
     }
 
     this.body.texture = spriteLib.frame(animName, dir, frame);
     // Rig transforms belong to the procedural rig; the sheets carry their own weight.
-    this.rig.rotation = 0;
+    this.rig.rotation = this.action === 'hit' && !rig.hit ? Math.sin(this.actionTicks * 1.4) * 0.1 : 0;
     this.rig.position.set(0, 0);
     this.rig.scale.x = 1;
     // Armor tint × scene light (damage flash overrides for a few ticks);
-    // a frost slow washes the knight ice-blue.
+    // a frost slow washes the hero ice-blue; Vanish fades him to a shade.
     if (this.flashTicks === 0) {
-      let tint = multiplyColors(this.getEquipmentTint(), this.sceneTint);
+      let tint = multiplyColors(rig.equipmentTint ? this.getEquipmentTint() : 0xffffff, this.sceneTint);
       if (this.slowTicks > 0) tint = multiplyColors(tint, 0x9fc4e8);
       this.body.tint = tint;
     }
+    this.container.alpha = this.stealthTicks > 0 ? 0.35 : 1;
   }
 
   /** Slash arc VFX (frame-based decay; positioned ahead of the body). */
@@ -475,7 +632,8 @@ export class Player extends Entity {
   }
 
   get speedMult(): number {
-    const base = ARCHETYPES[this.archetype].speedMult;
+    let base = ARCHETYPES[this.archetype].speedMult;
+    if (this.hasteTicks > 0) base *= this.hasteMult;
     return this.slowTicks > 0 ? base * 0.55 : base;
   }
 
@@ -487,30 +645,33 @@ export class Player extends Entity {
     return { min: p.minDamage, max: p.maxDamage };
   }
 
-  /** Full weapon behavior profile (combat timing + range + character). */
+  /** Full weapon behavior profile (combat timing + range + character).
+   *  It.32: unarmed heroes fight with their CLASS weapon (mage arcane
+   *  wand, ranger bow, rogue fast blades); class crit/attack-speed apply. */
   get weaponProfile(): WeaponProfile {
+    const cls = ARCHETYPES[this.archetype];
     const id = this.equipped.get('mainHand');
     const def = id ? ITEMS[id] : undefined;
-    const kind: WeaponKind = def?.weaponKind ?? 'blade';
+    const kind: WeaponKind = def?.weaponKind ?? cls.defaultWeapon;
     const timing = WEAPON_TIMING[kind];
     const family = WEAPON_FAMILY[kind];
     return {
       kind,
       ranged: kind === 'bow' || kind === 'wand',
       range: def?.range ?? family.range,
-      windupTicks: timing.windup,
-      recoverTicks: timing.recover,
-      minDamage: (def?.minDamage ?? 1) + this.levelDamageMin,
-      maxDamage: (def?.maxDamage ?? 3) + this.levelDamageMax,
-      critChance: family.critChance,
+      windupTicks: Math.max(6, Math.round(timing.windup * cls.attackSpeedMult)),
+      recoverTicks: Math.max(6, Math.round(timing.recover * cls.attackSpeedMult)),
+      minDamage: (def?.minDamage ?? cls.baseDamage.min) + this.levelDamageMin,
+      maxDamage: (def?.maxDamage ?? cls.baseDamage.max) + this.levelDamageMax,
+      critChance: family.critChance + cls.critBonus,
       stuns: family.stuns,
       color: def?.color ?? 0xffcf90,
     };
   }
 
-  /** Total flat damage reduction from all worn armor. */
+  /** Total flat damage reduction: class body + all worn armor. */
   override get armor(): number {
-    let total = 0;
+    let total = ARCHETYPES[this.archetype].armorBase;
     for (const id of this.equipped.values()) total += ITEMS[id]?.armor ?? 0;
     return total;
   }

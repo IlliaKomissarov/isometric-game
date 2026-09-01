@@ -339,6 +339,11 @@ export class CombatSystem {
   /** God mode (cheat menu): the player takes no damage while true. */
   godMode = false;
 
+  /** The floor's seeded RNG — skills roll on it (deterministic, it.32). */
+  get rng(): () => number {
+    return this.rand;
+  }
+
   /**
    * All living enemies within `r` tiles of a point (AoE cleave sweep).
    * Wired by main (fog-independent — the blade doesn't care what you see).
@@ -364,6 +369,11 @@ export class CombatSystem {
     const dy = p.pos.y - source.pos.y;
     const dist = Math.hypot(dx, dy);
     if (dist > reach || this.rand() >= toHit) {
+      eventBus.emit('combat:swing', { sourceId: source.id, targetId: p.id, result: 'miss' });
+      return;
+    }
+    // Class dodge (it.32): rangers slip, rogues weave, Vanish is absolute.
+    if (p.dodgeChance > 0 && this.rand() < p.dodgeChance) {
       eventBus.emit('combat:swing', { sourceId: source.id, targetId: p.id, result: 'miss' });
       return;
     }
@@ -400,8 +410,15 @@ export class CombatSystem {
     if (!target || target.hp <= 0 || target.action === 'dead') return;
     if (this.godMode && target === this.player) return; // Cheat: untouchable.
 
+    // Skill buffs (it.32): War Cry / Arcane Intellect amplify the hero's
+    // outgoing damage; Stone Skin absorbs a fraction of what comes in.
+    let rolled = event.amount;
+    if (event.sourceId === this.player.id) rolled = Math.round(rolled * this.player.damageMult);
+    if (target === this.player && this.player.damageReduction > 0) {
+      rolled = Math.round(rolled * (1 - this.player.damageReduction));
+    }
     // Armor is flat reduction; a landed hit always deals at least 1.
-    const amount = Math.max(1, event.amount - target.armor);
+    const amount = Math.max(1, rolled - target.armor);
     target.hp = Math.max(0, target.hp - amount);
     eventBus.emit('entity:damaged', {
       entityId: event.targetId,

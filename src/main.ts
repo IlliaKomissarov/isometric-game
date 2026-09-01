@@ -26,6 +26,8 @@ import { Enemy, PHASE_DIE_TICKS, PHASE_RISE_TICKS, type EnemyKind } from '@/enti
 import { EnemyPool } from '@/entities/EnemyPool';
 import { Player } from '@/entities/Player';
 import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap } from '@/scenes/DungeonGenerator';
+import { SkillSystem } from '@/systems/Skills';
+import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
 import { SceneManager } from '@/scenes/SceneManager';
@@ -146,11 +148,34 @@ async function boot(): Promise<void> {
   const seedParam = new URLSearchParams(location.search).get('seed');
   const baseSeed = seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
 
-  const player = new Player('warrior');
+  // CLASS SELECTION (it.32): a clean pre-run screen — four archetypes,
+  // four bodies, four skill sets. `?class=` bypasses it (tests/links).
+  const pickClass = (): Promise<ClassArchetype> => {
+    const valid = ['warrior', 'mage', 'ranger', 'rogue'] as const;
+    const param = new URLSearchParams(location.search).get('class');
+    if (param && (valid as readonly string[]).includes(param)) {
+      return Promise.resolve(param as ClassArchetype);
+    }
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('class-select');
+      overlay?.classList.add('show');
+      overlay?.querySelectorAll('.class-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          overlay.classList.remove('show');
+          audio.sfx('equip');
+          resolve((card as HTMLElement).dataset.class as ClassArchetype);
+        });
+      });
+    });
+  };
+  const chosenClass = await pickClass();
+
+  const player = new Player(chosenClass);
   state.register(player);
-  player.addItem('rusty_sword'); // A blade for the close work…
-  player.addItem('short_bow'); // …and a bow for what waits in the dark.
-  if (spriteLib.loaded) player.enableKnightRig(); // HD knight replaces the crystal.
+  // Starter kit fits the trade (it.32): the class's basic arms.
+  if (chosenClass === 'ranger') player.addItem('short_bow');
+  else if (chosenClass !== 'mage') player.addItem('rusty_sword');
+  if (spriteLib.loaded) player.enableKnightRig(); // The class body replaces the crystal.
 
   /**
    * Live ANIMATED paperdoll (it.15): a set of idle-animation frames of the
@@ -516,6 +541,8 @@ async function boot(): Promise<void> {
             toHit,
           });
         },
+        // Rogue Vanish (it.32): a hidden player cannot be seen or hunted.
+        isPlayerHidden: () => player.stealthed,
         // Hollow King at half health: two Ember Wretches claw out of the floor.
         summonMinions: (x, y) => {
           audio.sfx('summon');
@@ -695,6 +722,74 @@ async function boot(): Promise<void> {
 
   let world = buildWorld(floor);
 
+  // --- ACTIVE SKILLS (it.32): hotkeys 1–4, wired to the CURRENT floor ------
+  const skills = new SkillSystem({
+    player,
+    combat: () => world.combat,
+    enemiesNear: (x, y, r) => {
+      const out: Enemy[] = [];
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead' && Math.hypot(e.pos.x - x, e.pos.y - y) <= r) out.push(e);
+      });
+      out.sort((a, b) => Math.hypot(a.pos.x - x, a.pos.y - y) - Math.hypot(b.pos.x - x, b.pos.y - y));
+      return out;
+    },
+    isWalkable: (gx, gy) => world.scene.isWalkable(gx, gy),
+    burst: (x, y, c, n) => world.ambience.burst(x, y, c, n),
+    glint: (x, y) => world.ambience.playGlint(x, y),
+    shake: (a) => world.camera.addShake(a),
+    text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
+    sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
+  });
+
+  // Skill bar DOM: one slot per class skill, cooldown sweep + cost readout.
+  const skillSlotEls: Array<{ root: HTMLElement; cd: HTMLElement; num: HTMLElement }> = [];
+  {
+    const bar = document.getElementById('skill-bar');
+    if (bar) {
+      skills.skills.forEach((def, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'skill-slot';
+        slot.title = `${def.name} — ${def.hint}`;
+        slot.innerHTML =
+          `<div class="skill-glyph">${def.glyph}</div>` +
+          `<div class="skill-key">${i + 1}</div>` +
+          (def.cost > 0 ? `<div class="skill-cost">${def.cost}</div>` : '') +
+          `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
+          `<div class="skill-name">${def.name.toUpperCase()}</div>`;
+        bar.appendChild(slot);
+        skillSlotEls.push({
+          root: slot,
+          cd: slot.querySelector('.skill-cd') as HTMLElement,
+          num: slot.querySelector('.skill-cd-num') as HTMLElement,
+        });
+      });
+    }
+    const label = document.getElementById('resource-label');
+    if (label) label.textContent = player.resourceName;
+    document.getElementById('resource-fill')?.classList.toggle('stamina', player.resourceName === 'STAMINA');
+  }
+
+  const resourceFill = document.getElementById('resource-fill');
+  const updateSkillHud = (): void => {
+    if (resourceFill) resourceFill.style.width = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
+    skills.skills.forEach((def, i) => {
+      const el = skillSlotEls[i];
+      if (!el) return;
+      const cd = skills.cooldowns[i];
+      if (cd > 0) {
+        el.root.classList.add('cooling');
+        el.cd.style.height = `${Math.round((cd / def.cd) * 100)}%`;
+        el.num.textContent = `${Math.ceil(cd / 60)}`;
+      } else {
+        el.root.classList.remove('cooling');
+        el.cd.style.height = '0%';
+        el.num.textContent = '';
+      }
+      el.root.classList.toggle('poor', player.resource < def.cost);
+    });
+  };
+
   // SMOOTH FLOOR TRANSITIONS (it.15): a quick fade-to-black covers the
   // world teardown/rebuild so floors never pop. Guarded against re-entry.
   const floorFade = document.getElementById('floor-fade');
@@ -717,6 +812,7 @@ async function boot(): Promise<void> {
     withFade(() => {
       const clearTime = formatTime(state.tick - floorStartTick);
       destroyWorld(world);
+      skills.clearZones(); // Firewalls/traps stay in the old world's grave.
       floor++;
       world = buildWorld(floor);
       updateDepth();
@@ -740,6 +836,7 @@ async function boot(): Promise<void> {
   const enterArena = (): void =>
     withFade(() => {
       destroyWorld(world);
+      skills.clearZones();
       world = buildWorld(floor, 'arena');
       player.action = 'idle';
       updateOrb();
@@ -751,6 +848,7 @@ async function boot(): Promise<void> {
     if (target === floor) return;
     withFade(() => {
       destroyWorld(world);
+      skills.clearZones();
       floor = target;
       world = buildWorld(floor);
       updateDepth();
@@ -1129,8 +1227,10 @@ async function boot(): Promise<void> {
       world.movement.applyCommands(commands);
       world.combat.applyCommands(commands);
       inventorySystem.apply(commands);
+      skills.apply(commands); // Hotkeys 1–4 (it.32).
       world.movement.update(dt);
       world.combat.update();
+      skills.update();
       world.projectiles.update(dt);
       state.forEach((entity) => entity.update(dt));
       world.enemies.separate();
@@ -1346,6 +1446,7 @@ async function boot(): Promise<void> {
         bossBar?.classList.remove('show');
       }
 
+      updateSkillHud(); // Cooldown sweeps + resource bar (it.32).
       tutorial.update(cameraFocus.x, cameraFocus.y, frameDt);
       minimap.update(cameraFocus.x, cameraFocus.y, timeSec);
       world.camera.follow(cameraFocus, frameDt);
@@ -1358,7 +1459,7 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) {
     Object.defineProperty(window, '__game', {
       configurable: true,
-      get: () => ({ state, player, loop, audio, ...world, floor }),
+      get: () => ({ state, player, loop, audio, skills, ...world, floor }),
     });
   }
 }
@@ -1426,6 +1527,8 @@ function installCursor(canvas: HTMLCanvasElement): void {
 function voiceProfile(kind: EnemyKind): { pitch: number; bank: string } {
   switch (kind) {
     case 'zombie': return { pitch: 0.9, bank: 'hZombie' };
+    case 'shambler': return { pitch: 1.05, bank: 'hZombie' };
+    case 'hydra': return { pitch: 0.85, bank: 'hHiss' };
     case 'ahoul': return { pitch: 1.15, bank: 'hGrowl' };
     case 'wolf': return { pitch: 0.95, bank: 'hGrowl' };
     case 'lizard': return { pitch: 1.2, bank: 'hHiss' };
@@ -1448,6 +1551,8 @@ const BOSS_LEVELS: Record<number, number> = { 5: 7, 10: 13, 15: 18, 20: 25 };
 /** Depth-banded rosters (it.14): each band introduces new flesh so no two
  *  stretches of the crypt fight the same. Also feeds arena honor guards. */
 function kindPoolFor(floor: number): EnemyKind[] {
+  // It.32: the new packs join the rosters — Risen Villagers shuffle through
+  // the mid bands; Crimson Hydras stalk the ember depths as elites.
   return floor === 1
     ? ['fallen', 'fallen', 'skeleton', 'skeleton', 'zombie']
     : floor <= 3
@@ -1455,8 +1560,10 @@ function kindPoolFor(floor: number): EnemyKind[] {
       : floor <= 5
         ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman']
         : floor <= 9
-          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard']
-          : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard'];
+          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler']
+          : floor <= 14
+            ? ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'shambler']
+            : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'hydra'];
 }
 
 /**

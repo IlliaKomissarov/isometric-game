@@ -47,6 +47,8 @@ export type EnemyKind =
   | 'boss'
   | 'bossFrost'
   | 'bossEmber'
+  | 'shambler'
+  | 'hydra'
   | 'bossHollow'
   | 'bossHollowKnight'
   | 'bossHollowLich';
@@ -485,6 +487,61 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       ownShadow: true,
     },
   },
+  shambler: {
+    kind: 'shambler',
+    name: 'Risen Villager',
+    hp: 30,
+    minDamage: 5,
+    maxDamage: 9,
+    toHit: 0.68,
+    speedMult: 0.5,
+    windupTicks: 40,
+    recoverTicks: 34,
+    reach: 1.0,
+    hitRecoveryTicks: 22,
+    markerTexture: 'marker_zombie',
+    // NEW BODY (it.32): the x256 pack's shambling dead townsman — mid-band
+    // filler flesh. Drained cold tint sinks the modern clothes into the crypt.
+    sprite: {
+      walk: 'shambler_walk',
+      idle: 'shambler_idle',
+      death: 'shambler_death',
+      attack: 'shambler_attack',
+      hitAnim: 'shambler_hit',
+      anchorY: 0.72,
+      scale: 0.4, // 256px raw cells (it.32 live calibration).
+      tint: 0x9aa4b4,
+      stride: 3.4,
+      ownShadow: true,
+    },
+  },
+  hydra: {
+    kind: 'hydra',
+    name: 'Crimson Hydra',
+    hp: 120,
+    minDamage: 12,
+    maxDamage: 20,
+    toHit: 0.78,
+    speedMult: 0.62,
+    windupTicks: 42,
+    recoverTicks: 36,
+    reach: 1.6,
+    hitRecoveryTicks: 10, // Barely staggers — an elite of the ember depths.
+    markerTexture: 'marker_zombie',
+    // NEW BODY (it.32): the 512x512 pack's three-headed red horror.
+    sprite: {
+      walk: 'hydra_walk',
+      idle: 'hydra_idle',
+      death: 'hydra_death',
+      attack: 'hydra_attack',
+      hitAnim: 'hydra_hit',
+      anchorY: 0.68,
+      scale: 0.36, // 512px raw frames → elite presence (it.32 calibration).
+      tint: 0xf0d8d0,
+      stride: 3.0,
+      ownShadow: true,
+    },
+  },
   // === THE HOLLOW KING (it.30): three forms, three fresh hp pools, ======
   // === death-and-rebirth transitions between them (see nextPhase). ======
   bossHollow: {
@@ -596,6 +653,8 @@ export interface EnemyAIDeps {
   onDeathComplete: (enemy: Enemy) => void;
   /** Boss summoning hook (Hollow King) — spawn reinforcements near a point. */
   summonMinions?: (x: number, y: number) => void;
+  /** Rogue Vanish (it.32): while true, nothing can see the player. */
+  isPlayerHidden?: () => boolean;
 }
 
 export type EnemyAIState = 'idle' | 'chase' | 'flee';
@@ -922,7 +981,11 @@ export class Enemy extends Entity {
 
     const myTile = worldToTile(this.pos.x, this.pos.y, this.scratchA);
     const playerTile = worldToTile(player.x, player.y, this.scratchB);
-    const los = hasLineOfSight(myTile.x, myTile.y, playerTile.x, playerTile.y, this.ai.isOpaque);
+    // Vanish (it.32): a hidden player is unseeable — aggro can't start and
+    // chases bleed out through the lost-LOS timer.
+    const los =
+      hasLineOfSight(myTile.x, myTile.y, playerTile.x, playerTile.y, this.ai.isOpaque) &&
+      !(this.ai.isPlayerHidden?.() ?? false);
 
     // Cowardice: badly hurt melee types run — unless cornered once already
     // (desperation latch): a beast with nowhere to run stops running.

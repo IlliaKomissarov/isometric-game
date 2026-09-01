@@ -106,6 +106,14 @@ export class InputBindings {
           if (!e.repeat) this.inputQueue.enqueue({ type: 'PICKUP_NEAREST', playerId: this.playerId });
           return;
         }
+        // Active skills (it.32): hotkeys 1–4 cast the class skill bar.
+        if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'Digit4') {
+          e.preventDefault();
+          if (!e.repeat) {
+            this.inputQueue.enqueue({ type: 'SKILL', playerId: this.playerId, slot: Number(e.code.slice(-1)) - 1 });
+          }
+          return;
+        }
         if (!(e.code in KEY_AXES)) return;
         e.preventDefault();
         if (e.repeat) return;

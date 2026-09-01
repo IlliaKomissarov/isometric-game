@@ -1,5 +1,58 @@
 # Development Log
 
+## 2026-09-01 (iteration 32) — 4 playable classes, skill system, asset audit
+
+### Asset audit (public/assets deep-scan)
+- NEW packs parsed: "Frames_320x320 hero1" (leather swordsman, 21 anims —
+  the ROGUE hero, half-turn angle rotation like the lizard pack);
+  512x512 (three-headed CRIMSON HYDRA, naga-style 0-based angle folders,
+  16 angles); x256_Spritesheets (RISEN VILLAGER shambler, 16 grid sheets
+  per anim, zero empty cells audited). effects/ + vfx/ noted for future.
+- MAGE hero is a big-pack PAPERDOLL COMPOSITE: BaseHumanMale + RobesMage1
+  + MageHood2 + MageStaff1 stacked per cam/frame and baked at load
+  (compositeCamAnim). Layer health size-audited (tiny hood/staff frames
+  are legit accessories, not blanks).
+- CALIBRATION TRUTH (finally measured): rebake helpers KEEP original
+  texture dims — def/rig scales multiply RAW frame size. Reference table:
+  archer 320@0.36, wolf 320@0.42, big pack 148@0.62. New: shambler
+  256@0.4, hydra 512@0.36, ranger hero 320@0.42, mage 148@1.1.
+
+### 4 playable classes (Player refactor)
+- CLASS_RIGS per archetype (idle/run/attacks[]/hit/death + scale/anchor/
+  shadow): warrior=HD knight (unchanged), mage=composite, ranger=bow pack,
+  rogue=hero1 (3 cycled attack anims). enableKnightRig picks by class with
+  knight fallback; syncKnight generalized to per-anim frameCounts.
+- ARCHETYPES extended: armorBase, critBonus, attackSpeedMult (rogue 0.75),
+  dodgeChance (rogue 0.12/ranger 0.05, rolled in enemyStrike), resource
+  pool (mage MANA 120 else STAMINA) + per-tick regen, class default
+  weapon (mage wand/ranger bow/rogue katana) + base damage.
+- Class select overlay (#class-select) before the run; `?class=` bypass.
+
+### Active skills (src/systems/Skills.ts): 16 skills, hotkeys 1–4
+- SKILL InputCommand + Digit1–4 bindings; per-slot cooldowns; resource
+  costs; HUD action bar (#skill-bar: glyph, key, cost, cooldown sweep +
+  seconds, insufficient-resource graying) + resource bar by the orb.
+- Warrior: Whirlwind (r2.2 AoE 1.4x) · Charge (4-tile dash, path damage
+  + knockback) · War Cry (+35% dmg 10 s) · Stone Skin (55% DR 7 s).
+- Mage: Fireball (r1.8 burst at nearest foe) · Firewall (5-cell line DoT
+  6 s) · Frost Nova (freeze r3, bosses immune) · Arcane Intellect (+45%).
+- Ranger: Multishot (5-arrow fan) · Shadow Step (dash + haste) ·
+  Explosive Trap (armed mine, r1.9 detonation) · Rain of Arrows (5 waves).
+- Rogue: Blade Flurry (4 staged cuts) · Poison Blade (hits envenom, DoT
+  via combat:swing hook) · Vanish (untouchable+unseen 5 s; enemies lose
+  LOS via EnemyAIDeps.isPlayerHidden) · Shadow Slash (dash-through 1.8x).
+- All rolls go through the floor's seeded combat rng (Combat.rng getter);
+  dealDamage gained damageMult (source=player) + damageReduction hooks.
+  New sfx cases (skillWhirl/Dash/Shout/Buff/Fire/Arrows/Trap/TrapSet/
+  Poison/Vanish) from the TomMusic + Horror banks.
+
+### Verified live: all 16 skills fired with costs/cooldowns/FX per class;
+### rogue flurry staged 4 cuts; mage soak (fireball 77 crit, firewall
+### kills, nova freeze); ranger 5 arrows in flight + trap/rain kill;
+### warrior whirl/charge/buffs; class-select screen + card start; shambler
+### (d7) + hydra (d16) in rosters, sized and facing right; F20 3-phase
+### boss regression intact. Zero console errors on all passes.
+
 ## 2026-09-01 (iteration 31) — GitHub private repo + Pages deployment
 
 ### Asset curation (the blocker)

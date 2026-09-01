@@ -1,5 +1,23 @@
 # Development Log
 
+## 2026-09-01 (iteration 35) — Full troubleshooting session (no code changes)
+
+End-to-end real-play QA on a fresh seed (1234): class select by real card
+click → click-to-move (2.2 tiles) → click-on-enemy hitbox → auto-approach
+→ kill (+8 xp, level-up to 2 mid-boss-fight) → gold pickup (+22) → chest
+E-open + E-loot + equip → stairs descent 4→5 → arena threshold teleport →
+REAL Tomb Warden fight (gravecleaver + Whirlwind, held-Space swings) →
+seal correctly HELD with one fleeing archer alive (touching the hidden
+stair did nothing) → click-chase killed the kiter → clear → reveal →
+descent to 6 → UI toggles (I/L/O/M) → cheat TRAVEL to Arena XX → phase-1
+pool burst → knight form P2 with fresh full pool. Zero console errors.
+
+Two apparent failures were test artifacts, both correct behavior:
+(1) clicking an enemy behind a wall does nothing — fog gates targeting
+(and a debug warp had put the player INSIDE a wall); (2) held-button
+attacks don't pursue a kiting archer — click-to-attack is the pursuit
+command by design.
+
 ## 2026-09-01 (iteration 34) — Ranger vector remap, hero scale normalization,
 ## idle pacing, dynamic portraits
 

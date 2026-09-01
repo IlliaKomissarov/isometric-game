@@ -136,6 +136,12 @@ public/assets/big pack 8 moves/*
 !public/assets/big pack 8 moves/RobesMage1/
 !public/assets/big pack 8 moves/MageHood2/
 !public/assets/big pack 8 moves/MageStaff1/
+!public/assets/big pack 8 moves/DrkPant/
+!public/assets/big pack 8 moves/DrkStudLeth/
+!public/assets/big pack 8 moves/DrkBoot/
+!public/assets/big pack 8 moves/DrkHood/
+!public/assets/big pack 8 moves/Dagger/
+!public/assets/big pack 8 moves/LeftKuhkri/
 public/assets/big pack 8 moves/**/*.bmp
 
 # Rogue hero (it.32): hero1's used anim folders, Body only

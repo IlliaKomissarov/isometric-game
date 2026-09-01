@@ -1,0 +1,172 @@
+/**
+ * @module core/InputBindings
+ * Translates raw DOM events into deterministic InputQueue commands.
+ *
+ * This is the ONLY module that listens to mouse/keyboard. Hybrid scheme
+ * (Diablo mouse + BG:DA action buttons):
+ *   - Left click on a visible enemy → ATTACK (locked target)
+ *   - Left click on ground loot     → PICKUP
+ *   - Left click on walkable ground → MOVE_TO (tile via camera unprojection)
+ *   - WASD / Arrow keys → DIRECT_MOVE with a world-space direction
+ *   - SPACE / F held    → ATTACK_DOWN/UP (auto-targeted swings; whiffs air)
+ *   - E                 → PICKUP_NEAREST
+ *   - All move keys released → STOP
+ *
+ * Key-to-world mapping: screen intent (sx, sy) maps to world axes as
+ * (sy + sx, sy - sx), so "W" moves visually up-screen along the isometric
+ * diagonal. Diagonal normalization happens in the MovementSystem.
+ */
+
+import type { Camera } from '@/engine/Camera';
+import { vec2 } from '@/utils/Vec2';
+import type { InputQueue } from './InputQueue';
+
+const KEY_AXES: Record<string, { sx: number; sy: number }> = {
+  KeyW: { sx: 0, sy: -1 },
+  ArrowUp: { sx: 0, sy: -1 },
+  KeyS: { sx: 0, sy: 1 },
+  ArrowDown: { sx: 0, sy: 1 },
+  KeyA: { sx: -1, sy: 0 },
+  ArrowLeft: { sx: -1, sy: 0 },
+  KeyD: { sx: 1, sy: 0 },
+  ArrowRight: { sx: 1, sy: 0 },
+};
+
+const ATTACK_KEYS = new Set(['Space', 'KeyF']);
+
+export class InputBindings {
+  private readonly held = new Set<string>();
+  private readonly attackHeld = new Set<string>();
+  private readonly worldScratch = vec2();
+  private readonly abort = new AbortController();
+
+  constructor(
+    canvas: HTMLCanvasElement,
+    private readonly camera: Camera,
+    private readonly inputQueue: InputQueue,
+    private readonly playerId: number,
+    private readonly isWalkable: (gx: number, gy: number) => boolean,
+    /**
+     * Returns the id of a targetable (visible) enemy whose SPRITE contains the
+     * given canvas-pixel point, or null. Screen-space picking so clicking any
+     * part of a tall body works — never re-implement as ground-plane distance.
+     */
+    private readonly pickEnemy: (canvasX: number, canvasY: number) => number | null,
+    /** Returns the uid of a visible ground item at the canvas point, or null. */
+    private readonly pickItem: (canvasX: number, canvasY: number) => number | null,
+    /** Returns the id of a visible unopened chest at the canvas point, or null. */
+    private readonly pickChest: (canvasX: number, canvasY: number) => number | null,
+  ) {
+    const { signal } = this.abort;
+
+    canvas.addEventListener(
+      'pointerdown',
+      (e: PointerEvent) => {
+        if (e.button !== 0) return;
+        const w = this.camera.pointerToWorld(e.offsetX, e.offsetY, this.worldScratch);
+        // Picking priority: enemies, then ground loot, then walkable ground.
+        const targetId = this.pickEnemy(e.offsetX, e.offsetY);
+        if (targetId !== null) {
+          this.inputQueue.enqueue({ type: 'ATTACK', playerId: this.playerId, targetId });
+          return;
+        }
+        const itemUid = this.pickItem(e.offsetX, e.offsetY);
+        if (itemUid !== null) {
+          this.inputQueue.enqueue({ type: 'PICKUP', playerId: this.playerId, itemUid });
+          return;
+        }
+        const chestId = this.pickChest(e.offsetX, e.offsetY);
+        if (chestId !== null) {
+          this.inputQueue.enqueue({ type: 'OPEN_CHEST', playerId: this.playerId, chestId });
+          return;
+        }
+        const gx = Math.floor(w.x);
+        const gy = Math.floor(w.y);
+        if (!this.isWalkable(gx, gy)) return; // Clicks on walls/void are ignored.
+        this.inputQueue.enqueue({ type: 'MOVE_TO', playerId: this.playerId, gx, gy });
+      },
+      { signal },
+    );
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
+
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (ATTACK_KEYS.has(e.code)) {
+          e.preventDefault();
+          if (e.repeat) return;
+          if (this.attackHeld.size === 0) {
+            this.inputQueue.enqueue({ type: 'ATTACK_DOWN', playerId: this.playerId });
+          }
+          this.attackHeld.add(e.code);
+          return;
+        }
+        if (e.code === 'KeyE') {
+          e.preventDefault();
+          if (!e.repeat) this.inputQueue.enqueue({ type: 'PICKUP_NEAREST', playerId: this.playerId });
+          return;
+        }
+        if (!(e.code in KEY_AXES)) return;
+        e.preventDefault();
+        if (e.repeat) return;
+        this.held.add(e.code);
+        this.emitDirection();
+      },
+      { signal },
+    );
+    window.addEventListener(
+      'keyup',
+      (e: KeyboardEvent) => {
+        if (this.attackHeld.delete(e.code) && this.attackHeld.size === 0) {
+          this.inputQueue.enqueue({ type: 'ATTACK_UP', playerId: this.playerId });
+          return;
+        }
+        if (!this.held.delete(e.code)) return;
+        this.emitDirection();
+      },
+      { signal },
+    );
+    // Losing focus mid-hold would leave keys stuck — release everything.
+    window.addEventListener(
+      'blur',
+      () => {
+        if (this.attackHeld.size > 0) {
+          this.attackHeld.clear();
+          this.inputQueue.enqueue({ type: 'ATTACK_UP', playerId: this.playerId });
+        }
+        if (this.held.size === 0) return;
+        this.held.clear();
+        this.inputQueue.enqueue({ type: 'STOP', playerId: this.playerId });
+      },
+      { signal },
+    );
+  }
+
+  private emitDirection(): void {
+    let sx = 0;
+    let sy = 0;
+    for (const code of this.held) {
+      const axis = KEY_AXES[code];
+      sx += axis.sx;
+      sy += axis.sy;
+    }
+    sx = Math.sign(sx);
+    sy = Math.sign(sy);
+    if (sx === 0 && sy === 0) {
+      this.inputQueue.enqueue({ type: 'STOP', playerId: this.playerId });
+      return;
+    }
+    // Screen intent → world axes (see module doc).
+    this.inputQueue.enqueue({
+      type: 'DIRECT_MOVE',
+      playerId: this.playerId,
+      dx: sy + sx,
+      dy: sy - sx,
+    });
+  }
+
+  /** Detach all DOM listeners (scene teardown / memory cleanup). */
+  destroy(): void {
+    this.abort.abort();
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "isometric-arpg-core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Production-grade 2.5D isometric Action-RPG core framework (TypeScript + Vite + Pixi.js). Dark-fantasy tactical foundation designed for multi-agent delegation.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "deploy": "node scripts/deploy-pages.mjs"
+  },
+  "dependencies": {
+    "pixi.js": "^8.6.6"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.3.0",
+    "typescript": "~5.7.3",
+    "vite": "^6.0.5"
+  }
+}

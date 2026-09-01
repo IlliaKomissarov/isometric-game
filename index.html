@@ -1,0 +1,1283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Isometric ARPG — Dark Fantasy Core</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=IM+Fell+English:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --gold: #c8a558;
+        --gold-dim: #8f7642;
+        --parchment: #a99878;
+        --panel-bg: rgba(12, 10, 15, 0.88);
+        --panel-border: #3b3244;
+        --blood: #8e1f14;
+        --blood-bright: #c03424;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #07070a;
+      }
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+      #app canvas {
+        display: block;
+        /* The real cursor (pixel gauntlet-pointer) is injected by main.ts. */
+        cursor: default;
+      }
+
+      /* ---- Bottom HUD bar (it.16): the Diablo-style control panel strip ---- */
+      #hud-bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 88px;
+        background: linear-gradient(180deg, rgba(20, 16, 28, 0.92) 0%, rgba(9, 7, 14, 0.97) 100%);
+        border-top: 1px solid #3b3244;
+        box-shadow:
+          0 -1px 0 rgba(200, 165, 88, 0.14),
+          inset 0 8px 22px rgba(0, 0, 0, 0.55);
+        pointer-events: none;
+        z-index: 2;
+      }
+      #hud-bar::before {
+        content: '';
+        position: absolute;
+        left: 120px;
+        right: 300px;
+        top: 6px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+        opacity: 0.5;
+      }
+
+      /* Cinematic vignette over the whole view. */
+      #vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.55) 100%);
+      }
+
+      /* ---- Health orb (seated on the HUD bar, Diablo-style) ---- */
+      #orb-wrap {
+        position: fixed;
+        left: 22px;
+        bottom: 8px;
+        width: 92px;
+        text-align: center;
+        pointer-events: none;
+        user-select: none;
+        z-index: 3;
+      }
+      #orb {
+        position: relative;
+        width: 84px;
+        height: 84px;
+        margin: 0 auto;
+        border-radius: 50%;
+        overflow: hidden;
+        background: radial-gradient(circle at 32% 28%, #241014 0%, #12070a 55%, #060305 100%);
+        border: 3px solid #4a3d2b;
+        box-shadow:
+          0 0 0 1px #1c1712,
+          0 0 18px rgba(0, 0, 0, 0.8),
+          inset 0 0 14px rgba(0, 0, 0, 0.9);
+      }
+      #orb-fill {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 100%;
+        background: linear-gradient(180deg, var(--blood-bright) 0%, var(--blood) 45%, #4d0e08 100%);
+        transition: height 0.35s ease;
+      }
+      #orb-gloss {
+        position: absolute;
+        left: 14%;
+        top: 8%;
+        width: 42%;
+        height: 30%;
+        border-radius: 50%;
+        background: radial-gradient(ellipse, rgba(255, 240, 220, 0.28) 0%, transparent 70%);
+      }
+      #orb-label {
+        margin-top: 4px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--gold);
+        text-shadow: 0 1px 3px #000;
+        letter-spacing: 0.06em;
+      }
+      #orb.low #orb-fill {
+        animation: orb-pulse 1s ease-in-out infinite;
+      }
+      @keyframes orb-pulse {
+        50% {
+          filter: brightness(1.5);
+        }
+      }
+
+      /* ---- Controls (docked on the HUD bar, bottom-right, two columns) ---- */
+      #controls {
+        position: fixed;
+        right: 14px;
+        bottom: 6px;
+        width: 420px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 22px;
+        row-gap: 0;
+        padding: 4px 6px;
+        pointer-events: none;
+        user-select: none;
+        z-index: 3;
+      }
+      #controls h3 {
+        grid-column: 1 / -1;
+        margin: 0 0 2px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 10px;
+        letter-spacing: 0.3em;
+        text-align: center;
+        color: var(--gold-dim);
+        text-shadow: 0 1px 3px #000;
+      }
+      #controls .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 1.5px 0;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-size: 12px;
+        color: var(--parchment);
+        opacity: 0.8;
+      }
+      #controls .row.active {
+        color: #e8d9b0;
+        opacity: 1;
+        text-shadow: 0 0 6px rgba(200, 165, 88, 0.35);
+      }
+      #controls kbd {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        color: #cfc096;
+        background: #1a1520;
+        border: 1px solid #453a52;
+        border-bottom-width: 2px;
+        border-radius: 3px;
+        padding: 1.5px 7px;
+        white-space: nowrap;
+      }
+
+      /* ---- Minimap ---- */
+      #minimap {
+        position: fixed;
+        right: 22px;
+        top: 46px;
+        padding: 6px;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        box-shadow:
+          inset 0 0 18px rgba(0, 0, 0, 0.6),
+          0 0 14px rgba(0, 0, 0, 0.6);
+        pointer-events: none;
+        user-select: none;
+        z-index: 4;
+      }
+      #minimap.hidden {
+        display: none;
+      }
+      #minimap canvas {
+        display: block;
+        width: 176px;
+        height: 176px;
+        image-rendering: pixelated;
+        opacity: 0.92;
+      }
+
+      /* ---- Inventory panel ---- */
+      #inv-panel {
+        position: fixed;
+        right: 216px;
+        top: 46px;
+        width: 268px;
+        padding: 12px 18px 14px;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        box-shadow:
+          inset 0 0 24px rgba(0, 0, 0, 0.65),
+          0 0 18px rgba(0, 0, 0, 0.7);
+        display: none;
+        user-select: none;
+        z-index: 10;
+      }
+      #inv-panel.open {
+        display: block;
+      }
+      #inv-panel h3,
+      #inv-panel h4 {
+        margin: 2px 0 8px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        text-align: center;
+        color: var(--gold);
+        text-shadow: 0 1px 3px #000;
+      }
+      #inv-panel h3 {
+        font-size: 14px;
+      }
+      #inv-panel h4 {
+        font-size: 11px;
+        margin-top: 10px;
+        color: var(--gold-dim);
+      }
+      #inv-panel .inv-preview {
+        display: flex;
+        justify-content: center;
+        margin: 4px 0 10px;
+        min-height: 96px;
+      }
+      #inv-panel .inv-preview canvas {
+        image-rendering: pixelated;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.8));
+      }
+      /* ---- Icon grid cells ---- */
+      #inv-panel .inv-equip-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px 10px;
+        justify-items: center;
+      }
+      #inv-panel .inv-slot-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+      }
+      #inv-panel .inv-slot-label {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.2em;
+        color: var(--gold-dim);
+      }
+      #inv-panel .inv-cell {
+        width: 64px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #100d15;
+        border: 1px solid #2e2836;
+        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.7);
+        padding: 0;
+        cursor: pointer;
+      }
+      #inv-panel .inv-cell-empty {
+        opacity: 0.45;
+        cursor: default;
+      }
+      #inv-panel .inv-cell img {
+        width: 56px;
+        image-rendering: pixelated;
+      }
+      #inv-panel .inv-cell {
+        position: relative;
+      }
+      #inv-panel .inv-cell img.inv-pxicon {
+        width: 34px;
+        image-rendering: pixelated;
+      }
+      #inv-panel .inv-qty {
+        position: absolute;
+        right: 3px;
+        bottom: 1px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--gold);
+        text-shadow: 0 1px 2px #000;
+        pointer-events: none;
+      }
+      #inv-panel .rarity-common {
+        border-color: #4a443c;
+      }
+      #inv-panel .rarity-magic {
+        border-color: #5f7fdf;
+      }
+      #inv-panel .rarity-rare {
+        border-color: #d8a83c;
+      }
+      #inv-panel .inv-cell.inv-item:hover {
+        filter: brightness(1.4);
+        border-color: var(--gold);
+      }
+      #inv-panel .inv-pack-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 64px);
+        gap: 8px;
+        padding: 2px;
+        justify-content: center;
+      }
+
+      /* ---- Progression HUD: level, XP bar, gold (on the bar) ---- */
+      #progress-hud {
+        position: fixed;
+        left: 126px;
+        bottom: 10px;
+        pointer-events: none;
+        user-select: none;
+        z-index: 3;
+      }
+      #level-label {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        color: var(--gold);
+        text-shadow: 0 1px 3px #000;
+        display: inline-block;
+        margin-right: 10px;
+      }
+      #gold-wrap {
+        display: inline-block;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        color: #e8cf8a;
+        text-shadow: 0 1px 3px #000;
+      }
+      #gold-gem {
+        color: var(--gold);
+        margin-right: 4px;
+        font-size: 10px;
+      }
+      #xp-bar {
+        width: 170px;
+        height: 5px;
+        margin-top: 4px;
+        background: #16121a;
+        border: 1px solid #3b3244;
+        box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
+      }
+      #xp-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #8f7642, #c8a558);
+        transition: width 0.3s ease;
+      }
+
+      /* ---- Extracted character stats (on the HUD bar, beside the orb) ---- */
+      #char-stats {
+        position: fixed;
+        left: 126px;
+        bottom: 52px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        color: var(--parchment);
+        text-shadow: 0 1px 3px #000;
+        pointer-events: none;
+        user-select: none;
+        z-index: 3;
+      }
+      #char-stats span {
+        color: var(--gold-dim);
+        font-size: 10px;
+        letter-spacing: 0.18em;
+      }
+
+      #inv-panel .inv-count {
+        color: var(--parchment);
+        opacity: 0.6;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+      }
+      #inv-panel .inv-gold {
+        float: right;
+        color: #e8cf8a;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+      }
+      /* Scrollable backpack compartment: the panel never overflows the screen. */
+      #inv-panel .inv-scroll {
+        max-height: 176px;
+        overflow-y: auto;
+        padding-right: 6px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--panel-border) transparent;
+      }
+      #inv-panel .inv-scroll::-webkit-scrollbar {
+        width: 7px;
+      }
+      #inv-panel .inv-scroll::-webkit-scrollbar-thumb {
+        background: var(--panel-border);
+        border: 1px solid #1a1520;
+      }
+      #inv-panel .inv-scroll::-webkit-scrollbar-thumb:hover {
+        background: var(--gold-dim);
+      }
+      #inv-panel .inv-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #inv-panel .inv-divider {
+        height: 1px;
+        margin: 8px 0;
+        background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+      }
+      #inv-panel .inv-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 2.5px 0;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-size: 13.5px;
+      }
+      #inv-panel .inv-slot {
+        color: var(--parchment);
+        opacity: 0.75;
+      }
+      #inv-panel .inv-empty {
+        color: #55504a;
+      }
+      #inv-panel button.inv-item {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-size: 13.5px;
+        background: none;
+        border: none;
+        padding: 1px 4px;
+        cursor: pointer;
+        text-shadow: 0 1px 2px #000;
+      }
+      #inv-panel button.inv-item:hover {
+        text-decoration: underline;
+        filter: brightness(1.3);
+      }
+      #inv-panel .inv-stats {
+        margin-top: 10px;
+        text-align: center;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: var(--parchment);
+      }
+
+      /* ---- Item tooltip ---- */
+      #inv-tooltip {
+        position: fixed;
+        min-width: 150px;
+        padding: 8px 12px;
+        background: rgba(8, 6, 10, 0.95);
+        border: 1px solid #4a3f56;
+        box-shadow: 0 0 14px rgba(0, 0, 0, 0.8);
+        pointer-events: none;
+        display: none;
+        z-index: 20;
+      }
+      #inv-tooltip.show {
+        display: block;
+      }
+      #inv-tooltip .tip-name {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      #inv-tooltip .tip-slot {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 11.5px;
+        color: #7a7060;
+        margin: 2px 0;
+      }
+      #inv-tooltip .tip-stats {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-size: 12.5px;
+        color: var(--parchment);
+      }
+
+      /* ---- Boss bar + fall note ---- */
+      #boss-bar {
+        position: fixed;
+        top: 44px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 420px;
+        text-align: center;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+        pointer-events: none;
+        user-select: none;
+        z-index: 5;
+      }
+      #boss-bar.show {
+        opacity: 1;
+      }
+      #boss-bar-name {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.34em;
+        color: #d05a4a;
+        text-shadow: 0 0 12px rgba(140, 30, 20, 0.8), 0 1px 3px #000;
+        margin-bottom: 4px;
+      }
+      #boss-bar-track {
+        position: relative;
+        height: 11px;
+        background: #16121a;
+        border: 1px solid #6a4030;
+        box-shadow:
+          inset 0 0 8px rgba(0, 0, 0, 0.8),
+          0 0 14px rgba(140, 30, 20, 0.35);
+      }
+      /* Ornamental caps + 10% notch overlay (it.23 boss-bar polish). */
+      #boss-bar-track::before,
+      #boss-bar-track::after {
+        content: '◆';
+        position: absolute;
+        top: 50%;
+        transform: translateY(-52%);
+        font-size: 13px;
+        color: #8a4034;
+        text-shadow: 0 0 6px rgba(140, 30, 20, 0.8);
+      }
+      #boss-bar-track::before {
+        left: -18px;
+      }
+      #boss-bar-track::after {
+        right: -18px;
+      }
+      #boss-bar-fill {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(180deg, #e05038 0%, #a02418 45%, #58120c 100%);
+        transition: width 0.25s ease;
+      }
+      #boss-bar-notches {
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          90deg,
+          transparent 0,
+          transparent calc(10% - 1px),
+          rgba(10, 8, 10, 0.85) calc(10% - 1px),
+          rgba(10, 8, 10, 0.85) 10%
+        );
+        pointer-events: none;
+      }
+      #boss-note {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 34%;
+        text-align: center;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 38px;
+        letter-spacing: 0.32em;
+        color: var(--gold);
+        text-shadow: 0 0 26px rgba(200, 165, 88, 0.7), 0 2px 6px #000;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+        pointer-events: none;
+        user-select: none;
+      }
+      #boss-note.show {
+        opacity: 1;
+      }
+
+      /* ---- Chest interact prompt ---- */
+      #interact-hint {
+        position: fixed;
+        transform: translateX(-50%);
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        color: var(--gold);
+        background: rgba(10, 8, 12, 0.85);
+        border: 1px solid var(--panel-border);
+        padding: 3px 9px;
+        text-shadow: 0 1px 2px #000;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+        pointer-events: none;
+        user-select: none;
+        z-index: 6;
+      }
+      #interact-hint.show {
+        opacity: 1;
+      }
+      #interact-hint kbd {
+        font-size: 10px;
+        color: #cfc096;
+        background: #1a1520;
+        border: 1px solid #453a52;
+        border-radius: 3px;
+        padding: 0 5px;
+      }
+
+      /* ---- Level select ---- */
+      #level-select {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        min-width: 280px;
+        padding: 16px 22px 14px;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        box-shadow:
+          inset 0 0 30px rgba(0, 0, 0, 0.7),
+          0 0 40px rgba(0, 0, 0, 0.85);
+        display: none;
+        z-index: 30;
+      }
+      #level-select.open {
+        display: block;
+      }
+      /* Twenty depths need their own scroll region (it.22). */
+      #level-select .lvl-scroll {
+        max-height: 56vh;
+        overflow-y: auto;
+        padding-right: 6px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--panel-border) transparent;
+      }
+      #level-select .lvl-scroll::-webkit-scrollbar {
+        width: 7px;
+      }
+      #level-select .lvl-scroll::-webkit-scrollbar-thumb {
+        background: var(--panel-border);
+      }
+      #level-select h3 {
+        margin: 0 0 12px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 14px;
+        letter-spacing: 0.3em;
+        text-align: center;
+        color: var(--gold);
+        text-shadow: 0 1px 3px #000;
+      }
+      #level-select .lvl-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 18px;
+        width: 100%;
+        padding: 7px 10px;
+        margin-bottom: 4px;
+        background: #100d15;
+        border: 1px solid #2e2836;
+        cursor: pointer;
+        text-align: left;
+      }
+      #level-select .lvl-row:hover {
+        border-color: var(--gold);
+        filter: brightness(1.3);
+      }
+      #level-select .lvl-name {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        color: var(--parchment);
+      }
+      #level-select .lvl-hint {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 12px;
+        color: #6a6156;
+      }
+      #level-select .lvl-tip {
+        margin-top: 8px;
+        text-align: center;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 11.5px;
+        color: #5a5248;
+      }
+
+      /* ---- Tutorial hint banner ---- */
+      #hint-banner {
+        position: fixed;
+        left: 50%;
+        bottom: 130px;
+        transform: translateX(-50%);
+        max-width: 560px;
+        padding: 10px 26px;
+        text-align: center;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 16.5px;
+        color: #d8c9a2;
+        background: rgba(10, 8, 12, 0.82);
+        border: 1px solid #3b3244;
+        border-left: none;
+        border-right: none;
+        box-shadow: 0 0 18px rgba(0, 0, 0, 0.6);
+        text-shadow: 0 1px 3px #000;
+        opacity: 0;
+        transition: opacity 0.7s ease;
+        pointer-events: none;
+        user-select: none;
+        z-index: 5;
+      }
+      #hint-banner.show {
+        opacity: 1;
+      }
+
+      /* ---- Loading overlay ---- */
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #07070a;
+        z-index: 100;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 22px;
+        letter-spacing: 0.4em;
+        color: var(--gold-dim);
+        text-shadow: 0 0 20px rgba(200, 165, 88, 0.3);
+        transition: opacity 0.8s ease;
+        animation: loading-pulse 1.6s ease-in-out infinite;
+      }
+      #loading.done {
+        opacity: 0;
+        pointer-events: none;
+        animation: none;
+      }
+      @keyframes loading-pulse {
+        50% {
+          opacity: 0.55;
+        }
+      }
+
+      /* ---- Run timer ---- */
+      #timer {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: 0.22em;
+        color: var(--parchment);
+        text-shadow: 0 1px 3px #000;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      /* ---- Descend sub-line (floor clear time) ---- */
+      #descend-sub {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: calc(34% + 52px);
+        text-align: center;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 18px;
+        color: var(--parchment);
+        text-shadow: 0 1px 4px #000;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+        pointer-events: none;
+        user-select: none;
+      }
+      #descend-sub.show {
+        opacity: 1;
+      }
+
+      /* ---- Depth label ---- */
+      #depth-label {
+        position: fixed;
+        top: 16px;
+        left: 22px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: 0.32em;
+        color: var(--gold-dim);
+        text-shadow: 0 1px 3px #000;
+        pointer-events: none;
+        user-select: none;
+      }
+
+      /* ---- Death note ---- */
+      #death-note {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 34%;
+        text-align: center;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 42px;
+        letter-spacing: 0.3em;
+        color: var(--blood-bright);
+        text-shadow:
+          0 0 24px rgba(142, 31, 20, 0.9),
+          0 2px 6px #000;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+        pointer-events: none;
+        user-select: none;
+      }
+      #death-note.show {
+        opacity: 1;
+      }
+
+      /* ---- Victory note (Depth XX conquered) ---- */
+      #victory-note {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 30%;
+        text-align: center;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 44px;
+        letter-spacing: 0.34em;
+        color: var(--gold);
+        text-shadow:
+          0 0 40px rgba(200, 165, 88, 0.9),
+          0 2px 8px #000;
+        opacity: 0;
+        transition: opacity 1.4s ease;
+        pointer-events: none;
+        user-select: none;
+        z-index: 40;
+      }
+      #victory-note .victory-sub {
+        margin-top: 14px;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-weight: 400;
+        font-size: 19px;
+        letter-spacing: 0.08em;
+        color: var(--parchment);
+      }
+      #victory-note.show {
+        opacity: 1;
+      }
+
+      /* ---- Cheat menu (F1 / `) — the Forbidden Arts panel ---- */
+      #cheat-menu {
+        position: fixed;
+        left: 22px;
+        top: 52px;
+        width: 252px;
+        max-height: calc(100vh - 120px);
+        display: none;
+        flex-direction: column;
+        padding: 12px 14px 10px;
+        background: var(--panel-bg);
+        border: 1px solid #56304a;
+        box-shadow:
+          inset 0 0 24px rgba(0, 0, 0, 0.7),
+          0 0 18px rgba(0, 0, 0, 0.7);
+        z-index: 30;
+      }
+      #cheat-menu.open {
+        display: flex;
+      }
+      #cheat-menu .cheat-head {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #2e2836;
+      }
+      #cheat-portrait {
+        width: 72px;
+        height: 88px;
+        background:
+          radial-gradient(ellipse at 50% 80%, rgba(160, 60, 130, 0.16) 0%, transparent 65%),
+          #0c0a10;
+        border: 1px solid #453a52;
+        image-rendering: pixelated;
+        flex-shrink: 0;
+      }
+      #cheat-menu .cheat-head-text h3 {
+        margin: 0 0 4px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        color: #c05a9a;
+        text-shadow: 0 0 10px rgba(160, 60, 130, 0.5), 0 1px 3px #000;
+      }
+      #cheat-menu .cheat-sub {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 11px;
+        color: #6a6156;
+      }
+      #cheat-menu .cheat-powers {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+        margin-bottom: 10px;
+      }
+      #cheat-menu button {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-size: 12.5px;
+        color: var(--parchment);
+        background: #100d15;
+        border: 1px solid #2e2836;
+        cursor: pointer;
+        text-shadow: 0 1px 2px #000;
+        padding: 6px 8px;
+      }
+      #cheat-menu button:hover {
+        border-color: #c05a9a;
+        filter: brightness(1.35);
+      }
+      #cheat-menu .cheat-powers button.lit {
+        color: #e8b0d8;
+        border-color: #c05a9a;
+        box-shadow: inset 0 0 10px rgba(160, 60, 130, 0.25);
+      }
+      #cheat-menu .cheat-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 6px;
+      }
+      #cheat-menu .cheat-tab {
+        flex: 1;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        padding: 4px 2px;
+        color: #7a7060;
+      }
+      #cheat-menu .cheat-tab.active {
+        color: var(--gold);
+        border-color: var(--gold-dim);
+      }
+      /* The arsenal browser: its OWN scroll region — never clips the panel. */
+      #cheat-menu .cheat-items {
+        flex: 1;
+        min-height: 60px;
+        max-height: 220px;
+        overflow-y: auto;
+        margin-bottom: 6px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--panel-border) transparent;
+      }
+      #cheat-menu .cheat-items::-webkit-scrollbar {
+        width: 7px;
+      }
+      #cheat-menu .cheat-items::-webkit-scrollbar-thumb {
+        background: var(--panel-border);
+      }
+      #cheat-menu .cheat-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        margin-bottom: 3px;
+        text-align: left;
+      }
+      #cheat-menu .cheat-item.given {
+        filter: brightness(0.75);
+        border-color: #4a5a3a;
+      }
+      #cheat-menu .cheat-item.rarity-magic {
+        border-left: 2px solid #5f7fdf;
+      }
+      #cheat-menu .cheat-item.rarity-rare {
+        border-left: 2px solid #d8a83c;
+      }
+      #cheat-menu .cheat-icon {
+        width: 34px;
+        image-rendering: pixelated;
+        flex-shrink: 0;
+      }
+      #cheat-menu .cheat-icon-px {
+        width: 22px;
+      }
+      #cheat-menu .cheat-item-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      #cheat-menu .cheat-item-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #cheat-menu .cheat-item-stats {
+        font-size: 10px;
+        color: #8a8070;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #cheat-menu .cheat-takeall {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        color: var(--gold);
+        text-align: center;
+      }
+      #cheat-menu .cheat-tip {
+        margin-top: 6px;
+        text-align: center;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 10.5px;
+        color: #5a5248;
+      }
+
+      /* ---- Settings panel (O) — audio controls ---- */
+      #settings-panel {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 280px;
+        padding: 16px 22px 12px;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        box-shadow:
+          inset 0 0 30px rgba(0, 0, 0, 0.7),
+          0 0 40px rgba(0, 0, 0, 0.85);
+        display: none;
+        z-index: 32;
+      }
+      #settings-panel.open {
+        display: block;
+      }
+      #settings-panel h3 {
+        margin: 0 0 14px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 14px;
+        letter-spacing: 0.3em;
+        text-align: center;
+        color: var(--gold);
+        text-shadow: 0 1px 3px #000;
+      }
+      #settings-panel .set-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 6px 0;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-size: 14px;
+        color: var(--parchment);
+      }
+      #settings-panel input[type='range'] {
+        width: 150px;
+        accent-color: #c8a558;
+      }
+      #settings-panel input[type='checkbox'] {
+        accent-color: #c8a558;
+        width: 16px;
+        height: 16px;
+      }
+      #settings-panel .set-tip {
+        margin-top: 10px;
+        text-align: center;
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 11px;
+        color: #5a5248;
+      }
+
+      /* ---- Floor transition fade (it.15) ---- */
+      #floor-fade {
+        position: fixed;
+        inset: 0;
+        background: #050408;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.28s ease;
+        z-index: 50;
+      }
+      #floor-fade.show {
+        opacity: 1;
+      }
+
+      /* ---- End-game epilogue (it.15) ---- */
+      #endgame {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: radial-gradient(ellipse at center, rgba(10, 7, 12, 0.96) 0%, #030205 100%);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 2.2s ease;
+        z-index: 60;
+      }
+      #endgame.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #endgame h1 {
+        margin: 0;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 46px;
+        letter-spacing: 0.34em;
+        color: var(--gold);
+        text-shadow: 0 0 40px rgba(200, 165, 88, 0.9), 0 2px 8px #000;
+      }
+      #endgame .endgame-sub {
+        font-family: 'IM Fell English', 'Georgia', serif;
+        font-style: italic;
+        font-size: 19px;
+        color: var(--parchment);
+        max-width: 640px;
+        text-align: center;
+        line-height: 1.6;
+      }
+      #endgame-stats {
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        color: var(--gold-dim);
+      }
+      #endgame-again {
+        margin-top: 10px;
+        padding: 10px 34px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 14px;
+        letter-spacing: 0.26em;
+        color: var(--gold);
+        background: #100d15;
+        border: 1px solid var(--gold-dim);
+        cursor: pointer;
+        text-shadow: 0 1px 3px #000;
+      }
+      #endgame-again:hover {
+        filter: brightness(1.4);
+        box-shadow: 0 0 24px rgba(200, 165, 88, 0.3);
+      }
+
+      /* ---- Descend note ---- */
+      #descend-note {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 34%;
+        text-align: center;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 34px;
+        letter-spacing: 0.3em;
+        color: var(--gold);
+        text-shadow:
+          0 0 24px rgba(200, 165, 88, 0.6),
+          0 2px 6px #000;
+        opacity: 0;
+        transition: opacity 0.6s ease;
+        pointer-events: none;
+        user-select: none;
+      }
+      #descend-note.show {
+        opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="vignette"></div>
+    <div id="hud-bar"></div>
+
+    <div id="orb-wrap">
+      <div id="orb">
+        <div id="orb-fill"></div>
+        <div id="orb-gloss"></div>
+      </div>
+      <div id="orb-label">140</div>
+    </div>
+
+    <div id="progress-hud">
+      <div id="level-label">LVL 1</div>
+      <div id="xp-bar"><div id="xp-fill"></div></div>
+      <div id="gold-wrap"><span id="gold-gem">◆</span>GOLD:&nbsp;<span id="gold-label">0</span></div>
+    </div>
+
+    <div id="controls">
+      <h3>COMMANDS</h3>
+      <div class="row active" id="row-move"><span>Move · Target</span><kbd>LMB</kbd></div>
+      <div class="row" id="row-direct"><span>Direct Control</span><kbd>W A S D / ARROWS</kbd></div>
+      <div class="row"><span>Strike</span><kbd>SPACE / F</kbd></div>
+      <div class="row"><span>Take Loot</span><kbd>E</kbd></div>
+      <div class="row"><span>Inventory</span><kbd>I</kbd></div>
+      <div class="row"><span>Map</span><kbd>M</kbd></div>
+      <div class="row"><span>Depths</span><kbd>L</kbd></div>
+      <div class="row"><span>Zoom the Eye</span><kbd>WHEEL</kbd></div>
+      <div class="row"><span>Settings</span><kbd>O</kbd></div>
+      <div class="row"><span>Forbidden Arts</span><kbd>F1 / `</kbd></div>
+    </div>
+
+    <div id="interact-hint"><kbd>E</kbd> OPEN</div>
+    <div id="boss-bar">
+      <div id="boss-bar-name">THE TOMB WARDEN</div>
+      <div id="boss-bar-track"><div id="boss-bar-fill"></div><div id="boss-bar-notches"></div></div>
+    </div>
+    <div id="boss-note">THE WARDEN FALLS</div>
+    <div id="depth-label">DEPTH I</div>
+    <div id="timer">0:00</div>
+    <div id="death-note">YOU HAVE FALLEN</div>
+    <div id="floor-fade"></div>
+    <div id="endgame">
+      <h1>THE CRYPT IS CONQUERED</h1>
+      <div class="endgame-sub">
+        Below the twentieth depth there is only silence. The wardens have fallen, their crowns are ash,
+        and the stair behind you climbs toward a sun you had almost forgotten.
+        The dark will remember your name.
+      </div>
+      <div id="endgame-stats"></div>
+      <button id="endgame-again">DELVE AGAIN</button>
+    </div>
+    <div id="descend-note">YOU DESCEND DEEPER</div>
+    <div id="descend-sub"></div>
+    <div id="loading">FORGING THE DEPTHS</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

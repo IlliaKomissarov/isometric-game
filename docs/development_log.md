@@ -1,5 +1,29 @@
 # Development Log
 
+## 2026-09-01 (iteration 31) — GitHub private repo + Pages deployment
+
+### Asset curation (the blocker)
+- Raw public/ is ~2.5 GB / 303,517 files; one 142 MB WAV exceeds GitHub's
+  hard 100 MB limit — a raw push is impossible. `.gitignore` whitelists
+  EXACTLY what the game loads (mirrors SpriteLibrary/AudioManager, down to
+  zombie `picks()` frame numbers): 15,334 files ≈ 347 MB, none >90 MB.
+  Untracked on purpose: paperdoll layers, BMP twins, macOS `._*` stubs,
+  empty voice-pack folders, unused ambient WAVs, `se_ku…wav`.
+
+### Pages plumbing
+- vite.config: `PAGES=1` → base `/isometric-game/` + `publicDir: false`
+  (never copy 2.5 GB into dist). Runtime asset roots now derive from
+  `import.meta.env.BASE_URL` (AudioManager AUDIO_BASE, SpriteLibrary ROOT).
+- `npm run deploy` → scripts/deploy-pages.mjs: PAGES build, copy the
+  git-tracked public/ subset into dist/, `.nojekyll` (folders with spaces/
+  parens would break under Jekyll), publish via gh-pages branch.
+
+### Repo
+- gh CLI installed via winget; device-flow login (keyring token unreadable
+  cross-process on this Windows → re-login `--insecure-storage`;
+  `gh auth setup-git` for pushes). Private repo:
+  https://github.com/IlliaKomissarov/isometric-game (main, commit 3a262ef).
+
 ## 2026-09-01 (iteration 30) — Final boss: 3 forms, 3 hp pools, death/rebirth
 
 ### The Hollow King fight rebuilt as a def CHAIN (`nextPhase` on EnemyTypeDef)

@@ -12,7 +12,7 @@
  * Run with: npm run deploy
  */
 import { execSync, execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const run = (cmd, env = {}) =>
@@ -38,6 +38,21 @@ console.log(`[deploy] copied ${copied} asset files.`);
 // characters (our asset folders have parens/spaces). .nojekyll disables it.
 writeFileSync(join('dist', '.nojekyll'), '');
 
-console.log('[deploy] publishing dist/ to the gh-pages branch…');
-run('npx gh-pages -d dist -t true');
+// NATIVE PUBLISH (the gh-pages npm package dies on Windows here: it passes
+// all ~15k file paths as ONE command line → spawn ENAMETOOLONG). Git's own
+// plumbing builds the branch through the index instead — no length limits:
+// stage dist/ as a work-tree into a scratch index, write a tree, commit it
+// orphan, point refs/heads/gh-pages at it, force-push.
+console.log('[deploy] publishing dist/ to the gh-pages branch (native git)…');
+const scratchIndex = join(process.cwd(), 'node_modules', '.cache', 'pages-index');
+mkdirSync(dirname(scratchIndex), { recursive: true });
+rmSync(scratchIndex, { force: true });
+const env = { ...process.env, GIT_INDEX_FILE: scratchIndex };
+execFileSync('git', ['--work-tree', 'dist', 'add', '-A'], { env, stdio: 'inherit' });
+const tree = execFileSync('git', ['write-tree'], { env }).toString().trim();
+const commit = execFileSync('git', ['commit-tree', tree, '-m', 'Deploy to GitHub Pages'], { env })
+  .toString()
+  .trim();
+execFileSync('git', ['update-ref', 'refs/heads/gh-pages', commit], { stdio: 'inherit' });
+execFileSync('git', ['push', '-f', 'origin', 'gh-pages'], { stdio: 'inherit' });
 console.log('[deploy] done.');

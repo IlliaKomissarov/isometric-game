@@ -86,6 +86,10 @@ export class CombatSystem {
   /** Wired by main after ProjectileSystem exists (avoids a construction cycle). */
   fireProjectile: ((opts: import('./Projectiles').ProjectileSpawn) => void) | null = null;
 
+  /** Mouse-aim provider (it.33, wired by main): untargeted swings and
+   *  shots go toward the CURSOR, never into stale-facing empty space. */
+  aimDir: (() => { x: number; y: number }) | null = null;
+
   constructor(
     private readonly player: Player,
     private readonly movement: MovementSystem,
@@ -163,6 +167,12 @@ export class CombatSystem {
     this.swingSource = source;
     this.swingWindup = profile.windupTicks;
     this.swingRecover = profile.recoverTicks;
+    if (!target && this.aimDir) {
+      // No victim picked: the swing/draw still goes where the mouse points.
+      const a = this.aimDir();
+      p.facing.x = a.x;
+      p.facing.y = a.y;
+    }
     if (target) {
       const dx = target.pos.x - p.pos.x;
       const dy = target.pos.y - p.pos.y;
@@ -247,16 +257,18 @@ export class CombatSystem {
       eventBus.emit('combat:swing', { sourceId: p.id, targetId: target?.id ?? -1, result: 'miss' });
     }
 
-    // AoE ARC (it.15, Diablo-style cleave): the blade carries through every
-    // OTHER enemy grouped inside the reach and within ~55° of the swing
-    // direction — each takes its own to-hit + damage roll (no crit double).
-    const nearby = this.enemiesNear?.(p.pos.x, p.pos.y, reach) ?? [];
+    // AoE ARC (it.15, widened it.33): the blade carries through every OTHER
+    // enemy grouped inside the sweep — reach extended ~0.4 tiles past the
+    // primary strike and the arc opened from ~55° to ~70° per side, so
+    // clustered packs get cleaved fluidly — each takes its own to-hit +
+    // damage roll (no crit double).
+    const nearby = this.enemiesNear?.(p.pos.x, p.pos.y, reach + 0.4) ?? [];
     for (const foe of nearby) {
       if (foe === target || foe.hp <= 0 || foe.action === 'dead') continue;
       const fdx = foe.pos.x - p.pos.x;
       const fdy = foe.pos.y - p.pos.y;
       const flen = Math.hypot(fdx, fdy) || 1;
-      if ((fdx / flen) * dirX + (fdy / flen) * dirY < 0.57) continue; // Outside the arc.
+      if ((fdx / flen) * dirX + (fdy / flen) * dirY < 0.34) continue; // Outside the arc.
       if (this.rand() >= PLAYER_TO_HIT) continue;
       const amount = randInt(this.rand, profile.minDamage, profile.maxDamage);
       this.dealDamage({

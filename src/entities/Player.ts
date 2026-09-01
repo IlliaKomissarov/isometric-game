@@ -104,6 +104,9 @@ interface HeroRig {
   ownShadow: boolean;
   /** Equipment armor tints the body (the knight's HD sheets only). */
   equipmentTint: boolean;
+  /** Direction index offset (it.33): packs whose stored rows run opposite
+   *  the canonical order get a half-turn (+4 mod 8) correction. */
+  dirOffset?: number;
 }
 
 const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
@@ -127,10 +130,11 @@ const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
     scale: 0.42, anchorY: 0.72, ownShadow: true, equipmentTint: false,
   },
   rogue: {
+    // It.33: the dual-dagger hooded shadow (big-pack paperdoll composite)
+    // — a fully distinct silhouette from the plate warrior.
     idle: 'rogue_idle', run: 'rogue_run',
-    attacks: ['rogue_attack', 'rogue_attack2', 'rogue_attack3'],
-    hit: 'rogue_hit', death: 'rogue_death',
-    scale: 1.0, anchorY: 0.78, ownShadow: true, equipmentTint: false,
+    attacks: ['rogue_attack'], death: 'rogue_death',
+    scale: 1.1, anchorY: 0.8, ownShadow: true, equipmentTint: false,
   },
 };
 
@@ -570,8 +574,9 @@ export class Player extends Entity {
     }
 
     const rig = this.heroRig;
-    const dir = stableDir(this.facing.x, this.facing.y, this.lastDir);
+    let dir = stableDir(this.facing.x, this.facing.y, this.lastDir);
     this.lastDir = dir;
+    if (rig.dirOffset) dir = (dir + rig.dirOffset) % 8;
     let animName: AnimName;
     let frame: number;
     const fcOf = (name: AnimName): number => spriteLib.anim(name).frameCount;

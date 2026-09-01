@@ -16,6 +16,7 @@ import type { InputCommand } from '@/core/InputQueue';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { ClassArchetype } from '@/network/Serialization';
+import { canStandAt } from '@/systems/Collision';
 import type { CombatSystem } from '@/systems/Combat';
 import { randInt } from '@/utils/rng';
 
@@ -72,11 +73,22 @@ export interface SkillDeps {
   shake: (amount: number) => void;
   text: (x: number, y: number, msg: string, style: 'crit' | 'miss') => void;
   sfx: (name: string) => void;
+  /**
+   * TARGETED CASTING (it.33): unit vector from the player toward the mouse
+   * cursor's world point (falls back to facing) — every directional skill
+   * fires where the player is AIMING, never into empty space behind them.
+   */
+  aim: () => { x: number; y: number };
+  /**
+   * Persistent ground visual for a zone (trap rune / flame bed / rain
+   * sigil); returns a dispose function. Render-side.
+   */
+  zoneVisual: (kind: 'trap' | 'fire' | 'rain', x: number, y: number) => () => void;
 }
 
-interface FirewallZone { kind: 'firewall'; cells: Array<{ x: number; y: number }>; ticksLeft: number }
-interface TrapZone { kind: 'trap'; x: number; y: number; armTicks: number; ticksLeft: number }
-interface RainZone { kind: 'rain'; x: number; y: number; wavesLeft: number; nextWave: number }
+interface FirewallZone { kind: 'firewall'; cells: Array<{ x: number; y: number }>; ticksLeft: number; dispose: () => void }
+interface TrapZone { kind: 'trap'; x: number; y: number; armTicks: number; ticksLeft: number; dispose: () => void }
+interface RainZone { kind: 'rain'; x: number; y: number; wavesLeft: number; nextWave: number; dispose: () => void }
 type Zone = FirewallZone | TrapZone | RainZone;
 
 export class SkillSystem {
@@ -109,9 +121,19 @@ export class SkillSystem {
 
   /** Floor change: ground zones and pending cuts belong to the old floor. */
   clearZones(): void {
+    for (const zone of this.zones) zone.dispose();
     this.zones = [];
     this.poisons.clear();
     this.flurry = null;
+  }
+
+  /** Aim the player at the cursor and return the unit aim vector (it.33). */
+  private takeAim(): { x: number; y: number } {
+    const a = this.deps.aim();
+    const p = this.deps.player;
+    p.facing.x = a.x;
+    p.facing.y = a.y;
+    return a;
   }
 
   apply(commands: InputCommand[]): void {
@@ -155,6 +177,7 @@ export class SkillSystem {
           }
         }
         if (zone.ticksLeft > 0) survivors.push(zone);
+        else zone.dispose();
       } else if (zone.kind === 'trap') {
         zone.ticksLeft--;
         if (zone.armTicks > 0) {
@@ -165,16 +188,25 @@ export class SkillSystem {
         if (zone.ticksLeft % 30 === 0) this.deps.burst(zone.x, zone.y, 0xc8b060, 2); // Armed shimmer.
         const prey = this.deps.enemiesNear(zone.x, zone.y, 1.2);
         if (prey.length > 0) {
-          // DETONATION.
+          // DETONATION: the rune erupts and the object despawns cleanly.
+          zone.dispose();
           this.deps.sfx('skillTrap');
-          this.deps.shake(0.35);
-          this.deps.burst(zone.x, zone.y, 0xffb060, 22);
+          this.deps.shake(0.45);
+          this.deps.burst(zone.x, zone.y, 0xffd98a, 26);
+          this.deps.burst(zone.x, zone.y, 0xffb060, 20);
           this.deps.burst(zone.x, zone.y, 0xd85a3a, 14);
+          this.deps.glint(zone.x, zone.y);
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            this.deps.burst(zone.x + Math.cos(a) * 1.4, zone.y + Math.sin(a) * 1.4, 0xd85a3a, 4);
+          }
           for (const foe of this.deps.enemiesNear(zone.x, zone.y, 1.9)) {
             this.damage(foe, 18, 28, foe.pos.x - zone.x, foe.pos.y - zone.y, 0.8);
           }
         } else if (zone.ticksLeft > 0) {
           survivors.push(zone);
+        } else {
+          zone.dispose(); // Expired unsprung.
         }
       } else {
         // Rain zones track waves, not a lifetime.
@@ -193,6 +225,7 @@ export class SkillSystem {
           }
         }
         if (zone.wavesLeft > 0) survivors.push(zone);
+        else zone.dispose();
       }
     }
     this.zones = survivors;
@@ -248,16 +281,26 @@ export class SkillSystem {
     });
   }
 
-  /** Step the player along their facing while the ground allows it. */
+  /**
+   * Step the player along their facing while the ground allows it.
+   * WALL-COLLISION LOCK (it.33): each step is validated with the full
+   * body-radius `canStandAt` (corner-aware) — the dash STOPS at the last
+   * legal position instead of clipping the hero into a wall tile.
+   */
   private dash(tiles: number): void {
     const p = this.deps.player;
-    const steps = Math.round(tiles / 0.2);
+    const steps = Math.round(tiles / 0.1);
     for (let i = 0; i < steps; i++) {
-      const nx = p.pos.x + p.facing.x * 0.2;
-      const ny = p.pos.y + p.facing.y * 0.2;
-      if (!this.deps.isWalkable(Math.floor(nx), Math.floor(ny))) break;
+      const nx = p.pos.x + p.facing.x * 0.1;
+      const ny = p.pos.y + p.facing.y * 0.1;
+      if (!canStandAt(nx, ny, this.deps.isWalkable)) break;
       p.pos.x = nx;
       p.pos.y = ny;
+    }
+    // Belt and braces: if anything left us embedded, snap to tile center.
+    if (!canStandAt(p.pos.x, p.pos.y, this.deps.isWalkable)) {
+      p.pos.x = Math.floor(p.pos.x) + 0.5;
+      p.pos.y = Math.floor(p.pos.y) + 0.5;
     }
   }
 
@@ -271,9 +314,11 @@ export class SkillSystem {
         d.sfx('skillWhirl');
         d.shake(0.3);
         p.showSlash('crit');
-        for (let i = 0; i < 10; i++) {
-          const a = (i / 10) * Math.PI * 2;
-          d.burst(p.pos.x + Math.cos(a) * 1.5, p.pos.y + Math.sin(a) * 1.5, 0xd8cfc0, 4);
+        // Double steel ring: an inner flash and an outer trailing arc.
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * Math.PI * 2;
+          d.burst(p.pos.x + Math.cos(a) * 1.0, p.pos.y + Math.sin(a) * 1.0, 0xfff1d8, 3);
+          d.burst(p.pos.x + Math.cos(a + 0.26) * 1.9, p.pos.y + Math.sin(a + 0.26) * 1.9, 0xd8cfc0, 4);
         }
         for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 2.2)) {
           this.damage(foe, Math.round(prof.minDamage * 1.4), Math.round(prof.maxDamage * 1.4), foe.pos.x - p.pos.x, foe.pos.y - p.pos.y, 0.7);
@@ -282,6 +327,7 @@ export class SkillSystem {
       }
       case 'charge': {
         d.sfx('skillDash');
+        this.takeAim(); // Charge where the cursor points (it.33).
         const sx = p.pos.x;
         const sy = p.pos.y;
         this.dash(4);
@@ -322,13 +368,28 @@ export class SkillSystem {
       }
       // ---- MAGE ----
       case 'fireball': {
-        const foe = d.enemiesNear(p.pos.x, p.pos.y, 7)[0];
-        const tx = foe ? foe.pos.x : p.pos.x + p.facing.x * 4;
-        const ty = foe ? foe.pos.y : p.pos.y + p.facing.y * 4;
+        // AIMED (it.33): the burst lands on the nearest foe along the aim
+        // cone, else exactly where the cursor points.
+        const aim = this.takeAim();
+        const foe = d
+          .enemiesNear(p.pos.x, p.pos.y, 7)
+          .find((e) => {
+            const dx = e.pos.x - p.pos.x;
+            const dy = e.pos.y - p.pos.y;
+            const len = Math.hypot(dx, dy) || 1;
+            return (dx / len) * aim.x + (dy / len) * aim.y > 0.5;
+          }) ?? d.enemiesNear(p.pos.x, p.pos.y, 7)[0];
+        const tx = foe ? foe.pos.x : p.pos.x + aim.x * 4;
+        const ty = foe ? foe.pos.y : p.pos.y + aim.y * 4;
         d.sfx('skillFire');
         d.shake(0.3);
+        d.burst(tx, ty, 0xfff1d8, 10);
         d.burst(tx, ty, 0xffb060, 22);
         d.burst(tx, ty, 0xd85a3a, 14);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          d.burst(tx + Math.cos(a) * 1.5, ty + Math.sin(a) * 1.5, 0xd85a3a, 3);
+        }
         d.glint(tx, ty);
         for (const victim of d.enemiesNear(tx, ty, 1.8)) {
           this.damage(victim, Math.round(prof.minDamage * 1.8), Math.round(prof.maxDamage * 1.8), victim.pos.x - tx, victim.pos.y - ty, 0.6);
@@ -337,14 +398,21 @@ export class SkillSystem {
       }
       case 'firewall': {
         d.sfx('skillFire');
-        // A line perpendicular to the facing, 2.5 tiles ahead.
-        const cx = p.pos.x + p.facing.x * 2.5;
-        const cy = p.pos.y + p.facing.y * 2.5;
-        const px = -p.facing.y;
-        const py = p.facing.x;
+        // A line perpendicular to the AIM, 2.5 tiles toward the cursor.
+        const aim = this.takeAim();
+        const cx = p.pos.x + aim.x * 2.5;
+        const cy = p.pos.y + aim.y * 2.5;
+        const px = -aim.y;
+        const py = aim.x;
         const cells: Array<{ x: number; y: number }> = [];
         for (let i = -2; i <= 2; i++) cells.push({ x: cx + px * i, y: cy + py * i });
-        this.zones.push({ kind: 'firewall', cells, ticksLeft: 360 });
+        const disposers = cells.map((cell) => d.zoneVisual('fire', cell.x, cell.y));
+        this.zones.push({
+          kind: 'firewall',
+          cells,
+          ticksLeft: 360,
+          dispose: () => disposers.forEach((fn) => fn()),
+        });
         for (const cell of cells) d.burst(cell.x, cell.y, 0xffb060, 8);
         break;
       }
@@ -353,7 +421,8 @@ export class SkillSystem {
         d.shake(0.25);
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
-          d.burst(p.pos.x + Math.cos(a) * 2.2, p.pos.y + Math.sin(a) * 2.2, 0x9fd4f0, 5);
+          d.burst(p.pos.x + Math.cos(a) * 1.2, p.pos.y + Math.sin(a) * 1.2, 0xe8f4ff, 3);
+          d.burst(p.pos.x + Math.cos(a) * 2.4, p.pos.y + Math.sin(a) * 2.4, 0x9fd4f0, 5);
         }
         for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 3)) {
           if (foe.hitRecoveryTicks === 0 && foe.def.kind.startsWith('boss')) continue; // Wardens shrug it off.
@@ -377,7 +446,8 @@ export class SkillSystem {
       case 'multishot': {
         d.sfx('skillArrows');
         const combat = d.combat();
-        const base = Math.atan2(p.facing.y, p.facing.x);
+        const aim = this.takeAim();
+        const base = Math.atan2(aim.y, aim.x);
         for (let i = -2; i <= 2; i++) {
           const a = base + i * 0.21;
           combat.fireProjectile?.({
@@ -398,26 +468,38 @@ export class SkillSystem {
       }
       case 'shadowstep': {
         d.sfx('skillDash');
-        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 10);
+        this.takeAim(); // Step toward the cursor (it.33).
+        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 12);
+        d.burst(p.pos.x, p.pos.y, 0x4a4458, 8);
         this.dash(3.2);
         p.hasteTicks = 240;
         p.hasteMult = 1.35;
-        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 10);
+        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 12);
         break;
       }
       case 'trap': {
         d.sfx('skillTrapSet');
-        this.zones.push({ kind: 'trap', x: p.pos.x, y: p.pos.y, armTicks: 40, ticksLeft: 1200 });
+        // VISIBLE FLOOR OBJECT (it.33): a gold rune sits armed on the tile
+        // until something steps into it (or it expires).
+        const dispose = d.zoneVisual('trap', p.pos.x, p.pos.y);
+        this.zones.push({ kind: 'trap', x: p.pos.x, y: p.pos.y, armTicks: 40, ticksLeft: 1200, dispose });
         d.burst(p.pos.x, p.pos.y, 0xc8b060, 8);
         d.text(p.pos.x, p.pos.y - 1, 'TRAP SET', 'miss');
         break;
       }
       case 'rain': {
-        const foe = d.enemiesNear(p.pos.x, p.pos.y, 7)[0];
-        const tx = foe ? foe.pos.x : p.pos.x + p.facing.x * 4;
-        const ty = foe ? foe.pos.y : p.pos.y + p.facing.y * 4;
+        const aim = this.takeAim();
+        const foe = d.enemiesNear(p.pos.x, p.pos.y, 7).find((e) => {
+          const dx = e.pos.x - p.pos.x;
+          const dy = e.pos.y - p.pos.y;
+          const len = Math.hypot(dx, dy) || 1;
+          return (dx / len) * aim.x + (dy / len) * aim.y > 0.5;
+        }) ?? d.enemiesNear(p.pos.x, p.pos.y, 7)[0];
+        const tx = foe ? foe.pos.x : p.pos.x + aim.x * 4;
+        const ty = foe ? foe.pos.y : p.pos.y + aim.y * 4;
         d.sfx('skillArrows');
-        this.zones.push({ kind: 'rain', x: tx, y: ty, wavesLeft: 5, nextWave: 12 });
+        const dispose = d.zoneVisual('rain', tx, ty);
+        this.zones.push({ kind: 'rain', x: tx, y: ty, wavesLeft: 5, nextWave: 12, dispose });
         d.text(tx, ty - 1, 'RAIN OF ARROWS', 'crit');
         break;
       }
@@ -447,11 +529,17 @@ export class SkillSystem {
         d.sfx('skillVanish');
         p.stealthTicks = 300;
         d.burst(p.pos.x, p.pos.y, 0x6a6480, 24);
+        d.burst(p.pos.x, p.pos.y, 0x2c2838, 14);
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2;
+          d.burst(p.pos.x + Math.cos(a) * 0.8, p.pos.y + Math.sin(a) * 0.8, 0x8a86a0, 3);
+        }
         d.text(p.pos.x, p.pos.y - 1.2, 'VANISH', 'miss');
         break;
       }
       case 'shadowslash': {
         d.sfx('skillDash');
+        this.takeAim(); // Cut along the cursor line (it.33).
         const sx = p.pos.x;
         const sy = p.pos.y;
         this.dash(3);

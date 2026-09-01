@@ -50,7 +50,7 @@ import { ARCHETYPES, PLAYER_DEATH_TICKS } from '@/entities/Player';
 import { ITEMS, overlayTextureFor, statLine } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
-import { spriteLib, weaponIconUrl } from '@/render/SpriteLibrary';
+import { spriteLib, weaponIconUrl, type AnimName } from '@/render/SpriteLibrary';
 import { ChestSystem } from '@/systems/Chests';
 import { CheatMenuUI } from '@/ui/CheatMenu';
 import { itemIconDataUrl } from '@/ui/itemIcons';
@@ -148,8 +148,57 @@ async function boot(): Promise<void> {
   const seedParam = new URLSearchParams(location.search).get('seed');
   const baseSeed = seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
 
-  // CLASS SELECTION (it.32): a clean pre-run screen — four archetypes,
-  // four bodies, four skill sets. `?class=` bypasses it (tests/links).
+  // CLASS SELECTION (it.32/33): a clean pre-run screen — four archetypes,
+  // four bodies, four skill sets, LIVE ANIMATED PREVIEWS of each hero.
+  // `?class=` bypasses it (tests/links).
+  const PREVIEW_IDLE: Record<ClassArchetype, AnimName> = {
+    warrior: 'knight_idle',
+    mage: 'mage_idle',
+    ranger: 'ranger_idle',
+    rogue: 'rogue_idle',
+  };
+  /** South-facing idle frames, alpha-cropped to the painted body so every
+   *  hero previews at the SAME height regardless of pack padding. */
+  const classPreviewFrames = (cls: ClassArchetype): HTMLCanvasElement[] => {
+    if (!spriteLib.loaded || !spriteLib.hasAnim(PREVIEW_IDLE[cls])) return [];
+    const anim = spriteLib.anim(PREVIEW_IDLE[cls]);
+    const out: HTMLCanvasElement[] = [];
+    for (let f = 0; f < anim.frameCount; f++) {
+      const spr = new Sprite(anim.frames[6][f]); // Facing S.
+      const raw = app.renderer.extract.canvas(spr) as HTMLCanvasElement;
+      spr.destroy();
+      const ctx = raw.getContext('2d');
+      if (!ctx) continue;
+      // Alpha-scan the painted bounds.
+      const img = ctx.getImageData(0, 0, raw.width, raw.height);
+      let minX = raw.width;
+      let minY = raw.height;
+      let maxX = 0;
+      let maxY = 0;
+      for (let y = 0; y < raw.height; y += 2) {
+        for (let x = 0; x < raw.width; x += 2) {
+          if (img.data[(y * raw.width + x) * 4 + 3] > 20) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX <= minX || maxY <= minY) continue;
+      const c = document.createElement('canvas');
+      c.width = 96;
+      c.height = 116;
+      const cctx = c.getContext('2d')!;
+      cctx.imageSmoothingEnabled = false;
+      const sw = maxX - minX;
+      const sh = maxY - minY;
+      const scale = Math.min(96 / sw, 108 / sh);
+      cctx.drawImage(raw, minX, minY, sw, sh, (96 - sw * scale) / 2, 116 - sh * scale - 4, sw * scale, sh * scale);
+      out.push(c);
+    }
+    return out;
+  };
   const pickClass = (): Promise<ClassArchetype> => {
     const valid = ['warrior', 'mage', 'ranger', 'rogue'] as const;
     const param = new URLSearchParams(location.search).get('class');
@@ -159,11 +208,32 @@ async function boot(): Promise<void> {
     return new Promise((resolve) => {
       const overlay = document.getElementById('class-select');
       overlay?.classList.add('show');
+      const timers: number[] = [];
       overlay?.querySelectorAll('.class-card').forEach((card) => {
+        const cls = (card as HTMLElement).dataset.class as ClassArchetype;
+        // Live animated model preview atop each card (it.33).
+        const frames = classPreviewFrames(cls);
+        if (frames.length > 0) {
+          const cv = document.createElement('canvas');
+          cv.className = 'cc-preview';
+          cv.width = 96;
+          cv.height = 116;
+          card.insertBefore(cv, card.firstChild);
+          const cctx = cv.getContext('2d')!;
+          let fi = 0;
+          const draw = (): void => {
+            cctx.clearRect(0, 0, cv.width, cv.height);
+            cctx.drawImage(frames[fi % frames.length], 0, 0);
+            fi++;
+          };
+          draw();
+          timers.push(window.setInterval(draw, 200));
+        }
         card.addEventListener('click', () => {
           overlay.classList.remove('show');
+          timers.forEach((t) => clearInterval(t));
           audio.sfx('equip');
-          resolve((card as HTMLElement).dataset.class as ClassArchetype);
+          resolve(cls);
         });
       });
     });
@@ -460,6 +530,18 @@ async function boot(): Promise<void> {
     };
     const combat = new CombatSystem(player, movement, scene.isWalkable, findNearestEnemy, seed);
     combat.godMode = cheatState.god; // Cheats survive the floor transition.
+    // Untargeted swings aim at the mouse cursor (it.33).
+    combat.aimDir = () => {
+      if (lastMouse.seen) {
+        const w = camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2());
+        const dx = w.x - player.pos.x;
+        const dy = w.y - player.pos.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0.2) return { x: dx / len, y: dy / len };
+      }
+      const flen = Math.hypot(player.facing.x, player.facing.y) || 1;
+      return { x: player.facing.x / flen, y: player.facing.y / flen };
+    };
     // AoE cleave sweep: every living enemy in range (fog-independent sim).
     combat.enemiesNear = (x, y, r) => {
       const out: Entity[] = [];
@@ -722,6 +804,15 @@ async function boot(): Promise<void> {
 
   let world = buildWorld(floor);
 
+  // MOUSE AIM TRACKING (it.33): skills cast toward the cursor's world
+  // point — the last known pointer position feeds the aim vector.
+  const lastMouse = { x: window.innerWidth / 2, y: window.innerHeight / 2, seen: false };
+  app.canvas.addEventListener('pointermove', (e: PointerEvent) => {
+    lastMouse.x = e.offsetX;
+    lastMouse.y = e.offsetY;
+    lastMouse.seen = true;
+  });
+
   // --- ACTIVE SKILLS (it.32): hotkeys 1–4, wired to the CURRENT floor ------
   const skills = new SkillSystem({
     player,
@@ -740,6 +831,64 @@ async function boot(): Promise<void> {
     shake: (a) => world.camera.addShake(a),
     text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
     sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
+    aim: () => {
+      if (lastMouse.seen) {
+        const w = world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2());
+        const dx = w.x - player.pos.x;
+        const dy = w.y - player.pos.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0.2) return { x: dx / len, y: dy / len };
+      }
+      const flen = Math.hypot(player.facing.x, player.facing.y) || 1;
+      return { x: player.facing.x / flen, y: player.facing.y / flen };
+    },
+    zoneVisual: (kind, x, y) => {
+      // Persistent ground objects for skill zones (it.33): a gold trap
+      // rune, a burning flame bed, or a pale rain sigil.
+      const s = worldToScreen(x, y, vec2());
+      const made: Sprite[] = [];
+      if (kind === 'trap') {
+        const ring = new Sprite(assets.get('targetRing'));
+        ring.anchor.set(0.5);
+        ring.tint = 0xc8b060;
+        ring.scale.set(0.55);
+        ring.alpha = 0.9;
+        ring.position.set(s.x, s.y);
+        world.viewport.groundLayer.addChild(ring);
+        made.push(ring);
+        const glow = new Sprite(assets.get('glow'));
+        glow.anchor.set(0.5);
+        glow.blendMode = 'add';
+        glow.tint = 0xc8b060;
+        glow.scale.set(0.8);
+        glow.alpha = 0.3;
+        glow.position.set(s.x, s.y);
+        world.viewport.ambienceLayer.addChild(glow);
+        made.push(glow);
+      } else if (kind === 'fire') {
+        const glow = new Sprite(assets.get('glow'));
+        glow.anchor.set(0.5);
+        glow.blendMode = 'add';
+        glow.tint = 0xff8040;
+        glow.scale.set(1.3);
+        glow.alpha = 0.55;
+        glow.position.set(s.x, s.y);
+        world.viewport.ambienceLayer.addChild(glow);
+        made.push(glow);
+      } else {
+        const ring = new Sprite(assets.get('targetRing'));
+        ring.anchor.set(0.5);
+        ring.tint = 0xd8cfa8;
+        ring.scale.set(0.9);
+        ring.alpha = 0.6;
+        ring.position.set(s.x, s.y);
+        world.viewport.groundLayer.addChild(ring);
+        made.push(ring);
+      }
+      return () => {
+        for (const spr of made) if (!spr.destroyed) spr.destroy();
+      };
+    },
   });
 
   // Skill bar DOM: one slot per class skill, cooldown sweep + cost readout.
@@ -750,13 +899,16 @@ async function boot(): Promise<void> {
       skills.skills.forEach((def, i) => {
         const slot = document.createElement('div');
         slot.className = 'skill-slot';
-        slot.title = `${def.name} — ${def.hint}`;
+        // Rich hover tooltip (it.33): name, cost, cooldown, description.
         slot.innerHTML =
           `<div class="skill-glyph">${def.glyph}</div>` +
           `<div class="skill-key">${i + 1}</div>` +
           (def.cost > 0 ? `<div class="skill-cost">${def.cost}</div>` : '') +
           `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
-          `<div class="skill-name">${def.name.toUpperCase()}</div>`;
+          `<div class="skill-name">${def.name.toUpperCase()}</div>` +
+          `<div class="skill-tip"><b>${def.name}</b>` +
+          `<span>${def.cost > 0 ? `${def.cost} ${player.resourceName.toLowerCase()} · ` : ''}${Math.round(def.cd / 60)}s cooldown</span>` +
+          `<p>${def.hint}</p></div>`;
         bar.appendChild(slot);
         skillSlotEls.push({
           root: slot,
@@ -918,6 +1070,21 @@ async function boot(): Promise<void> {
     revealFloor: () => {
       world.lighting.revealAll();
       minimap.markDirty();
+    },
+    // QUICK TELEPORT (it.33): jump straight to any floor or boss arena.
+    teleport: (target: number, arena: boolean) => {
+      const dest = Math.max(1, Math.min(target, MAX_DEPTH));
+      withFade(() => {
+        destroyWorld(world);
+        skills.clearZones();
+        floor = dest;
+        world = buildWorld(floor, arena && isBossFloor(floor) ? 'arena' : 'normal');
+        updateDepth();
+        floorStartTick = state.tick;
+        player.action = 'idle';
+        levelSelect.unlock(floor);
+        updateOrb();
+      });
     },
     items: () =>
       Object.values(ITEMS).map((def) => ({
@@ -1354,6 +1521,14 @@ async function boot(): Promise<void> {
         const p = world.camera.worldToCanvas(nearChest.x, nearChest.y, pickRingScratch);
         interactHint.style.left = `${Math.round(p.x)}px`;
         interactHint.style.top = `${Math.round(p.y - 64)}px`;
+        // COMBAT DIM (it.33): the label fades way back while anything is
+        // hunting the player — loot text must never shout over a fight.
+        // (It is already pointer-events: none, so it never eats clicks.)
+        let inCombat = false;
+        world.enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.aiState === 'chase') inCombat = true;
+        });
+        interactHint.style.opacity = inCombat ? '0.25' : '';
         interactHint.classList.add('show');
       } else {
         interactHint?.classList.remove('show');

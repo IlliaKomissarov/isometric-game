@@ -33,18 +33,21 @@ export interface CheatHooks {
   giveItem: (id: string) => void;
   killVisibleEnemies: () => void;
   revealFloor: () => void;
+  /** Quick teleport (it.33): jump to a floor, optionally into its arena. */
+  teleport: (floor: number, arena: boolean) => void;
   /** Full item catalog for the arsenal browser. */
   items: () => CheatItemInfo[];
   /** Pre-rendered idle animation frames for the portrait (may be empty). */
   portraitFrames: () => HTMLCanvasElement[];
 }
 
-type ArsenalTab = 'weapons' | 'armor' | 'relics';
+type ArsenalTab = 'weapons' | 'armor' | 'relics' | 'travel';
 
 const TAB_LABEL: Record<ArsenalTab, string> = {
   weapons: 'WEAPONS',
   armor: 'ARMOR',
   relics: 'RELICS',
+  travel: 'TRAVEL',
 };
 
 function tabOf(item: CheatItemInfo): ArsenalTab {
@@ -128,9 +131,22 @@ export class CheatMenuUI {
           `<button class="cheat-tab${t === this.tab ? ' active' : ''}" data-tab="${t}">${TAB_LABEL[t]}</button>`,
       )
       .join('');
-    const rows = items
-      .map(
-        (it) => `
+    // TRAVEL tab (it.33): every depth 1–20 plus the four sealed arenas.
+    const ROMAN = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX'];
+    const travelRows =
+      `<div class="cheat-travel-grid">` +
+      Array.from({ length: 20 }, (_, i) => `<button class="cheat-floor" data-floor="${i + 1}">${ROMAN[i]}</button>`).join('') +
+      `</div><div class="cheat-travel-arenas">` +
+      [5, 10, 15, 20]
+        .map((f) => `<button class="cheat-arena" data-floor="${f}" data-arena="1">⚔ ARENA ${ROMAN[f - 1]}</button>`)
+        .join('') +
+      `</div>`;
+    const rows =
+      this.tab === 'travel'
+        ? travelRows
+        : items
+            .map(
+              (it) => `
         <button class="cheat-item rarity-${it.rarity}" data-give="${it.id}" title="${it.name}">
           ${it.iconHtml}
           <span class="cheat-item-text">
@@ -138,8 +154,8 @@ export class CheatMenuUI {
             <span class="cheat-item-stats">${it.stats}</span>
           </span>
         </button>`,
-      )
-      .join('');
+            )
+            .join('');
 
     this.panel.innerHTML = `
       <div class="cheat-head">
@@ -157,7 +173,7 @@ export class CheatMenuUI {
       </div>
       <div class="cheat-tabs">${tabs}</div>
       <div class="cheat-items">${rows}</div>
-      <button class="cheat-takeall" data-act="takeall">⚑ TAKE ALL ${TAB_LABEL[this.tab]}</button>
+      ${this.tab === 'travel' ? '' : `<button class="cheat-takeall" data-act="takeall">⚑ TAKE ALL ${TAB_LABEL[this.tab]}</button>`}
       <div class="cheat-tip">L jumps floors · F1 / \` closes</div>
     `;
 
@@ -176,6 +192,9 @@ export class CheatMenuUI {
         else if (act === 'takeall') {
           for (const it of this.hooks.items()) if (tabOf(it) === this.tab) this.hooks.giveItem(it.id);
           btn.textContent = '⚑ TAKEN';
+        } else if (btn.dataset.floor) {
+          this.hooks.teleport(Number(btn.dataset.floor), btn.dataset.arena === '1');
+          this.toggle(); // Close over the fade — arrive with a clear screen.
         } else if (give) {
           this.hooks.giveItem(give);
           btn.classList.add('given');

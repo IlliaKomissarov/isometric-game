@@ -137,9 +137,6 @@ export type AnimName =
   | 'rogue_idle'
   | 'rogue_run'
   | 'rogue_attack'
-  | 'rogue_attack2'
-  | 'rogue_attack3'
-  | 'rogue_hit'
   | 'rogue_death'
   | 'hydra_idle'
   | 'hydra_walk'
@@ -603,24 +600,22 @@ export class SpriteLibrary {
       reg('hollow2_attack', await camAnim('SkeletonWarrior10', '2_Attack', F.attack), F.attack.length);
       reg('hollow2_death', await camAnim('SkeletonWarrior10', '7_Death', F.death), F.death.length);
 
-      // THE MAGE HERO (it.32): the big pack is a PAPERDOLL system — the
-      // robed caster is COMPOSITED per frame from four aligned layers
-      // (base body, robes, hood, staff; all size-audited healthy — the
-      // sub-2KB hood/staff frames are legitimately tiny accessories) and
-      // baked into single textures at load.
-      const MAGE_LAYERS = ['BaseHumanMale', 'RobesMage1', 'MageHood2', 'MageStaff1'];
-      const compositeCamAnim = async (seqAnim: string, frameNums: number[]): Promise<Texture[][]> => {
+      // PAPERDOLL COMPOSITES (it.32/33): the big pack is a layer system —
+      // hero bodies are COMPOSITED per frame from aligned layers (all
+      // size-audited healthy; sub-2KB weapon/hood frames are legitimately
+      // tiny accessories) and baked into single textures at load.
+      const compositeCamAnim = async (layers: string[], seqAnim: string, frameNums: number[]): Promise<Texture[][]> => {
         const urlOf = (model: string, cam: number, f: number) =>
           encodeURI(`${BP}/${model}/${seqAnim}_CAM${cam}_${f}.png`);
         const urls: string[] = [];
-        for (const m of MAGE_LAYERS) {
+        for (const m of layers) {
           for (let cam = 0; cam < 8; cam++) for (const f of frameNums) urls.push(urlOf(m, cam, f));
         }
         const loaded = (await Assets.load(urls)) as Record<string, Texture>;
         const out = CAM_FOR_DIR.map((cam) =>
           frameNums.map((f) => {
             const stack = new Container();
-            for (const m of MAGE_LAYERS) stack.addChild(new Sprite(loaded[urlOf(m, cam, f)]));
+            for (const m of layers) stack.addChild(new Sprite(loaded[urlOf(m, cam, f)]));
             const baked = this.renderer.generateTexture({ target: stack, antialias: true });
             baked.source.scaleMode = 'nearest';
             stack.destroy({ children: true });
@@ -630,36 +625,26 @@ export class SpriteLibrary {
         await Assets.unload(urls);
         return out;
       };
-      reg('mage_idle', await compositeCamAnim('1_Idle', F.idle), F.idle.length);
-      reg('mage_walk', await compositeCamAnim('5_Walk', F.walk), F.walk.length);
-      reg('mage_cast', await compositeCamAnim('4_Cast', F.cast), F.cast.length);
-      reg('mage_death', await compositeCamAnim('7_Death', F.death), F.death.length);
+      // THE MAGE HERO: base body + red robes + hood + staff.
+      const MAGE_LAYERS = ['BaseHumanMale', 'RobesMage1', 'MageHood2', 'MageStaff1'];
+      reg('mage_idle', await compositeCamAnim(MAGE_LAYERS, '1_Idle', F.idle), F.idle.length);
+      reg('mage_walk', await compositeCamAnim(MAGE_LAYERS, '5_Walk', F.walk), F.walk.length);
+      reg('mage_cast', await compositeCamAnim(MAGE_LAYERS, '4_Cast', F.cast), F.cast.length);
+      reg('mage_death', await compositeCamAnim(MAGE_LAYERS, '7_Death', F.death), F.death.length);
+      // THE ROGUE HERO (it.33, replaces hero1 — user: too close to the
+      // warrior): a hooded shadow in dark studded leather, DUAL-WIELDING
+      // a dagger and a kuhkri. Completely distinct silhouette.
+      const ROGUE_LAYERS = ['BaseHumanMale', 'DrkPant', 'DrkStudLeth', 'DrkBoot', 'DrkHood', 'Dagger', 'LeftKuhkri'];
+      reg('rogue_idle', await compositeCamAnim(ROGUE_LAYERS, '1_Idle', F.idle), F.idle.length);
+      reg('rogue_run', await compositeCamAnim(ROGUE_LAYERS, '6_Run', F.run), F.run.length);
+      reg('rogue_attack', await compositeCamAnim(ROGUE_LAYERS, '2_Attack', F.attack), F.attack.length);
+      reg('rogue_death', await compositeCamAnim(ROGUE_LAYERS, '7_Death', F.death), F.death.length);
     } catch (err) {
       console.warn('[SpriteLibrary] big pack 8 moves unavailable:', err);
     }
 
-    // THE ROGUE HERO (it.32): "Frames_320x320 hero1" — a scrappy leather
-    // swordsman with a HUGE moveset (8 attacks, 4 deaths). Same vendor
-    // convention as the lizard pack → same half-turn angle rotation.
-    try {
-      const H_ANGLES = ['180', '225', '270', '315', '000', '045', '090', '135'];
-      const heroAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
-        rebakeAnglePack(
-          (angle, f) => `${ROOT}/Frames_320x320 hero1/${folder}/Body/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
-          H_ANGLES,
-          SpriteLibrary.picks(total, count),
-          0.46,
-        );
-      this.anims.set('rogue_idle', { frames: await heroAnim('Idle_Stand', 16, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('rogue_run', { frames: await heroAnim('Run_Forward', 15, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('rogue_attack', { frames: await heroAnim('Attack_01', 16, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('rogue_attack2', { frames: await heroAnim('Attack_03', 16, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('rogue_attack3', { frames: await heroAnim('Attack_05', 16, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('rogue_hit', { frames: await heroAnim('Hit_01', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('rogue_death', { frames: await heroAnim('Death_01', 16, 10), frameCount: 10, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] hero1 pack unavailable:', err);
-    }
+    // (It.33: the hero1 rogue was replaced by the big-pack dual-dagger
+    // composite above — the pack remains on disk for future use.)
 
     // THE CRIMSON HYDRA (it.32): 512x512 pack — a three-headed red horror
     // for the ember depths. Naga-style per-frame angle folders (0-based),

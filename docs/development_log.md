@@ -1,5 +1,53 @@
 # Development Log
 
+## 2026-09-01 (iteration 33) — Select previews, distinct rogue, aim casting,
+## dash lock, trap object, tooltips, cheat travel
+
+### Character select
+- LIVE ANIMATED previews per card: S-facing idle frames extracted, ALPHA-
+  CROPPED to painted bounds and drawn at one fixed height — automatic
+  scale unification across all four heroes on the select screen.
+- ROGUE REPLACED (user: too close to the warrior): hero1 dropped for a
+  big-pack paperdoll composite — BaseHumanMale + DrkPant + DrkStudLeth +
+  DrkBoot + DrkHood + Dagger + LeftKuhkri: a hooded DUAL-WIELD shadow.
+  compositeCamAnim generalized to take a layer list.
+- In-game scale parity: mage/rogue 1.1 (148px composites) ≈ knight 0.92.
+
+### Ranger direction audit
+- Frame-by-frame walk tests (A/W/D): facings CORRECT in this build — the
+  it.32 3x-scale bug made directions unreadable; scale fix resolved it.
+- Real fix shipped: untargeted swings/shots now aim at the MOUSE CURSOR
+  (Combat.aimDir, wired in buildWorld) — the draw no longer plays toward
+  stale facing when firing at air.
+
+### Skills
+- Rich hover tooltips on the action bar (name · cost · cooldown · effect;
+  .skill-slot pointer-events restored for hover only).
+- TARGETED CASTING: SkillDeps.aim() (cursor world vector); takeAim() turns
+  the hero and drives charge/firewall/shadowstep/shadowslash/multishot and
+  the fireball/rain target cones.
+- EXPLOSIVE TRAP: visible gold rune + glow (zoneVisual dep) that detonates
+  with ring bursts + glint and cleanly despawns; firewall cells now carry
+  persistent flame glows; rain shows a target sigil. Zones own dispose().
+- Cleave widened: reach +0.4, arc 55°→70° per side — verified one swing
+  hitting a 3-enemy cluster.
+- FX pass: double steel rings (whirlwind), double nova ring, impact ring
+  on fireball, shadow puffs on vanish/shadowstep.
+
+### Dash wall-collision lock
+- dash() now steps 0.1 with corner-aware canStandAt and snaps to tile
+  center if ever embedded — verified 6 consecutive dashes INTO a wall all
+  ending on legal ground.
+
+### Chest label & cheat menu
+- #interact-hint dims to 0.25 opacity while anything is chasing (already
+  pointer-events: none).
+- Cheat menu: TRAVEL tab (20 floor buttons + 4 arena buttons, closes over
+  the fade; verified instant jump into the Ember Maw's arena), smooth
+  scrolling; arsenal already lists the full ITEMS catalog.
+
+### Zero console errors across every pass.
+
 ## 2026-09-01 (iteration 32) — 4 playable classes, skill system, asset audit
 
 ### Asset audit (public/assets deep-scan)

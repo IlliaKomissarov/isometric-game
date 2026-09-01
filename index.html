@@ -997,7 +997,40 @@
         margin-bottom: 6px;
         scrollbar-width: thin;
         scrollbar-color: var(--panel-border) transparent;
+        scroll-behavior: smooth;
+        overscroll-behavior: contain;
       }
+      /* Quick teleport grid (it.33). */
+      #cheat-menu .cheat-travel-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
+        margin-bottom: 8px;
+      }
+      #cheat-menu .cheat-floor {
+        padding: 6px 0;
+        font-family: 'Cinzel', serif;
+        font-size: 10px;
+        color: #d8cfc0;
+        background: #17131e;
+        border: 1px solid #3c3448;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #cheat-menu .cheat-floor:hover { border-color: var(--gold); color: var(--gold); }
+      #cheat-menu .cheat-travel-arenas { display: grid; gap: 4px; }
+      #cheat-menu .cheat-arena {
+        padding: 6px 0;
+        font-family: 'Cinzel', serif;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: #e0a0a0;
+        background: #1e1218;
+        border: 1px solid #5a2c34;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #cheat-menu .cheat-arena:hover { border-color: #c05a5a; color: #ffc0c0; }
       #cheat-menu .cheat-items::-webkit-scrollbar {
         width: 7px;
       }
@@ -1240,7 +1273,52 @@
         border-radius: 6px;
         background: linear-gradient(180deg, #17131e, #0c0a12);
         box-shadow: 0 0 12px rgba(0, 0, 0, 0.8), inset 0 0 14px rgba(0, 0, 0, 0.7);
-        overflow: hidden;
+        pointer-events: auto; /* it.33: hoverable for tooltips. */
+      }
+      .skill-slot > :not(.skill-tip) { pointer-events: none; }
+      /* Rich hover tooltip (it.33): name, cost, cooldown, description. */
+      .skill-tip {
+        position: absolute;
+        left: 50%;
+        bottom: 74px;
+        transform: translateX(-50%);
+        width: 190px;
+        padding: 9px 11px;
+        border: 1px solid #4a3c28;
+        border-radius: 6px;
+        background: rgba(12, 10, 18, 0.96);
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.8);
+        text-align: left;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.12s ease;
+        pointer-events: none;
+        z-index: 40;
+      }
+      .skill-slot:hover .skill-tip { opacity: 1; visibility: visible; }
+      .skill-tip b {
+        display: block;
+        font-family: 'Cinzel', serif;
+        font-size: 12px;
+        letter-spacing: 0.1em;
+        color: var(--gold, #c8a558);
+        margin-bottom: 2px;
+      }
+      .skill-tip span {
+        display: block;
+        font-family: 'Cinzel', serif;
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        color: #6f86b8;
+        margin-bottom: 5px;
+      }
+      .skill-tip p {
+        margin: 0;
+        font-family: 'IM Fell English', serif;
+        font-style: italic;
+        font-size: 11px;
+        line-height: 1.4;
+        color: #a89f92;
       }
       .skill-glyph {
         position: absolute;
@@ -1380,6 +1458,14 @@
         transform: translateY(-6px);
         border-color: var(--gold, #c8a558);
         box-shadow: 0 8px 30px rgba(200, 165, 88, 0.18);
+      }
+      .cc-preview {
+        display: block;
+        margin: 0 auto 4px;
+        width: 96px;
+        height: 116px;
+        image-rendering: pixelated;
+        filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
       }
       .class-card h2 {
         font-family: 'Cinzel', serif;

@@ -100,16 +100,12 @@ export class CheatMenuUI {
     const draw = (): void => {
       const frame = frames[this.portraitFrame % frames.length];
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // Crop to the character (the source cell is mostly empty margin),
-      // then fit feet-down into the portrait window.
-      const sx = frame.width * 0.27;
-      const sy = frame.height * 0.1;
-      const sw = frame.width * 0.46;
-      const sh = frame.height * 0.82;
-      const scale = Math.min(canvas.width / sw, canvas.height / sh);
-      const w = sw * scale;
-      const h = sh * scale;
-      ctx.drawImage(frame, sx, sy, sw, sh, (canvas.width - w) / 2, canvas.height - h, w, h);
+      // It.34: the frames arrive PRE-CROPPED to the hero's painted body
+      // (classPreviewFrames) — a plain contain-fit shows any archetype.
+      const scale = Math.min(canvas.width / frame.width, canvas.height / frame.height);
+      const w = frame.width * scale;
+      const h = frame.height * scale;
+      ctx.drawImage(frame, (canvas.width - w) / 2, canvas.height - h, w, h);
       this.portraitFrame++;
     };
     draw();

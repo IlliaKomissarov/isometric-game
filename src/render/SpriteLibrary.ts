@@ -383,12 +383,14 @@ export class SpriteLibrary {
     }
 
     // The ranger (x320p bow set): one 320px-cell grid sheet per 22.5° dir.
-    // It.23 FIX: this pack's angles run 180° OPPOSITE the other sheets —
-    // the archer walked and shot backwards. Angle list is rotated half a
-    // turn so sprite facing matches movement and shot trajectory.
+    // It.34 GROUND-TRUTH REMAP: every stored row was rendered to a labeled
+    // grid and read off — the old it.23 half-turn list was still rotated
+    // 90° (slot E showed S, slot N showed E, slot S showed W: a consistent
+    // (d+6)%8 error). This list aligns each canonical dir [E,NE,N,NW,W,
+    // SW,S,SE] with the sheet angle that actually FACES that way.
     try {
       const rBase = `${ROOT}/x320p_Spritesheets`;
-      const R_ANGLES = ['180', '225', '270', '315', '000', '045', '090', '135'];
+      const R_ANGLES = ['270', '315', '000', '045', '090', '135', '180', '225'];
       const rAnim = async (name: string, total: number, count: number): Promise<Texture[][]> => {
         const framesPerDir: Texture[][] = [];
         for (const angle of R_ANGLES) {

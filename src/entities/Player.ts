@@ -116,25 +116,28 @@ const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
     hit: 'knight_hit', death: 'knight_die',
     scale: 0.92, anchorY: 0.8, ownShadow: false, equipmentTint: true,
   },
+  // SCALE NORMALIZATION (it.34, measured painted heights): knight idle
+  // paints 58u × 0.92 ≈ 53u — the accepted hero/mob baseline (big-pack
+  // mobs ≈ 55u; bosses hold 128–134u = 2.4–2.5× by design). Every hero
+  // scale below lands its painted height on that same ≈53u target:
+  // mage 111u×0.48, rogue 112u×0.48, ranger 167u×0.32.
   mage: {
     idle: 'mage_idle', run: 'mage_walk',
     attacks: ['mage_cast'], rangedAttack: 'mage_cast', death: 'mage_death',
-    scale: 1.1, anchorY: 0.8, ownShadow: true, equipmentTint: false,
+    scale: 0.48, anchorY: 0.8, ownShadow: true, equipmentTint: false,
   },
   ranger: {
     idle: 'ranger_idle', run: 'ranger_run',
     attacks: ['ranger_attack'], rangedAttack: 'ranger_attack',
     hit: 'ranger_hit', death: 'ranger_death',
-    // The archer MOB renders these same rebaked sheets at 0.36 — the hero
-    // stands a touch taller (measured live, it.32).
-    scale: 0.42, anchorY: 0.72, ownShadow: true, equipmentTint: false,
+    scale: 0.32, anchorY: 0.72, ownShadow: true, equipmentTint: false,
   },
   rogue: {
     // It.33: the dual-dagger hooded shadow (big-pack paperdoll composite)
     // — a fully distinct silhouette from the plate warrior.
     idle: 'rogue_idle', run: 'rogue_run',
     attacks: ['rogue_attack'], death: 'rogue_death',
-    scale: 1.1, anchorY: 0.8, ownShadow: true, equipmentTint: false,
+    scale: 0.48, anchorY: 0.8, ownShadow: true, equipmentTint: false,
   },
 };
 
@@ -603,7 +606,10 @@ export class Player extends Entity {
       animName = rig.run;
       frame = Math.floor(this.runClock); // Distance-coupled (see update()).
     } else {
-      this.animClock += 0.12; // Slow, breathing idle — deliberate weight.
+      // IDLE PACING (it.34 jitter fix): the big-pack idles are only 4
+      // unevenly-sampled frames — at the old 0.12/frame they twitched.
+      // 0.05 (~3 fps) steps cleanly 0→N and reads as slow breathing.
+      this.animClock += 0.05;
       animName = rig.idle;
       frame = Math.floor(this.animClock);
     }

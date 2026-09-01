@@ -1371,16 +1371,10 @@
       .skill-slot.cooling .skill-cd-num { opacity: 1; }
       .skill-slot.cooling .skill-glyph { opacity: 0.35; }
       .skill-slot.poor .skill-glyph { color: #5a5464; text-shadow: none; }
+      /* It.34: always-on name labels overlapped between slots — the hover
+         tooltip carries the name now, so the plaques stay hidden. */
       .skill-name {
-        position: absolute;
-        left: 50%;
-        bottom: 62px;
-        transform: translateX(-50%);
-        white-space: nowrap;
-        font-family: 'Cinzel', serif;
-        font-size: 9px;
-        letter-spacing: 0.12em;
-        color: #8d8496;
+        display: none;
       }
 
       /* Resource bar (mana/stamina) beside the health orb. */

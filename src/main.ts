@@ -253,14 +253,22 @@ async function boot(): Promise<void> {
    * each frame). InventoryUI cycles them — the menu character breathes.
    */
   const PREVIEW_SLOTS: readonly EquipmentSlot[] = ['cloak', 'legs', 'torso', 'head', 'offHand', 'mainHand'];
+  // Portrait scale per class (it.34): lands every archetype's painted body
+  // at the same panel height (knight 58u·1.35 ≈ mage/rogue 111u·0.7 ≈
+  // ranger 167u·0.47 ≈ 78 px).
+  const PORTRAIT_SCALE: Record<ClassArchetype, number> = { warrior: 1.35, mage: 0.7, ranger: 0.47, rogue: 0.7 };
+  const heroIdleAnim = (): AnimName | null =>
+    spriteLib.loaded && spriteLib.hasAnim(PREVIEW_IDLE[player.archetype]) ? PREVIEW_IDLE[player.archetype] : null;
   const buildPaperdollFrames = (): HTMLCanvasElement[] => {
     const buildRig = (bodyTexIndex: number): HTMLCanvasElement => {
       const rig = new Container();
-      if (spriteLib.loaded) {
-        const body = new Sprite(spriteLib.frame('knight_idle', 6, bodyTexIndex)); // Facing S.
+      const idleAnim = heroIdleAnim();
+      if (idleAnim) {
+        // DYNAMIC HERO BODY (it.34): the CHOSEN class breathes in the panel.
+        const body = new Sprite(spriteLib.frame(idleAnim, 6, bodyTexIndex)); // Facing S.
         body.anchor.set(0.5, 0.8);
-        body.tint = player.getEquipmentTint();
-        body.scale.set(1.35);
+        if (player.archetype === 'warrior') body.tint = player.getEquipmentTint();
+        body.scale.set(PORTRAIT_SCALE[player.archetype]);
         rig.addChild(body);
         // Item-colored gems under the model mark each worn slot.
         let gemIndex = 0;
@@ -297,10 +305,12 @@ async function boot(): Promise<void> {
       rig.destroy({ children: true });
       return canvas;
     };
-    if (!spriteLib.loaded) return [buildRig(0)];
-    const idle = spriteLib.anim('knight_idle');
+    const idleAnim = heroIdleAnim();
+    if (!idleAnim) return [buildRig(0)];
+    const idle = spriteLib.anim(idleAnim);
     const frames: HTMLCanvasElement[] = [];
-    for (let f = 0; f < idle.frameCount; f += 2) frames.push(buildRig(f));
+    const step = Math.max(1, Math.floor(idle.frameCount / 6));
+    for (let f = 0; f < idle.frameCount; f += step) frames.push(buildRig(f));
     return frames;
   };
 
@@ -1034,19 +1044,10 @@ async function boot(): Promise<void> {
   levelSelect.unlock(floor);
 
   // --- Cheat menu (F1 / `) --------------------------------------------------
-  // Animated idle portrait: pre-extract a handful of knight idle frames as
-  // canvases (south-facing, armor-tinted) — the menu animates them itself.
-  const portraitFrames: HTMLCanvasElement[] = [];
-  if (spriteLib.loaded) {
-    const idle = spriteLib.anim('knight_idle');
-    for (let f = 0; f < idle.frameCount; f += 2) {
-      const spr = new Sprite(idle.frames[6][f]);
-      spr.tint = player.getEquipmentTint();
-      spr.scale.set(2);
-      portraitFrames.push(app.renderer.extract.canvas(spr) as HTMLCanvasElement);
-      spr.destroy();
-    }
-  }
+  // DYNAMIC HERO PORTRAIT (it.34): the animated idle frames of the CLASS
+  // the player actually chose — alpha-cropped by classPreviewFrames, so
+  // every archetype fills the portrait window identically.
+  const portraitFrames: HTMLCanvasElement[] = classPreviewFrames(player.archetype);
   new CheatMenuUI({
     toggleGod: () => {
       cheatState.god = !cheatState.god;
@@ -1634,7 +1635,7 @@ async function boot(): Promise<void> {
   if (import.meta.env.DEV) {
     Object.defineProperty(window, '__game', {
       configurable: true,
-      get: () => ({ state, player, loop, audio, skills, ...world, floor }),
+      get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, ...world, floor }),
     });
   }
 }

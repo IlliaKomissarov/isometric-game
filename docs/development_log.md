@@ -1,5 +1,40 @@
 # Development Log
 
+## 2026-09-01 (iteration 34) — Ranger vector remap, hero scale normalization,
+## idle pacing, dynamic portraits
+
+### Ranger 8-dir GROUND-TRUTH remap
+- Rendered every stored ranger_run row to a labeled on-screen grid and
+  read the true facings: the it.23 half-turn list was still 90° off
+  (slot E showed S, N showed E, S showed W — consistent (d+6)%8 error).
+- R_ANGLES fixed at the SOURCE to ['270','315','000','045','090','135',
+  '180','225'] — hero AND archer mob corrected together. Re-rendered the
+  grid post-fix: all 8 canonical dirs now face their movement vectors.
+
+### Hero scale normalization (measured painted heights)
+- Alpha-scanned idle frames: knight 58u@0.92≈53u (baseline; big-pack mobs
+  ≈55u; bosses 128–134u = 2.4–2.5× — preserved). Mage was 111u@1.1≈122u
+  and rogue 112u@1.1≈123u (the "too tall" bug), ranger 167u@0.42≈70u.
+- New rig scales: mage 0.48, rogue 0.48, ranger 0.32 → every hero ≈53u,
+  verified on-screen beside skeleton mobs.
+
+### Idle jitter fix
+- Sheet-hero idle clock 0.12→0.05/render (~3 fps): the 4 unevenly-sampled
+  big-pack idle frames now read as slow breathing; stepping is monotone
+  0→N with modulo wrap (frame() already wraps — no clamp/bounce).
+
+### Dynamic hero portraits
+- Cheat menu portrait = classPreviewFrames(archetype) (alpha-cropped,
+  animated); CheatMenu draw simplified to contain-fit.
+- Inventory paperdoll body = the chosen class's idle anim at per-class
+  PORTRAIT_SCALE (≈78px painted for all four); armor tint warrior-only.
+- Skill-bar always-on name plaques hidden (they overlapped; tooltips
+  carry the names).
+
+### Audit: ranger dir grid pre/post, all four in-game heights vs mobs,
+### mage/rogue idle pacing, ranger+rogue portraits in both menus.
+### Zero console errors.
+
 ## 2026-09-01 (iteration 33) — Select previews, distinct rogue, aim casting,
 ## dash lock, trap object, tooltips, cheat travel
 

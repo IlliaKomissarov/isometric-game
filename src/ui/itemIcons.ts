@@ -16,6 +16,7 @@
 
 import { Texture } from 'pixi.js';
 import type { ItemDef } from '@/items/catalog';
+import { uiAssetUrl, weaponIconUrl } from '@/render/SpriteLibrary';
 
 const cache = new Map<string, string>();
 const textureCache = new Map<string, Texture>();
@@ -288,6 +289,19 @@ function drawIconCanvas(def: ItemDef, scale: number): HTMLCanvasElement {
     }
   }
   return canvas;
+}
+
+/**
+ * The one icon resolver every panel uses (it.40): painted art from the
+ * Ultimate Fantasy pack when the item has `art`, the oubliette weapon icon
+ * when it has `icon`, else the generated pixel icon. `base` is the class
+ * every variant carries; `px` is added only to the pixel fallback.
+ */
+export function itemIconHtml(def: ItemDef, base = '', px = 'px'): string {
+  const cls = (extra: string): string => [base, extra].filter(Boolean).join(' ');
+  if (def.art) return `<img class="${cls('art')}" src="${uiAssetUrl(`items/${def.art}.png`)}" alt="${def.name}" draggable="false">`;
+  if (def.icon) return `<img class="${cls('')}" src="${weaponIconUrl(def.icon)}" alt="${def.name}" draggable="false">`;
+  return `<img class="${cls(px)}" src="${itemIconDataUrl(def)}" alt="${def.name}" draggable="false">`;
 }
 
 /** Data-URL for an item's icon (cached) — DOM inventory cells. */

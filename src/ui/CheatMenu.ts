@@ -39,15 +39,20 @@ export interface CheatHooks {
   items: () => CheatItemInfo[];
   /** Pre-rendered idle animation frames for the portrait (may be empty). */
   portraitFrames: () => HTMLCanvasElement[];
+  /** LEVEL (it.40): set the hero's level outright (1–30); returns the new sheet. */
+  setLevel: (level: number) => void;
+  /** Current sheet for the HERO tab readout. */
+  heroInfo: () => { level: number; xp: number; xpToNext: number; hpMax: number; dmgMin: number; dmgMax: number };
 }
 
-type ArsenalTab = 'weapons' | 'armor' | 'relics' | 'travel';
+type ArsenalTab = 'weapons' | 'armor' | 'relics' | 'travel' | 'hero';
 
 const TAB_LABEL: Record<ArsenalTab, string> = {
   weapons: 'WEAPONS',
   armor: 'ARMOR',
   relics: 'RELICS',
   travel: 'TRAVEL',
+  hero: 'HERO',
 };
 
 function tabOf(item: CheatItemInfo): ArsenalTab {
@@ -149,9 +154,21 @@ export class CheatMenuUI {
         .map((f) => `<button class="cheat-arena" data-floor="${f}" data-arena="1">⚔ ARENA ${ROMAN[f - 1]}</button>`)
         .join('') +
       `</div>`;
+    // HERO tab (it.40): instant level 1–30 for stat / skill testing.
+    const info = this.hooks.heroInfo();
+    const heroRows =
+      `<div class="cheat-hero">` +
+      `<div class="cheat-hero-sheet"><b>LEVEL ${info.level}</b><span>${info.xp} / ${info.xpToNext} xp · ${info.hpMax} hp · ${info.dmgMin}–${info.dmgMax} base dmg</span></div>` +
+      `<div class="cheat-level-steps">` +
+      [-5, -1, 1, 5].map((d) => `<button class="cheat-level-step" data-level="${info.level + d}">${d > 0 ? '+' : ''}${d}</button>`).join('') +
+      `</div><div class="cheat-level-grid">` +
+      Array.from({ length: 30 }, (_, i) => `<button class="cheat-level${i + 1 === info.level ? ' lit' : ''}" data-level="${i + 1}">${i + 1}</button>`).join('') +
+      `</div><div class="cheat-hero-note">Levels grow max HP (+4) and base damage; HP refills on every change.</div></div>`;
     const rows =
       this.tab === 'travel'
         ? travelRows
+        : this.tab === 'hero'
+          ? heroRows
         : items
             .map(
               (it) => `
@@ -181,7 +198,7 @@ export class CheatMenuUI {
       </div>
       <div class="cheat-tabs">${tabs}</div>
       <div class="cheat-items">${rows}</div>
-      ${this.tab === 'travel' ? '' : `<button class="cheat-takeall" data-act="takeall">⚑ TAKE ALL ${TAB_LABEL[this.tab]}</button>`}
+      ${this.tab === 'travel' || this.tab === 'hero' ? '' : `<button class="cheat-takeall" data-act="takeall">⚑ TAKE ALL ${TAB_LABEL[this.tab]}</button>`}
       <div class="cheat-tip">L jumps floors · F1 / \` closes</div>
     `;
 
@@ -202,6 +219,10 @@ export class CheatMenuUI {
         else if (act === 'takeall') {
           for (const it of this.hooks.items()) if (tabOf(it) === this.tab) this.hooks.giveItem(it.id);
           btn.textContent = '⚑ TAKEN';
+        } else if (btn.dataset.level) {
+          this.hooks.setLevel(Number(btn.dataset.level));
+          this.render();
+          this.startPortrait();
         } else if (btn.dataset.floor) {
           this.hooks.teleport(Number(btn.dataset.floor), btn.dataset.arena === '1');
           this.toggle(); // Close over the fade — arrive with a clear screen.

@@ -18,10 +18,18 @@ import { mulberry32 } from '@/utils/rng';
 export const STASH_CAPACITY = 24;
 /** Merchants pay a quarter of an item's worth. */
 export const SELL_RATIO = 0.25;
+/** How many sold items the merchant keeps on the counter for buyback. */
+export const BUYBACK_CAPACITY = 8;
 
 export class TownSystem {
   /** Item ids on the merchant's table (a purchase removes it; restocks per visit). */
   stock: string[] = [];
+  /**
+   * BUYBACK (it.40): what the hero sold this visit, newest first. Bought
+   * back for exactly what the merchant paid; capped, and cleared when the
+   * table restocks — nothing lingers on the counter forever.
+   */
+  buyback: string[] = [];
   readonly stash: StashState;
 
   constructor(
@@ -38,7 +46,7 @@ export class TownSystem {
    */
   restock(seed: number, deepestFloor: number, visit: number): void {
     const rand = mulberry32((seed ^ (visit * 0x9e37)) >>> 0);
-    const staples = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'scroll_town_portal', 'scroll_town_portal'];
+    const staples = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir', 'scroll_town_portal', 'scroll_town_portal'];
     const gear = ['rusty_sword', 'short_bow', 'plank_shield', 'iron_cap', 'leather_jerkin', 'worn_boots', 'flanged_mace', 'war_axe'];
     const magic = Object.values(ITEMS).filter((d) => d.rarity === 'magic' && d.slot !== 'consumable').map((d) => d.id);
     const rare = Object.values(ITEMS).filter((d) => d.rarity === 'rare' && d.slot !== 'consumable').map((d) => d.id);
@@ -48,6 +56,7 @@ export class TownSystem {
     for (let i = 0; i < magicCount; i++) stock.push(magic[Math.floor(rand() * magic.length)]);
     if (deepestFloor >= 8 && rand() < 0.5) stock.push(rare[Math.floor(rand() * rare.length)]);
     this.stock = [...new Set(stock.filter((id) => id in ITEMS))].flatMap((id) => (staples.includes(id) ? stock.filter((s) => s === id) : [id]));
+    this.buyback = [];
     eventBus.emit('town:changed', {});
   }
 
@@ -86,8 +95,27 @@ export class TownSystem {
           const price = this.sellPrice(def);
           p.backpack.splice(cmd.backpackIndex, 1);
           p.gold += price;
+          this.buyback.unshift(def.id);
+          if (this.buyback.length > BUYBACK_CAPACITY) this.buyback.length = BUYBACK_CAPACITY;
           eventBus.emit('inventory:changed', {});
+          eventBus.emit('town:changed', {});
           eventBus.emit('town:traded', { kind: 'sell', itemId: def.id, gold: price });
+          break;
+        }
+        case 'BUYBACK': {
+          const id = this.buyback[cmd.index];
+          const def = id ? ITEMS[id] : undefined;
+          if (!def) break;
+          const price = this.sellPrice(def);
+          if (p.gold < price) {
+            eventBus.emit('town:refused', { reason: 'gold' });
+            break;
+          }
+          p.gold -= price;
+          this.buyback.splice(cmd.index, 1);
+          p.addItem(def.id);
+          eventBus.emit('town:changed', {});
+          eventBus.emit('town:traded', { kind: 'buy', itemId: def.id, gold: price });
           break;
         }
         case 'STASH_PUT': {

@@ -21,7 +21,7 @@ const mode = process.argv.includes('--delete') ? 'delete' : process.argv.include
 const quarantineDir = mode === 'quarantine' ? resolve(process.argv[process.argv.indexOf('--quarantine') + 1]) : null;
 
 /** Top-level entries kept whole. */
-const KEEP_DIRS = new Set(['atlas']);
+const KEEP_DIRS = new Set(['atlas', 'ui']);
 const KEEP_FILES = new Set(['README.md']);
 
 /** Audio keep list — mirrors AudioManager.ts exactly (relative to audio/). */

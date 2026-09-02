@@ -12,14 +12,11 @@ import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
 import { ITEMS, type ItemDef } from '@/items/catalog';
-import { weaponIconUrl } from '@/render/SpriteLibrary';
 import { STASH_CAPACITY, type TownSystem } from '@/systems/Town';
-import { itemIconDataUrl } from './itemIcons';
+import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips } from './itemTip';
 
-function iconHtml(def: ItemDef): string {
-  return def.icon ? `<img src="${weaponIconUrl(def.icon)}" alt="">` : `<img class="px" src="${itemIconDataUrl(def)}" alt="">`;
-}
+const iconHtml = (def: ItemDef): string => itemIconHtml(def);
 
 export class StashUI {
   private readonly panel: HTMLElement;

@@ -313,6 +313,18 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] SaveGame: 3 LocalStorage slots, autosave on town arrival / pause / SAVE & EXIT; CONTINUE / LOAD GAME / overwrite picker
 - [x] QA loop: start -> town -> vendor -> stash -> gate -> floor 1 -> portal -> town -> save & exit -> load; zero console errors
 
+## Iteration 40 - Town Redesign, Market, Camp Heroes, Buyback, Skill Art (2026-09-02)
+
+- [x] Second test-models upload audited: 16 skill glyphs + 16 painted item icons baked to assets/ui; UI pack rejected; raw folder pruned
+- [x] 46x40 town: forest belt + cliff ring, market square with four stalls, two residential quarters, streets and lanes, campsite, vault
+- [x] Stone archway gate with braziers, cold light and drifting fog; well removed; collision audit (flood fill) at build
+- [x] Resting heroes: the three unpicked classes idle around the campfire (render-only Player rigs)
+- [x] Cottage interiors: door column walkable, roof cutaway 20% inside / 38% behind
+- [x] Merchant buyback counter + BUYBACK command; Violet Elixir; gold math verified
+- [x] Skill slots use the baked glyphs with cast flash; panels/tooltips/cells reframed; painted item art everywhere
+- [x] Cheat menu HERO tab: instant level 1-30
+- [x] QA: streets, cottage entry, camp, vendor cycle, level cheat, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

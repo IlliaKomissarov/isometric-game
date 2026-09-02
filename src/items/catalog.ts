@@ -40,6 +40,8 @@ export interface ItemDef {
   color: number;
   /** Weapon-icon stem from the oubliette pack (drives grid + ground icons). */
   icon?: string;
+  /** Painted 64 px icon under assets/ui/items (it.40) — wins over `icon` in panels. */
+  art?: string;
 }
 
 /**
@@ -99,14 +101,14 @@ export const RARITY_COLOR: Record<Rarity, number> = {
 };
 
 export const ITEMS: Record<string, ItemDef> = {
-  rusty_sword: { id: 'rusty_sword', name: 'Rusty Sword', slot: 'mainHand', rarity: 'common', minDamage: 3, maxDamage: 7, color: 0x9a8f80, icon: 'bronze_sword_0' },
-  soldier_blade: { id: 'soldier_blade', name: 'Soldier Blade', slot: 'mainHand', rarity: 'magic', minDamage: 6, maxDamage: 12, color: 0x8fa8d8, icon: 'iron_sword_0' },
-  doombringer: { id: 'doombringer', name: 'Doombringer', slot: 'mainHand', rarity: 'rare', minDamage: 11, maxDamage: 20, color: 0xd8763c, icon: 'steel_large_0' },
-  short_bow: { id: 'short_bow', name: 'Short Bow', slot: 'mainHand', rarity: 'common', weaponKind: 'bow', range: 6, minDamage: 4, maxDamage: 8, color: 0x8a6f4d },
-  hunters_bow: { id: 'hunters_bow', name: "Hunter's Bow", slot: 'mainHand', rarity: 'magic', weaponKind: 'bow', range: 6.5, minDamage: 6, maxDamage: 11, color: 0x6f9a5a },
-  emberwand: { id: 'emberwand', name: 'Emberwand', slot: 'mainHand', rarity: 'rare', weaponKind: 'wand', range: 5.5, minDamage: 9, maxDamage: 15, color: 0xe0803a, icon: 'stick_0' },
-  plank_shield: { id: 'plank_shield', name: 'Plank Shield', slot: 'offHand', rarity: 'common', armor: 2, color: 0x8a6f4d },
-  tower_aegis: { id: 'tower_aegis', name: 'Tower Aegis', slot: 'offHand', rarity: 'magic', armor: 4, color: 0x6f8fd0 },
+  rusty_sword: { id: 'rusty_sword', name: 'Rusty Sword', slot: 'mainHand', rarity: 'common', art: 'rusty_sword', minDamage: 3, maxDamage: 7, color: 0x9a8f80, icon: 'bronze_sword_0' },
+  soldier_blade: { id: 'soldier_blade', name: 'Soldier Blade', slot: 'mainHand', rarity: 'magic', art: 'soldier_blade', minDamage: 6, maxDamage: 12, color: 0x8fa8d8, icon: 'iron_sword_0' },
+  doombringer: { id: 'doombringer', name: 'Doombringer', slot: 'mainHand', rarity: 'rare', art: 'doombringer', minDamage: 11, maxDamage: 20, color: 0xd8763c, icon: 'steel_large_0' },
+  short_bow: { id: 'short_bow', name: 'Short Bow', slot: 'mainHand', rarity: 'common', art: 'short_bow', weaponKind: 'bow', range: 6, minDamage: 4, maxDamage: 8, color: 0x8a6f4d },
+  hunters_bow: { id: 'hunters_bow', name: "Hunter's Bow", slot: 'mainHand', rarity: 'magic', art: 'hunters_bow', weaponKind: 'bow', range: 6.5, minDamage: 6, maxDamage: 11, color: 0x6f9a5a },
+  emberwand: { id: 'emberwand', name: 'Emberwand', slot: 'mainHand', rarity: 'rare', art: 'emberwand', weaponKind: 'wand', range: 5.5, minDamage: 9, maxDamage: 15, color: 0xe0803a, icon: 'stick_0' },
+  plank_shield: { id: 'plank_shield', name: 'Plank Shield', slot: 'offHand', rarity: 'common', art: 'plank_shield', armor: 2, color: 0x8a6f4d },
+  tower_aegis: { id: 'tower_aegis', name: 'Tower Aegis', slot: 'offHand', rarity: 'magic', art: 'tower_aegis', armor: 4, color: 0x6f8fd0 },
   iron_cap: { id: 'iron_cap', name: 'Iron Cap', slot: 'head', rarity: 'common', armor: 1, color: 0x9aa0a8 },
   crown_of_embers: { id: 'crown_of_embers', name: 'Crown of Embers', slot: 'head', rarity: 'rare', armor: 3, color: 0xe09040 },
   leather_jerkin: { id: 'leather_jerkin', name: 'Leather Jerkin', slot: 'torso', rarity: 'common', armor: 2, color: 0x8a6a48 },
@@ -114,8 +116,8 @@ export const ITEMS: Record<string, ItemDef> = {
   worn_boots: { id: 'worn_boots', name: 'Worn Boots', slot: 'legs', rarity: 'common', armor: 1, color: 0x7a6650 },
   shadow_cloak: { id: 'shadow_cloak', name: 'Shadow Cloak', slot: 'cloak', rarity: 'magic', armor: 1, color: 0x6a5a9a },
   // --- The expanded arsenal (oubliette icon pack) ---------------------------
-  war_axe: { id: 'war_axe', name: 'War Axe', slot: 'mainHand', rarity: 'common', weaponKind: 'axe', minDamage: 5, maxDamage: 11, color: 0x9a8874, icon: 'iron_axe_0' },
-  gravecleaver: { id: 'gravecleaver', name: 'Gravecleaver', slot: 'mainHand', rarity: 'rare', weaponKind: 'axe', minDamage: 13, maxDamage: 24, color: 0xc06a48, icon: 'iron_baxe_0' },
+  war_axe: { id: 'war_axe', name: 'War Axe', slot: 'mainHand', rarity: 'common', art: 'war_axe', weaponKind: 'axe', minDamage: 5, maxDamage: 11, color: 0x9a8874, icon: 'iron_axe_0' },
+  gravecleaver: { id: 'gravecleaver', name: 'Gravecleaver', slot: 'mainHand', rarity: 'rare', art: 'gravecleaver', weaponKind: 'axe', minDamage: 13, maxDamage: 24, color: 0xc06a48, icon: 'iron_baxe_0' },
   flanged_mace: { id: 'flanged_mace', name: 'Flanged Mace', slot: 'mainHand', rarity: 'common', weaponKind: 'mace', minDamage: 4, maxDamage: 9, color: 0x8a8a94, icon: 'mace_0' },
   skullcrusher: { id: 'skullcrusher', name: 'Skullcrusher', slot: 'mainHand', rarity: 'magic', weaponKind: 'mace', minDamage: 7, maxDamage: 13, color: 0x7a86a8, icon: 'mace_big_0' },
   dawnhammer: { id: 'dawnhammer', name: 'Dawnhammer', slot: 'mainHand', rarity: 'rare', weaponKind: 'mace', minDamage: 10, maxDamage: 18, color: 0xd8b45c, icon: 'steel_ghammer_0' },
@@ -124,9 +126,10 @@ export const ITEMS: Record<string, ItemDef> = {
   iron_katana: { id: 'iron_katana', name: 'Iron Katana', slot: 'mainHand', rarity: 'magic', weaponKind: 'katana', minDamage: 5, maxDamage: 9, color: 0xb0b8c8, icon: 'iron_katana_0' },
   falcon_edge: { id: 'falcon_edge', name: 'Falcon Edge', slot: 'mainHand', rarity: 'rare', weaponKind: 'katana', minDamage: 7, maxDamage: 12, color: 0xd8cfa0, icon: 'steel_falcon_0' },
   // --- Consumables (it.39): the belt-less Diablo essentials ------------------
-  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', value: 30, use: { heal: 0.5 }, color: 0xc83030 },
-  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8 },
-  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'magic', value: 80, use: { portal: true }, color: 0xd8c890 },
+  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', art: 'health_potion', value: 30, use: { heal: 0.5 }, color: 0xc83030 },
+  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', art: 'mana_potion', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8 },
+  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'magic', art: 'scroll_town_portal', value: 80, use: { portal: true }, color: 0xd8c890 },
+  elixir: { id: 'elixir', name: 'Violet Elixir', slot: 'consumable', rarity: 'magic', art: 'elixir', value: 65, use: { heal: 0.35, resource: 0.5 }, color: 0x9a5ad8 },
 };
 
 const BY_RARITY: Record<Rarity, ItemDef[]> = { common: [], magic: [], rare: [] };

@@ -1,16 +1,17 @@
 /**
  * @module town/TownProps
- * Dresses the town layout (it.39): cottages, the stall, fences, trees,
- * pillars, barrels, the stash chest, animated campfire / torches / well,
- * flat decals. Everything standing was already planned as TILE_BLOCKED by
- * TownMap; this module only draws, lights and registers.
+ * Dresses the town layout (it.39 / it.40): cottages, stalls, fences,
+ * trees, pillars, barrels, the stash chest, animated campfire / torches /
+ * braziers, the dungeon-gate ARCHWAY with its drifting fog, flat decals.
+ * Everything standing was already planned as TILE_BLOCKED by TownMap;
+ * this module only draws, lights and registers.
  *
- * Returns the OCCLUDERS (tall sprites that should cut away when the hero
- * walks behind them) and the INTERACTABLES (stash, merchant stall) with
- * their prompt labels.
+ * Returns the OCCLUDERS (tall sprites that cut away when the hero walks
+ * behind — or inside — them), the INTERACTABLES (stash, merchant stall),
+ * and an `update(dt)` for the render-side fog drift at the gate.
  */
 
-import { Sprite } from 'pixi.js';
+import { Graphics, Sprite } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
@@ -23,6 +24,8 @@ import type { TownLayout, TownProp } from './TownMap';
 export interface Occluder {
   sprite: Sprite;
   depth: number;
+  /** Blocked footprint (tiles) — standing inside it means "indoors". */
+  tiles: { x: number; y: number; w: number; h: number };
 }
 
 export interface Interactable {
@@ -39,6 +42,9 @@ export interface TownDressing {
   occluders: Occluder[];
   interactables: Interactable[];
   stashSprite: Sprite | null;
+  /** Render-frame update: gate fog drift, brazier flicker. */
+  update: (dt: number) => void;
+  destroy: () => void;
 }
 
 export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting: Lighting, ambience: Ambience): TownDressing {
@@ -46,6 +52,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const occluders: Occluder[] = [];
   const interactables: Interactable[] = [];
   const hotspots: Array<{ x: number; y: number }> = [];
+  const fog: Array<{ sprite: Sprite; x: number; y: number; phase: number; speed: number }> = [];
   let stashSprite: Sprite | null = null;
   const has = (name: string): boolean => spriteLib.loaded && spriteLib.hasSingle(name);
 
@@ -68,22 +75,30 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     return spr;
   };
 
-  /** A looping animated prop on one tile (campfire, torch, well). */
-  const animated = (p: TownProp, anim: 'campfire' | 'torch' | 'well', fps: number, anchorY: number, scale = 1): Sprite | null => {
+  /** A looping animated prop on one tile (campfire, torch, brazier flame). */
+  const animated = (
+    gx: number,
+    gy: number,
+    anim: 'campfire' | 'torch',
+    fps: number,
+    anchorY: number,
+    scale = 1,
+    lift = 0,
+  ): Sprite | null => {
     if (!spriteLib.loaded || !spriteLib.hasAnim(anim)) return null;
     const frames = spriteLib.anim(anim).frames[0];
     const spr = new Sprite(frames[0]);
     spr.anchor.set(0.5, anchorY);
     spr.scale.set(scale);
-    const s = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
-    spr.position.set(s.x, s.y + 4);
-    spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
+    const s = worldToScreen(gx + 0.5, gy + 0.5, scratch);
+    spr.position.set(s.x, s.y + 4 - lift);
+    spr.zIndex = depthKey(gx + 0.5, gy + 0.5) + 1;
     viewport.objectLayer.addChild(spr);
-    ambience.addLoopingAnim(spr, frames, fps, p.x, p.y);
+    ambience.addLoopingAnim(spr, frames, fps, gx, gy);
     return spr;
   };
 
-  const glowAt = (gx: number, gy: number, tint: number, alpha: number, scale: number, lift: number): void => {
+  const glowAt = (gx: number, gy: number, tint: number, alpha: number, scale: number, lift: number): Sprite => {
     const g = new Sprite(assets.get('glow'));
     g.anchor.set(0.5);
     g.blendMode = 'add';
@@ -92,6 +107,98 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     g.position.set(s.x, s.y - lift);
     viewport.ambienceLayer.addChild(g);
     ambience.addGlow(g, gx, gy, alpha, scale);
+    return g;
+  };
+
+  const footprint = (p: TownProp): Occluder['tiles'] => ({ x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 });
+
+  /**
+   * THE DUNGEON GATE: a dark stone archway spanning the street. Piers on
+   * the two blocked tiles, a rounded arch with a keystone, a translucent
+   * black throat (the hero stays dimly visible walking in) and cold fog.
+   */
+  const archway = (p: TownProp): void => {
+    const g = new Graphics();
+    // The piers stand on the two blocked tiles either side of the stair; in
+    // the 2:1 projection those centres are offset diagonally, so the span
+    // is a SKEWED band — an arch drawn in the world, not a flat facade.
+    const pl = worldToScreen(p.x + 0.5, p.y + 0.5, vec2());
+    const pr = worldToScreen(p.x + 2.5, p.y + 0.5, vec2());
+    const mid = worldToScreen(p.x + 1.5, p.y + 0.5, vec2());
+    const pierW = 26;
+    const pierH = 98;
+    const lintel = 16;
+    const pierTop = (s: { x: number; y: number }): number => s.y - pierH;
+    // Throat: translucent dark between the piers, so whoever walks in fades.
+    g.moveTo(pl.x, pl.y);
+    g.lineTo(pl.x, pierTop(pl) - 2);
+    g.quadraticCurveTo(mid.x, pierTop(mid) - 70, pr.x, pierTop(pr) - 2);
+    g.lineTo(pr.x, pr.y);
+    g.closePath();
+    g.fill({ color: 0x04030a, alpha: 0.7 });
+    // Piers with a lit face, a shaded edge and mortar lines.
+    for (const s of [pl, pr]) {
+      const top = pierTop(s);
+      g.rect(s.x - pierW / 2, top, pierW, pierH);
+      g.fill({ color: 0x3b3642 });
+      g.rect(s.x - pierW / 2, top, 7, pierH);
+      g.fill({ color: 0x57515f });
+      g.rect(s.x + pierW / 2 - 6, top, 6, pierH);
+      g.fill({ color: 0x1d1922 });
+      for (let yy = top + 12; yy < top + pierH - 4; yy += 13) {
+        g.rect(s.x - pierW / 2 + 1, yy, pierW - 2, 1);
+        g.fill({ color: 0x24202a, alpha: 0.9 });
+      }
+      g.rect(s.x - pierW / 2 - 4, top - 5, pierW + 8, 7); // Capital.
+      g.fill({ color: 0x4c4654 });
+      g.ellipse(s.x, s.y + 2, pierW * 0.8, 6); // Footing shadow.
+      g.fill({ color: 0x000000, alpha: 0.4 });
+    }
+    // The arch: a thick pointed band from capital to capital.
+    const apex = { x: mid.x, y: pierTop(mid) - 62 };
+    g.moveTo(pl.x - pierW / 2 - 4, pierTop(pl) - 4);
+    g.quadraticCurveTo(apex.x - 8, apex.y - lintel - 4, apex.x, apex.y - lintel);
+    g.quadraticCurveTo(apex.x + 8, apex.y - lintel - 4, pr.x + pierW / 2 + 4, pierTop(pr) - 4);
+    g.lineTo(pr.x + pierW / 2 - 6, pierTop(pr) + 2);
+    g.quadraticCurveTo(apex.x + 6, apex.y + 4, apex.x, apex.y + 6);
+    g.quadraticCurveTo(apex.x - 6, apex.y + 4, pl.x - pierW / 2 + 6, pierTop(pl) + 2);
+    g.closePath();
+    g.fill({ color: 0x433e4c });
+    // Voussoir joints.
+    const segs = 10;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const ox = pl.x - pierW / 2 + (pr.x + pierW / 2 - (pl.x - pierW / 2)) * t;
+      const inner = (1 - t) * (1 - t) * (pierTop(pl) + 2) + 2 * (1 - t) * t * (apex.y + 4) + t * t * (pierTop(pr) + 2);
+      const outer = inner - lintel - 6;
+      g.moveTo(ox, inner);
+      g.lineTo(ox + (t < 0.5 ? -3 : 3), outer);
+      g.stroke({ color: 0x24202a, width: 1.5, alpha: 0.9 });
+    }
+    // Keystone with the carved sigil.
+    g.rect(apex.x - 8, apex.y - lintel - 10, 16, lintel + 14);
+    g.fill({ color: 0x5e5868 });
+    g.circle(apex.x, apex.y - 2, 3.5);
+    g.fill({ color: 0x14111a });
+    g.zIndex = depthKey(p.x + 1.5, p.y + 0.5) + 2; // Just past the stair tile: the hero walks INTO it.
+    viewport.objectLayer.addChild(g); // Always lit: the town's sight radius covers the gate.
+    const base = mid;
+
+    // Cold fog rolling out of the throat (render-side drift in update()).
+    for (let i = 0; i < 5; i++) {
+      const f = new Sprite(assets.get('glow'));
+      f.anchor.set(0.5);
+      f.tint = 0x6f7fa8;
+      f.alpha = 0.16;
+      f.scale.set(1.6 + i * 0.25, 0.8 + i * 0.1);
+      f.zIndex = g.zIndex + 1;
+      viewport.objectLayer.addChild(f);
+      lighting.registerProp(p.x + 1, p.y, f);
+      fog.push({ sprite: f, x: base.x + (i - 2) * 10, y: base.y - 22 - i * 4, phase: i * 1.3, speed: 0.35 + i * 0.07 });
+    }
+    // A cold light from the deep, and a warm one from each brazier later.
+    lighting.addSource(p.x + 1.5, p.y + 0.5, 3.6, 110, 130, 200, 0.55);
+    glowAt(p.x + 1, p.y, 0x5060a0, 0.35, 1.6, 30);
   };
 
   let nextId = 1;
@@ -99,13 +206,15 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     switch (p.kind) {
       case 'house': {
         const spr = standing(p, p.variant ?? 'house_a', 0.96);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex });
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
         break;
       }
       case 'stall': {
         const spr = standing(p, p.variant ?? 'stall_a', 0.94);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex });
-        interactables.push({ id: nextId++, kind: 'merchant', x: layout.merchant.x + 0.5, y: layout.merchant.y + 0.5, label: 'E · TRADE', tiles: layout.merchant.tiles });
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        if (p.variant === 'stall_a') {
+          interactables.push({ id: nextId++, kind: 'merchant', x: layout.merchant.x + 0.5, y: layout.merchant.y + 0.5, label: 'E · TRADE', tiles: layout.merchant.tiles });
+        }
         break;
       }
       case 'stash': {
@@ -115,21 +224,30 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'campfire': {
-        animated(p, 'campfire', 9, 0.92);
+        animated(p.x, p.y, 'campfire', 9, 0.92);
         glowAt(p.x, p.y, 0xff9040, 0.75, 2.6, 18);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 5.5, 255, 150, 60, 0.85);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
         break;
       }
       case 'torch': {
-        animated(p, 'torch', 8, 0.92, 1.1);
+        animated(p.x, p.y, 'torch', 8, 0.92, 1.1);
         glowAt(p.x, p.y, 0xffb060, 0.5, 1.4, 30);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 3.4, 255, 170, 80, 0.55);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
         break;
       }
-      case 'well':
-        animated(p, 'well', 6, 0.9);
+      case 'brazier': {
+        // A pillar crowned with a burning bowl.
+        standing(p, 'pillar', 0.94);
+        animated(p.x, p.y, 'campfire', 10, 0.98, 0.62, 58);
+        glowAt(p.x, p.y, 0xff8a30, 0.7, 1.9, 66);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.4, 255, 140, 50, 0.8);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'arch':
+        archway(p);
         break;
       case 'pillar':
         standing(p, 'pillar', 0.94);
@@ -139,7 +257,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       case 'tree': {
         const spr = standing(p, p.variant ?? 'tree_a', 0.94);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex });
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
         break;
       }
       case 'barrel':
@@ -165,5 +283,19 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     }
   }
   ambience.setHotspots(hotspots);
-  return { occluders, interactables, stashSprite };
+
+  let clock = 0;
+  const update = (dt: number): void => {
+    clock += dt;
+    for (const f of fog) {
+      const t = clock * f.speed + f.phase;
+      f.sprite.position.set(f.x + Math.sin(t) * 14, f.y + Math.cos(t * 0.7) * 5 - (t % 3) * 4);
+      f.sprite.alpha = 0.1 + 0.08 * (0.5 + 0.5 * Math.sin(t * 1.9));
+    }
+  };
+  const destroy = (): void => {
+    for (const f of fog) f.sprite.destroy();
+    fog.length = 0;
+  };
+  return { occluders, interactables, stashSprite, update, destroy };
 }

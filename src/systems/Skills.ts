@@ -31,33 +31,35 @@ export interface SkillDef {
   cost: number;
   /** One-line HUD tooltip. */
   hint: string;
+  /** Baked 64 px glyph under assets/ui/skills (it.40); the rune `glyph` is the fallback. */
+  icon?: string;
 }
 
 /** The 16 skills — 4 per class, slots map to hotkeys 1–4. */
 export const CLASS_SKILLS: Record<ClassArchetype, SkillDef[]> = {
   warrior: [
-    { id: 'whirlwind', name: 'Whirlwind', glyph: '⚔', cd: 300, cost: 25, hint: '360° steel — strikes everything around you' },
-    { id: 'charge', name: 'Charge', glyph: '➤', cd: 420, cost: 20, hint: 'Dash forward, scattering and wounding foes' },
-    { id: 'warcry', name: 'War Cry', glyph: '♜', cd: 900, cost: 15, hint: '+35% damage for 10 s' },
-    { id: 'stoneskin', name: 'Stone Skin', glyph: '⛨', cd: 900, cost: 20, hint: 'Absorb 55% of damage for 7 s' },
+    { id: 'whirlwind', icon: 'whirlwind', name: 'Whirlwind', glyph: '⚔', cd: 300, cost: 25, hint: '360° steel — strikes everything around you' },
+    { id: 'charge', icon: 'charge', name: 'Charge', glyph: '➤', cd: 420, cost: 20, hint: 'Dash forward, scattering and wounding foes' },
+    { id: 'warcry', icon: 'warcry', name: 'War Cry', glyph: '♜', cd: 900, cost: 15, hint: '+35% damage for 10 s' },
+    { id: 'stoneskin', icon: 'stoneskin', name: 'Stone Skin', glyph: '⛨', cd: 900, cost: 20, hint: 'Absorb 55% of damage for 7 s' },
   ],
   mage: [
-    { id: 'fireball', name: 'Fireball', glyph: '✸', cd: 200, cost: 18, hint: 'Explosive burst at the nearest foe' },
-    { id: 'firewall', name: 'Firewall', glyph: '♒', cd: 600, cost: 30, hint: 'A line of flame that burns for 6 s' },
-    { id: 'frostnova', name: 'Frost Nova', glyph: '❄', cd: 540, cost: 25, hint: 'Freeze everything near you' },
-    { id: 'intellect', name: 'Arcane Intellect', glyph: '✦', cd: 1200, cost: 0, hint: '+45% spell damage for 15 s' },
+    { id: 'fireball', icon: 'fireball', name: 'Fireball', glyph: '✸', cd: 200, cost: 18, hint: 'Explosive burst at the nearest foe' },
+    { id: 'firewall', icon: 'firewall', name: 'Firewall', glyph: '♒', cd: 600, cost: 30, hint: 'A line of flame that burns for 6 s' },
+    { id: 'frostnova', icon: 'frostnova', name: 'Frost Nova', glyph: '❄', cd: 540, cost: 25, hint: 'Freeze everything near you' },
+    { id: 'intellect', icon: 'intellect', name: 'Arcane Intellect', glyph: '✦', cd: 1200, cost: 0, hint: '+45% spell damage for 15 s' },
   ],
   ranger: [
-    { id: 'multishot', name: 'Multishot', glyph: '⋔', cd: 200, cost: 18, hint: 'A fan of five arrows' },
-    { id: 'shadowstep', name: 'Shadow Step', glyph: '➟', cd: 300, cost: 15, hint: 'Quick dash + 4 s of haste' },
-    { id: 'trap', name: 'Explosive Trap', glyph: '☒', cd: 480, cost: 20, hint: 'Plant a mine at your feet' },
-    { id: 'rain', name: 'Rain of Arrows', glyph: '⇊', cd: 800, cost: 35, hint: 'Arrow storm on the nearest pack' },
+    { id: 'multishot', icon: 'multishot', name: 'Multishot', glyph: '⋔', cd: 200, cost: 18, hint: 'A fan of five arrows' },
+    { id: 'shadowstep', icon: 'shadowstep', name: 'Shadow Step', glyph: '➟', cd: 300, cost: 15, hint: 'Quick dash + 4 s of haste' },
+    { id: 'trap', icon: 'trap', name: 'Explosive Trap', glyph: '☒', cd: 480, cost: 20, hint: 'Plant a mine at your feet' },
+    { id: 'rain', icon: 'rain', name: 'Rain of Arrows', glyph: '⇊', cd: 800, cost: 35, hint: 'Arrow storm on the nearest pack' },
   ],
   rogue: [
-    { id: 'flurry', name: 'Blade Flurry', glyph: '≋', cd: 220, cost: 18, hint: 'Four lightning cuts on one victim' },
-    { id: 'poison', name: 'Poison Blade', glyph: '☠', cd: 700, cost: 15, hint: 'Coat your blades — hits poison for 15 s' },
-    { id: 'vanish', name: 'Vanish', glyph: '◍', cd: 900, cost: 25, hint: 'Untouchable and unseen for 5 s' },
-    { id: 'shadowslash', name: 'Shadow Slash', glyph: '⌁', cd: 420, cost: 25, hint: 'Dash through foes, cutting deep' },
+    { id: 'flurry', icon: 'flurry', name: 'Blade Flurry', glyph: '≋', cd: 220, cost: 18, hint: 'Four lightning cuts on one victim' },
+    { id: 'poison', icon: 'poison', name: 'Poison Blade', glyph: '☠', cd: 700, cost: 15, hint: 'Coat your blades — hits poison for 15 s' },
+    { id: 'vanish', icon: 'vanish', name: 'Vanish', glyph: '◍', cd: 900, cost: 25, hint: 'Untouchable and unseen for 5 s' },
+    { id: 'shadowslash', icon: 'shadowslash', name: 'Shadow Slash', glyph: '⌁', cd: 420, cost: 25, hint: 'Dash through foes, cutting deep' },
   ],
 };
 

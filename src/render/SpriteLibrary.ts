@@ -45,6 +45,12 @@ export function weaponIconUrl(stem: string): string {
   return `${ATLAS_BASE}/single_wicon_${stem}.png`;
 }
 
+
+/** DOM-only art under public/assets/ui (skill glyphs, painted item icons — it.40). */
+export function uiAssetUrl(rel: string): string {
+  return `${ROOT}/ui/${rel}`;
+}
+
 export type AnimName =
   | 'knight_idle'
   | 'knight_run'

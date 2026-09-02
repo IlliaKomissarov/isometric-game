@@ -1,5 +1,90 @@
 # Development Log
 
+## 2026-09-02 (iteration 40) - Town redesign, market square, camp heroes, buyback, skill art, level cheat
+
+### Asset re-audit (`public/assets/test-models`, second upload: 499 files, 44 MB)
+- KEEP -> baked to `public/assets/ui/` (DOM-only art; the atlas stays for
+  world sprites): 16 of the 220 elemental 16 px glyphs as `skills/<id>.png`
+  (x4 nearest, one per active skill), and 16 of the 62 painted 1024 px
+  "Ultimate Fantasy RPG Icons" (CC0) as `items/<id>.png` (alpha-cropped,
+  60 px inside 64, Lanczos): potions (red / blue / green / purple), the
+  portal scroll, wooden + iron shields, bows, the ember staff, swords,
+  axes, a chest.
+- REJECT: the pixel "Free Medieval Fantasy UI Pack" (word buttons and 32 px
+  frames in a chunky pixel style that fights the Cinzel / parchment UI;
+  its icon sheets are duplicates of the singles), the pack's promo card,
+  the remaining 204 glyphs and 46 icons (no matching skill / item yet -
+  re-bake from the pack when one is added). No NPC sprites, houses,
+  stalls or trees were in this upload; the town uses the it.39 bake.
+- The raw folder was deleted after the bake; `scripts/purge-assets.mjs`
+  now keeps `ui/` alongside `atlas/`.
+
+### Town redesign (`town/TownMap.ts`, 46x40)
+- A cliff ring (the map's only walls, tinted mossy rock by SceneManager)
+  behind a two-deep staggered FOREST BELT; every belt tile that is not a
+  tree is undergrowth (blocked) so the edge never traps anyone.
+- MARKET SQUARE (N): 16x10 cobbled plaza, four canopied stalls, the
+  shopkeeper behind stall A, crates / barrels / pots / hanging signs /
+  signpost, torch posts at the corners; six villagers wander it.
+- Streets: the cobbled main street south to the gate, an east-west high
+  street, dirt lanes to every cottage, the vault and the camp.
+- Two RESIDENTIAL quarters (3 cottages each) with fenced yards; the
+  fence rows leave the door column open. Each cottage keeps its room
+  and doorstep walkable: step in and the roof + front wall drop to 20%
+  (behind stays 38%).
+- STASH VAULT (NW), CAMPSITE (SW: fire, seats, the three resting heroes,
+  the portal stone east of the street), the ugly animated well removed.
+- DUNGEON GATE (S): a stone archway drawn in Pixi Graphics across the
+  main street (piers on the two blocked tiles, voussoir ring, keystone,
+  translucent throat so the hero fades into the dark), two BRAZIERS
+  (pillar + scaled campfire flame + warm light), cold blue light and five
+  drifting fog sprites (`TownDressing.update`). The stairwell sits under
+  the arch; walking in descends.
+- COLLISION AUDIT: `auditTownLayout()` flood-fills from the spawn and
+  warns about any unreachable walkable tile or unreachable point of
+  interest (gate, stash, stall, portal, fire, every door). Found and fixed
+  in QA: two north cottages fenced shut; 80 forest pockets (now brush).
+
+### Camp heroes (`town/CampHeroes.ts`)
+- The three classes NOT chosen rest around the fire as real `Player` rigs
+  (same atlases, HERO_HEIGHT scale, idle breathing) that are RENDER-ONLY:
+  never in GameState, never ticked, never targetable. They face the fire
+  and take the scene tint. The camp chip names them.
+
+### Merchant fix + buyback (`systems/Town.ts`, `ui/Shop.ts`)
+- Selling now moves the item to a BUYBACK counter (newest first, 8 deep,
+  cleared on every restock) shown under FOR SALE; `BUYBACK` is a new
+  InputCommand priced at exactly what the merchant paid. Gold math
+  verified live: 300 -> sell sword +19 -> 319 -> buy back -19 -> 300.
+- The Violet Elixir (+35% hp, +50% resource, 65 g) joins the staples.
+
+### Skill art + cast FX
+- `SkillDef.icon` -> `<img class="skill-icon">` in the slot (rune glyph
+  is the fallback); slots wear iron plate + gold hairline + corner rivets;
+  when a cooldown starts from zero the slot pops (`.cast`: scale 1.12 +
+  radial gold bloom, 0.45 s).
+- `ui/itemIcons.itemIconHtml()` is the one resolver for every panel
+  (inventory, shop, stash, cheat arsenal): painted `art` > pack `icon` >
+  generated pixel icon.
+
+### UI overhaul (index.html, appended block)
+- Double frames (iron outside, gold hairline inside) on every panel and
+  tooltip, parchment ink (#eadfc8) on near-black, gold price text, gear
+  cells rimmed gold, dashed rows for buyback, `button:active` at 0.72.
+
+### Cheat menu HERO tab
+- LEVEL 1-30 grid plus -5 / -1 / +1 / +5 steps -> `Player.setLevel()`
+  (max HP = class base + 4/level, HP refilled, XP zeroed), sheet readout
+  (xp, hp, base damage), level-up sting + burst.
+
+### Live QA (Chrome, stepped sim)
+Fresh save -> town spawn (audit clean, no console errors) -> stepped into
+the west cottage: roof alpha 0.20 -> stall: sell Rusty Sword (+19),
+buyback (-19), painted icons in every row -> skill 1: `.cast` flash,
+cooldown 298 -> F1 HERO: level 10 (186 hp), +5 -> 15 (206 hp) -> gate
+approach and arch inspected in screenshots. Camp shows Mage, Ranger,
+Rogue for a Warrior run.
+
 ## 2026-09-02 (iteration 39) - Town hub (floor 0), vendors, save/load, stash, town assets
 
 ### New assets (baked from `public/assets/test-models`, then pruned)

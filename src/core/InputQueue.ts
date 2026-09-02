@@ -39,6 +39,7 @@ export type InputCommand =
   /** Town economy (it.39). */
   | { type: 'BUY'; playerId: number; index: number }
   | { type: 'SELL'; playerId: number; backpackIndex: number }
+  | { type: 'BUYBACK'; playerId: number; index: number }
   | { type: 'STASH_PUT'; playerId: number; backpackIndex: number }
   | { type: 'STASH_TAKE'; playerId: number; index: number }
   | { type: 'STASH_GOLD'; playerId: number; amount: number };

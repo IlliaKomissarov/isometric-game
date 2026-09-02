@@ -55,16 +55,18 @@ import type { Entity } from '@/entities/Entity';
 import { ITEMS, overlayTextureFor, statLine } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
-import { spriteLib, weaponIconUrl, type AnimName } from '@/render/SpriteLibrary';
+import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
 import { ChestSystem } from '@/systems/Chests';
 import { CheatMenuUI } from '@/ui/CheatMenu';
-import { itemIconDataUrl } from '@/ui/itemIcons';
+import { itemIconHtml } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
 import { buildTownLayout, type TownLayout } from '@/town/TownMap';
 import { placeTownProps, type Interactable, type Occluder } from '@/town/TownProps';
 import { Villagers } from '@/town/Villagers';
+import { CampHeroes } from '@/town/CampHeroes';
+import { auditTownLayout } from '@/town/TownMap';
 import { TownSystem } from '@/systems/Town';
 import { ShopUI } from '@/ui/Shop';
 import { StashUI } from '@/ui/Stash';
@@ -111,6 +113,11 @@ interface World {
     occluders: Occluder[];
     interactables: Interactable[];
     stashSprite: Sprite | null;
+    /** The three unpicked heroes resting at the fire (it.40). */
+    campHeroes: CampHeroes;
+    /** Render-frame dressing update (gate fog) + teardown. */
+    update: (dt: number) => void;
+    destroyDressing: () => void;
   } | null;
   /** Roster spawn indexes killed on this floor (FloorMemory). */
   killed: Set<number>;
@@ -1062,8 +1069,23 @@ async function boot(): Promise<void> {
       let townState: World['town'] = null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
-        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 4, layout.merchant);
-        townState = { layout, villagers, occluders: dressing.occluders, interactables: dressing.interactables, stashSprite: dressing.stashSprite };
+        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 6, layout.merchant);
+        const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
+        // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
+        const audit = auditTownLayout(layout);
+        if (audit.unreachable.length || audit.missing.length) {
+          console.warn('[town] layout audit:', audit.unreachable.length, 'unreachable tiles', audit.unreachable.slice(0, 12), 'missing:', audit.missing);
+        }
+        townState = {
+          layout,
+          villagers,
+          occluders: dressing.occluders,
+          interactables: dressing.interactables,
+          stashSprite: dressing.stashSprite,
+          campHeroes,
+          update: dressing.update,
+          destroyDressing: dressing.destroy,
+        };
       }
 
       // Target ring: unmistakable marker under whatever the player is striking.
@@ -1207,6 +1229,8 @@ async function boot(): Promise<void> {
     const destroyWorld = (w: World): void => {
       w.unsubscribe();
       w.town?.villagers.destroy();
+      w.town?.campHeroes.destroy();
+      w.town?.destroyDressing();
       w.input.destroy();
       w.projectiles.clear();
       w.enemies.destroyAll();
@@ -1480,6 +1504,7 @@ async function boot(): Promise<void> {
 
     // Skill bar DOM: one slot per class skill, cooldown sweep + cost readout.
     const skillSlotEls: Array<{ root: HTMLElement; cd: HTMLElement; num: HTMLElement }> = [];
+    const lastSkillCd: number[] = [0, 0, 0, 0];
     const skillBar = document.getElementById('skill-bar');
     {
       if (skillBar) {
@@ -1489,7 +1514,10 @@ async function boot(): Promise<void> {
           slot.className = 'skill-slot';
           // Rich hover tooltip (it.33): name, cost, cooldown, description.
           slot.innerHTML =
-            `<div class="skill-glyph">${def.glyph}</div>` +
+            (def.icon
+              ? `<div class="skill-glyph has-icon"><img class="skill-icon" src="${uiAssetUrl(`skills/${def.icon}.png`)}" alt="${def.name}" draggable="false"></div>`
+              : `<div class="skill-glyph">${def.glyph}</div>`) +
+            `<div class="skill-flash"></div>` +
             `<div class="skill-key">${i + 1}</div>` +
             (def.cost > 0 ? `<div class="skill-cost">${def.cost}</div>` : '') +
             `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
@@ -1517,6 +1545,13 @@ async function boot(): Promise<void> {
         const el = skillSlotEls[i];
         if (!el) return;
         const cd = skills.cooldowns[i];
+        // CAST FLASH (it.40): a cooldown that just started means the skill fired.
+        if (cd > 0 && lastSkillCd[i] === 0) {
+          el.root.classList.remove('cast');
+          void el.root.offsetWidth;
+          el.root.classList.add('cast');
+        }
+        lastSkillCd[i] = cd;
         if (cd > 0) {
           el.root.classList.add('cooling');
           el.cd.style.height = `${Math.round((cd / def.cd) * 100)}%`;
@@ -1690,12 +1725,25 @@ async function boot(): Promise<void> {
           slot: def.slot,
           rarity: def.rarity,
           stats: statLine(def),
-          iconHtml:
-            def.icon && spriteLib.loaded
-              ? `<img class="cheat-icon" src="${weaponIconUrl(def.icon)}" alt="">`
-              : `<img class="cheat-icon cheat-icon-px" src="${itemIconDataUrl(def)}" alt="">`,
+          iconHtml: itemIconHtml(def, 'cheat-icon', 'cheat-icon-px'),
         })),
       portraitFrames: () => portraitFrames,
+      setLevel: (level) => {
+        player.setLevel(level);
+        updateOrb();
+        updateProgressHud();
+        eventBus.emit('inventory:changed', {}); // Stat readouts re-derive from the new level.
+        audio.sfx('levelUp');
+        world.ambience.burst(player.pos.x, player.pos.y, 0xf0d070, 16);
+      },
+      heroInfo: () => ({
+        level: player.level,
+        xp: player.xp,
+        xpToNext: player.xpToNext(),
+        hpMax: player.hpMax,
+        dmgMin: player.levelDamageMin,
+        dmgMax: player.levelDamageMax,
+      }),
     });
 
     // --- Cross-floor event wiring (per run) ----------------------------------
@@ -2211,6 +2259,10 @@ async function boot(): Promise<void> {
         if (world.town) {
           const t = world.town;
           t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          t.campHeroes.update((x, y) => world.lighting.getTintAt(x, y, 0.7));
+          t.update(frameDt);
+          const heroTx = Math.floor(player.pos.x);
+          const heroTy = Math.floor(player.pos.y);
           // ROOF CUTAWAY (it.39): a cottage or tree the hero stands behind fades
           // so the body never disappears under a roof.
           const hs = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
@@ -2225,7 +2277,10 @@ async function boot(): Promise<void> {
             const top = spr.position.y - h * spr.anchor.y;
             const bottom = top + h * 0.9;
             const behind = o.depth > heroDepth && hs.x > left && hs.x < right && hs.y - 30 > top && hs.y - 30 < bottom;
-            const target = behind ? 0.38 : 1;
+            // INSIDE (it.40): standing in a cottage's door column — the roof
+            // and front wall drop to a ghost so the room reads.
+            const inside = heroTx >= o.tiles.x && heroTx < o.tiles.x + o.tiles.w && heroTy >= o.tiles.y && heroTy < o.tiles.y + o.tiles.h;
+            const target = inside ? 0.2 : behind ? 0.38 : 1;
             spr.alpha += (target - spr.alpha) * k;
           }
           if (t.stashSprite && spriteLib.hasSingle('stash_open')) {
@@ -2370,6 +2425,11 @@ async function boot(): Promise<void> {
         bestD = gd;
         best = { x: t.layout.gate.x + 0.5, y: t.layout.gate.y + 0.5, html: 'THE DUNGEON GATE · walk in to descend', lift: 44 };
       }
+      const cf = Math.hypot(player.pos.x - (t.layout.campfire.x + 0.5), player.pos.y - (t.layout.campfire.y + 0.5));
+      if (cf < bestD && cf < 2.4) {
+        bestD = cf;
+        best = { x: t.layout.campfire.x + 0.5, y: t.layout.campfire.y + 0.5, html: `THE CAMP · ${t.campHeroes.names.join(' · ')} rest here`, lift: 70 };
+      }
       if (portalReturn) {
         const pd = Math.hypot(player.pos.x - (t.layout.portal.x + 0.5), player.pos.y - (t.layout.portal.y + 0.5));
         if (pd < bestD && pd < 3) {
@@ -2496,7 +2556,7 @@ export function isBossFloor(floor: number): boolean {
  * boss chains), the summoned wretches, and — for arenas — the keeper.
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
-  if (mode === 'hub') return ['villager_walk', 'merchant_walk', 'campfire', 'torch', 'well'];
+  if (mode === 'hub') return ['villager_walk', 'merchant_walk', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle'];
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));
   kinds.add('fallen'); // Hollow King summons; cheap (shares the knight sheets).
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);

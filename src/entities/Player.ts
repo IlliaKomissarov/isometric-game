@@ -311,6 +311,19 @@ export class Player extends Entity {
     return gained;
   }
 
+  /**
+   * CHEAT (it.40): jump straight to a level. Rebuilds the sheet the way
+   * `grantXp` would have grown it (max HP +4 per level from the class
+   * base), fills HP, zeroes the partial XP. Clamped to 1–30.
+   */
+  setLevel(target: number): void {
+    const level = Math.max(1, Math.min(30, Math.round(target)));
+    this.level = level;
+    this.xp = 0;
+    this.hpMax = ARCHETYPES[this.archetype].hpMax + 4 * (level - 1);
+    this.hp = this.hpMax;
+  }
+
   /** Flat damage grown by levels (it.23: many small levels — gentle slope). */
   get levelDamageMin(): number {
     return Math.floor((this.level - 1) * 0.25);

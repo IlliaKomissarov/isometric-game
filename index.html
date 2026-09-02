@@ -2165,6 +2165,190 @@
       #hint-banner.show {
         opacity: 0.92;
       }
+
+      /* ===================================================================
+         IT.40 — UI OVERHAUL: dark-fantasy frames, high-contrast text, skill
+         glyphs, painted item art, buyback, cheat HERO tab.
+         =================================================================== */
+      :root {
+        --frame-iron: #3a3240;
+        --frame-gold: #7a6236;
+        --frame-gold-hi: #c8a558;
+        --ink: #eadfc8;
+        --ink-dim: #b9ad98;
+      }
+      /* Skill slots: iron plate, gold inner rule, corner rivets. */
+      .skill-slot {
+        width: 60px;
+        height: 60px;
+        border: 2px solid var(--frame-iron);
+        border-radius: 4px;
+        background:
+          radial-gradient(circle at 50% 35%, rgba(200, 165, 88, 0.08), transparent 62%),
+          linear-gradient(180deg, #1b1622, #0b0910);
+        box-shadow:
+          inset 0 0 0 1px var(--frame-gold),
+          inset 0 0 18px rgba(0, 0, 0, 0.85),
+          0 0 14px rgba(0, 0, 0, 0.9);
+        overflow: hidden;
+      }
+      .skill-slot::before,
+      .skill-slot::after {
+        content: '';
+        position: absolute;
+        width: 5px;
+        height: 5px;
+        background: var(--frame-gold-hi);
+        box-shadow: 0 0 4px rgba(200, 165, 88, 0.6);
+        transform: rotate(45deg);
+        pointer-events: none;
+        z-index: 3;
+      }
+      .skill-slot::before { left: 2px; top: 2px; }
+      .skill-slot::after { right: 2px; bottom: 2px; }
+      .skill-glyph.has-icon { padding: 6px; }
+      .skill-icon {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        image-rendering: pixelated;
+        filter: drop-shadow(0 0 6px rgba(255, 170, 70, 0.35)) contrast(1.08) saturate(1.1);
+      }
+      .skill-slot.poor .skill-icon { filter: grayscale(0.9) brightness(0.55); }
+      .skill-slot.cooling .skill-glyph.has-icon { opacity: 0.55; }
+      .skill-key {
+        top: 1px;
+        left: 5px;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--ink);
+        text-shadow: 0 1px 2px #000, 0 0 6px #000;
+        z-index: 2;
+      }
+      .skill-cost {
+        bottom: 1px;
+        right: 5px;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: #9fb4e8;
+        text-shadow: 0 1px 2px #000, 0 0 6px #000;
+        z-index: 2;
+      }
+      .skill-cd-num { color: #f2e8d2; font-size: 17px; z-index: 2; }
+      /* Cast flash: a gold bloom + scale pop the moment a skill fires. */
+      .skill-flash {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle, rgba(255, 220, 140, 0.9), rgba(255, 150, 60, 0.35) 55%, transparent 75%);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 4;
+      }
+      .skill-slot.cast { animation: skillPop 0.42s ease-out; }
+      .skill-slot.cast .skill-flash { animation: skillFlash 0.45s ease-out; }
+      @keyframes skillPop {
+        0% { transform: scale(1); box-shadow: inset 0 0 0 1px var(--frame-gold-hi), 0 0 22px rgba(255, 190, 90, 0.8); }
+        35% { transform: scale(1.12); }
+        100% { transform: scale(1); }
+      }
+      @keyframes skillFlash {
+        0% { opacity: 1; transform: scale(0.6); }
+        100% { opacity: 0; transform: scale(1.6); }
+      }
+      .skill-tip {
+        border: 1px solid var(--frame-gold);
+        box-shadow: inset 0 0 0 1px #0b0910, 0 0 0 1px var(--frame-iron), 0 8px 28px rgba(0, 0, 0, 0.9);
+        background: rgba(10, 8, 14, 0.98);
+      }
+      .skill-tip b { color: var(--frame-gold-hi); font-size: 12.5px; }
+      .skill-tip span { color: #9fb4e8; }
+      .skill-tip p { color: var(--ink-dim); }
+
+      /* Panels: double frame (iron outside, gold hairline inside). */
+      .town-panel,
+      #inv-panel,
+      #cheat-menu,
+      .modal > div,
+      #save-panel .sv-panel {
+        border: 2px solid var(--frame-iron) !important;
+        box-shadow:
+          inset 0 0 0 1px var(--frame-gold),
+          inset 0 0 40px rgba(0, 0, 0, 0.75),
+          0 0 0 1px #000,
+          0 12px 60px rgba(0, 0, 0, 0.95) !important;
+      }
+      .town-panel h3, #inv-panel h3 { color: var(--frame-gold-hi); text-shadow: 0 1px 2px #000, 0 0 10px rgba(200, 165, 88, 0.25); }
+      .town-panel h4 { color: var(--ink); letter-spacing: 0.2em; }
+      .town-panel h4.tp-sub {
+        margin: 10px 0 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--frame-iron);
+        font-size: 10px;
+        color: #9fb4e8;
+      }
+      .town-panel .tp-purse { color: var(--frame-gold-hi); font-weight: 700; text-shadow: 0 1px 2px #000; }
+      .town-panel .tp-row {
+        border: 1px solid var(--frame-iron);
+        background: linear-gradient(180deg, rgba(38, 30, 46, 0.9), rgba(14, 11, 18, 0.95));
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+        transition: background 0.12s ease, border-color 0.12s ease, opacity 0.08s ease;
+      }
+      .town-panel .tp-row:hover { border-color: var(--frame-gold); background: linear-gradient(180deg, rgba(58, 46, 66, 0.95), rgba(20, 16, 26, 0.98)); }
+      .town-panel .tp-row .tp-name { color: var(--ink); text-shadow: 0 1px 2px #000; }
+      .town-panel .tp-row .tp-gold { color: var(--frame-gold-hi); font-weight: 700; text-shadow: 0 1px 2px #000; }
+      .town-panel .tp-row.poor .tp-gold { color: #b05a4a; }
+      .town-panel .tp-row.tp-buyback { border-style: dashed; }
+      .town-panel .tp-row img.art,
+      #inv-panel .inv-cell img.art,
+      #cheat-menu img.cheat-icon.art {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+        image-rendering: auto;
+        filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.9));
+      }
+      #inv-panel .inv-cell img.art { width: 40px; height: 40px; }
+      .town-panel .tp-note { color: var(--ink-dim); }
+      .town-panel .tp-empty { color: #7d7466; }
+      /* Inventory grid: rivet frames on every cell, gold rim on gear. */
+      #inv-panel .inv-cell {
+        border: 1px solid var(--frame-iron);
+        background: linear-gradient(180deg, #17131e, #0b0910);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.7), inset 0 0 10px rgba(0, 0, 0, 0.8);
+      }
+      #inv-panel .inv-cell.inv-item { border-color: var(--frame-gold); }
+      #inv-panel .inv-cell.inv-item:hover { box-shadow: inset 0 0 0 1px var(--frame-gold-hi), 0 0 12px rgba(200, 165, 88, 0.35); }
+      /* Tooltips: parchment ink on near-black, gold rule. */
+      #item-tip, #inv-tooltip {
+        border: 1px solid var(--frame-gold);
+        box-shadow: inset 0 0 0 1px #0b0910, 0 0 0 1px var(--frame-iron), 0 8px 28px rgba(0, 0, 0, 0.9);
+        background: rgba(9, 7, 12, 0.98);
+      }
+      #item-tip .tip-stats, #inv-tooltip .tip-stats { color: var(--ink); }
+      #item-tip .tip-slot { color: var(--ink-dim); }
+      /* Every button: the same press feel. */
+      button:active { opacity: 0.72; }
+      /* Cheat HERO tab. */
+      .cheat-hero { display: flex; flex-direction: column; gap: 10px; padding: 6px 2px; }
+      .cheat-hero-sheet b { display: block; font-family: 'Cinzel', serif; font-size: 15px; letter-spacing: 0.2em; color: var(--frame-gold-hi); }
+      .cheat-hero-sheet span { font-family: 'IM Fell English', serif; font-style: italic; font-size: 12px; color: var(--ink-dim); }
+      .cheat-level-steps { display: flex; gap: 6px; }
+      .cheat-level-steps button, .cheat-level-grid button {
+        font-family: 'Cinzel', serif;
+        font-size: 11px;
+        color: var(--ink);
+        background: linear-gradient(180deg, #221b2c, #0f0c14);
+        border: 1px solid var(--frame-iron);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+        cursor: pointer;
+        padding: 5px 0;
+      }
+      .cheat-level-steps button { flex: 1; }
+      .cheat-level-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+      .cheat-level-grid button { padding: 4px 0; font-size: 10.5px; min-width: 0; }
+      .cheat-level-grid button:hover, .cheat-level-steps button:hover { border-color: var(--frame-gold); }
+      .cheat-level-grid button.lit { border-color: var(--frame-gold-hi); color: var(--frame-gold-hi); box-shadow: 0 0 10px rgba(200, 165, 88, 0.35); }
+      .cheat-hero-note { font-family: 'IM Fell English', serif; font-style: italic; font-size: 11px; color: #7d7466; }
     </style>
   </head>
   <body>

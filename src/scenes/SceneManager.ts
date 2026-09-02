@@ -106,6 +106,8 @@ export class SceneManager {
 
   private addWallSprite(gx: number, gy: number, viewport: Viewport, lighting: Lighting): void {
     const sprite = new Sprite(assets.get(`wall${this.themeSuffix}`));
+    // TOWN (it.40): the ring wall reads as mossy rock cliffs behind the tree line.
+    if (this.theme === 'town') sprite.tint = 0x7f8f74;
     const s = worldToScreen(gx, gy, this.scratch);
     // Wall texture is TILE_H + WALL_Z tall; its base diamond must align with
     // the floor grid, so the sprite is raised by WALL_Z.

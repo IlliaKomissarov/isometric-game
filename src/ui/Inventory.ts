@@ -15,8 +15,8 @@ import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
 import { ITEMS, RARITY_COLOR, itemValue, statLine, type ItemDef } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
-import { weaponIconUrl } from '@/render/SpriteLibrary';
-import { itemIconDataUrl } from './itemIcons';
+
+import { itemIconHtml } from './itemIcons';
 
 const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string }> = [
   { slot: 'mainHand', label: 'MAIN' },
@@ -32,12 +32,7 @@ function hex(color: number): string {
 }
 
 /** Cell content: the real pack icon, or a crisp generated pixel icon. */
-function iconHtml(def: ItemDef): string {
-  if (def.icon) {
-    return `<img src="${weaponIconUrl(def.icon)}" alt="${def.name}" draggable="false">`;
-  }
-  return `<img class="inv-pxicon" src="${itemIconDataUrl(def)}" alt="${def.name}" draggable="false">`;
-}
+const iconHtml = (def: ItemDef): string => itemIconHtml(def, '', 'inv-pxicon');
 
 export class InventoryUI {
   private readonly panel: HTMLElement;

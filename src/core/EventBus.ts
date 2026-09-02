@@ -27,7 +27,7 @@ export interface GameEvents {
   /** A multi-phase boss entered a new phase (2 = quicken, 3 = model swap). */
   'boss:phase': { entityId: number; phase: number };
   /** A projectile terminated (wall, range, or flesh) — spark/dust VFX hook. */
-  'projectile:impact': { x: number; y: number; kind: 'arrow' | 'bolt'; hitFlesh: boolean };
+  'projectile:impact': { x: number; y: number; kind: 'arrow' | 'bolt' | 'fireball'; hitFlesh: boolean };
   /** A ground item appeared (loot roll succeeded). */
   'item:dropped': { uid: number; itemId: string; x: number; y: number };
   /** The player reached a chest they ordered opened. */
@@ -46,6 +46,8 @@ export interface GameEvents {
   'town:changed': Record<string, never>;
   'town:traded': { kind: 'buy' | 'sell'; itemId: string; gold: number };
   'town:refused': { reason: 'gold' | 'stashFull' };
+  /** Skill points spent / hotbar changed (it.41). */
+  'skills:changed': Record<string, never>;
   /** A consumable was used (potion drunk, scroll read). */
   'item:used': { itemId: string };
 }

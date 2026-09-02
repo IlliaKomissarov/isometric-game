@@ -107,7 +107,7 @@ export class ShopUI {
       })
       .join('');
     this.panel.innerHTML = `
-      <div class="tp-head"><h3>THE MERCHANT</h3><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close>✕</button></div>
+      <div class="tp-head drag-handle"><h3>THE MERCHANT</h3><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close>✕</button></div>
       <div class="tp-cols">
         <div class="tp-col"><h4>FOR SALE</h4><div class="tp-list">${sale || '<span class="tp-empty">Sold out</span>'}${buyback ? `<h4 class="tp-sub">BUYBACK · what you sold</h4>${buyback}` : ''}</div></div>
         <div class="tp-col"><h4>YOUR PACK · sell</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing to sell</span>'}</div></div>

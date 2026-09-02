@@ -1238,6 +1238,12 @@ export class Enemy extends Entity {
 
   override syncRender(alpha: number): void {
     super.syncRender(alpha);
+    // Overhead HP + level plaque hold a constant on-screen size (it.41).
+    if (this.healthBar.visible) {
+      this.healthBar.scale.set(Enemy.hudScale);
+      this.levelText.scale.set(Enemy.hudScale);
+      this.healthBar.alpha = 0.85;
+    }
 
     if (this.usesSprite()) {
       this.syncSpriteAnim();
@@ -1468,9 +1474,12 @@ export class Enemy extends Entity {
 
   /** SEGMENTED health bar (it.23): quarter-notches make remaining health
    *  readable at a glance; the "Lv N" plaque shows alongside. */
+  /** 1/zoom (clamped) — set by main each frame so bars never balloon when zoomed in (it.41). */
+  static hudScale = 1;
+
   private redrawHealthBar(): void {
-    const w = 32;
-    const h = 5;
+    const w = 26;
+    const h = 4;
     this.healthBar.clear();
     this.healthBar.rect(-w / 2 - 1, -1, w + 2, h + 2).fill({ color: 0x0a0a0c, alpha: 0.92 });
     const frac = Math.max(0, this.hp / this.hpMax);

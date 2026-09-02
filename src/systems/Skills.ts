@@ -1,67 +1,47 @@
 /**
  * @module systems/Skills
- * Active class skills (it.32): 4 per archetype on hotkeys 1–4, with
- * cooldowns, resource costs (mana/stamina), timed buffs, ground zones
- * (firewall / traps / arrow rain), dashes and DoTs.
+ * Active skills (it.32, progression it.41): the hero's four HOTBAR slots
+ * hold any learned skill from any class path; casting pays a resource
+ * cost and starts a cooldown. Cooldowns, timed buffs, ground zones
+ * (firewall / traps / arrow rain), dashes, DoTs and staged cuts all tick
+ * here.
+ *
+ * PROGRESSION (it.41): skill points, unlocks and the hotbar are hero state
+ * mutated ONLY through UNLOCK_SKILL / UNLOCK_PASSIVE / EQUIP_SKILL
+ * InputCommands applied inside the tick (the DOM tree never touches the
+ * Player). CLASS SYNERGY: a skill of the hero's own class casts at +30%
+ * power, 20% shorter cooldown, and lays its class status on every victim
+ * (STAGGER / BURN / HOBBLE / POISON).
  *
  * DETERMINISM: casts arrive as 'SKILL' InputCommands and every effect
  * resolves through CombatSystem.dealDamage — the one legal hp mutator.
- * The system itself is world-agnostic: it reaches the CURRENT floor's
- * systems through the lazy accessors in `SkillDeps` (main rewires nothing
- * on floor change; it only calls `clearZones()`).
+ * The system is world-agnostic: it reaches the CURRENT floor's systems
+ * through the lazy accessors in `SkillDeps`. All VFX go out through
+ * `deps.vfx` / `deps.burst` and never come back.
  */
 
 import { eventBus } from '@/core/EventBus';
 import type { InputCommand } from '@/core/InputQueue';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
-import type { ClassArchetype } from '@/network/Serialization';
+import type { VfxAnim, VfxHandle, VfxOpts } from '@/render/Vfx';
 import { canStandAt } from '@/systems/Collision';
 import type { CombatSystem } from '@/systems/Combat';
+import type { ProjectileSpawn } from '@/systems/Projectiles';
 import { randInt } from '@/utils/rng';
+import {
+  CLASS_SKILLS,
+  PASSIVE_BY_ID,
+  SKILL_BY_ID,
+  SYNERGY,
+  canUnlockPassive,
+  canUnlockSkill,
+  skillCost,
+  type SkillDef,
+} from './SkillTree';
+import type { ClassArchetype } from '@/network/Serialization';
 
-export interface SkillDef {
-  id: string;
-  name: string;
-  /** HUD glyph (a rune-like character on the action bar). */
-  glyph: string;
-  /** Cooldown in simulation ticks (60/s). */
-  cd: number;
-  /** Resource cost (mana or stamina by class). */
-  cost: number;
-  /** One-line HUD tooltip. */
-  hint: string;
-  /** Baked 64 px glyph under assets/ui/skills (it.40); the rune `glyph` is the fallback. */
-  icon?: string;
-}
-
-/** The 16 skills — 4 per class, slots map to hotkeys 1–4. */
-export const CLASS_SKILLS: Record<ClassArchetype, SkillDef[]> = {
-  warrior: [
-    { id: 'whirlwind', icon: 'whirlwind', name: 'Whirlwind', glyph: '⚔', cd: 300, cost: 25, hint: '360° steel — strikes everything around you' },
-    { id: 'charge', icon: 'charge', name: 'Charge', glyph: '➤', cd: 420, cost: 20, hint: 'Dash forward, scattering and wounding foes' },
-    { id: 'warcry', icon: 'warcry', name: 'War Cry', glyph: '♜', cd: 900, cost: 15, hint: '+35% damage for 10 s' },
-    { id: 'stoneskin', icon: 'stoneskin', name: 'Stone Skin', glyph: '⛨', cd: 900, cost: 20, hint: 'Absorb 55% of damage for 7 s' },
-  ],
-  mage: [
-    { id: 'fireball', icon: 'fireball', name: 'Fireball', glyph: '✸', cd: 200, cost: 18, hint: 'Explosive burst at the nearest foe' },
-    { id: 'firewall', icon: 'firewall', name: 'Firewall', glyph: '♒', cd: 600, cost: 30, hint: 'A line of flame that burns for 6 s' },
-    { id: 'frostnova', icon: 'frostnova', name: 'Frost Nova', glyph: '❄', cd: 540, cost: 25, hint: 'Freeze everything near you' },
-    { id: 'intellect', icon: 'intellect', name: 'Arcane Intellect', glyph: '✦', cd: 1200, cost: 0, hint: '+45% spell damage for 15 s' },
-  ],
-  ranger: [
-    { id: 'multishot', icon: 'multishot', name: 'Multishot', glyph: '⋔', cd: 200, cost: 18, hint: 'A fan of five arrows' },
-    { id: 'shadowstep', icon: 'shadowstep', name: 'Shadow Step', glyph: '➟', cd: 300, cost: 15, hint: 'Quick dash + 4 s of haste' },
-    { id: 'trap', icon: 'trap', name: 'Explosive Trap', glyph: '☒', cd: 480, cost: 20, hint: 'Plant a mine at your feet' },
-    { id: 'rain', icon: 'rain', name: 'Rain of Arrows', glyph: '⇊', cd: 800, cost: 35, hint: 'Arrow storm on the nearest pack' },
-  ],
-  rogue: [
-    { id: 'flurry', icon: 'flurry', name: 'Blade Flurry', glyph: '≋', cd: 220, cost: 18, hint: 'Four lightning cuts on one victim' },
-    { id: 'poison', icon: 'poison', name: 'Poison Blade', glyph: '☠', cd: 700, cost: 15, hint: 'Coat your blades — hits poison for 15 s' },
-    { id: 'vanish', icon: 'vanish', name: 'Vanish', glyph: '◍', cd: 900, cost: 25, hint: 'Untouchable and unseen for 5 s' },
-    { id: 'shadowslash', icon: 'shadowslash', name: 'Shadow Slash', glyph: '⌁', cd: 420, cost: 25, hint: 'Dash through foes, cutting deep' },
-  ],
-};
+export { CLASS_SKILLS, type SkillDef };
 
 /** Lazy world accessors — always resolve against the CURRENT floor. */
 export interface SkillDeps {
@@ -75,6 +55,8 @@ export interface SkillDeps {
   shake: (amount: number) => void;
   text: (x: number, y: number, msg: string, style: 'crit' | 'miss') => void;
   sfx: (name: string) => void;
+  /** Animated effect strips (it.41). */
+  vfx: (anim: VfxAnim, x: number, y: number, opts?: VfxOpts) => VfxHandle;
   /**
    * TARGETED CASTING (it.33): unit vector from the player toward the mouse
    * cursor's world point (falls back to facing) — every directional skill
@@ -90,19 +72,30 @@ export interface SkillDeps {
   zoneVisual: (kind: 'trap' | 'fire' | 'rain', x: number, y: number) => () => void;
 }
 
-interface FirewallZone { kind: 'firewall'; cells: Array<{ x: number; y: number }>; ticksLeft: number; dispose: () => void }
-interface TrapZone { kind: 'trap'; x: number; y: number; armTicks: number; ticksLeft: number; dispose: () => void }
-interface RainZone { kind: 'rain'; x: number; y: number; wavesLeft: number; nextWave: number; dispose: () => void }
+interface FirewallZone { kind: 'firewall'; cells: Array<{ x: number; y: number }>; ticksLeft: number; dispose: () => void; syn: Synergy }
+interface TrapZone { kind: 'trap'; x: number; y: number; armTicks: number; ticksLeft: number; dispose: () => void; syn: Synergy }
+interface RainZone { kind: 'rain'; x: number; y: number; wavesLeft: number; nextWave: number; dispose: () => void; syn: Synergy }
 type Zone = FirewallZone | TrapZone | RainZone;
+
+/** Power scale + class status a cast carries (captured at cast time for delayed effects). */
+interface Synergy {
+  scale: number;
+  status: ClassArchetype | null;
+}
+const NO_SYNERGY: Synergy = { scale: 1, status: null };
 
 export class SkillSystem {
   /** Remaining cooldown ticks per slot (UI reads this). */
   readonly cooldowns = [0, 0, 0, 0];
   private zones: Zone[] = [];
-  /** enemyId → poison state (Poison Blade DoT). */
+  /** enemyId → poison state (Poison Blade DoT / rogue synergy). */
   private readonly poisons = new Map<number, { ticksLeft: number; nextBite: number }>();
+  /** enemyId → burn state (mage synergy). */
+  private readonly burns = new Map<number, { ticksLeft: number; nextBite: number }>();
   /** Blade Flurry: staged follow-up cuts. */
-  private flurry: { targetId: number; hitsLeft: number; nextHit: number } | null = null;
+  private flurry: { targetId: number; hitsLeft: number; nextHit: number; syn: Synergy } | null = null;
+  /** The synergy of the cast currently executing (damage() reads it). */
+  private syn: Synergy = NO_SYNERGY;
 
   /** Seeded rolls via the current floor's combat RNG (deterministic). */
   private get rand(): () => number {
@@ -126,9 +119,14 @@ export class SkillSystem {
     this.clearZones();
   }
 
-  /** The active class's skill defs (HUD + casting). */
-  get skills(): SkillDef[] {
-    return CLASS_SKILLS[this.deps.player.archetype];
+  /** The hotbar: a learned skill per slot, or null (HUD + casting). */
+  get skills(): Array<SkillDef | null> {
+    return this.deps.player.loadout.map((id) => (id ? SKILL_BY_ID[id] ?? null : null));
+  }
+
+  /** Is this skill on the hero's own class path (synergy)? */
+  isSynergy(def: SkillDef): boolean {
+    return def.cls === this.deps.player.archetype;
   }
 
   /** Floor change: ground zones and pending cuts belong to the old floor. */
@@ -136,6 +134,7 @@ export class SkillSystem {
     for (const zone of this.zones) zone.dispose();
     this.zones = [];
     this.poisons.clear();
+    this.burns.clear();
     this.flurry = null;
   }
 
@@ -195,16 +194,77 @@ export class SkillSystem {
     return { x: wx, y: wy };
   }
 
+  /** Screen-space rotation of a world aim (for oriented strips). */
+  private static screenAngle(aim: { x: number; y: number }): number {
+    return Math.atan2((aim.x + aim.y) / 2, aim.x - aim.y);
+  }
+
   apply(commands: InputCommand[]): void {
     for (const cmd of commands) {
       if (cmd.type === 'SKILL') this.cast(cmd.slot);
+      else if (cmd.type === 'UNLOCK_SKILL') this.unlockSkill(cmd.id);
+      else if (cmd.type === 'UNLOCK_PASSIVE') this.unlockPassive(cmd.id);
+      else if (cmd.type === 'EQUIP_SKILL') this.equip(cmd.slot, cmd.id);
     }
+  }
+
+  // ---- PROGRESSION (it.41) ----------------------------------------------
+
+  private unlockSkill(id: string): void {
+    const p = this.deps.player;
+    const check = canUnlockSkill(p, id);
+    if (!check.ok) return;
+    const def = SKILL_BY_ID[id];
+    p.skillPoints -= skillCost(p, def);
+    p.unlockedSkills.add(id);
+    // First learned skill lands on the first free slot automatically.
+    const free = p.loadout.indexOf(null);
+    if (free >= 0 && !p.loadout.includes(id)) p.loadout[free] = id;
+    this.deps.sfx('levelUp');
+    this.deps.text(p.pos.x, p.pos.y - 1.2, `${def.name.toUpperCase()} LEARNED`, 'crit');
+    this.deps.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.9, flat: true, fps: 20, tint: this.isSynergy(def) ? 0xffd070 : 0x9fb4e8 });
+    eventBus.emit('skills:changed', {});
+  }
+
+  private unlockPassive(id: string): void {
+    const p = this.deps.player;
+    const check = canUnlockPassive(p, id);
+    if (!check.ok) return;
+    const def = PASSIVE_BY_ID[id];
+    p.skillPoints -= skillCost(p, def);
+    p.passives.add(id);
+    p.hpMax = p.baseHpMax(); // Passives may raise the pool.
+    this.deps.sfx('skillBuff');
+    this.deps.text(p.pos.x, p.pos.y - 1.2, def.name.toUpperCase(), 'crit');
+    this.deps.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 0.9, lift: 22, fps: 16, overlay: true });
+    eventBus.emit('skills:changed', {});
+    eventBus.emit('inventory:changed', {}); // Stat readouts.
+  }
+
+  private equip(slot: number, id: string | null): void {
+    const p = this.deps.player;
+    if (slot < 0 || slot > 3) return;
+    if (id !== null && !p.unlockedSkills.has(id)) return;
+    // One skill lives in one slot.
+    if (id !== null) {
+      const prev = p.loadout.indexOf(id);
+      if (prev >= 0) p.loadout[prev] = null;
+    }
+    p.loadout[slot] = id;
+    this.cooldowns[slot] = 0;
+    this.deps.sfx('uiClick');
+    eventBus.emit('skills:changed', {});
   }
 
   private cast(slot: number): void {
     const p = this.deps.player;
     const def = this.skills[slot];
-    if (!def || p.action === 'dead') return;
+    if (p.action === 'dead') return;
+    if (!def) {
+      this.deps.text(p.pos.x, p.pos.y - 1, 'NO SKILL · K', 'miss');
+      this.deps.sfx('ui');
+      return;
+    }
     if (this.cooldowns[slot] > 0) {
       this.deps.sfx('ui');
       return;
@@ -214,8 +274,11 @@ export class SkillSystem {
       this.deps.sfx('ui');
       return;
     }
-    this.cooldowns[slot] = def.cd;
-    this.execute(def.id);
+    const synergy = this.isSynergy(def);
+    this.cooldowns[slot] = Math.round(def.cd * (synergy ? SYNERGY.cooldown : 1));
+    this.syn = synergy ? { scale: SYNERGY.power, status: def.cls } : NO_SYNERGY;
+    this.execute(def);
+    this.syn = NO_SYNERGY;
   }
 
   /** One tick of skill machinery: cooldowns, zones, DoTs, staged hits. */
@@ -225,11 +288,12 @@ export class SkillSystem {
     // Ground zones.
     const survivors: Zone[] = [];
     for (const zone of this.zones) {
+      this.syn = zone.syn;
       if (zone.kind === 'firewall') {
         zone.ticksLeft--;
         if (zone.ticksLeft % 14 === 0) {
           for (const cell of zone.cells) {
-            this.deps.burst(cell.x, cell.y, zone.ticksLeft % 28 === 0 ? 0xffb060 : 0xd85a3a, 3);
+            this.deps.burst(cell.x, cell.y, zone.ticksLeft % 28 === 0 ? 0xffb060 : 0xd85a3a, 2);
             for (const foe of this.deps.enemiesNear(cell.x, cell.y, 0.9)) {
               this.damage(foe, 3, 6, 0, 0);
             }
@@ -251,14 +315,10 @@ export class SkillSystem {
           zone.dispose();
           this.deps.sfx('skillTrap');
           this.deps.shake(0.45);
-          this.deps.burst(zone.x, zone.y, 0xffd98a, 26);
-          this.deps.burst(zone.x, zone.y, 0xffb060, 20);
-          this.deps.burst(zone.x, zone.y, 0xd85a3a, 14);
+          this.deps.vfx('vfx_explosion', zone.x, zone.y, { scale: 1.6, lift: 26, fps: 24 });
+          this.deps.vfx('vfx_ring', zone.x, zone.y, { scale: 1.2, flat: true, fps: 22, tint: 0xffc070 });
+          this.deps.burst(zone.x, zone.y, 0xffd98a, 16);
           this.deps.glint(zone.x, zone.y);
-          for (let i = 0; i < 8; i++) {
-            const a = (i / 8) * Math.PI * 2;
-            this.deps.burst(zone.x + Math.cos(a) * 1.4, zone.y + Math.sin(a) * 1.4, 0xd85a3a, 4);
-          }
           for (const foe of this.deps.enemiesNear(zone.x, zone.y, 1.9)) {
             this.damage(foe, 18, 28, foe.pos.x - zone.x, foe.pos.y - zone.y, 0.8);
           }
@@ -278,6 +338,7 @@ export class SkillSystem {
             const a = this.rand() * Math.PI * 2;
             const r = this.rand() * 1.8;
             this.deps.burst(zone.x + Math.cos(a) * r, zone.y + Math.sin(a) * r, 0xd8cfa8, 3);
+            if (i < 3) this.deps.vfx('vfx_strike', zone.x + Math.cos(a) * r, zone.y + Math.sin(a) * r, { scale: 0.45, lift: 30, fps: 30, rotation: Math.PI / 2 + 0.6, tint: 0xd8e0f0 });
           }
           for (const foe of this.deps.enemiesNear(zone.x, zone.y, 2.0)) {
             this.damage(foe, 6, 10, 0, 0);
@@ -287,24 +348,12 @@ export class SkillSystem {
         else zone.dispose();
       }
     }
+    this.syn = NO_SYNERGY;
     this.zones = survivors;
 
-    // Poison DoT.
-    for (const [id, poison] of this.poisons) {
-      poison.ticksLeft--;
-      poison.nextBite--;
-      if (poison.nextBite <= 0) {
-        poison.nextBite = 30;
-        const foe = this.deps.enemiesNear(this.deps.player.pos.x, this.deps.player.pos.y, 40).find((e) => e.id === id);
-        if (!foe || foe.hp <= 0) {
-          this.poisons.delete(id);
-          continue;
-        }
-        this.deps.combat().dealDamage({ sourceId: this.deps.player.id, targetId: id, amount: 3 });
-        this.deps.burst(foe.pos.x, foe.pos.y, 0x86c85a, 4);
-      }
-      if (poison.ticksLeft <= 0) this.poisons.delete(id);
-    }
+    // DoTs: poison (green) and burn (ember).
+    this.tickDot(this.poisons, 3, 30, 0x86c85a);
+    this.tickDot(this.burns, 2, 20, 0xff9040);
 
     // Blade Flurry follow-up cuts.
     if (this.flurry) {
@@ -314,9 +363,12 @@ export class SkillSystem {
         const foe = this.deps.enemiesNear(p.pos.x, p.pos.y, 2.0).find((e) => e.id === this.flurry!.targetId);
         if (foe && foe.hp > 0) {
           const prof = p.weaponProfile;
+          this.syn = this.flurry.syn;
           this.damage(foe, Math.round(prof.minDamage * 0.8), Math.round(prof.maxDamage * 0.8), foe.pos.x - p.pos.x, foe.pos.y - p.pos.y, 0.15);
+          this.syn = NO_SYNERGY;
           this.deps.sfx('swing');
           p.showSlash('hit');
+          this.deps.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.55, lift: 22, fps: 30, rotation: this.rand() * Math.PI * 2, tint: 0xffffff, overlay: true });
           this.flurry.hitsLeft--;
           this.flurry.nextHit = 11;
           if (this.flurry.hitsLeft <= 0) this.flurry = null;
@@ -327,17 +379,58 @@ export class SkillSystem {
     }
   }
 
-  /** Roll + deliver skill damage through the one legal channel. */
+  private tickDot(map: Map<number, { ticksLeft: number; nextBite: number }>, dmg: number, period: number, color: number): void {
+    for (const [id, dot] of map) {
+      dot.ticksLeft--;
+      dot.nextBite--;
+      if (dot.nextBite <= 0) {
+        dot.nextBite = period;
+        const foe = this.deps.enemiesNear(this.deps.player.pos.x, this.deps.player.pos.y, 40).find((e) => e.id === id);
+        if (!foe || foe.hp <= 0) {
+          map.delete(id);
+          continue;
+        }
+        this.deps.combat().dealDamage({ sourceId: this.deps.player.id, targetId: id, amount: dmg });
+        this.deps.burst(foe.pos.x, foe.pos.y, color, 4);
+      }
+      if (dot.ticksLeft <= 0) map.delete(id);
+    }
+  }
+
+  /** Roll + deliver skill damage through the one legal channel (synergy-scaled + class status). */
   private damage(foe: Enemy, min: number, max: number, kx: number, ky: number, knock = 0.4): void {
     const len = Math.hypot(kx, ky) || 1;
+    const amount = Math.max(1, Math.round(randInt(this.rand, min, max) * this.syn.scale));
     this.deps.combat().dealDamage({
       sourceId: this.deps.player.id,
       targetId: foe.id,
-      amount: randInt(this.rand, min, max),
+      amount,
       knockX: kx / len,
       knockY: ky / len,
       knockDist: knock,
     });
+    if (!this.syn.status || foe.hp <= 0) return;
+    const boss = foe.def.kind.startsWith('boss');
+    switch (this.syn.status) {
+      case 'mage':
+        this.burns.set(foe.id, { ticksLeft: 180, nextBite: 20 });
+        break;
+      case 'rogue':
+        this.poisons.set(foe.id, { ticksLeft: 160, nextBite: 25 });
+        break;
+      case 'warrior':
+        if (!boss) {
+          foe.action = 'hit';
+          foe.actionTicks = Math.max(foe.actionTicks, 18);
+        }
+        break;
+      case 'ranger':
+        if (!boss) {
+          foe.action = 'hit';
+          foe.actionTicks = Math.max(foe.actionTicks, 10);
+        }
+        break;
+    }
   }
 
   /**
@@ -363,21 +456,22 @@ export class SkillSystem {
     }
   }
 
-  private execute(id: string): void {
+  private execute(def: SkillDef): void {
     const p = this.deps.player;
     const prof = p.weaponProfile;
     const d = this.deps;
-    switch (id) {
+    const syn = this.syn;
+    switch (def.id) {
       // ---- WARRIOR ----
       case 'whirlwind': {
         d.sfx('skillWhirl');
         d.shake(0.3);
         p.showSlash('crit');
-        // Double steel ring: an inner flash and an outer trailing arc.
+        d.vfx('vfx_vortex', p.pos.x, p.pos.y, { scale: 1.7, lift: 14, fps: 26, tint: syn.status ? 0xffd090 : 0xd8d8e8 });
+        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.0, flat: true, fps: 24, tint: 0xd8cfc0, alpha: 0.7 });
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
-          d.burst(p.pos.x + Math.cos(a) * 1.0, p.pos.y + Math.sin(a) * 1.0, 0xfff1d8, 3);
-          d.burst(p.pos.x + Math.cos(a + 0.26) * 1.9, p.pos.y + Math.sin(a + 0.26) * 1.9, 0xd8cfc0, 4);
+          d.burst(p.pos.x + Math.cos(a + 0.26) * 1.9, p.pos.y + Math.sin(a + 0.26) * 1.9, 0xd8cfc0, 3);
         }
         for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 2.2)) {
           this.damage(foe, Math.round(prof.minDamage * 1.4), Math.round(prof.maxDamage * 1.4), foe.pos.x - p.pos.x, foe.pos.y - p.pos.y, 0.7);
@@ -386,9 +480,10 @@ export class SkillSystem {
       }
       case 'charge': {
         d.sfx('skillDash');
-        this.takeAim(); // Charge where the cursor points (it.33).
+        const aim = this.takeAim(); // Charge where the cursor points (it.33).
         const sx = p.pos.x;
         const sy = p.pos.y;
+        d.vfx('vfx_ring', sx, sy, { scale: 0.7, flat: true, fps: 26, tint: 0xd8b070, alpha: 0.8 });
         this.dash(4);
         d.shake(0.25);
         const hit = new Set<number>();
@@ -397,6 +492,7 @@ export class SkillSystem {
           const px = sx + ((p.pos.x - sx) * i) / steps;
           const py = sy + ((p.pos.y - sy) * i) / steps;
           if (i % 2 === 0) d.burst(px, py, 0xc8b090, 3);
+          if (i % 4 === 2) d.vfx('vfx_strike', px, py, { scale: 0.7, lift: 18, fps: 28, rotation: SkillSystem.screenAngle(aim) + Math.PI, tint: 0xe8d0a0, alpha: 0.85 });
           for (const foe of d.enemiesNear(px, py, 1.1)) {
             if (hit.has(foe.id)) continue;
             hit.add(foe.id);
@@ -409,41 +505,60 @@ export class SkillSystem {
         d.sfx('skillShout');
         d.shake(0.2);
         p.dmgBuffTicks = 600;
-        p.dmgBuffMult = 1.35;
+        p.dmgBuffMult = syn.status ? 1.45 : 1.35;
         d.text(p.pos.x, p.pos.y - 1.2, 'WAR CRY!', 'crit');
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2;
-          d.burst(p.pos.x + Math.cos(a) * 0.9, p.pos.y + Math.sin(a) * 0.9, 0xffd98a, 4);
-        }
+        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.5, flat: true, fps: 22, tint: 0xffb060 });
+        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.0, lift: 22, fps: 18, tint: 0xffc080, overlay: true });
         break;
       }
       case 'stoneskin': {
         d.sfx('skillBuff');
         p.drTicks = 420;
-        p.drFrac = 0.55;
+        p.drFrac = syn.status ? 0.65 : 0.55;
         d.text(p.pos.x, p.pos.y - 1.2, 'STONE SKIN', 'miss');
-        d.burst(p.pos.x, p.pos.y, 0xb0a898, 16);
+        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.0, lift: 22, fps: 16, tint: 0xb0a898, overlay: true });
+        d.burst(p.pos.x, p.pos.y, 0xb0a898, 10);
         break;
       }
       // ---- MAGE ----
       case 'fireball': {
-        // AIMED (it.33/38): the burst lands on the nearest foe along the
-        // aim cone, else exactly where the cursor points.
+        // A REAL PROJECTILE (it.41): the comet flies along the aim and
+        // bursts on the first foe or at the aim point, dealing area damage.
         const aim = this.takeAim();
-        const { x: tx, y: ty } = this.aimTarget(aim, 7, 1, 4);
+        const { x: tx, y: ty } = this.aimTarget(aim, 7, 1.2, 4);
         d.sfx('skillFire');
-        d.shake(0.3);
-        d.burst(tx, ty, 0xfff1d8, 10);
-        d.burst(tx, ty, 0xffb060, 22);
-        d.burst(tx, ty, 0xd85a3a, 14);
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2;
-          d.burst(tx + Math.cos(a) * 1.5, ty + Math.sin(a) * 1.5, 0xd85a3a, 3);
-        }
-        d.glint(tx, ty);
-        for (const victim of d.enemiesNear(tx, ty, 1.8)) {
-          this.damage(victim, Math.round(prof.minDamage * 1.8), Math.round(prof.maxDamage * 1.8), victim.pos.x - tx, victim.pos.y - ty, 0.6);
-        }
+        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.6, flat: true, fps: 28, tint: 0xff9040, alpha: 0.8 });
+        const dist = Math.hypot(tx - p.pos.x, ty - p.pos.y);
+        const dmgMin = Math.round(prof.minDamage * 1.8);
+        const dmgMax = Math.round(prof.maxDamage * 1.8);
+        const spawn: ProjectileSpawn = {
+          faction: 'player',
+          kind: 'fireball',
+          sourceId: p.id,
+          x: p.pos.x,
+          y: p.pos.y,
+          targetX: tx,
+          targetY: ty,
+          minDamage: dmgMin,
+          maxDamage: dmgMax,
+          toHit: 1,
+          tint: 0xffb060,
+          maxTravel: dist + 0.15,
+          onImpact: (ix, iy) => {
+            this.syn = syn;
+            d.shake(0.3);
+            d.sfx('boltImpact');
+            d.vfx('vfx_explosion', ix, iy, { scale: 1.5, lift: 24, fps: 26 });
+            d.vfx('vfx_ring', ix, iy, { scale: 1.1, flat: true, fps: 24, tint: 0xff9040 });
+            d.burst(ix, iy, 0xffb060, 12);
+            d.glint(ix, iy);
+            for (const victim of d.enemiesNear(ix, iy, 1.8)) {
+              this.damage(victim, dmgMin, dmgMax, victim.pos.x - ix, victim.pos.y - iy, 0.6);
+            }
+            this.syn = NO_SYNERGY;
+          },
+        };
+        d.combat().fireProjectile?.(spawn);
         break;
       }
       case 'firewall': {
@@ -461,22 +576,25 @@ export class SkillSystem {
           cells,
           ticksLeft: 360,
           dispose: () => disposers.forEach((fn) => fn()),
+          syn,
         });
-        for (const cell of cells) d.burst(cell.x, cell.y, 0xffb060, 8);
+        for (const cell of cells) d.burst(cell.x, cell.y, 0xffb060, 6);
+        d.vfx('vfx_ring', cx, cy, { scale: 1.3, flat: true, fps: 24, tint: 0xff9040, alpha: 0.8 });
         break;
       }
       case 'frostnova': {
         d.sfx('freeze');
         d.shake(0.25);
+        d.vfx('vfx_splash', p.pos.x, p.pos.y, { scale: 2.2, lift: 10, fps: 16, tint: 0xbfe6ff });
+        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 1.9, flat: true, fps: 22, tint: 0x9fd4f0 });
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
-          d.burst(p.pos.x + Math.cos(a) * 1.2, p.pos.y + Math.sin(a) * 1.2, 0xe8f4ff, 3);
-          d.burst(p.pos.x + Math.cos(a) * 2.4, p.pos.y + Math.sin(a) * 2.4, 0x9fd4f0, 5);
+          d.burst(p.pos.x + Math.cos(a) * 2.4, p.pos.y + Math.sin(a) * 2.4, 0x9fd4f0, 4);
         }
         for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 3)) {
           if (foe.hitRecoveryTicks === 0 && foe.def.kind.startsWith('boss')) continue; // Wardens shrug it off.
           foe.action = 'hit';
-          foe.actionTicks = 110; // Frozen solid.
+          foe.actionTicks = syn.status ? 140 : 110; // Frozen solid.
           this.damage(foe, 4, 8, 0, 0);
         }
         d.text(p.pos.x, p.pos.y - 1.2, 'FROST NOVA', 'crit');
@@ -485,9 +603,10 @@ export class SkillSystem {
       case 'intellect': {
         d.sfx('skillBuff');
         p.dmgBuffTicks = 900;
-        p.dmgBuffMult = 1.45;
+        p.dmgBuffMult = syn.status ? 1.55 : 1.45;
         d.glint(p.pos.x, p.pos.y);
-        d.burst(p.pos.x, p.pos.y, 0xb8a8f0, 18);
+        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.1, lift: 24, fps: 18, tint: 0xb8a8f0, overlay: true });
+        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.0, flat: true, fps: 22, tint: 0x9f8fe8 });
         d.text(p.pos.x, p.pos.y - 1.2, 'ARCANE MIGHT', 'crit');
         break;
       }
@@ -497,6 +616,7 @@ export class SkillSystem {
         const combat = d.combat();
         const aim = this.takeAim();
         const base = Math.atan2(aim.y, aim.x);
+        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.55, flat: true, fps: 30, tint: 0xd8e8c0, alpha: 0.7 });
         for (let i = -2; i <= 2; i++) {
           const a = base + i * 0.21;
           combat.fireProjectile?.({
@@ -507,8 +627,8 @@ export class SkillSystem {
             y: p.pos.y,
             targetX: p.pos.x + Math.cos(a) * 6,
             targetY: p.pos.y + Math.sin(a) * 6,
-            minDamage: prof.minDamage,
-            maxDamage: prof.maxDamage,
+            minDamage: Math.round(prof.minDamage * syn.scale),
+            maxDamage: Math.round(prof.maxDamage * syn.scale),
             toHit: 0.85,
             tint: prof.color,
           });
@@ -518,12 +638,13 @@ export class SkillSystem {
       case 'shadowstep': {
         d.sfx('skillDash');
         this.takeAim(); // Step toward the cursor (it.33).
-        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 12);
-        d.burst(p.pos.x, p.pos.y, 0x4a4458, 8);
+        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 0.8, flat: true, fps: 30, tint: 0x8a86c0, alpha: 0.8 });
+        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
         this.dash(3.2);
         p.hasteTicks = 240;
-        p.hasteMult = 1.35;
-        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 12);
+        p.hasteMult = syn.status ? 1.45 : 1.35;
+        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 0.8, flat: true, fps: 30, tint: 0x8a86c0, alpha: 0.8 });
+        d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
         break;
       }
       case 'trap': {
@@ -531,7 +652,7 @@ export class SkillSystem {
         // VISIBLE FLOOR OBJECT (it.33): a gold rune sits armed on the tile
         // until something steps into it (or it expires).
         const dispose = d.zoneVisual('trap', p.pos.x, p.pos.y);
-        this.zones.push({ kind: 'trap', x: p.pos.x, y: p.pos.y, armTicks: 40, ticksLeft: 1200, dispose });
+        this.zones.push({ kind: 'trap', x: p.pos.x, y: p.pos.y, armTicks: 40, ticksLeft: 1200, dispose, syn });
         d.burst(p.pos.x, p.pos.y, 0xc8b060, 8);
         d.text(p.pos.x, p.pos.y - 1, 'TRAP SET', 'miss');
         break;
@@ -541,7 +662,8 @@ export class SkillSystem {
         const { x: tx, y: ty } = this.aimTarget(aim, 7, 1, 4);
         d.sfx('skillArrows');
         const dispose = d.zoneVisual('rain', tx, ty);
-        this.zones.push({ kind: 'rain', x: tx, y: ty, wavesLeft: 5, nextWave: 12, dispose });
+        this.zones.push({ kind: 'rain', x: tx, y: ty, wavesLeft: 5, nextWave: 12, dispose, syn });
+        d.vfx('vfx_ring', tx, ty, { scale: 1.4, flat: true, fps: 20, tint: 0xd8e0f0, alpha: 0.7 });
         d.text(tx, ty - 1, 'RAIN OF ARROWS', 'crit');
         break;
       }
@@ -551,37 +673,36 @@ export class SkillSystem {
         if (!foe) {
           d.text(p.pos.x, p.pos.y - 1, 'NO TARGET', 'miss');
           // Refund: an empty flurry costs nothing (cd stays as the price).
-          p.resource = Math.min(p.resourceMax, p.resource + this.skills[0].cost);
+          p.resource = Math.min(p.resourceMax, p.resource + def.cost);
           break;
         }
         d.sfx('swing');
         p.showSlash('hit');
+        d.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.55, lift: 22, fps: 30, rotation: 0.4, overlay: true });
         this.damage(foe, Math.round(prof.minDamage * 0.8), Math.round(prof.maxDamage * 0.8), foe.pos.x - p.pos.x, foe.pos.y - p.pos.y, 0.15);
-        this.flurry = { targetId: foe.id, hitsLeft: 3, nextHit: 11 };
+        this.flurry = { targetId: foe.id, hitsLeft: 3, nextHit: 11, syn };
         break;
       }
       case 'poison': {
         d.sfx('skillPoison');
         p.poisonBladeTicks = 900;
-        d.burst(p.pos.x, p.pos.y, 0x86c85a, 14);
+        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 0.9, lift: 22, fps: 18, tint: 0x86c85a, overlay: true });
+        d.burst(p.pos.x, p.pos.y, 0x86c85a, 10);
         d.text(p.pos.x, p.pos.y - 1.2, 'BLADES ENVENOMED', 'crit');
         break;
       }
       case 'vanish': {
         d.sfx('skillVanish');
-        p.stealthTicks = 300;
-        d.burst(p.pos.x, p.pos.y, 0x6a6480, 24);
-        d.burst(p.pos.x, p.pos.y, 0x2c2838, 14);
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * Math.PI * 2;
-          d.burst(p.pos.x + Math.cos(a) * 0.8, p.pos.y + Math.sin(a) * 0.8, 0x8a86a0, 3);
-        }
+        p.stealthTicks = syn.status ? 360 : 300;
+        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 1.1, flat: true, fps: 26, tint: 0x5a5478 });
+        d.vfx('vfx_splash', p.pos.x, p.pos.y, { scale: 1.2, lift: 18, fps: 18, tint: 0x6a6480, alpha: 0.8 });
+        d.burst(p.pos.x, p.pos.y, 0x6a6480, 16);
         d.text(p.pos.x, p.pos.y - 1.2, 'VANISH', 'miss');
         break;
       }
       case 'shadowslash': {
         d.sfx('skillDash');
-        this.takeAim(); // Cut along the cursor line (it.33).
+        const aim = this.takeAim(); // Cut along the cursor line (it.33).
         const sx = p.pos.x;
         const sy = p.pos.y;
         this.dash(3);
@@ -595,9 +716,11 @@ export class SkillSystem {
           for (const foe of d.enemiesNear(px, py, 1.1)) {
             if (hit.has(foe.id)) continue;
             hit.add(foe.id);
+            d.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.7, lift: 22, fps: 30, rotation: SkillSystem.screenAngle(aim), tint: 0xc0a8ff, overlay: true });
             this.damage(foe, Math.round(prof.minDamage * 1.8), Math.round(prof.maxDamage * 1.8), p.facing.x, p.facing.y, 0.5);
           }
         }
+        d.vfx('vfx_strike', p.pos.x, p.pos.y, { scale: 0.8, lift: 18, fps: 30, rotation: SkillSystem.screenAngle(aim) + Math.PI, tint: 0xb0a0e8 });
         break;
       }
     }

@@ -12,7 +12,7 @@
 
 import type { ClassArchetype, EquipmentSlot } from '@/network/Serialization';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const SAVE_SLOTS = 3;
 const KEY = (slot: number): string => `iso-arpg-save-${slot}`;
 
@@ -45,6 +45,11 @@ export interface PlayerSave {
   resource: number;
   backpack: string[];
   equipped: Array<{ slot: EquipmentSlot; itemId: string }>;
+  /** Progression (it.41, save v2). */
+  skillPoints: number;
+  unlocked: string[];
+  loadout: Array<string | null>;
+  passives: string[];
 }
 
 export interface SaveGame {
@@ -81,7 +86,18 @@ function readRaw(slot: number): SaveGame | null {
     const raw = localStorage.getItem(KEY(slot));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SaveGame>;
-    if (parsed.version !== SAVE_VERSION || !parsed.player || !parsed.stash) return null;
+    const ver = (parsed as { version?: number }).version;
+    if (!parsed.player || !parsed.stash) return null;
+    if (ver === 1) {
+      // v1 → v2: a hero saved before the skill tree gets one point per level.
+      const pl = parsed.player as Partial<PlayerSave>;
+      pl.skillPoints = Math.max(1, pl.level ?? 1);
+      pl.unlocked = [];
+      pl.loadout = [null, null, null, null];
+      pl.passives = [];
+      parsed.version = SAVE_VERSION;
+    }
+    if (parsed.version !== SAVE_VERSION) return null;
     return parsed as SaveGame;
   } catch {
     return null;

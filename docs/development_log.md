@@ -1,5 +1,95 @@
 # Development Log
 
+## 2026-09-02 (iteration 41) - Skill tree + progression, cross-class synergy, animated spell VFX, draggable windows, E toggles, HUD cleanup
+
+### Asset audit (`public/assets/test-models`, third upload: 884 PNG, 205 MB)
+- KEEP -> 12 single-direction strips baked into `atlas/vfx_*.png` (union
+  alpha crop, Lanczos, centred in square cells): `vfx_fireball` (the
+  oriented comet, 15 f/96), `vfx_explosion` (fire_explosion every 3rd,
+  25 f/96), `vfx_burst` (5 f/96), `vfx_firewall` (fire_wall every 3rd,
+  24 f/80, loops), `vfx_ring` (FirePortal, 15 f/128), `vfx_vortex`
+  (15 f/96), `vfx_splash` (WaterSplash, 8 f/96), `vfx_whirl` (Whirlpool,
+  15 f/128), `vfx_slash` (WaterSlash, 10 f/96), `vfx_aura` (15 f/96),
+  `vfx_orb` (fire Orb, 15 f/48), `vfx_strike` (fire_strike every 2nd,
+  15 f/96). 1.36 MB total; every floor preloads them.
+- REJECT: the `_high` 1000 px duplicates, the 30 FPS sheets (three times
+  the frames for no visible gain at 60 Hz render), the pixel "explosion
+  pack 1" (chunky 32-192 px style against the painterly game),
+  Flamethrower / Kamehameha / lavafall / waterfall / fountain / torch /
+  canalisation / circle and waterball sheets (nothing casts them), the
+  GIF previews, PDFs, __MACOSX and .DS_Store junk. Folder deleted after QA.
+
+### Progression (`systems/SkillTree.ts`, `entities/Player.ts`)
+- Heroes start with basic attacks, ONE skill point, and an empty hotbar;
+  every level grants one point (the cheat level jump grants the
+  difference). `Player.skillPoints / unlockedSkills / loadout / passives`
+  are hero state and persist (save v2; v1 slots migrate with one point
+  per level).
+- Four class paths x four tiers (level 1 / 3 / 5 / 7, each tier needs the
+  previous one on that path) plus two passives per class (level 4 + one
+  active of that class): Iron Hide +3 armor, Blood Rush +10% dmg,
+  Wellspring +40% regen, Emberheart +12% dmg, Fleet Foot +8% speed, Keen
+  Eye +12% dmg, Sleight +8% dodge, Second Wind +35% regen - read by the
+  Player getters (`passiveBonus`).
+- CROSS-CLASS: any path may be learned at double point cost.
+- SYNERGY: a skill on the hero's own path casts at +30% power, 20% shorter
+  cooldown, and every hit lays the class status - warrior STAGGER (18-tick
+  hit stun), mage BURN (2 dmg / 20 ticks for 3 s), ranger HOBBLE (10-tick
+  stun), rogue POISON (existing DoT). Delayed effects (zones, flurry cuts,
+  the fireball's impact) carry the synergy they were cast with.
+- Commands (determinism rule intact): `UNLOCK_SKILL`, `UNLOCK_PASSIVE`,
+  `EQUIP_SKILL {slot, id|null}` applied by SkillSystem inside the tick;
+  `skills:changed` re-renders the tree, the sheet and the hotbar.
+  The first learned skill auto-fills the first empty slot.
+
+### Skill tree window (`ui/SkillTree.ts`, K) + character sheet (`ui/CharacterSheet.ts`, C)
+- Own path first and flagged; nodes read LEARNED / READY / LOCKED (with the
+  reason: level, prerequisite, points), show cost, and learned actives
+  carry a 1-2-3-4 picker; the footer hotbar accepts a selected skill or
+  clears a slot. Empty hotbar slots show "+" and point at K.
+- Character sheet: progress, vitals, offense (damage with every
+  multiplier), defense, hotbar, passives, running buffs; refreshed each
+  second while open.
+
+### Spell VFX (`render/Vfx.ts`)
+- `VfxSystem.play(anim, x, y, {fps, scale, tint, loop, lift, rotation,
+  flat, overlay, depthBias})`: strips in the depth-sorted object layer
+  (or the ambience overlay), additive, one-shots fade over their last
+  third, loops run until stopped. `SkillDeps.vfx` is the only way in.
+- FIREBALL is now a real projectile (`kind: 'fireball'`, animated comet
+  head, ember trail) that detonates on the first foe or at the aim point
+  through `ProjectileSpawn.onImpact` (area damage inside the tick) with
+  the explosion strip + ground ring. Wand bolts fly the animated orb and
+  burst on impact. Firewall cells loop the fire_wall strip; frost nova =
+  splash + whirl ring; whirlwind = vortex; charge / rain / shadow slash
+  = strike streaks; buffs = aura; flurry / slash = oriented cut arcs;
+  trap detonation = explosion + ring; learning a skill rings the hero.
+
+### Draggable windows (`ui/draggable.ts`)
+- Any panel header with `.drag-handle` drags its window (pointer capture
+  on the panel so re-rendered headers keep working; buttons in the header
+  still click), clamped to the viewport, position remembered per window
+  in `iso-arpg-ui-pos`. Wired: inventory, merchant, stash, skill tree,
+  character sheet, cheat menu.
+
+### E key symmetry + HUD cleanup
+- E with the merchant / stash window open closes it; E beside the portal
+  stone returns through it and E at the gate descends (no need to step in).
+- Boss phase notes and the depth banner are top-anchored under the boss
+  bar (`#boss-note` 96 px, `#descend-note` 60 px, sub-line 98 px).
+- Overhead enemy HP bars are slimmer (26x4) and, with the level plaque and
+  floating damage numbers, scale by 1/zoom (clamped) so a deep zoom never
+  fills the view with bars and text (`Enemy.hudScale`, `DamageText.setZoom`).
+
+### Live QA (Chrome, stepped sim)
+Fresh mage -> K: only Fireball READY, all else LOCKED with reasons ->
+learn (1 pt -> 0, auto slot 1, synergy frame) -> drag the tree 161x44 px,
+off-screen drag clamped, position stored -> level 7 (6 pts) -> Whirlwind
+cross-class 2 pts + Firewall 1 pt -> 3 left; Whirlwind moved to slot 4 ->
+E at the stall opens, E again closes -> fireball in town: comet + ring,
+cooldown 148 (200 x 0.8 synergy) -> floor 1: fireball on a foe, burn ticks
+after impact -> zoom 2.2: bars/numbers hold size -> zero console errors.
+
 ## 2026-09-02 (iteration 40) - Town redesign, market square, camp heroes, buyback, skill art, level cheat
 
 ### Asset re-audit (`public/assets/test-models`, second upload: 499 files, 44 MB)

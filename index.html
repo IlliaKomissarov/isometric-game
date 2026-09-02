@@ -594,11 +594,11 @@
         position: fixed;
         left: 0;
         right: 0;
-        top: 34%;
+        top: 96px; /* TOP-ANCHORED (it.41): under the boss bar, never over the fight. */
         text-align: center;
         font-family: 'Cinzel', 'Georgia', serif;
         font-weight: 700;
-        font-size: 38px;
+        font-size: 26px;
         letter-spacing: 0.32em;
         color: var(--gold);
         text-shadow: 0 0 26px rgba(200, 165, 88, 0.7), 0 2px 6px #000;
@@ -807,7 +807,7 @@
         position: fixed;
         left: 0;
         right: 0;
-        top: calc(34% + 52px);
+        top: 98px; /* Under the top-anchored note (it.41). */
         text-align: center;
         font-family: 'IM Fell English', 'Georgia', serif;
         font-style: italic;
@@ -1238,11 +1238,11 @@
         position: fixed;
         left: 0;
         right: 0;
-        top: 34%;
+        top: 60px; /* TOP-ANCHORED (it.41). */
         text-align: center;
         font-family: 'Cinzel', 'Georgia', serif;
         font-weight: 700;
-        font-size: 34px;
+        font-size: 26px;
         letter-spacing: 0.3em;
         color: var(--gold);
         text-shadow:
@@ -2349,6 +2349,122 @@
       .cheat-level-grid button:hover, .cheat-level-steps button:hover { border-color: var(--frame-gold); }
       .cheat-level-grid button.lit { border-color: var(--frame-gold-hi); color: var(--frame-gold-hi); box-shadow: 0 0 10px rgba(200, 165, 88, 0.35); }
       .cheat-hero-note { font-family: 'IM Fell English', serif; font-style: italic; font-size: 11px; color: #7d7466; }
+
+      /* ===================================================================
+         IT.41 — SKILL TREE, CHARACTER SHEET, DRAGGABLE WINDOWS, HUD CLEANUP
+         =================================================================== */
+      .drag-handle { cursor: move; user-select: none; }
+      .dragging { opacity: 0.92; }
+      .skill-slot.empty .skill-glyph.skill-empty { color: #4a4254; font-size: 30px; }
+      .skill-slot.synergy { box-shadow: inset 0 0 0 1px var(--frame-gold-hi), inset 0 0 18px rgba(0, 0, 0, 0.85), 0 0 16px rgba(200, 165, 88, 0.35); }
+      #skill-tree, #char-sheet {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        display: none;
+        flex-direction: column;
+        padding: 12px 16px 12px;
+        background: var(--panel-bg);
+        border: 2px solid var(--frame-iron);
+        box-shadow: inset 0 0 0 1px var(--frame-gold), inset 0 0 40px rgba(0, 0, 0, 0.75), 0 0 0 1px #000, 0 12px 60px rgba(0, 0, 0, 0.95);
+        z-index: 36;
+        color: var(--ink);
+      }
+      #skill-tree { width: min(1180px, 96vw); max-height: 92vh; }
+      #char-sheet { width: 520px; max-height: 88vh; overflow: auto; }
+      #skill-tree.open, #char-sheet.open { display: flex; }
+      .st-head, .cs-head {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line, #3b3244);
+        margin-bottom: 8px;
+      }
+      .st-head h3, .cs-head h3 { margin: 0; font-family: 'Cinzel', serif; font-size: 15px; letter-spacing: 0.28em; color: var(--frame-gold-hi); text-shadow: 0 1px 3px #000; }
+      .st-points { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.12em; color: #ffd070; font-weight: 700; }
+      .st-level, .cs-class { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.12em; color: var(--ink-dim); margin-left: auto; }
+      .st-head .tp-close, .cs-head .tp-close { margin-left: 8px; }
+      .st-synergy { font-family: 'IM Fell English', serif; font-style: italic; font-size: 12.5px; color: var(--ink-dim); margin-bottom: 8px; }
+      .st-synergy b { color: #ffd070; font-style: normal; }
+      .st-cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; overflow: auto; min-height: 0; }
+      .st-col { border: 1px solid var(--frame-iron); background: rgba(0, 0, 0, 0.25); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+      .st-col-own { border-color: var(--frame-gold); box-shadow: inset 0 0 22px rgba(200, 165, 88, 0.08); }
+      .st-col h4 { margin: 0 0 4px; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.24em; color: var(--ink); display: flex; flex-direction: column; gap: 2px; }
+      .st-col h4 i { font-family: 'IM Fell English', serif; font-style: italic; font-size: 10.5px; letter-spacing: 0.04em; color: #9fb4e8; }
+      .st-col-own h4 i { color: #ffd070; }
+      .st-passive-head { margin-top: 4px; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.24em; color: #7d7466; }
+      .st-node {
+        position: relative;
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        grid-template-rows: auto auto;
+        column-gap: 8px;
+        padding: 7px 8px 7px;
+        border: 1px solid var(--frame-iron);
+        background: linear-gradient(180deg, rgba(38, 30, 46, 0.9), rgba(14, 11, 18, 0.95));
+        cursor: pointer;
+        transition: border-color 0.12s ease, box-shadow 0.12s ease;
+      }
+      .st-node:hover { border-color: var(--frame-gold); }
+      .st-node.st-learned { border-color: var(--frame-gold); }
+      .st-node.st-ready { border-color: #6f9a5a; box-shadow: 0 0 12px rgba(110, 170, 90, 0.25); }
+      .st-node.st-ready:hover { box-shadow: 0 0 16px rgba(110, 170, 90, 0.45); }
+      .st-node.st-locked { opacity: 0.62; cursor: not-allowed; }
+      .st-node.picking { box-shadow: 0 0 0 2px #ffd070, 0 0 18px rgba(255, 208, 112, 0.5); }
+      .st-tier { grid-column: 1 / -1; font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.18em; color: #7d7466; margin-bottom: 4px; }
+      .st-icon { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; border: 1px solid var(--frame-iron); background: #0b0910; box-shadow: inset 0 0 8px #000; }
+      .st-glyph { display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--frame-gold-hi); }
+      .st-locked .st-icon { filter: grayscale(0.85) brightness(0.6); }
+      .st-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+      .st-text b { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.06em; color: var(--ink); }
+      .st-text span { font-family: 'IM Fell English', serif; font-style: italic; font-size: 11px; color: var(--ink-dim); line-height: 1.25; }
+      .st-text em { font-family: 'Cinzel', serif; font-style: normal; font-size: 9.5px; letter-spacing: 0.1em; color: #9fb4e8; margin-top: 2px; }
+      .st-ready .st-text em { color: #9fd08a; }
+      .st-learned .st-text em { color: #ffd070; }
+      .st-slots { grid-column: 1 / -1; display: flex; gap: 4px; margin-top: 6px; }
+      .st-slot {
+        flex: 1;
+        font-family: 'Cinzel', serif;
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--ink);
+        background: linear-gradient(180deg, #221b2c, #0f0c14);
+        border: 1px solid var(--frame-iron);
+        padding: 3px 0;
+        cursor: pointer;
+      }
+      .st-slot:hover { border-color: var(--frame-gold); }
+      .st-slot.lit { border-color: var(--frame-gold-hi); color: var(--frame-gold-hi); box-shadow: 0 0 10px rgba(200, 165, 88, 0.35); }
+      .st-bar { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line, #3b3244); }
+      .st-bar-slot {
+        position: relative;
+        width: 50px;
+        height: 50px;
+        border: 2px solid var(--frame-iron);
+        background: linear-gradient(180deg, #1b1622, #0b0910);
+        box-shadow: inset 0 0 0 1px var(--frame-gold);
+        cursor: pointer;
+        padding: 5px;
+      }
+      .st-bar-slot.target { border-color: #ffd070; box-shadow: 0 0 14px rgba(255, 208, 112, 0.5); }
+      .st-bar-slot img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+      .st-bar-slot kbd { position: absolute; top: 1px; left: 4px; font-family: 'Cinzel', serif; font-size: 10px; color: var(--ink); background: none; border: none; }
+      .st-bar-slot span { display: block; font-size: 22px; color: var(--frame-gold-hi); text-align: center; line-height: 36px; }
+      .st-bar-slot .st-empty { color: #4a4254; }
+      .st-bar-note { font-family: 'IM Fell English', serif; font-style: italic; font-size: 11.5px; color: #7d7466; margin-left: 6px; }
+      .cs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .cs-block { border: 1px solid var(--frame-iron); padding: 8px 10px; background: rgba(0, 0, 0, 0.25); }
+      .cs-wide { margin-top: 8px; }
+      .cs-block h4 { margin: 0 0 6px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.24em; color: #9fb4e8; }
+      .cs-row { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; font-family: 'IM Fell English', serif; font-size: 13px; }
+      .cs-row span { color: var(--ink-dim); flex: 1; }
+      .cs-row b { color: var(--ink); font-weight: 600; }
+      .cs-row i { color: #7d7466; font-size: 11px; }
+      .cs-empty { font-family: 'IM Fell English', serif; font-style: italic; font-size: 12px; color: #7d7466; }
+      .cs-skills { display: flex; flex-wrap: wrap; gap: 6px; }
+      .cs-skill { font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.08em; color: var(--ink); border: 1px solid var(--frame-iron); padding: 3px 8px; }
     </style>
   </head>
   <body>
@@ -2378,6 +2494,8 @@
       <div class="row"><span>Take Loot · Interact</span><kbd>E</kbd></div>
       <div class="row"><span>Potion · Mana</span><kbd>Q · R</kbd></div>
       <div class="row"><span>Inventory</span><kbd>I</kbd></div>
+      <div class="row"><span>Skill Tree</span><kbd>K</kbd></div>
+      <div class="row"><span>Character</span><kbd>C</kbd></div>
       <div class="row"><span>Map</span><kbd>M</kbd></div>
       <div class="row"><span>Depths</span><kbd>L</kbd></div>
       <div class="row"><span>Zoom the Eye</span><kbd>WHEEL</kbd></div>

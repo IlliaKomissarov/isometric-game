@@ -84,7 +84,7 @@ export class StashUI {
     const pack = p.backpack.map((id, i) => (ITEMS[id] ? row(ITEMS[id], 'data-put', i) : '')).join('');
     const stash = s.items.map((id, i) => (ITEMS[id] ? row(ITEMS[id], 'data-take', i) : '')).join('');
     this.panel.innerHTML = `
-      <div class="tp-head"><h3>THE STASH</h3><span class="tp-purse">◆ ${p.gold} carried · ◆ ${s.gold} stashed</span><button class="tp-close" data-close>✕</button></div>
+      <div class="tp-head drag-handle"><h3>THE STASH</h3><span class="tp-purse">◆ ${p.gold} carried · ◆ ${s.gold} stashed</span><button class="tp-close" data-close>✕</button></div>
       <div class="tp-cols">
         <div class="tp-col"><h4>YOUR PACK · ${p.backpack.length}</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing carried</span>'}</div></div>
         <div class="tp-col"><h4>STASH · ${s.items.length}/${STASH_CAPACITY}</h4><div class="tp-list">${stash || '<span class="tp-empty">Empty</span>'}</div></div>

@@ -325,6 +325,17 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Cheat menu HERO tab: instant level 1-30
 - [x] QA: streets, cottage entry, camp, vendor cycle, level cheat, zero console errors
 
+## Iteration 41 - Skill Tree, Cross-Class Synergy, Spell VFX, Draggable UI (2026-09-02)
+
+- [x] Third test-models upload audited: 12 VFX strips baked (fire/water packs); pixel explosions, hi-res and 30 FPS duplicates rejected; folder pruned
+- [x] Skill points (1 + 1/level), four class paths x four tiers + passives, cross-class at double cost, own-class synergy (+30% / -20% cd / class status)
+- [x] Skill tree window (K) with slot picker + hotbar footer; character sheet (C); save v2 persists progression (v1 migrates)
+- [x] Fireball is an animated projectile with area detonation; every skill got strip VFX; wand bolts animated
+- [x] Draggable windows by header (inventory, shop, stash, tree, sheet, cheat) with remembered positions
+- [x] E closes an open vendor/stash window; E takes the portal / gate
+- [x] Boss notes + depth banner top-anchored; enemy HP bars slimmer and zoom-stable; damage numbers zoom-stable
+- [x] QA: unlocks, cross-class, drag + clamp, E toggles, fireball + burn on floor 1, zoom, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

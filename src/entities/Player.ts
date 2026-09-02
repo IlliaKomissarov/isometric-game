@@ -14,6 +14,7 @@ import { assets } from '@/core/AssetManager';
 import { eventBus } from '@/core/EventBus';
 import { ITEMS, overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type WeaponKind } from '@/items/catalog';
 import type { ClassArchetype, EntitySnapshot, EquipmentSlot } from '@/network/Serialization';
+import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import { multiplyColors } from '@/utils/color';
 import { idleFrame, type LightDir } from '@/render/animUtil';
@@ -243,8 +244,28 @@ export class Player extends Entity {
   /** Poison Blade: melee hits coat targets while ticks remain. */
   poisonBladeTicks = 0;
 
+  // ---- Progression (it.41): skill points, learned skills, the hotbar ----
+  /** Unspent skill points (1 at birth, +1 per level). */
+  skillPoints = 1;
+  readonly unlockedSkills = new Set<string>();
+  /** Hotbar 1–4: learned skill ids (null = empty). */
+  readonly loadout: Array<string | null> = [null, null, null, null];
+  readonly passives = new Set<string>();
+
+  /** Sum of one passive effect across everything learned. */
+  passiveBonus(key: 'armor' | 'dmg' | 'regen' | 'speed' | 'dodge' | 'hp'): number {
+    let total = 0;
+    for (const id of this.passives) total += PASSIVE_BY_ID[id]?.effect[key] ?? 0;
+    return total;
+  }
+
+  /** Max HP the sheet should have at this level with these passives. */
+  baseHpMax(): number {
+    return ARCHETYPES[this.archetype].hpMax + 4 * (this.level - 1) + this.passiveBonus('hp');
+  }
+
   get damageMult(): number {
-    return this.dmgBuffTicks > 0 ? this.dmgBuffMult : 1;
+    return (this.dmgBuffTicks > 0 ? this.dmgBuffMult : 1) * (1 + this.passiveBonus('dmg'));
   }
 
   get damageReduction(): number {
@@ -253,7 +274,7 @@ export class Player extends Entity {
 
   get dodgeChance(): number {
     if (this.stealthTicks > 0) return 1; // Vanished: untouchable.
-    return ARCHETYPES[this.archetype].dodgeChance;
+    return Math.min(0.75, ARCHETYPES[this.archetype].dodgeChance + this.passiveBonus('dodge'));
   }
 
   get stealthed(): boolean {
@@ -305,6 +326,7 @@ export class Player extends Entity {
       this.xp -= this.xpToNext();
       this.level++;
       gained++;
+      this.skillPoints++; // One point per level (it.41).
       this.hpMax += 4;
       this.hp = Math.min(this.hpMax, this.hp + Math.round(this.hpMax * 0.25));
     }
@@ -318,9 +340,10 @@ export class Player extends Entity {
    */
   setLevel(target: number): void {
     const level = Math.max(1, Math.min(30, Math.round(target)));
+    if (level > this.level) this.skillPoints += level - this.level; // Levels bring points.
     this.level = level;
     this.xp = 0;
-    this.hpMax = ARCHETYPES[this.archetype].hpMax + 4 * (level - 1);
+    this.hpMax = this.baseHpMax();
     this.hp = this.hpMax;
   }
 
@@ -501,7 +524,7 @@ export class Player extends Entity {
     if (this.flashTicks > 0 && --this.flashTicks === 0) this.body.tint = 0xffffff;
 
     // Skill economy (it.32): resource trickles back; timed buffs burn down.
-    this.resource = Math.min(this.resourceMax, this.resource + this.resourceRegen);
+    this.resource = Math.min(this.resourceMax, this.resource + this.resourceRegen * (1 + this.passiveBonus('regen')));
     if (this.dmgBuffTicks > 0) this.dmgBuffTicks--;
     if (this.drTicks > 0) this.drTicks--;
     if (this.hasteTicks > 0) this.hasteTicks--;
@@ -720,7 +743,7 @@ export class Player extends Entity {
   }
 
   get speedMult(): number {
-    let base = ARCHETYPES[this.archetype].speedMult;
+    let base = ARCHETYPES[this.archetype].speedMult * (1 + this.passiveBonus('speed'));
     if (this.hasteTicks > 0) base *= this.hasteMult;
     return this.slowTicks > 0 ? base * 0.55 : base;
   }
@@ -759,7 +782,7 @@ export class Player extends Entity {
 
   /** Total flat damage reduction: class body + all worn armor. */
   override get armor(): number {
-    let total = ARCHETYPES[this.archetype].armorBase;
+    let total = ARCHETYPES[this.archetype].armorBase + this.passiveBonus('armor');
     for (const id of this.equipped.values()) total += ITEMS[id]?.armor ?? 0;
     return total;
   }

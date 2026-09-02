@@ -1786,6 +1786,234 @@
     "left": 28,
     "right": 66
    }
+  },
+  "vfx_fireball": {
+   "file": "vfx_fireball.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 3,
+    "bottom": 92,
+    "left": 0,
+    "right": 96
+   }
+  },
+  "vfx_explosion": {
+   "file": "vfx_explosion.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 25,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 96,
+    "left": 0,
+    "right": 96
+   }
+  },
+  "vfx_burst": {
+   "file": "vfx_burst.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 5,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 1,
+    "bottom": 94,
+    "left": 0,
+    "right": 96
+   }
+  },
+  "vfx_firewall": {
+   "file": "vfx_firewall.png",
+   "cellW": 80,
+   "cellH": 80,
+   "frameCount": 24,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 80,
+   "origH": 80,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 12,
+    "bottom": 67,
+    "left": 0,
+    "right": 80
+   }
+  },
+  "vfx_ring": {
+   "file": "vfx_ring.png",
+   "cellW": 128,
+   "cellH": 128,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 128,
+   "origH": 128,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 127,
+    "left": 0,
+    "right": 128
+   }
+  },
+  "vfx_vortex": {
+   "file": "vfx_vortex.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 96,
+    "left": 2,
+    "right": 93
+   }
+  },
+  "vfx_splash": {
+   "file": "vfx_splash.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 8,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 1,
+    "bottom": 94,
+    "left": 0,
+    "right": 96
+   }
+  },
+  "vfx_whirl": {
+   "file": "vfx_whirl.png",
+   "cellW": 128,
+   "cellH": 128,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 128,
+   "origH": 128,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 128,
+    "left": 3,
+    "right": 124
+   }
+  },
+  "vfx_slash": {
+   "file": "vfx_slash.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 10,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 96,
+    "left": 19,
+    "right": 76
+   }
+  },
+  "vfx_aura": {
+   "file": "vfx_aura.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 96,
+    "left": 15,
+    "right": 80
+   }
+  },
+  "vfx_orb": {
+   "file": "vfx_orb.png",
+   "cellW": 48,
+   "cellH": 48,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 48,
+   "origH": 48,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 48,
+    "left": 1,
+    "right": 46
+   }
+  },
+  "vfx_strike": {
+   "file": "vfx_strike.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 24,
+    "bottom": 71,
+    "left": 0,
+    "right": 96
+   }
   }
  },
  "singles": {

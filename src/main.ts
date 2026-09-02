@@ -66,6 +66,10 @@ import { buildTownLayout, type TownLayout } from '@/town/TownMap';
 import { placeTownProps, type Interactable, type Occluder } from '@/town/TownProps';
 import { Villagers } from '@/town/Villagers';
 import { CampHeroes } from '@/town/CampHeroes';
+import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
+import { SkillTreeUI } from '@/ui/SkillTree';
+import { CharacterSheetUI } from '@/ui/CharacterSheet';
+import { makeDraggable } from '@/ui/draggable';
 import { auditTownLayout } from '@/town/TownMap';
 import { TownSystem } from '@/systems/Town';
 import { ShopUI } from '@/ui/Shop';
@@ -102,6 +106,8 @@ interface World {
   playerHalo: Sprite;
   /** Floating combat numbers (per-floor: lives in the viewport's layers). */
   dmgText: DamageTextSystem;
+  /** Animated spell strips (it.41). */
+  vfx: VfxSystem;
   /** The floor's boss (every 5th depth) — stairs stay barred while it lives. */
   boss: Enemy | null;
   bossSeen: boolean;
@@ -551,6 +557,12 @@ async function boot(): Promise<void> {
       player.hpMax = loaded.player.hpMax;
       player.hp = Math.min(loaded.player.hpMax, Math.max(1, loaded.player.hp));
       player.resource = Math.min(player.resourceMax, loaded.player.resource);
+      player.skillPoints = loaded.player.skillPoints;
+      for (const id of loaded.player.unlocked) player.unlockedSkills.add(id);
+      for (const id of loaded.player.passives) player.passives.add(id);
+      loaded.player.loadout.forEach((id, i) => {
+        player.loadout[i] = id && player.unlockedSkills.has(id) ? id : null;
+      });
       for (const id of loaded.player.backpack) if (ITEMS[id]) player.addItem(id);
       for (const { itemId } of loaded.player.equipped) {
         if (!ITEMS[itemId]) continue;
@@ -937,6 +949,7 @@ async function boot(): Promise<void> {
         return out;
       };
       const projectiles = new ProjectileSystem(viewport, scene.isWalkable, player, findEnemyAt);
+      const vfx = new VfxSystem(viewport.objectLayer, viewport.ambienceLayer);
       projectiles.combat = combat;
       combat.fireProjectile = (opts) => {
         audio.sfx(opts.kind === 'bolt' ? 'bolt' : 'bow');
@@ -1218,6 +1231,7 @@ async function boot(): Promise<void> {
         targetRing,
         playerHalo,
         dmgText,
+        vfx,
         boss,
         bossSeen: false,
         unsubscribe,
@@ -1233,6 +1247,7 @@ async function boot(): Promise<void> {
       w.town?.destroyDressing();
       w.input.destroy();
       w.projectiles.clear();
+      w.vfx.clear();
       w.enemies.destroyAll();
       // The hero survives the viewport teardown — but only detach them if
       // they still stand in THIS world (the next one may already own them).
@@ -1270,7 +1285,7 @@ async function boot(): Promise<void> {
         if (itemId) equipped.push({ slot: s, itemId });
       }
       const save: SaveGame = {
-        version: 1,
+        version: 2,
         slot,
         seed: baseSeed,
         createdAt,
@@ -1288,6 +1303,10 @@ async function boot(): Promise<void> {
           resource: player.resource,
           backpack: [...player.backpack],
           equipped,
+          skillPoints: player.skillPoints,
+          unlocked: [...player.unlockedSkills],
+          loadout: [...player.loadout],
+          passives: [...player.passives],
         },
         stash: { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
@@ -1439,6 +1458,7 @@ async function boot(): Promise<void> {
       shake: (a) => world.camera.addShake(a),
       text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
       sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
+      vfx: (anim, x, y, opts) => world.vfx.play(anim, x, y, opts),
       aim: () => {
         if (lastMouse.seen) {
           const w = world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2());
@@ -1476,15 +1496,21 @@ async function boot(): Promise<void> {
           world.viewport.ambienceLayer.addChild(glow);
           made.push(glow);
         } else if (kind === 'fire') {
+          // FLAME BED (it.41): the baked fire_wall strip loops on the cell.
+          const flame = world.vfx.play('vfx_firewall', x, y, { loop: true, scale: 1.05, lift: 22, fps: 22 });
           const glow = new Sprite(assets.get('glow'));
           glow.anchor.set(0.5);
           glow.blendMode = 'add';
           glow.tint = 0xff8040;
           glow.scale.set(1.3);
-          glow.alpha = 0.55;
+          glow.alpha = 0.45;
           glow.position.set(s.x, s.y);
           world.viewport.ambienceLayer.addChild(glow);
           made.push(glow);
+          return () => {
+            flame.stop();
+            for (const spr of made) if (!spr.destroyed) spr.destroy();
+          };
         } else {
           const ring = new Sprite(assets.get('targetRing'));
           ring.anchor.set(0.5);
@@ -1502,19 +1528,21 @@ async function boot(): Promise<void> {
     });
     subs.push(() => skills.destroy());
 
-    // Skill bar DOM: one slot per class skill, cooldown sweep + cost readout.
+    // Skill bar DOM (it.41): one slot per HOTBAR entry — rebuilt whenever
+    // the tree changes the loadout. Empty slots point at the tree (K).
     const skillSlotEls: Array<{ root: HTMLElement; cd: HTMLElement; num: HTMLElement }> = [];
     const lastSkillCd: number[] = [0, 0, 0, 0];
     const skillBar = document.getElementById('skill-bar');
-    {
-      if (skillBar) {
-        skillBar.innerHTML = '';
-        skills.skills.forEach((def, i) => {
-          const slot = document.createElement('div');
-          slot.className = 'skill-slot';
-          // Rich hover tooltip (it.33): name, cost, cooldown, description.
-          slot.innerHTML =
-            (def.icon
+    const buildSkillBar = (): void => {
+      if (!skillBar) return;
+      skillBar.innerHTML = '';
+      skillSlotEls.length = 0;
+      skills.skills.forEach((def, i) => {
+        const slot = document.createElement('div');
+        slot.className = 'skill-slot' + (def ? (skills.isSynergy(def) ? ' synergy' : '') : ' empty');
+        // Rich hover tooltip (it.33): name, cost, cooldown, description.
+        slot.innerHTML = def
+          ? (def.icon
               ? `<div class="skill-glyph has-icon"><img class="skill-icon" src="${uiAssetUrl(`skills/${def.icon}.png`)}" alt="${def.name}" draggable="false"></div>`
               : `<div class="skill-glyph">${def.glyph}</div>`) +
             `<div class="skill-flash"></div>` +
@@ -1522,28 +1550,32 @@ async function boot(): Promise<void> {
             (def.cost > 0 ? `<div class="skill-cost">${def.cost}</div>` : '') +
             `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
             `<div class="skill-name">${def.name.toUpperCase()}</div>` +
-            `<div class="skill-tip"><b>${def.name}</b>` +
-            `<span>${def.cost > 0 ? `${def.cost} ${player.resourceName.toLowerCase()} · ` : ''}${Math.round(def.cd / 60)}s cooldown</span>` +
-            `<p>${def.hint}</p></div>`;
-          skillBar.appendChild(slot);
-          skillSlotEls.push({
-            root: slot,
-            cd: slot.querySelector('.skill-cd') as HTMLElement,
-            num: slot.querySelector('.skill-cd-num') as HTMLElement,
-          });
+            `<div class="skill-tip"><b>${def.name}${skills.isSynergy(def) ? ' · SYNERGY' : ''}</b>` +
+            `<span>${def.cost > 0 ? `${def.cost} ${player.resourceName.toLowerCase()} · ` : ''}${Math.round((def.cd * (skills.isSynergy(def) ? 0.8 : 1)) / 60)}s cooldown</span>` +
+            `<p>${def.hint}</p></div>`
+          : `<div class="skill-glyph skill-empty">+</div><div class="skill-flash"></div><div class="skill-key">${i + 1}</div>` +
+            `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
+            `<div class="skill-tip"><b>Empty slot</b><span>${player.skillPoints} skill point${player.skillPoints === 1 ? '' : 's'}</span><p>Press K to open the Skill Tree and learn a skill.</p></div>`;
+        skillBar.appendChild(slot);
+        skillSlotEls.push({
+          root: slot,
+          cd: slot.querySelector('.skill-cd') as HTMLElement,
+          num: slot.querySelector('.skill-cd-num') as HTMLElement,
         });
-      }
+      });
       const label = document.getElementById('resource-label');
       if (label) label.textContent = player.resourceName;
       document.getElementById('resource-fill')?.classList.toggle('stamina', player.resourceName === 'STAMINA');
-    }
+    };
+    buildSkillBar();
+    subs.push(eventBus.on('skills:changed', () => buildSkillBar()));
 
     const resourceFill = document.getElementById('resource-fill');
     const updateSkillHud = (): void => {
       if (resourceFill) resourceFill.style.width = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
       skills.skills.forEach((def, i) => {
         const el = skillSlotEls[i];
-        if (!el) return;
+        if (!el || !def) return;
         const cd = skills.cooldowns[i];
         // CAST FLASH (it.40): a cooldown that just started means the skill fired.
         if (cd > 0 && lastSkillCd[i] === 0) {
@@ -1554,7 +1586,7 @@ async function boot(): Promise<void> {
         lastSkillCd[i] = cd;
         if (cd > 0) {
           el.root.classList.add('cooling');
-          el.cd.style.height = `${Math.round((cd / def.cd) * 100)}%`;
+          el.cd.style.height = `${Math.min(100, Math.round((cd / def.cd) * 100))}%`;
           el.num.textContent = `${Math.ceil(cd / 60)}`;
         } else {
           el.root.classList.remove('cooling');
@@ -1732,6 +1764,7 @@ async function boot(): Promise<void> {
         player.setLevel(level);
         updateOrb();
         updateProgressHud();
+        eventBus.emit('skills:changed', {});
         eventBus.emit('inventory:changed', {}); // Stat readouts re-derive from the new level.
         audio.sfx('levelUp');
         world.ambience.burst(player.pos.x, player.pos.y, 0xf0d070, 16);
@@ -1827,8 +1860,11 @@ async function boot(): Promise<void> {
       if (hitFlesh) audio.sfx(kind === 'bolt' ? 'boltImpact' : 'arrowHit');
       else if (kind === 'arrow') audio.sfx('arrowWall'); // Clatter off stone.
       if (kind === 'bolt') {
-        world.ambience.burst(x, y, 0xffb060, hitFlesh ? 8 : 5);
+        world.vfx.play('vfx_burst', x, y, { scale: 0.7, lift: 18, fps: 22 });
+        world.ambience.burst(x, y, 0xffb060, hitFlesh ? 6 : 4);
         world.ambience.sparks(x, y, 0, 0, 6);
+      } else if (kind === 'fireball') {
+        /* The fireball's own onImpact drew the explosion. */
       } else if (!hitFlesh) {
         world.ambience.puff(x, y); // Arrow clattering off stone.
         world.ambience.sparks(x, y, 0, 0, 3);
@@ -1902,7 +1938,11 @@ async function boot(): Promise<void> {
           world.ambience.playGlint(player.pos.x, player.pos.y);
           world.camera.addShake(0.25);
           world.dmgText.show(player.pos.x - 0.4, player.pos.y - 0.4, 'LEVEL UP!', 'crit');
+          world.dmgText.show(player.pos.x + 0.4, player.pos.y - 0.9, `+${levelsGained} SKILL POINT${levelsGained > 1 ? 'S' : ''}`, 'miss');
+          world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
+          tutorial.notify('skillpoint', 'A skill point is yours — press K to open the Skill Tree.');
           updateOrb(); // Max HP grew (and partially refilled).
+          eventBus.emit('skills:changed', {});
         }
         updateProgressHud();
         if (entity === world.boss) {
@@ -2075,6 +2115,7 @@ async function boot(): Promise<void> {
         world.movement.update(dt);
         world.combat.update();
         skills.update();
+        if (++sheetClock % 60 === 0) charSheetUI.tick();
         world.projectiles.update(dt);
         state.forEach((entity) => entity.update(dt));
         world.enemies.separate();
@@ -2186,7 +2227,14 @@ async function boot(): Promise<void> {
           (gx, gy) => world.lighting.isVisible(gx, gy),
         );
         world.loot.updateRender(timeSec, world.lighting);
-        world.projectiles.updateRender(world.lighting, world.ambience);
+        world.projectiles.updateRender(world.lighting, world.ambience, frameDt);
+        world.vfx.update(frameDt);
+        {
+          // HUD occlusion (it.41): overhead bars and numbers hold screen size at any zoom.
+          const z = world.camera.currentZoom;
+          Enemy.hudScale = Math.max(0.5, Math.min(1.1, 1 / Math.max(0.01, z)));
+          world.dmgText.setZoom(z);
+        }
         world.chests.updateRender(timeSec);
         world.dmgText.update(frameDt);
 
@@ -2351,6 +2399,23 @@ async function boot(): Promise<void> {
     // --- Town panels + interaction (it.39) ------------------------------------
     const shopUI = new ShopUI(player, town, inputQueue);
     const stashUI = new StashUI(player, town, inputQueue);
+    const skillTreeUI = new SkillTreeUI(player, inputQueue);
+    const charSheetUI = new CharacterSheetUI(player);
+    // DRAGGABLE WINDOWS (it.41): every panel by its header, remembered per panel.
+    const undrag = [
+      ['inv-panel', 'inventory'],
+      ['shop-panel', 'shop'],
+      ['stash-panel', 'stash'],
+      ['skill-tree', 'skilltree'],
+      ['char-sheet', 'charsheet'],
+      ['cheat-menu', 'cheat'],
+    ]
+      .map(([id, key]) => {
+        const el = document.getElementById(id);
+        return el ? makeDraggable(el, key) : null;
+      })
+      .filter((f): f is () => void => !!f);
+    let sheetClock = 0;
     const interactableDist = (it: Interactable): number => {
       let best = Infinity;
       for (const tile of it.tiles) best = Math.min(best, Math.hypot(player.pos.x - (tile.x + 0.5), player.pos.y - (tile.y + 0.5)));
@@ -2366,6 +2431,24 @@ async function boot(): Promise<void> {
       if (!t) return;
       for (const cmd of commands) {
         if (cmd.type === 'PICKUP_NEAREST') {
+          // SYMMETRICAL E (it.41): an open trade / stash window closes on the same key.
+          if (shopUI.isOpen || stashUI.isOpen) {
+            shopUI.close();
+            stashUI.close();
+            continue;
+          }
+          // E at the portal stone or the gate takes it (no need to step in).
+          if (portalReturn && !transitioning) {
+            const pt = t.layout.portal;
+            if (Math.hypot(player.pos.x - (pt.x + 0.5), player.pos.y - (pt.y + 0.5)) < 1.8) {
+              returnThroughPortal();
+              continue;
+            }
+          }
+          if (!transitioning && Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5)) < 2.2) {
+            pendingDescend = true;
+            continue;
+          }
           let best: Interactable | null = null;
           let bestD = 2.1;
           for (const it of t.interactables) {
@@ -2502,6 +2585,9 @@ async function boot(): Promise<void> {
         loop.stop();
         shopUI.destroy();
         stashUI.destroy();
+        skillTreeUI.destroy();
+        charSheetUI.destroy();
+        for (const off of undrag) off();
         for (const id of timers) clearTimeout(id);
         timers.clear();
         for (const off of subs) off();
@@ -2556,13 +2642,13 @@ export function isBossFloor(floor: number): boolean {
  * boss chains), the summoned wretches, and — for arenas — the keeper.
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
-  if (mode === 'hub') return ['villager_walk', 'merchant_walk', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle'];
+  if (mode === 'hub') return ['villager_walk', 'merchant_walk', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));
   kinds.add('fallen'); // Hollow King summons; cheap (shares the knight sheets).
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);
   const out = new Set<string>();
   for (const k of kinds) for (const a of animsForKind(k)) out.add(a);
-  return [...out];
+  return [...VFX_ANIMS, ...[...out]];
 }
 
 /**

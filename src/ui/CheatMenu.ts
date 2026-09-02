@@ -183,7 +183,7 @@ export class CheatMenuUI {
             .join('');
 
     this.panel.innerHTML = `
-      <div class="cheat-head">
+      <div class="cheat-head drag-handle">
         <canvas id="cheat-portrait" width="72" height="88"></canvas>
         <div class="cheat-head-text">
           <h3>FORBIDDEN ARTS</h3>

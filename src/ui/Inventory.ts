@@ -133,7 +133,7 @@ export class InventoryUI {
             .join('');
 
     this.panel.innerHTML = `
-      <h3>INVENTORY</h3>
+      <h3 class="drag-handle">INVENTORY</h3>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
       <div class="inv-divider"></div>

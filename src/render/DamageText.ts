@@ -23,8 +23,14 @@ interface FloatingText {
 export class DamageTextSystem {
   private readonly pool: FloatingText[] = [];
   private readonly scratch = vec2();
+  /** 1/zoom (clamped): numbers keep a readable on-screen size at any zoom (it.41). */
+  private zoomScale = 1;
 
   constructor(private readonly layer: Container) {}
+
+  setZoom(zoom: number): void {
+    this.zoomScale = Math.max(0.5, Math.min(1, 1 / Math.max(0.01, zoom)));
+  }
 
   /**
    * @param kind  Styles the number: enemy damage (bone-white), player damage
@@ -69,6 +75,7 @@ export class DamageTextSystem {
 
     const s = worldToScreen(x, y, this.scratch);
     ft.node.position.set(s.x + (Math.random() - 0.5) * 14, s.y - 46);
+    ft.node.scale.set(this.zoomScale);
     ft.node.alpha = 1;
     ft.node.visible = true;
     ft.active = true;

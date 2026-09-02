@@ -33,6 +33,9 @@ export type InputCommand =
   | { type: 'UNEQUIP'; playerId: number; slot: EquipmentSlot }
   /** Active skill hotkeys 1–4 (it.32): cast the class skill in `slot`. */
   | { type: 'SKILL'; playerId: number; slot: number }
+  | { type: 'UNLOCK_SKILL'; playerId: number; id: string }
+  | { type: 'UNLOCK_PASSIVE'; playerId: number; id: string }
+  | { type: 'EQUIP_SKILL'; playerId: number; slot: number; id: string | null }
   /** Consumables (it.39): drink/read the backpack item; Q = quickest healing potion. */
   | { type: 'USE_ITEM'; playerId: number; backpackIndex: number }
   | { type: 'USE_QUICK'; playerId: number; kind: 'health' | 'mana' }

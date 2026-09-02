@@ -10,8 +10,9 @@
  * can burst sparks/dust without the sim knowing about particles.
  */
 
-import { Sprite } from 'pixi.js';
+import { Sprite, type Texture } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
+import { spriteLib } from '@/render/SpriteLibrary';
 import { eventBus } from '@/core/EventBus';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
@@ -23,7 +24,7 @@ import { depthKey, worldToScreen } from '@/utils/iso';
 import type { CombatSystem } from './Combat';
 import type { WalkableFn } from './Collision';
 
-export type ProjectileKind = 'arrow' | 'bolt';
+export type ProjectileKind = 'arrow' | 'bolt' | 'fireball';
 export type ProjectileFaction = 'player' | 'enemy';
 
 export interface ProjectileSpawn {
@@ -39,6 +40,13 @@ export interface ProjectileSpawn {
   toHit: number;
   /** Tint for bolt projectiles (weapon color). */
   tint?: number;
+  /** Stop and burst here even without a hit (aimed spells, it.41). */
+  maxTravel?: number;
+  /**
+   * AREA IMPACT (it.41): called at the termination point instead of the
+   * single-target hit roll (fireball). Runs inside the sim tick.
+   */
+  onImpact?: (x: number, y: number) => void;
 }
 
 interface Projectile extends ProjectileSpawn {
@@ -47,9 +55,17 @@ interface Projectile extends ProjectileSpawn {
   dirY: number;
   traveled: number;
   sprite: Sprite;
+  /** Animated head (it.41): strip frames + clock. */
+  frames: ReadonlyArray<Texture> | null;
+  clock: number;
 }
 
-const SPEED: Record<ProjectileKind, number> = { arrow: 9, bolt: 7.5 };
+const SPEED: Record<ProjectileKind, number> = { arrow: 9, bolt: 7.5, fireball: 8 };
+/** Animated heads per kind (atlas strip, playback fps, on-screen scale). */
+const HEAD: Partial<Record<ProjectileKind, { anim: 'vfx_fireball' | 'vfx_orb'; fps: number; scale: number }>> = {
+  fireball: { anim: 'vfx_fireball', fps: 24, scale: 0.7 },
+  bolt: { anim: 'vfx_orb', fps: 20, scale: 0.75 },
+};
 const MAX_TRAVEL = 12;
 const HIT_RADIUS = 0.45;
 
@@ -80,16 +96,27 @@ export class ProjectileSystem {
       sprite.anchor.set(0.5);
       sprite.visible = false;
       this.viewport.objectLayer.addChild(sprite);
-      p = { ...opts, active: false, dirX: 0, dirY: 0, traveled: 0, sprite };
+      p = { ...opts, active: false, dirX: 0, dirY: 0, traveled: 0, sprite, frames: null, clock: 0 };
       this.pool.push(p);
     }
+    p.maxTravel = undefined;
+    p.onImpact = undefined;
     Object.assign(p, opts);
     p.active = true;
     p.dirX = dx / len;
     p.dirY = dy / len;
     p.traveled = 0;
-    p.sprite.texture = assets.get(opts.kind);
-    p.sprite.blendMode = opts.kind === 'bolt' ? 'add' : 'normal';
+    p.clock = 0;
+    const head = HEAD[opts.kind];
+    p.frames = head && spriteLib.loaded && spriteLib.hasAnim(head.anim) ? spriteLib.anim(head.anim).frames[0] : null;
+    if (p.frames) {
+      p.sprite.texture = p.frames[0];
+      p.sprite.scale.set(head!.scale);
+    } else {
+      p.sprite.texture = assets.get(opts.kind === 'arrow' ? 'arrow' : 'bolt');
+      p.sprite.scale.set(opts.kind === 'fireball' ? 1.6 : 1);
+    }
+    p.sprite.blendMode = opts.kind === 'arrow' ? 'normal' : 'add';
     // Screen-space heading (accounts for the 2:1 iso squash).
     p.sprite.rotation = Math.atan2((p.dirX + p.dirY) / 2, p.dirX - p.dirY);
     p.sprite.visible = true;
@@ -104,8 +131,14 @@ export class ProjectileSystem {
       p.y += p.dirY * step;
       p.traveled += step;
 
-      if (p.traveled >= MAX_TRAVEL || !this.isWalkable(Math.floor(p.x), Math.floor(p.y))) {
+      if (p.traveled >= (p.maxTravel ?? MAX_TRAVEL) || !this.isWalkable(Math.floor(p.x), Math.floor(p.y))) {
         this.impact(p, false);
+        continue;
+      }
+
+      if (p.onImpact) {
+        // Area spell: the first foe it meets detonates it (the callback rolls the damage).
+        if (this.findEnemyAt(p.x, p.y, HIT_RADIUS + 0.1)) this.impact(p, true);
         continue;
       }
 
@@ -127,21 +160,25 @@ export class ProjectileSystem {
   }
 
   /** Per-frame: position, depth-sort, fog gating, lighting, trails (it.36). */
-  updateRender(lighting: Lighting, ambience?: Ambience): void {
+  updateRender(lighting: Lighting, ambience?: Ambience, dt = 1 / 60): void {
     for (const p of this.pool) {
       if (!p.active) continue;
+      if (p.frames) {
+        p.clock += dt;
+        p.sprite.texture = p.frames[Math.floor(p.clock * (HEAD[p.kind]?.fps ?? 20)) % p.frames.length];
+      }
       const visible = lighting.isVisible(Math.floor(p.x), Math.floor(p.y));
       p.sprite.visible = visible;
       if (!visible) continue;
       const s = worldToScreen(p.x, p.y, this.scratch);
       p.sprite.position.set(s.x, s.y - 18); // Flies at torso height.
       p.sprite.zIndex = depthKey(p.x, p.y);
-      p.sprite.tint = p.kind === 'bolt' ? (p.tint ?? 0xffcf90) : lighting.getTintAt(p.x, p.y, 0.35);
+      p.sprite.tint = p.kind === 'arrow' ? lighting.getTintAt(p.x, p.y, 0.35) : p.frames ? 0xffffff : (p.tint ?? 0xffcf90);
       // Spell trails smear ember light behind bolts; arrows shed faint dust.
       if (ambience) {
-        if (p.kind === 'bolt') {
+        if (p.kind !== 'arrow') {
           ambience.trail(p.x, p.y, 18, p.tint ?? 0xffcf90, true);
-          if (Math.random() < 0.5) ambience.trail(p.x, p.y, 18, 0xffe8c0, true);
+          if (Math.random() < (p.kind === 'fireball' ? 0.9 : 0.5)) ambience.trail(p.x, p.y, 18, 0xffe8c0, true);
         } else if (Math.random() < 0.6) {
           ambience.trail(p.x, p.y, 18, 0x9a9080, false);
         }
@@ -160,6 +197,7 @@ export class ProjectileSystem {
   private impact(p: Projectile, hitFlesh: boolean): void {
     p.active = false;
     p.sprite.visible = false;
+    p.onImpact?.(p.x, p.y);
     eventBus.emit('projectile:impact', { x: p.x, y: p.y, kind: p.kind, hitFlesh });
   }
 }

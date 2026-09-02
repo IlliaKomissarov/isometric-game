@@ -1,5 +1,16 @@
 # Development Log
 
+## 2026-09-03 (iteration 46) - Dungeon gate relocated to the WEST cliff
+
+- The ruin archway now sits on the west edge of floor 0, EMBEDDED in the
+  cliff: solid rock above (x 0-8, y 19-24) and beside it (x 0-1, y 25-32),
+  the 3x2 footprint at 3-5 x 25-26, the threshold tile at (4,27). A cobbled
+  forecourt (x 2-9, y 25-30), two braziers flanking the threshold, two
+  guards on the road, two torch posts. The high street now starts at the
+  threshold and runs straight east to the market square. The blob bulges
+  gently toward the west cliff; the north-west quarter keeps its cottages,
+  stalls and stores on a plain lane. Contact with the threshold descends.
+
 ## 2026-09-03 (iteration 45) - North-west gate, dusk-lit town, no town pentagram, music playlists, Darinia font, gargoyle globe + framed bars
 
 - GATE: the ruin archway now sits NORTH-WEST, set into the cliff (footprint

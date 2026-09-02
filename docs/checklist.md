@@ -377,6 +377,11 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Darinia display font on headers, titles, tooltips, buttons and banners
 - [x] Gargoyle health globe, framed resource and boss bars, HUD stack re-spaced
 
+## Iteration 46 - West Cliff Gate (2026-09-03)
+
+- [x] Dungeon gate embedded in the west cliff; forecourt, braziers, guards; high street from the threshold
+- [x] All town points of interest reachable; touch-to-descend; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

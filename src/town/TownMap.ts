@@ -14,7 +14,7 @@
  *                      the TAVERN, the STASH VAULT (NW), the CAMPSITE
  *                      clearing (SW), the portal yard (SE), torch posts
  *                      along every street, two gate guards (the gate
- *                      is NORTH-WEST since it.45; no ritual circle)
+ *                      is set into the WEST cliff since it.46; no ritual circle)
  *   every open patch:  tree clusters and bush tufts — no empty lawns
  *
  * Every standing object claims a TILE_BLOCKED footprint BEFORE the scene
@@ -118,7 +118,8 @@ export function buildTownLayout(): TownLayout {
   const CX = 30;
   const CY = 27;
   const radiusAt = (theta: number): number => {
-    const bump = 5 * Math.exp(-((theta + (3 * Math.PI) / 4) ** 2) / 0.14); // The gate sits NORTH-WEST (it.45).
+    // WEST GATE (it.46): a gentle bulge toward the west cliff where the archway is set.
+    const bump = 2 * Math.exp(-((Math.PI - Math.abs(theta)) ** 2) / 0.2);
     return 24.5 + 2.6 * Math.sin(2 * theta + 1.3) + 1.8 * Math.sin(5 * theta + 0.4) + 1.4 * Math.sin(3 * theta + 2.6) + bump;
   };
   const polar = (x: number, y: number): { r: number; theta: number } => {
@@ -173,11 +174,11 @@ export function buildTownLayout(): TownLayout {
   };
 
   // ---- STREETS ----
-  const gate = { x: 11, y: 10 }; // NORTH-WEST (it.45): in front of the archway (footprint 10–12 × 8–9).
+  const gate = { x: 4, y: 27 }; // WEST (it.46): in front of the archway set into the west cliff (footprint 3–5 × 25–26).
   ellipse(30, 22, 9.5, 6.5, KIND_COBBLE); // The market square.
-  street([[11, 10], [13, 13], [17, 15], [21, 18], [24, 20]], KIND_COBBLE, 1.4); // Main street: NW gate -> square.
+  street([[13, 13], [17, 15], [21, 18], [24, 20]], KIND_COBBLE, 1.2); // The north-west quarter's lane -> square.
   street([[30, 28], [29, 33], [30, 38], [30, 44]], KIND_COBBLE, 1.3); // South street -> lower plaza.
-  street([[8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.1); // High street.
+  street([[4, 27], [8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.3); // High street: WEST gate -> square -> east.
   ellipse(30, 44.5, 3.5, 2.2, KIND_COBBLE); // Lower plaza.
   street([[36, 12], [34, 16]], KIND_DIRT, 1.0); // Tavern lane.
   street([[45, 27], [47, 20]], KIND_DIRT, 0.9); // NE cottage.
@@ -225,23 +226,26 @@ export function buildTownLayout(): TownLayout {
     houses.push({ x, y, w: 3, h: 3 });
   };
 
-  // The DUNGEON GATE (NORTH-WEST, it.45): the ruin archway on its 3×2 footprint
-  // set into the cliff, a cobbled forecourt, braziers and two guards; the
-  // gate road runs south-east to the square through a built-up quarter.
-  clearFor(8, 8, 7, 5, 0, KIND_COBBLE);
-  props.push({ kind: 'ruingate', x: 10, y: 8, w: 3, h: 2 });
-  for (let y = 8; y <= 9; y++) for (let x = 10; x <= 12; x++) grid[idx(x, y)] = TILE_BLOCKED;
+  // The DUNGEON GATE (WEST, it.46): the ruin archway on its 3×2 footprint is
+  // EMBEDDED in the west cliff — solid rock above and beside it — with a
+  // cobbled forecourt, two braziers and two guards; the high street runs
+  // straight east from its threshold to the market square.
+  clearFor(2, 25, 8, 6, 0, KIND_COBBLE);
+  props.push({ kind: 'ruingate', x: 3, y: 25, w: 3, h: 2 });
+  for (let y = 25; y <= 26; y++) for (let x = 3; x <= 5; x++) grid[idx(x, y)] = TILE_BLOCKED;
   grid[idx(gate.x, gate.y)] = TILE_FLOOR;
   tileKind[idx(gate.x, gate.y)] = KIND_COBBLE;
-  for (let y = 4; y <= 7; y++) for (let x = 8; x <= 14; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL;
-  block({ kind: 'brazier', x: 8, y: 10 });
-  block({ kind: 'brazier', x: 14, y: 10 });
+  for (let y = 19; y <= 24; y++) for (let x = 0; x <= 8; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL; // The cliff mass above the arch.
+  for (let y = 25; y <= 32; y++) for (let x = 0; x <= 1; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL; // The cliff face beside it.
+  block({ kind: 'brazier', x: 2, y: 27 });
+  block({ kind: 'brazier', x: 6, y: 27 });
   const guards = [
-    { x: 9, y: 12 },
-    { x: 13, y: 12 },
+    { x: 3, y: 29 },
+    { x: 6, y: 29 },
   ];
   for (const g of guards) block({ kind: 'guard', x: g.x, y: g.y });
-  // The gate quarter: cottages, a stall, stores and fences crowd the road.
+  for (const [x, y] of [[8, 25], [8, 29]] as const) block({ kind: 'torch', x, y });
+  // The north-west quarter: cottages, stalls, stores and fences along its lane.
   house(16, 7, 'house_d');
   house(6, 14, 'house_b');
   for (const x of [16, 18, 19]) block({ kind: 'fence', x, y: 10 });

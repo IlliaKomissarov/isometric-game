@@ -1,5 +1,7 @@
 # Skill: External Sprite-Pack Pipeline (Knight Sheets + Lords of Pain Frames)
 
+> **SUPERSEDED (it.36):** the raw packs described below were baked into grid atlases and deleted. Runtime loading is documented in `atlas-sprite-pipeline.md`; this file stays as the record of how the packs were calibrated (direction rows, anchors, rebake scales).
+
 ## What & why
 Real art replaced the geometric placeholders. Two pack formats, one loader
 (`src/render/SpriteLibrary.ts`):

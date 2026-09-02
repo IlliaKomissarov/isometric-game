@@ -277,6 +277,23 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [ ] Positional audio (pan/attenuate SFX by distance to camera)
 - [ ] Ambient beds from the pack's Cave/Interior loops (BGS folder)
 
+## Iteration 36 - Studio Overhaul: Atlases, Purge, Menus, Scale, Audio, VFX (2026-09-02)
+
+- [x] Asset audit + bake: 89 anims / 19 singles into public/assets/atlas (49 MB, cropped, half-res packs)
+- [x] PURGE: 2,921 MB / 217 entries of raw packs, unused audio, dummy folders removed (scripts/purge-assets.mjs)
+- [x] Lazy atlas streaming per floor + next-floor prefetch; production menu at 0.8 s / 206 KB
+- [x] Main menu (DESCEND / CHOOSE YOUR DELVER / SETTINGS & CONTROLS / CREDITS) + title theme
+- [x] Run lifecycle: startRun/destroy - restart, main menu, hero re-select without a refresh
+- [x] Pause menu (ESC) + death overlay (RISE AGAIN / RESTART / MAIN MENU); epilogue MAIN MENU
+- [x] Idle ping-pong pacing (mage/rogue/skeletons), time-based idle clock
+- [x] Unit height standard: heroes + mobs 56 px, bosses 128 px, from manifest painted bounds
+- [x] Item icon overhaul (20x20 shaded pixel art) + lit slot tiles + rarity glows
+- [x] Music state machine (menu/dungeon/boss/victory), ducking, UI/pickup SFX banks, deferred combat bank decode
+- [x] Impact sparks, projectile trails, dynamic floor shadows
+- [x] QA: 4 classes, floors 1-20, arenas 5/10/15/20, Hollow King phases, victory - zero console errors
+- [ ] Positional audio (pan/attenuate by distance) - still open
+- [ ] Item drop back to the ground from the inventory - still open
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

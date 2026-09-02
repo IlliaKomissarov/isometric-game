@@ -305,6 +305,7 @@ async function boot(): Promise<void> {
     document.body.classList.remove('in-run');
     audio.setMusic('menu');
     mainMenu.show();
+    performance.mark('boot:menu'); // Boot-time telemetry (QA reads it).
   };
 
   const openClassSelect = async (): Promise<void> => {
@@ -332,6 +333,7 @@ async function boot(): Promise<void> {
       run?.destroy();
       run = null;
       run = await startRun(cls, startFloor);
+      performance.mark('run:ready');
     } catch (err) {
       console.error('[run] failed to start:', err);
       showMainMenu();
@@ -1788,10 +1790,24 @@ async function boot(): Promise<void> {
     loop.start();
 
     // Dev-only debug handle for console inspection and automated testing.
+    // `travel(floor, arena)` rebuilds a floor WITHOUT the fade timers (hidden
+    // tabs throttle timers to once a minute — deterministic QA needs a
+    // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
+      const devTravel = async (target: number, arena = false): Promise<void> => {
+        destroyWorld(world);
+        skills.clearZones();
+        floor = Math.max(1, Math.min(target, MAX_DEPTH));
+        world = await buildWorld(floor, arena && isBossFloor(floor) ? 'arena' : 'normal');
+        updateDepth();
+        floorStartTick = state.tick;
+        player.action = 'idle';
+        levelSelect.unlock(floor);
+        updateOrb();
+      };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, ...world, floor }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, ...world, floor }),
       });
     }
 

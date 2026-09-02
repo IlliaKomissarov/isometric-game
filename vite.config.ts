@@ -9,10 +9,10 @@ import { basename, resolve } from 'path';
  *   (safe for sub-agents to move files without breaking relative imports).
  * - esbuild target ES2022 to match tsconfig.
  * - GitHub Pages (it.31): `PAGES=1 npm run build` sets the /isometric-game/
- *   base AND skips the public/ copy; the deploy script copies only the
- *   git-tracked curated subset into dist. Runtime asset URLs are built from
- *   import.meta.env.BASE_URL, so dev ('/') and Pages ('/isometric-game/')
- *   both resolve.
+ *   base. Runtime asset URLs are built from import.meta.env.BASE_URL, so
+ *   dev ('/') and Pages ('/isometric-game/') both resolve. Since the it.36
+ *   purge public/ is ~95 MB of runtime-only files, so the public copy runs
+ *   normally in every build.
  * - ATLAS BAKE ENDPOINT (it.36, dev only): the in-browser baker
  *   (`src/dev/AtlasBaker.ts`) POSTs finished sprite atlases + manifest to
  *   `/__bake`; this plugin writes them under public/assets/atlas/. It is
@@ -58,7 +58,7 @@ function atlasBakePlugin(): Plugin {
 
 export default defineConfig({
   base: process.env.PAGES ? '/isometric-game/' : '/',
-  publicDir: process.env.PAGES ? false : 'public',
+  publicDir: 'public',
   plugins: [atlasBakePlugin()],
   resolve: {
     alias: {

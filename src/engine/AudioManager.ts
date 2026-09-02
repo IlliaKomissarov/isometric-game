@@ -85,7 +85,6 @@ const FILES = {
   bgm: `${AUDIO_BASE}/universfield-dark-mystery-cinematic-485921.mp3`,
   bgmDeep: `${AUDIO_BASE}/alesiadavina-dark-demonic-atmosphere-gloomy-horror-drone-sfx-541953.mp3`,
   horn: `${AUDIO_BASE}/kave_msri-war-horn-sfx-319881.mp3`,
-  magic4: `${AUDIO_BASE}/yodguard-dark-magic-4-378653.mp3`,
   magic6: `${AUDIO_BASE}/yodguard-dark-magic-6-378652.mp3`,
   chant: `${AUDIO_BASE}/yodguard-dark-spell-chant-3-533018.mp3`,
   beast: `${AUDIO_BASE}/alesiadavina-demonic-presence-detected-dark-beast-breathing-sfx-543185.mp3`,
@@ -274,22 +273,8 @@ export class AudioManager {
       const data = this.noiseBuffer.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
 
-      // File-based SFX decode lazily in the background (guarded — a missing
-      // file falls back to the synth voice, never an engine halt).
-      for (const key of ['horn', 'magic6', 'chant', 'beast', 'doom'] as const) {
-        void this.loadBuffer(key, FILES[key]);
-      }
-      // The Fantasy-pack variant banks (small oggs, decoded in background).
-      for (const [group, urls] of Object.entries(VARIANTS)) {
-        urls.forEach((url, i) => void this.loadBuffer(`${group}_${i}`, url));
-      }
-      // The Horror SFX banks (it.25) — same variant machinery.
-      for (const [group, urls] of Object.entries(HORROR_BANKS)) {
-        urls.forEach((url, i) => void this.loadBuffer(`${group}_${i}`, url));
-      }
-      // Probe the numbered voice-pack folders (activates them if real
-      // audio data ever lands there — currently 0-byte stubs).
-      void this.probeVoicePack();
+      // Combat/horror banks are DEFERRED to `preloadRunBanks()` (it.36):
+      // the title screen only pays for the UI voice and its own theme.
 
       // UI voice banks (tiny WAVs) decode first — menus speak immediately.
       for (const [group, urls] of Object.entries(UI_BANKS)) {
@@ -311,10 +296,32 @@ export class AudioManager {
       window.setInterval(() => this.maybeStinger(), 4000);
       this.stingerQuietUntil = performance.now() + 15000;
       this.applyMusic(); // Whatever main asked for before the gesture landed.
+      if (this.musicState === 'dungeon' || this.musicState === 'boss') this.preloadRunBanks();
       this.retryOnNextGesture(); // Autoplay safety: re-kick on the next real gesture.
     } catch (err) {
       console.warn('[Audio] Web Audio unavailable:', err);
       this.ctx = null;
+    }
+  }
+
+  private runBanksLoaded = false;
+
+  /**
+   * Decode the combat + horror banks (it.36: called when a run starts,
+   * never on the title screen). Guarded: a missing file falls back to the
+   * synth voice, never an engine halt. Idempotent.
+   */
+  preloadRunBanks(): void {
+    if (!this.ctx || this.runBanksLoaded) return;
+    this.runBanksLoaded = true;
+    for (const key of ['horn', 'magic6', 'chant', 'beast', 'doom'] as const) {
+      void this.loadBuffer(key, FILES[key]);
+    }
+    for (const [group, urls] of Object.entries(VARIANTS)) {
+      urls.forEach((url, i) => void this.loadBuffer(`${group}_${i}`, url));
+    }
+    for (const [group, urls] of Object.entries(HORROR_BANKS)) {
+      urls.forEach((url, i) => void this.loadBuffer(`${group}_${i}`, url));
     }
   }
 
@@ -543,46 +550,8 @@ export class AudioManager {
 
   private lastVoiceAt = 0;
 
-  /**
-   * Voice-pack pools (it.24): the 10 numbered folders are auto-probed at
-   * unlock. As shipped they contain ONLY 0-byte macOS ._stubs (no audio
-   * data — verified three times), so probing finds nothing and the beast
-   * slices carry the voices. The moment REAL wavs are copied in, these
-   * pools fill and take over the mapping with zero code changes:
-   *   7-Damage → hurt · 8-Death → die · 9-Grunting → idle ·
-   *   10-Shouting → attack · 6-Miscellaneous → ambient stingers.
-   */
+  /** Optional voice-actor pools (empty unless real takes are wired in). */
   private readonly voicePools = new Map<string, AudioBuffer[]>();
-
-  private async probeVoicePack(): Promise<void> {
-    if (!this.ctx) return;
-    const cats: Array<[pool: string, dir: string, stem: string]> = [
-      ['hurt', '7 - Damage', 'damage'],
-      ['die', '8 - Death', 'death'],
-      ['idle', '9 - Grunting', 'grunting'],
-      ['attack', '10 - Shouting', 'shouting'],
-      ['ambient', '6 - Miscellaneous', 'miscellaneous'],
-    ];
-    const actors = ['alex', 'ian', 'sean', 'karen', 'meghan'];
-    for (const [pool, dir, stem] of cats) {
-      const found: AudioBuffer[] = [];
-      for (const actor of actors) {
-        for (let n = 1; n <= 10; n++) {
-          try {
-            const res = await fetch(encodeURI(`${AUDIO_BASE}/${dir}/${stem}_${n}_${actor}.wav`));
-            if (!res.ok) break; // Actor absent — stop probing this voice.
-            found.push(await this.ctx.decodeAudioData(await res.arrayBuffer()));
-          } catch {
-            break;
-          }
-        }
-      }
-      if (found.length > 0) this.voicePools.set(pool, found);
-    }
-    if (this.voicePools.size > 0) {
-      console.info(`[Audio] Voice pack active: ${[...this.voicePools.entries()].map(([k, v]) => `${k}×${v.length}`).join(', ')}`);
-    }
-  }
 
   /** Random take from a discovered voice pool through the SFX bus. */
   private playPool(pool: string, pitch: number, vol: number): boolean {
@@ -882,6 +851,7 @@ export class AudioManager {
    */
   setMusic(state: MusicState, floor = this.musicFloor): void {
     const trackChanged = state === 'boss' && floor !== this.musicFloor;
+    if (state === 'dungeon' || state === 'boss') this.preloadRunBanks();
     if (state === this.musicState && !trackChanged) return;
     this.musicState = state;
     this.musicFloor = floor;

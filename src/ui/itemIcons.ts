@@ -1,12 +1,17 @@
 /**
  * @module ui/itemIcons
- * Crisp pixel-style icons for gear WITHOUT an oubliette pack sprite (bows,
- * armor, cloaks). Drawn once per item on a tiny 2D canvas in the same
- * 14×14-ish pixel language as the pack's weapon icons, tinted by the item's
- * color, and cached as data URLs for the DOM inventory grid.
+ * Sharp dark-fantasy pixel icons for gear WITHOUT a pack sprite (bows,
+ * wands, shields, helms, armor, boots, cloaks) — it.36 overhaul.
  *
- * Weapons that DO have pack icons never come through here — the real
- * sprite always wins (see ui/Inventory.iconHtml).
+ * Each icon is a 20×20 pixel painting built from a small palette per
+ * item (base color → 5-step ramp: deepest shade, shade, base, light,
+ * highlight) plus fixed metal/wood/leather accents, with a 1-px obsidian
+ * outline so it reads crisply on the dark slot tiles. Icons are drawn once
+ * per item on a 2D canvas and cached as data URLs (DOM grid) and as Pixi
+ * textures (ground drops).
+ *
+ * Weapons that DO have oubliette pack icons never come through here — the
+ * real sprite always wins (see ui/Inventory.iconHtml).
  */
 
 import { Texture } from 'pixi.js';
@@ -15,68 +20,224 @@ import type { ItemDef } from '@/items/catalog';
 const cache = new Map<string, string>();
 const textureCache = new Map<string, Texture>();
 
-type Px = ReadonlyArray<readonly [number, number]>;
+const SIZE = 20;
 
-/** Pixel maps (x,y in a 14×14 grid) per slot/kind silhouette. */
-const SHAPES: Record<string, Px> = {
+/**
+ * Pixel maps: 20 rows of 20 chars. Legend —
+ *   '.' empty · 'o' outline · '1' deepest · '2' shade · '3' base ·
+ *   '4' light · '5' highlight (all from the item color ramp) ·
+ *   'w' wood · 'W' wood light · 'm' metal · 'M' metal light · 's' string ·
+ *   'g' gold trim · 'G' gold light · 'r' red gem · 'k' black (leather dark)
+ */
+const SHAPES: Record<string, string[]> = {
   bow: [
-    [9, 1], [10, 2], [11, 3], [11, 4], [12, 5], [12, 6], [12, 7], [12, 8], [11, 9], [11, 10], [10, 11], [9, 12],
-    [8, 2], [8, 11], // Tips.
-    [7, 3], [7, 10], // String anchors.
-    [6, 4], [6, 5], [6, 6], [6, 7], [6, 8], [6, 9], // String.
-    [2, 6], [3, 6], [4, 6], [5, 6], // Nocked arrow.
+    '.......oo...........',
+    '......oW4o..........',
+    '.......s4Wo.........',
+    '.......s.o43o.......',
+    '.......s..o43o......',
+    '.......s..o43o......',
+    '.......s...o43o.....',
+    '.......s...o43o.....',
+    '.......s...o43o.....',
+    '.oMMmmwwwwwwwwwwWWo.',
+    '.......s...o32o.....',
+    '.......s...o32o.....',
+    '.......s...o32o.....',
+    '.......s..o32o......',
+    '.......s..o32o......',
+    '.......s.o32o.......',
+    '.......s2Wo.........',
+    '......oW2o..........',
+    '.......oo...........',
+    '....................',
   ],
   wand: [
-    [3, 11], [4, 10], [5, 9], [6, 8], [7, 7], [8, 6], [9, 5],
-    [10, 3], [11, 3], [10, 4], [11, 4], // Focus orb.
+    '................o...',
+    '..............oo5o..',
+    '.............o5G5o..',
+    '.............o5Gg5o.',
+    '..............o55o..',
+    '.............oMo.o..',
+    '............oMmo....',
+    '...........oMmo.....',
+    '..........o3mo......',
+    '.........o32o.......',
+    '........o32o........',
+    '.......o32o.........',
+    '......o321o.........',
+    '.....o321o..........',
+    '....o321o...........',
+    '...o21o.............',
+    '..o21o..............',
+    '..o1o...............',
+    '...o................',
+    '....................',
   ],
   head: [
-    [5, 3], [6, 2], [7, 2], [8, 3], [4, 4], [9, 4], [4, 5], [9, 5], [4, 6], [9, 6],
-    [4, 7], [5, 7], [6, 7], [7, 7], [8, 7], [9, 7], [5, 8], [8, 8], [6, 5], [7, 5],
+    '....................',
+    '.......oooooo.......',
+    '.....oo444444oo.....',
+    '....o4455554444o....',
+    '...o445555444333o...',
+    '...o44554444333o....',
+    '..o44444444333322o..',
+    '..o44444333333222o..',
+    '..o4gggggggggggg2o..',
+    '..o3333ooooo33222o..',
+    '..o33oo.....oo222o..',
+    '..o3o.........o22o..',
+    '..o3o..o...o..o2o...',
+    '..o22ooo...ooo22o...',
+    '..o2222o...o222o....',
+    '...o221o...o11o.....',
+    '....ooo.....oo......',
+    '....................',
+    '....................',
+    '....................',
   ],
   offHand: [
-    [4, 2], [5, 2], [6, 2], [7, 2], [8, 2], [9, 2], [3, 3], [10, 3], [3, 4], [10, 4],
-    [3, 5], [10, 5], [4, 6], [9, 6], [4, 7], [9, 7], [5, 8], [8, 8], [6, 9], [7, 9],
-    [6, 4], [7, 4], [6, 5], [7, 5], // Boss.
+    '....................',
+    '....oooooooooooo....',
+    '...o444444444443o...',
+    '...o4555444443333o..',
+    '...o455g444g43333o..',
+    '...o44gGMMMMgg333o..',
+    '...o44gMM5MMMg333o..',
+    '...o44gM5rrMMg233o..',
+    '...o44gMMrrMMg222o..',
+    '...o43gMMMMMMg222o..',
+    '...o33ggMMMMgg222o..',
+    '....o3333gg32221o...',
+    '....o33333322211o...',
+    '.....o3333222111o...',
+    '......o33222111o....',
+    '.......o2221110.....',
+    '........o2211o......',
+    '.........o11o.......',
+    '..........oo........',
+    '....................',
   ],
   torso: [
-    [4, 2], [9, 2], [3, 3], [10, 3], [4, 4], [5, 4], [6, 4], [7, 4], [8, 4], [9, 4],
-    [4, 5], [9, 5], [4, 6], [9, 6], [4, 7], [9, 7], [5, 8], [6, 8], [7, 8], [8, 8],
-    [6, 5], [7, 5], [6, 6], [7, 6],
+    '....................',
+    '....oo........oo....',
+    '...o44o..oo..o44o...',
+    '..o4444oo44oo4444o..',
+    '..o4455544444554o...',
+    '..o4455554455554o...',
+    '..o444ggg44ggg44o...',
+    '...o4444g44g4443o...',
+    '...o44444gg44433o...',
+    '...o444443344333o...',
+    '...o4444333333322o..',
+    '...o3333333332222o..',
+    '...o33333g3322222o..',
+    '...o3333ggg222222o..',
+    '...o3322g2g222211o..',
+    '....o22222222211o...',
+    '....o2221111111o....',
+    '.....ooooooooo......',
+    '....................',
+    '....................',
   ],
   legs: [
-    [4, 2], [5, 2], [8, 2], [9, 2], [4, 3], [5, 3], [8, 3], [9, 3], [4, 4], [8, 4],
-    [4, 5], [8, 5], [4, 6], [8, 6], [3, 7], [4, 7], [5, 7], [7, 7], [8, 7], [9, 7],
+    '....................',
+    '....................',
+    '....oooo....oooo....',
+    '...o4444o..o4444o...',
+    '...o4443o..o3444o...',
+    '...o4443o..o3444o...',
+    '...o4433o..o3344o...',
+    '...o4333o..o3334o...',
+    '...o3333o..o3333o...',
+    '...o3332o..o2333o...',
+    '...o3322o..o2233o...',
+    '...o3222o..o2223o...',
+    '..o33222o..o22233o..',
+    '..o32222o..o22223o..',
+    '.o332221oo.o122233o.',
+    '.o3222111o.o1112223o',
+    '.o2211111o.o1111122o',
+    '..ooooooo...ooooooo.',
+    '....................',
+    '....................',
   ],
   cloak: [
-    [6, 1], [7, 1], [5, 2], [8, 2], [4, 3], [9, 3], [4, 4], [9, 4], [3, 5], [10, 5],
-    [3, 6], [10, 6], [3, 7], [10, 7], [2, 8], [11, 8], [2, 9], [4, 9], [6, 9], [8, 9], [10, 9],
+    '....................',
+    '........oooo........',
+    '.......o4gg4o.......',
+    '......o44gg44o......',
+    '.....o4444444 4o.....',
+    '....o44444444444o...',
+    '....o44443344444o...',
+    '...o444433334444o...',
+    '...o444433334444o...',
+    '...o44433333344o....',
+    '...o4443333333 4o....',
+    '..o44333333333 44o...',
+    '..o4433333333333o...',
+    '..o3333322223333o...',
+    '..o3332222222233o...',
+    '..o3222222222223o...',
+    '.o22222211122222o...',
+    '.o2222111111112o....',
+    '..oooooooooooooo....',
+    '....................',
   ],
 };
 
-function shapeFor(def: ItemDef): Px {
+function shapeFor(def: ItemDef): string[] {
   if (def.slot === 'mainHand') return SHAPES[def.weaponKind ?? 'bow'] ?? SHAPES.bow;
   return SHAPES[def.slot] ?? SHAPES.torso;
 }
 
-/** Render an item's pixel icon onto a fresh canvas (14×14 grid at `scale`). */
+function clamp(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+/** 5-step ramp from the item color (deep shade → highlight). */
+function ramp(color: number): string[] {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const mix = (k: number, toward: number): string =>
+    `rgb(${clamp(r + (toward - r) * k)},${clamp(g + (toward - g) * k)},${clamp(b + (toward - b) * k)})`;
+  return [mix(0.62, 8), mix(0.34, 14), mix(0, 0), mix(0.28, 250), mix(0.6, 255)];
+}
+
+const FIXED: Record<string, string> = {
+  o: '#0b090e',
+  w: '#5a3a22',
+  W: '#8a6238',
+  m: '#8c8e98',
+  M: '#d0d4dc',
+  s: '#d8cfb0',
+  g: '#a8843a',
+  G: '#e6c66a',
+  r: '#c0342a',
+  k: '#1a1418',
+};
+
+/** Render an item's pixel icon onto a fresh canvas (20×20 grid at `scale`). */
 function drawIconCanvas(def: ItemDef, scale: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
-  canvas.width = 14 * scale;
-  canvas.height = 14 * scale;
+  canvas.width = SIZE * scale;
+  canvas.height = SIZE * scale;
   const ctx = canvas.getContext('2d')!;
-  const r = (def.color >> 16) & 0xff;
-  const g = (def.color >> 8) & 0xff;
-  const b = def.color & 0xff;
-
   const shape = shapeFor(def);
-  // Dark outline pass, then the colored body with a simple top-light ramp.
-  ctx.fillStyle = '#0d0b10';
-  for (const [x, y] of shape) ctx.fillRect((x - 1) * scale + 1, (y - 1) * scale + 1, scale + 4, scale + 4);
-  for (const [x, y] of shape) {
-    const lightRow = y < 5 ? 1.25 : y > 9 ? 0.75 : 1;
-    ctx.fillStyle = `rgb(${Math.min(255, r * lightRow) | 0},${Math.min(255, g * lightRow) | 0},${Math.min(255, b * lightRow) | 0})`;
-    ctx.fillRect(x * scale, y * scale, scale, scale);
+  const colors = ramp(def.color);
+  for (let y = 0; y < SIZE; y++) {
+    const row = shape[y] ?? '';
+    for (let x = 0; x < SIZE; x++) {
+      const ch = row[x];
+      if (!ch || ch === '.' || ch === ' ') continue;
+      let fill: string | undefined;
+      if (ch >= '1' && ch <= '5') fill = colors[Number(ch) - 1];
+      else fill = FIXED[ch];
+      if (!fill) continue;
+      ctx.fillStyle = fill;
+      ctx.fillRect(x * scale, y * scale, scale, scale);
+    }
   }
   return canvas;
 }

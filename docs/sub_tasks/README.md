@@ -44,5 +44,6 @@ smaller agent can execute it without touching core architecture.
 | Projectiles | `systems/Projectiles.ts` (faction/kind model; rolls stay in Combat) | `skills/diablo-combat-model.md` |
 | Items & paperdoll | `items/catalog.ts` (data + `overlayTextureFor` + WEAPON_TIMING), `entities/Player.ts` | — |
 | World lifecycle | `main.ts` buildWorld/destroyWorld (per-floor teardown contract) | — |
-| External sprites | `render/SpriteLibrary.ts` (manifest, dir mapping, slicing) | `skills/external-sprite-pipeline.md` |
+| External sprites | `render/SpriteLibrary.ts` (atlas manifest, lazy `ensure()`, trim/orig slicing) | `skills/atlas-sprite-pipeline.md` |
+| Run lifecycle & menus | `main.ts` startRun/destroy, `ui/MainMenu.ts`, `ui/RunMenus.ts` | - |
 | Chests & interactables | `systems/Chests.ts` (place/pick/open + approach via OPEN_CHEST) | — |

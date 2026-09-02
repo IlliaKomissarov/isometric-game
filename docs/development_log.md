@@ -1,5 +1,95 @@
 # Development Log
 
+## 2026-09-02 (iteration 36) — Studio overhaul: atlas purge, main menu, run
+## lifecycle, unit scale standard, UI visibility, audio map, VFX
+
+### Asset audit → bake → purge (the load-time fix)
+- Baseline: boot fetched ~6,000 raw frame files (2.5 GB store on disk,
+  330,558 files); the loading screen cleared at **~50 s** in dev.
+- Every animation the game renders was baked FROM THE RUNNING GAME into
+  grid atlases (`src/dev/AtlasBaker.ts` + a dev-only `/__bake` Vite
+  endpoint, commit 07c386cd): renderer-extracted textures (rebakes,
+  paperdoll composites, the tone-baked stairwell all preserved), alpha-
+  cropped per anim with Pixi `trim/orig` keeping every anchor valid, and
+  the ≤0.42-scale packs (zombie/hydra/wolf/lizard/guard/shambler) baked at
+  half resolution. 89 anims + 19 singles, 49 MB. Denser frame picks for the
+  packs that had the frames on disk (zombie 12/16/16/12, ranger 12/12/16/8/15,
+  naga/guard/hydra/shambler/wolf/lizard likewise).
+- `SpriteLibrary` rewritten as an atlas registry with `ensure()` lazy
+  loading; `manifest.json` carries painted bounds per anim.
+- PURGE: `scripts/purge-assets.mjs` moved 217 entries / 2,921 MB out
+  (all raw sprite packs, the unused Foozle/Copings/Temple/Large-Wall/vfx/
+  effects packs, dummy `tiles/sprites/paperdoll/ui` folders, the 0-byte
+  voice-actor stubs, every unmapped TomMusic/Horror file, the unused
+  dark-magic-4 track and stray wav). `public/assets` is now 96 MB / 235
+  files: `atlas/` + the mapped audio + README. `.gitignore` whitelist and
+  the PAGES publicDir hack retired (public/ copies normally).
+- RESULT (production build, `vite preview`): DOMContentLoaded 0.2 s, menu
+  shown at **0.81 s** with **206 KB** transferred (9 requests); a run
+  starts ~1.0 s after PLAY (hero rig + floor-1 roster); later floors
+  stream under the fade in 20–700 ms and the next floor prefetches.
+
+### Main menu, character re-selection, restart flow
+- `main.ts` split into BOOT (once) and `startRun()` → `RunHandle.destroy()`:
+  every EventBus subscription, timer (`later()`), UI panel, DOM listener
+  (AbortController), world, player and `state` are torn down; HUD resets.
+  RESTART RUN / RETURN TO MAIN MENU / a different hero never reload the tab.
+- Title screen (`ui/MainMenu.ts`, ember canvas): DESCEND (remembers the
+  last delver in localStorage) · CHOOSE YOUR DELVER (cancellable class
+  select with BACK/ESC) · SETTINGS & CONTROLS (settings panel now carries
+  the full control table + CLOSE) · CREDITS.
+- `ui/RunMenus.ts`: ESC pause (loop stopped, music ducked; RESUME / SETTINGS
+  / RESTART / MAIN MENU) and the DEATH overlay after the death animation
+  (RISE AGAIN at the entrance / RESTART / MAIN MENU). Epilogue gained MAIN
+  MENU; DELVE AGAIN restarts in place.
+- Verified: pause→resume, death→rise, restart (1.9 s), exit→menu leaves 0
+  panels / 0 skill slots / `__game` null, warrior→mage→ranger→rogue swaps.
+
+### Idle repair + unit height standard
+- `render/animUtil.idleFrame`: time-based; 4-frame big-pack idles (mage,
+  rogue, every skeleton) PING-PONG at 3.6 fps — no more snap from the last
+  frame to the first; long idles loop at 6–8 fps. Player idle clock is a
+  render wall-clock (was per-render-frame, so frame-rate dependent).
+- Scale is DATA now: `HERO_HEIGHT = MOB_HEIGHT = 56`, `BOSS_HEIGHT = 128`
+  (× `heightMult` flavor) over the manifest's painted idle height. Measured
+  in-game: warrior/mage/ranger/rogue all 56 px (mage/rogue were 43, knight
+  56 before); skeleton 56, fallen 48, zombie 60, hydra 70; Tomb/Frost
+  Wardens and all three Hollow King forms 128; Ember Maw 102.
+- Walk `stride` is now CYCLES per tile (frame-count independent).
+
+### UI visibility pass
+- Inventory/cheat slot tiles lit (radial highlight + 2 px border), rarity
+  glows (magic blue / rare gold box-shadows), icon drop-shadows, dashed
+  empty slots; `ui/itemIcons.ts` redrawn as 20×20 shaded pixel icons
+  (bow, wand, helm, shield, mail, greaves, cloak) from a 5-step ramp of the
+  item color with metal/wood/gold accents.
+- Hint banner slightly transparent; tooltip opaque; all overlays remain
+  `pointer-events: none` except real buttons.
+
+### Audio + procedural VFX
+- `AudioManager` music state machine (`setMusic`: menu / dungeon / boss /
+  victory, 1.4 s element crossfades, ambience only with the dungeon bed,
+  `duck()` for modals). Title theme = "Whispers of the Abyss", epilogue =
+  "Cursed Citadel". Combat/horror banks decode when a run starts (`preloadRunBanks`),
+  not on the title screen. New SFX: uiHover/uiClick/uiConfirm/uiBack, pause/
+  unpause, inventory book open/close, map open/close, hero select, rare
+  pickup (gem), gold gather takes, equip clack, level-up heart.
+- `Ambience.sparks()` (additive impact flecks on every landed blow, bolt
+  impacts, gold) and `Ambience.trail()` (ember smear behind bolts, dust
+  behind arrows, emitted from `Projectiles.updateRender`). Dynamic floor
+  shadows: `Lighting.lightDirAt` + `setShadowLight` stretch each unit's
+  grounded ellipse away from the dominant light.
+
+### QA (hidden-tab automation; `__game.travel` dev hook = timer-free floors)
+- Warrior/mage/ranger/rogue runs; floors 1–20 all spawn fully-sprited
+  rosters (no marker fallbacks); arenas 5/10/15/20: Tomb Warden kill → stair
+  reveal → descent to 6; Frost + Ember arenas build with boss music per
+  floor; Hollow King all three phases (summons at P2) → arena clear → stair
+  → THE CRYPT IS CONQUERED with victory music → MAIN MENU → new run.
+- Zero console errors/warnings across the whole pass; no 404s after the purge.
+- Hidden-tab caveat: Chrome throttles timers to ~1/min after 5 min hidden,
+  which is why the dev hook bypasses the fade timers for automation.
+
 ## 2026-09-01 (iteration 35) — Full troubleshooting session (no code changes)
 
 End-to-end real-play QA on a fresh seed (1234): class select by real card

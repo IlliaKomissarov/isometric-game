@@ -2058,13 +2058,14 @@ async function boot(): Promise<void> {
             const w = world;
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
             const delay = entity === w.boss ? 7600 : 1100;
-            if (entity === w.boss && floor >= MAX_DEPTH) {
-              // FINAL VICTORY (it.43): the Hollow King's last form falls -> the sequence runs itself.
+            if (floor >= MAX_DEPTH && w.boss && (entity === w.boss || w.boss.hp <= 0)) {
+              // FINAL VICTORY (it.43): the arena clears with the Hollow King's last form down
+              // (whatever died last) -> the sequence runs itself after the collapse.
               later(() => {
                 if (world !== w || victoryShown) return;
                 victoryShown = true;
                 runEndgame();
-              }, 7800);
+              }, entity === w.boss ? 7800 : 2500);
             }
             later(() => {
               if (world !== w) return;

@@ -15,3 +15,6 @@ Thumbs.db
 # truth for what may live here, so nothing under public/ is ignored.
 # Drop a new raw pack ELSEWHERE, bake it, commit only the atlas.
 # ============================================================
+
+# Raw asset uploads: bake into atlas/ui, never commit (1 GB+).
+public/assets/test-models/

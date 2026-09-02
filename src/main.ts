@@ -323,7 +323,6 @@ async function boot(): Promise<void> {
   const mainMenu = new MainMenuUI({
     // START GAME always opens the character selection (it.37 flow rule).
     play: () => void openClassSelect(),
-    chooseHero: () => void openClassSelect(),
     settings: () => settings.open(),
   });
   mainMenu.setLastHero(lastHero);
@@ -1041,6 +1040,7 @@ async function boot(): Promise<void> {
       world = next;
       skills.clearZones(); // Firewalls/traps stay in the old world's grave.
       destroyWorld(old);
+      interactHint?.classList.remove('show', 'dim'); // No floating chips survive a floor.
       return true;
     };
 
@@ -1086,6 +1086,8 @@ async function boot(): Promise<void> {
         const flen = Math.hypot(player.facing.x, player.facing.y) || 1;
         return { x: player.facing.x / flen, y: player.facing.y / flen };
       },
+      // The cursor's exact world point (it.38): ground zones land ON it.
+      aimPoint: () => (lastMouse.seen ? world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2()) : null),
       zoneVisual: (kind, x, y) => {
         // Persistent ground objects for skill zones (it.33): a gold trap
         // rune, a burning flame bed, or a pale rain sigil.
@@ -1458,6 +1460,7 @@ async function boot(): Promise<void> {
 
     on('chest:reached', ({ chestId }) => world.chests.open(chestId));
     on('chest:opened', ({ x, y }) => {
+      interactHint?.classList.remove('show', 'dim'); // The prompt dies with the lock.
       audio.sfx('chest');
       world.ambience.playGlint(x, y);
       world.camera.addKick(2);
@@ -1798,10 +1801,12 @@ async function boot(): Promise<void> {
           world.enemies.forEachActive((e) => {
             if (e.hp > 0 && e.aiState === 'chase') inCombat = true;
           });
-          interactHint.style.opacity = inCombat ? '0.25' : '';
+          interactHint.classList.toggle('dim', inCombat);
           interactHint.classList.add('show');
         } else {
-          interactHint?.classList.remove('show');
+          // It.38: the chip used to keep an inline opacity when it hid — a
+          // faint "E OPEN" then floated forever near the player.
+          interactHint?.classList.remove('show', 'dim');
         }
 
         // Entity fog gate with a neighbor fallback: a cornered enemy whose

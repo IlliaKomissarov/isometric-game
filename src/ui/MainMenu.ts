@@ -12,20 +12,11 @@ import { audio } from '@/engine/AudioManager';
 import type { ClassArchetype } from '@/network/Serialization';
 
 export interface MainMenuHooks {
-  /** Quick start with the remembered hero (or open the class select). */
+  /** START GAME → the character selection screen (it.38: the only way in). */
   play: () => void;
-  /** Open the class-select screen. */
-  chooseHero: () => void;
   /** Open the settings + controls panel. */
   settings: () => void;
 }
-
-const CLASS_LABEL: Record<ClassArchetype, string> = {
-  warrior: 'WARRIOR',
-  mage: 'MAGE',
-  ranger: 'RANGER',
-  rogue: 'ROGUE',
-};
 
 interface Ember {
   x: number;
@@ -39,7 +30,6 @@ interface Ember {
 
 export class MainMenuUI {
   private readonly root: HTMLElement;
-  private readonly playLabel: HTMLElement;
   private readonly credits: HTMLElement;
   private readonly emberCanvas: HTMLCanvasElement;
   private readonly embers: Ember[] = [];
@@ -49,7 +39,6 @@ export class MainMenuUI {
 
   constructor(private readonly hooks: MainMenuHooks) {
     this.root = document.getElementById('main-menu')!;
-    this.playLabel = this.root.querySelector('[data-menu="play"] .mm-sub')!;
     this.credits = document.getElementById('credits')!;
     this.emberCanvas = this.root.querySelector<HTMLCanvasElement>('#mm-embers')!;
 
@@ -60,9 +49,6 @@ export class MainMenuUI {
         if (act === 'play') {
           audio.sfx('uiConfirm');
           this.hooks.play();
-        } else if (act === 'hero') {
-          audio.sfx('uiClick');
-          this.hooks.chooseHero();
         } else if (act === 'settings') {
           audio.sfx('uiClick');
           this.hooks.settings();
@@ -84,9 +70,9 @@ export class MainMenuUI {
     });
   }
 
-  /** The remembered hero is shown on the START button (pre-selected in the class select). */
-  setLastHero(cls: ClassArchetype | null): void {
-    this.playLabel.textContent = cls ? `choose your delver · last: ${CLASS_LABEL[cls]}` : 'choose your delver';
+  /** The remembered hero is pre-selected on the class screen; the menu stays clean. */
+  setLastHero(_cls: ClassArchetype | null): void {
+    /* no menu label — see the class select's CONFIRM button */
   }
 
   show(): void {

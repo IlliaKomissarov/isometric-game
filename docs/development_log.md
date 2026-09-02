@@ -1,5 +1,26 @@
 # Development Log
 
+## 2026-09-02 (iteration 38) - Chest chip leak, menu streamlining, aim/firewall alignment
+
+- STUCK "E OPEN": the interact chip set an INLINE opacity (0.25) during
+  combat and only removed the `show` class when hiding, so a faint chip
+  floated forever near the player after a chest was opened. Now a `dim`
+  class carries the combat fade, the chip is cleared on `chest:opened`
+  and on every floor swap. All floating text already auto-fades
+  (damage numbers 0.85 s, crits 1.1 s, banners 2.6 s).
+- Main menu = START GAME / SETTINGS / CREDITS. START opens the character
+  selection (select card -> CONFIRM -> floor 1); the delver button is gone.
+- Skills: `SkillDeps.aimPoint()` (cursor world point) + `aimTarget()` -
+  aimed ground skills (Fireball, Firewall, Rain of Arrows) land on the
+  foe in the aim cone, else EXACTLY on the cursor (range-clamped), never a
+  fixed distance ahead. Firewall is laid across a SCREEN-perpendicular of
+  the aim (world-space perpendiculars skew under the 2:1 projection),
+  centered on the target, 1.15-tile cell spacing.
+- Live QA: menu -> select -> confirm -> floor 1; chest E-open (chip hidden,
+  no inline opacity, 2 drops); firewall perpendicular on screen (90.0 deg)
+  and centered on the foe (0.00 tiles); fireball 7 dmg, frost nova 4 dmg +
+  freeze. Zero console errors.
+
 ## 2026-09-02 (iteration 37) — Stability: transition freeze, direction
 ## remaps, slow idles, select→confirm flow, gold visibility, impact FX
 

@@ -79,6 +79,8 @@ export interface SkillDeps {
    * fires where the player is AIMING, never into empty space behind them.
    */
   aim: () => { x: number; y: number };
+  /** The cursor's exact world point, or null when the mouse was never seen. */
+  aimPoint: () => { x: number; y: number } | null;
   /**
    * Persistent ground visual for a zone (trap rune / flame bed / rain
    * sigil); returns a dispose function. Render-side.
@@ -142,6 +144,53 @@ export class SkillSystem {
     p.facing.x = a.x;
     p.facing.y = a.y;
     return a;
+  }
+
+  /**
+   * TARGET POINT (it.38): where an aimed ground skill lands — the nearest
+   * foe inside the aim cone within `range`, else the cursor's world point
+   * (clamped to `range`, at least `minDist` out), else `fallback` tiles
+   * along the aim. No more fixed "4 tiles ahead" misses.
+   */
+  private aimTarget(aim: { x: number; y: number }, range: number, minDist: number, fallback: number): { x: number; y: number } {
+    const p = this.deps.player;
+    const foe = this.deps.enemiesNear(p.pos.x, p.pos.y, range).find((e) => {
+      const dx = e.pos.x - p.pos.x;
+      const dy = e.pos.y - p.pos.y;
+      const len = Math.hypot(dx, dy) || 1;
+      return (dx / len) * aim.x + (dy / len) * aim.y > 0.5;
+    });
+    if (foe) return { x: foe.pos.x, y: foe.pos.y };
+    const cursor = this.deps.aimPoint();
+    if (cursor) {
+      const dx = cursor.x - p.pos.x;
+      const dy = cursor.y - p.pos.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0.05) {
+        const d = Math.min(range, Math.max(minDist, len));
+        return { x: p.pos.x + (dx / len) * d, y: p.pos.y + (dy / len) * d };
+      }
+    }
+    return { x: p.pos.x + aim.x * fallback, y: p.pos.y + aim.y * fallback };
+  }
+
+  /**
+   * SCREEN-PERPENDICULAR of a world aim vector (it.38): the firewall must
+   * read straight across the aim ON SCREEN. A world-space perpendicular is
+   * skewed by the 2:1 projection, so rotate in screen space and map back:
+   *   screen = (wx - wy, (wx + wy) / 2)   world = (sy + sx / 2, sy - sx / 2)
+   */
+  private static screenPerp(aim: { x: number; y: number }): { x: number; y: number } {
+    const sx = aim.x - aim.y;
+    const sy = (aim.x + aim.y) / 2;
+    const psx = -sy;
+    const psy = sx;
+    let wx = psy + psx / 2;
+    let wy = psy - psx / 2;
+    const len = Math.hypot(wx, wy) || 1;
+    wx /= len;
+    wy /= len;
+    return { x: wx, y: wy };
   }
 
   apply(commands: InputCommand[]): void {
@@ -376,19 +425,10 @@ export class SkillSystem {
       }
       // ---- MAGE ----
       case 'fireball': {
-        // AIMED (it.33): the burst lands on the nearest foe along the aim
-        // cone, else exactly where the cursor points.
+        // AIMED (it.33/38): the burst lands on the nearest foe along the
+        // aim cone, else exactly where the cursor points.
         const aim = this.takeAim();
-        const foe = d
-          .enemiesNear(p.pos.x, p.pos.y, 7)
-          .find((e) => {
-            const dx = e.pos.x - p.pos.x;
-            const dy = e.pos.y - p.pos.y;
-            const len = Math.hypot(dx, dy) || 1;
-            return (dx / len) * aim.x + (dy / len) * aim.y > 0.5;
-          }) ?? d.enemiesNear(p.pos.x, p.pos.y, 7)[0];
-        const tx = foe ? foe.pos.x : p.pos.x + aim.x * 4;
-        const ty = foe ? foe.pos.y : p.pos.y + aim.y * 4;
+        const { x: tx, y: ty } = this.aimTarget(aim, 7, 1, 4);
         d.sfx('skillFire');
         d.shake(0.3);
         d.burst(tx, ty, 0xfff1d8, 10);
@@ -406,14 +446,13 @@ export class SkillSystem {
       }
       case 'firewall': {
         d.sfx('skillFire');
-        // A line perpendicular to the AIM, 2.5 tiles toward the cursor.
+        // A line straight ACROSS the aim (screen-perpendicular, it.38),
+        // centered on the targeted foe or the cursor point (1.5–5 tiles out).
         const aim = this.takeAim();
-        const cx = p.pos.x + aim.x * 2.5;
-        const cy = p.pos.y + aim.y * 2.5;
-        const px = -aim.y;
-        const py = aim.x;
+        const { x: cx, y: cy } = this.aimTarget(aim, 5, 1.5, 2.5);
+        const { x: px, y: py } = SkillSystem.screenPerp(aim);
         const cells: Array<{ x: number; y: number }> = [];
-        for (let i = -2; i <= 2; i++) cells.push({ x: cx + px * i, y: cy + py * i });
+        for (let i = -2; i <= 2; i++) cells.push({ x: cx + px * i * 1.15, y: cy + py * i * 1.15 });
         const disposers = cells.map((cell) => d.zoneVisual('fire', cell.x, cell.y));
         this.zones.push({
           kind: 'firewall',
@@ -497,14 +536,7 @@ export class SkillSystem {
       }
       case 'rain': {
         const aim = this.takeAim();
-        const foe = d.enemiesNear(p.pos.x, p.pos.y, 7).find((e) => {
-          const dx = e.pos.x - p.pos.x;
-          const dy = e.pos.y - p.pos.y;
-          const len = Math.hypot(dx, dy) || 1;
-          return (dx / len) * aim.x + (dy / len) * aim.y > 0.5;
-        }) ?? d.enemiesNear(p.pos.x, p.pos.y, 7)[0];
-        const tx = foe ? foe.pos.x : p.pos.x + aim.x * 4;
-        const ty = foe ? foe.pos.y : p.pos.y + aim.y * 4;
+        const { x: tx, y: ty } = this.aimTarget(aim, 7, 1, 4);
         d.sfx('skillArrows');
         const dispose = d.zoneVisual('rain', tx, ty);
         this.zones.push({ kind: 'rain', x: tx, y: ty, wavesLeft: 5, nextWave: 12, dispose });

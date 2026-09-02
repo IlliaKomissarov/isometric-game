@@ -633,6 +633,10 @@
       #interact-hint.show {
         opacity: 1;
       }
+      /* Combat dim (it.38: a class, never an inline style that can leak). */
+      #interact-hint.show.dim {
+        opacity: 0.25;
+      }
       #interact-hint kbd {
         font-size: 10px;
         color: #cfc096;
@@ -2007,9 +2011,8 @@
         <h1>CRYPT OF THE<br />HOLLOW KING</h1>
         <p class="mm-tag">twenty depths · four delvers · one crown of ash</p>
         <div class="mm-rule"></div>
-        <button class="menu-btn" data-menu="play">DESCEND<span class="mm-sub">choose a delver first</span></button>
-        <button class="menu-btn" data-menu="hero">CHOOSE YOUR DELVER</button>
-        <button class="menu-btn" data-menu="settings">SETTINGS &amp; CONTROLS</button>
+        <button class="menu-btn" data-menu="play">START GAME</button>
+        <button class="menu-btn" data-menu="settings">SETTINGS</button>
         <button class="menu-btn" data-menu="credits">CREDITS</button>
         <div class="mm-foot">ESC pauses · the dark remembers your last delver</div>
       </div>

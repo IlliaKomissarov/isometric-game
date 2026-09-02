@@ -167,6 +167,14 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
 
+  let lastHero: ClassArchetype | null = null;
+  try {
+    const stored = localStorage.getItem(LAST_HERO_KEY);
+    if (stored && (VALID_CLASSES as readonly string[]).includes(stored)) lastHero = stored as ClassArchetype;
+  } catch {
+    /* storage unavailable */
+  }
+
   // --- Hero previews (shared by class select, portraits, paperdoll) ---------
   /** South-facing idle frames, alpha-cropped to the painted body so every
    *  hero previews at the SAME height regardless of pack padding. */
@@ -230,7 +238,30 @@ async function boot(): Promise<void> {
         ac.abort();
         resolve(cls);
       };
-      overlay.querySelectorAll<HTMLElement>('.class-card').forEach((card) => {
+      // SELECT → CONFIRM (it.37): a card click highlights the delver; the
+      // CONFIRM button (or Enter) starts the descent. The remembered hero
+      // comes pre-selected.
+      const confirmBtn = overlay.querySelector<HTMLButtonElement>('[data-cs-confirm]');
+      let selected: ClassArchetype | null = lastHero;
+      const cards = overlay.querySelectorAll<HTMLElement>('.class-card');
+      const paint = (): void => {
+        cards.forEach((c) => c.classList.toggle('selected', c.dataset.class === selected));
+        if (confirmBtn) {
+          confirmBtn.disabled = !selected;
+          confirmBtn.textContent = selected ? `CONFIRM · ${selected.toUpperCase()}` : 'CONFIRM';
+        }
+      };
+      paint();
+      confirmBtn?.addEventListener(
+        'click',
+        () => {
+          if (!selected) return;
+          audio.sfx('heroSelect');
+          finish(selected);
+        },
+        { signal: ac.signal },
+      );
+      cards.forEach((card) => {
         const cls = card.dataset.class as ClassArchetype;
         // Live animated model preview atop each card (it.33).
         let cv = card.querySelector<HTMLCanvasElement>('canvas.cc-preview');
@@ -257,8 +288,9 @@ async function boot(): Promise<void> {
         card.addEventListener(
           'click',
           () => {
-            audio.sfx('heroSelect');
-            finish(cls);
+            audio.sfx('uiClick');
+            selected = cls;
+            paint();
           },
           { signal: ac.signal },
         );
@@ -275,6 +307,10 @@ async function boot(): Promise<void> {
         'keydown',
         (e: KeyboardEvent) => {
           if (e.code === 'Escape') finish(null);
+          if ((e.code === 'Enter' || e.code === 'NumpadEnter') && selected) {
+            audio.sfx('heroSelect');
+            finish(selected);
+          }
         },
         { signal: ac.signal },
       );
@@ -283,19 +319,10 @@ async function boot(): Promise<void> {
 
   // --- Run lifecycle --------------------------------------------------------
   let run: RunHandle | null = null;
-  let lastHero: ClassArchetype | null = null;
-  try {
-    const stored = localStorage.getItem(LAST_HERO_KEY);
-    if (stored && (VALID_CLASSES as readonly string[]).includes(stored)) lastHero = stored as ClassArchetype;
-  } catch {
-    /* storage unavailable */
-  }
 
   const mainMenu = new MainMenuUI({
-    play: () => {
-      if (lastHero) void beginRun(lastHero);
-      else void openClassSelect();
-    },
+    // START GAME always opens the character selection (it.37 flow rule).
+    play: () => void openClassSelect(),
     chooseHero: () => void openClassSelect(),
     settings: () => settings.open(),
   });
@@ -352,6 +379,14 @@ async function boot(): Promise<void> {
     run?.destroy();
     run = null;
     showMainMenu();
+  };
+  /** Pause/death → CHANGE CLASS: tear the run down and reopen the selection. */
+  const changeClass = (): void => {
+    run?.destroy();
+    run = null;
+    document.body.classList.remove('in-run');
+    audio.setMusic('menu');
+    void openClassSelect();
   };
 
   // Epilogue buttons are wired ONCE (the overlay outlives runs).
@@ -542,11 +577,25 @@ async function boot(): Promise<void> {
     });
 
     // --- Per-floor world construction --------------------------------------
-    const buildWorld = async (floorNum: number, mode: 'normal' | 'arena' = 'normal'): Promise<World> => {
+    /**
+     * LAZY ATLASES (it.36): stream a floor's roster BEFORE anything is torn
+     * down — the old floor keeps simulating while the fetch runs. A failed
+     * fetch only costs sprites (procedural markers fall back); it can never
+     * hang a transition (it.37 error boundary).
+     */
+    const preloadFloor = async (floorNum: number, mode: 'normal' | 'arena'): Promise<void> => {
+      try {
+        await spriteLib.ensure(animsForFloor(floorNum, mode));
+      } catch (err) {
+        console.warn('[floor] atlas preload failed — procedural fallback:', err);
+      }
+    };
+
+    // SYNCHRONOUS world construction (it.37): no await between the old
+    // floor's teardown and the new floor's first tick — the freeze was the
+    // loop touching a destroyed world during the old async gap.
+    const buildWorld = (floorNum: number, mode: 'normal' | 'arena' = 'normal'): World => {
       const isArena = mode === 'arena';
-      // LAZY ATLASES (it.36): this floor's roster (+ the hero) must be
-      // resident before a single body spawns; the fade covers the fetch.
-      await spriteLib.ensure(animsForFloor(floorNum, mode));
       const seed = ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
@@ -961,11 +1010,39 @@ async function boot(): Promise<void> {
       w.input.destroy();
       w.projectiles.clear();
       w.enemies.destroyAll();
-      player.container.removeFromParent(); // Survives the viewport teardown.
+      // The hero survives the viewport teardown — but only detach them if
+      // they still stand in THIS world (the next one may already own them).
+      if (player.container.parent === w.viewport.objectLayer) player.container.removeFromParent();
       w.viewport.destroy();
     };
 
-    let world = await buildWorld(floor);
+    await preloadFloor(floor, 'normal');
+    let world = buildWorld(floor);
+
+    /**
+     * BUILD-THEN-SWAP (it.37): the next floor is constructed while the
+     * current one still exists; only on success is the old floor destroyed.
+     * A generation/build error keeps the player on the current floor with
+     * a console error instead of a dead loop. Returns false on failure.
+     */
+    const swapWorld = (make: () => World): boolean => {
+      let next: World;
+      try {
+        next = make();
+      } catch (err) {
+        console.error('[floor] build failed — staying on the current floor:', err);
+        // The failed attempt may have re-parented the hero; put them back.
+        if (player.container.parent !== world.viewport.objectLayer) {
+          world.viewport.objectLayer.addChild(player.container);
+        }
+        return false;
+      }
+      const old = world;
+      world = next;
+      skills.clearZones(); // Firewalls/traps stay in the old world's grave.
+      destroyWorld(old);
+      return true;
+    };
 
     // MOUSE AIM TRACKING (it.33): skills cast toward the cursor's world
     // point — the last known pointer position feeds the aim vector.
@@ -1117,33 +1194,44 @@ async function boot(): Promise<void> {
     // shows a "delving" label until the new floor is fully built.
     const floorFade = document.getElementById('floor-fade');
     let transitioning = false;
+    let transitionSerial = 0;
     const withFade = (work: () => Promise<void>): void => {
       if (transitioning) return;
       transitioning = true;
+      const serial = ++transitionSerial;
       audio.sfx('stairs');
       floorFade?.classList.add('show');
+      const finish = (): void => {
+        if (!alive || serial !== transitionSerial) return;
+        floorFade?.classList.remove('loading');
+        later(() => {
+          floorFade?.classList.remove('show');
+          transitioning = false;
+        }, 140);
+      };
       later(() => {
         floorFade?.classList.add('loading');
         void work()
           .catch((err) => console.error('[floor] transition failed:', err))
-          .finally(() => {
-            if (!alive) return;
-            floorFade?.classList.remove('loading');
-            later(() => {
-              floorFade?.classList.remove('show');
-              transitioning = false;
-            }, 140);
-          });
+          .finally(finish);
       }, 300);
+      // WATCHDOG (it.37): nothing may hold the fade forever — if the work
+      // has not settled in 20 s the screen is handed back with an error.
+      later(() => {
+        if (transitioning && serial === transitionSerial) {
+          console.error('[floor] transition watchdog fired — releasing the fade');
+          finish();
+        }
+      }, 20000);
     };
 
     const descend = (): void =>
       withFade(async () => {
+        const next = floor + 1;
+        await preloadFloor(next, 'normal');
         const clearTime = formatTime(state.tick - floorStartTick);
-        destroyWorld(world);
-        skills.clearZones(); // Firewalls/traps stay in the old world's grave.
-        floor++;
-        world = await buildWorld(floor);
+        if (!swapWorld(() => buildWorld(next))) return;
+        floor = next;
         updateDepth();
         levelSelect.unlock(floor);
         // The run timer resets cleanly on every floor transition.
@@ -1163,9 +1251,8 @@ async function boot(): Promise<void> {
      */
     const enterArena = (): void =>
       withFade(async () => {
-        destroyWorld(world);
-        skills.clearZones();
-        world = await buildWorld(floor, 'arena');
+        await preloadFloor(floor, 'arena');
+        if (!swapWorld(() => buildWorld(floor, 'arena'))) return;
         player.action = 'idle';
         updateOrb();
         world.dmgText.show(player.pos.x + 1.2, player.pos.y - 0.6, 'THE ARENA SEALS SHUT', 'crit');
@@ -1175,10 +1262,9 @@ async function boot(): Promise<void> {
     const jumpToFloor = (target: number): void => {
       if (target === floor) return;
       withFade(async () => {
-        destroyWorld(world);
-        skills.clearZones();
+        await preloadFloor(target, 'normal');
+        if (!swapWorld(() => buildWorld(target))) return;
         floor = target;
-        world = await buildWorld(floor);
         updateDepth();
         floorStartTick = state.tick;
         player.action = 'idle';
@@ -1236,10 +1322,10 @@ async function boot(): Promise<void> {
       teleport: (target: number, arena: boolean) => {
         const dest = Math.max(1, Math.min(target, MAX_DEPTH));
         withFade(async () => {
-          destroyWorld(world);
-          skills.clearZones();
+          const mode = arena && isBossFloor(dest) ? 'arena' : 'normal';
+          await preloadFloor(dest, mode);
+          if (!swapWorld(() => buildWorld(dest, mode))) return;
           floor = dest;
-          world = await buildWorld(floor, arena && isBossFloor(floor) ? 'arena' : 'normal');
           updateDepth();
           floorStartTick = state.tick;
           player.action = 'idle';
@@ -1289,6 +1375,10 @@ async function boot(): Promise<void> {
         world.camera.addKick(2.5); // Felt on every landed blow.
         // Impact sparks (it.36): steel meets flesh — a hot fleck burst.
         world.ambience.sparks(entity.pos.x, entity.pos.y, dirX ?? 0, dirY ?? 0, Math.min(10, 4 + (amount >> 1)));
+        // Impact flash + victim-side arc (it.37): the blow READS at the body.
+        const ranged = player.weaponProfile.ranged;
+        world.ambience.impactFlash(entity.pos.x, entity.pos.y, ranged ? 0xffb060 : 0xfff0d0, 0.8 + Math.min(1.2, amount / 16));
+        if (!ranged) world.ambience.slashArc(entity.pos.x, entity.pos.y, dirX ?? 1, dirY ?? 0, 0xffe6c0, 0.8);
       } else if (entity === player) {
         player.onDamaged();
         world.camera.addKick(5);
@@ -1531,8 +1621,34 @@ async function boot(): Promise<void> {
     const pickRingScratch = vec2();
     let lastRenderTime = performance.now();
 
+    // ERROR BOUNDARY (it.37): an exception inside a tick or a frame must
+    // never kill the rAF loop (that was a silent freeze). Report the first
+    // few, keep running.
+    let loopErrors = 0;
+    const reportLoopError = (where: string, err: unknown): void => {
+      loopErrors++;
+      if (loopErrors <= 5) console.error(`[loop] ${where} threw (${loopErrors}):`, err);
+    };
+
     const loop = new GameLoop({
       update: (dt, tick) => {
+        try {
+          tickUpdate(dt, tick);
+        } catch (err) {
+          reportLoopError('update', err);
+        }
+      },
+      render: (alpha) => {
+        try {
+          frameRender(alpha);
+        } catch (err) {
+          reportLoopError('render', err);
+        }
+      },
+    });
+
+    function tickUpdate(dt: number, tick: number): void {
+      {
         if (pendingDescend) {
           pendingDescend = false;
           descend();
@@ -1633,8 +1749,11 @@ async function boot(): Promise<void> {
         }
 
         eventBus.emit('sim:tick', { tick });
-      },
-      render: (alpha) => {
+      }
+    }
+
+    function frameRender(alpha: number): void {
+      {
         const now = performance.now();
         const frameDt = Math.min((now - lastRenderTime) / 1000, 0.1);
         lastRenderTime = now;
@@ -1767,8 +1886,8 @@ async function boot(): Promise<void> {
         minimap.update(cameraFocus.x, cameraFocus.y, timeSec);
         world.camera.follow(cameraFocus, frameDt);
         app.renderer.render(app.stage);
-      },
-    });
+      }
+    }
 
     // --- Pause / death menus (it.36) -----------------------------------------
     const runMenus = new RunMenusUI({
@@ -1780,6 +1899,7 @@ async function boot(): Promise<void> {
       },
       restart: () => restartRun(),
       mainMenu: () => exitToMenu(),
+      changeClass: () => changeClass(),
       settings: () => settings.open(),
       respawn: () => respawnPlayer(),
       canPause: () => !transitioning && !victoryShown,
@@ -1795,10 +1915,11 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        destroyWorld(world);
-        skills.clearZones();
-        floor = Math.max(1, Math.min(target, MAX_DEPTH));
-        world = await buildWorld(floor, arena && isBossFloor(floor) ? 'arena' : 'normal');
+        const dest = Math.max(1, Math.min(target, MAX_DEPTH));
+        const mode = arena && isBossFloor(dest) ? 'arena' : 'normal';
+        await preloadFloor(dest, mode);
+        if (!swapWorld(() => buildWorld(dest, mode))) return;
+        floor = dest;
         updateDepth();
         floorStartTick = state.tick;
         player.action = 'idle';

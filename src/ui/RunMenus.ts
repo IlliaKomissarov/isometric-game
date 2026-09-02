@@ -16,6 +16,8 @@ export interface RunMenuHooks {
   resume: () => void;
   restart: () => void;
   mainMenu: () => void;
+  /** Tear the run down and reopen the class selection (it.37). */
+  changeClass: () => void;
   settings: () => void;
   /** Death overlay only: respawn at the floor entrance. */
   respawn: () => void;
@@ -67,6 +69,10 @@ export class RunMenusUI {
               audio.sfx('uiBack');
               this.hideAll();
               this.hooks.mainMenu();
+            } else if (act === 'class') {
+              audio.sfx('uiConfirm');
+              this.hideAll();
+              this.hooks.changeClass();
             } else if (act === 'settings') {
               audio.sfx('uiClick');
               this.hooks.settings();

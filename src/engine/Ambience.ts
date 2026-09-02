@@ -31,6 +31,19 @@ interface LoopingAnim {
   clock: number;
   gx: number;
   gy: number;
+  /** TREASURE mode (it.37): saturated gold tint floor + twinkle sparks. */
+  treasure: boolean;
+  sparkleClock: number;
+}
+
+/** Short-lived additive FX sprite (impact flash, slash arc). */
+interface FxSprite {
+  active: boolean;
+  sprite: Sprite;
+  life: number;
+  maxLife: number;
+  kind: 'flash' | 'arc';
+  baseScale: number;
 }
 
 interface Mote {
@@ -96,6 +109,7 @@ export class Ambience {
   private readonly bursts: BurstParticle[] = [];
   private readonly glints: GlintPlay[] = [];
   private readonly loops: LoopingAnim[] = [];
+  private readonly fx: FxSprite[] = [];
   private glintFrames: Texture[] | null = null;
   private hotspots: ReadonlyArray<{ x: number; y: number }> = [];
   private readonly scratch = vec2();
@@ -212,6 +226,25 @@ export class Ambience {
     p.sprite.visible = true;
   }
 
+  /** A single slow gold twinkle rising off treasure (it.37). */
+  sparkle(x: number, y: number): void {
+    const p = this.acquireBurst();
+    p.active = true;
+    p.wx = x;
+    p.wy = y;
+    p.z = 4 + Math.random() * 10;
+    p.vx = (Math.random() - 0.5) * 0.15;
+    p.vy = (Math.random() - 0.5) * 0.15;
+    p.vz = 14 + Math.random() * 10;
+    p.life = 0;
+    p.maxLife = 0.45 + Math.random() * 0.3;
+    p.sprite.tint = Math.random() < 0.5 ? 0xfff2c0 : 0xffd870;
+    p.sprite.blendMode = 'add';
+    p.baseAlpha = 1;
+    p.sprite.scale.set(0.35 + Math.random() * 0.3);
+    p.sprite.visible = true;
+  }
+
   /** Pooled burst particle (grows the pool on demand). */
   private acquireBurst(): BurstParticle {
     let p = this.bursts.find((b) => !b.active);
@@ -256,8 +289,58 @@ export class Ambience {
    * Register a looping tile-pinned frame animation (e.g. gold piles).
    * The sprite must already be parented; Ambience drives frames + fog gating.
    */
-  addLoopingAnim(sprite: Sprite, frames: Texture[], fps: number, gx: number, gy: number): void {
-    this.loops.push({ sprite, frames, fps, clock: Math.random() * frames.length, gx, gy });
+  addLoopingAnim(sprite: Sprite, frames: Texture[], fps: number, gx: number, gy: number, treasure = false): void {
+    this.loops.push({ sprite, frames, fps, clock: Math.random() * frames.length, gx, gy, treasure, sparkleClock: Math.random() });
+  }
+
+  /**
+   * IMPACT FLASH (it.37): a hot additive bloom that pops at a hit point
+   * and dies in ~0.18 s — reads the landed blow before the numbers do.
+   */
+  impactFlash(x: number, y: number, color: number, size = 1): void {
+    const p = this.acquireFx('flash');
+    const s = worldToScreen(x, y, this.scratch);
+    p.sprite.position.set(s.x, s.y - 22);
+    p.sprite.tint = color;
+    p.sprite.rotation = 0;
+    p.baseScale = 0.55 * size;
+    p.maxLife = 0.18;
+    p.life = 0;
+    p.active = true;
+    p.sprite.visible = true;
+  }
+
+  /**
+   * IMPACT ARC (it.37): the crescent slash flashed AT THE VICTIM along the
+   * blow's travel axis (melee hits) — with the hero's own arc it reads as
+   * blade meeting flesh.
+   */
+  slashArc(x: number, y: number, dirX: number, dirY: number, color: number, size = 1): void {
+    const p = this.acquireFx('arc');
+    const s = worldToScreen(x, y, this.scratch);
+    p.sprite.position.set(s.x, s.y - 24);
+    p.sprite.tint = color;
+    // World → screen heading of the blow (2:1 squash), arc swings across it.
+    p.sprite.rotation = Math.atan2((dirX + dirY) / 2, dirX - dirY) + Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+    p.baseScale = 0.9 * size;
+    p.maxLife = 0.16;
+    p.life = 0;
+    p.active = true;
+    p.sprite.visible = true;
+  }
+
+  private acquireFx(kind: 'flash' | 'arc'): FxSprite {
+    let p = this.fx.find((f) => !f.active && f.kind === kind);
+    if (!p) {
+      const sprite = new Sprite(assets.get(kind === 'flash' ? 'glow' : 'slash'));
+      sprite.anchor.set(kind === 'flash' ? 0.5 : 0.1, 0.5);
+      sprite.blendMode = 'add';
+      sprite.visible = false;
+      this.viewport.ambienceLayer.addChild(sprite);
+      p = { active: false, sprite, life: 0, maxLife: 1, kind, baseScale: 1 };
+      this.fx.push(p);
+    }
+    return p;
   }
 
   /**
@@ -375,7 +458,41 @@ export class Ambience {
       if (!visible) continue;
       loop.clock += dt * loop.fps;
       loop.sprite.texture = loop.frames[Math.floor(loop.clock) % loop.frames.length];
-      if (getTint) loop.sprite.tint = getTint(loop.gx + 0.5, loop.gy + 0.5);
+      if (loop.treasure) {
+        // HIGH-CONTRAST GOLD (it.37): never sinks into the shadow ramp —
+        // a saturated warm floor plus a slow shimmer, and twinkle sparks.
+        const shimmer = 0.86 + 0.14 * Math.sin(time * 4.2 + loop.gx * 1.3 + loop.gy * 0.7);
+        const r = Math.round(255 * shimmer);
+        const g2 = Math.round(226 * shimmer);
+        const b = Math.round(120 * shimmer);
+        loop.sprite.tint = (r << 16) | (g2 << 8) | b;
+        loop.sparkleClock -= dt;
+        if (loop.sparkleClock <= 0) {
+          loop.sparkleClock = 0.25 + Math.random() * 0.35;
+          this.sparkle(loop.gx + 0.5 + (Math.random() - 0.5) * 0.5, loop.gy + 0.5 + (Math.random() - 0.5) * 0.5);
+        }
+      } else if (getTint) {
+        loop.sprite.tint = getTint(loop.gx + 0.5, loop.gy + 0.5);
+      }
+    }
+
+    // Impact FX: flash blooms out, arcs whip and fade.
+    for (const p of this.fx) {
+      if (!p.active) continue;
+      p.life += dt;
+      const t = p.life / p.maxLife;
+      if (t >= 1) {
+        p.active = false;
+        p.sprite.visible = false;
+        continue;
+      }
+      if (p.kind === 'flash') {
+        p.sprite.scale.set(p.baseScale * (0.6 + t * 1.4));
+        p.sprite.alpha = 0.9 * (1 - t) * (1 - t);
+      } else {
+        p.sprite.scale.set(p.baseScale * (0.8 + t * 0.5));
+        p.sprite.alpha = 0.95 * (1 - t);
+      }
     }
 
     for (const glow of this.glows) {

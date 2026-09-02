@@ -88,16 +88,16 @@ export function placeProps(
       gold.zIndex = depthKey(gx + 0.5, gy + 0.5);
       gold.scale.set(1.8);
       viewport.objectLayer.addChild(gold);
-      ambience.addLoopingAnim(gold, spriteLib.anim('gold_drop').frames[0], 5, gx, gy);
-      // It.26 VISIBILITY: a pulsing golden glow beneath the pile so it
-      // reads unmistakably against the dark floors.
+      ambience.addLoopingAnim(gold, spriteLib.anim('gold_drop').frames[0], 5, gx, gy, true);
+      // It.26/37 VISIBILITY: a strong pulsing golden glow beneath the pile
+      // (treasure mode above keeps the coins saturated + twinkling).
       const glow = new Sprite(assets.get('glow'));
       glow.anchor.set(0.5);
       glow.blendMode = 'add';
-      glow.tint = 0xffd870;
+      glow.tint = 0xffc850;
       glow.position.set(gs.x, gs.y - 4);
       viewport.ambienceLayer.addChild(glow);
-      ambience.addGlow(glow, gx, gy, 0.55, 0.8);
+      ambience.addGlow(glow, gx, gy, 1.0, 1.35);
       goldPiles.push({ x: gx + 0.5, y: gy + 0.5, amount: 8 + Math.floor(rand() * 18), sprite: gold, glow, taken: false });
     }
   }

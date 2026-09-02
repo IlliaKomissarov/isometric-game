@@ -1705,10 +1705,30 @@
         margin-top: 8px;
       }
 
-      /* Class select gains a BACK control (it.36). */
-      #class-select .cs-back {
+      /* Class select: BACK + CONFIRM (it.37 select-then-confirm flow). */
+      #class-select .cs-actions {
+        display: flex;
+        gap: 14px;
         margin-top: 28px;
+      }
+      #class-select .cs-back,
+      #class-select .cs-confirm {
         width: 220px;
+        margin: 0;
+      }
+      #class-select .cs-confirm:disabled {
+        opacity: 0.4;
+        cursor: default;
+        transform: none;
+        box-shadow: none;
+      }
+      .class-card.selected {
+        border-color: var(--gold, #c8a558);
+        box-shadow: 0 0 34px rgba(200, 165, 88, 0.32), inset 0 0 22px rgba(200, 165, 88, 0.12);
+        transform: translateY(-6px);
+      }
+      .class-card.selected h2 {
+        color: var(--gold, #c8a558);
       }
 
       /* Floor fade shows a delving label while atlases stream in (it.36). */
@@ -1969,7 +1989,10 @@
           <div class="cc-skills">Blade Flurry · Poison Blade<br />Vanish · Shadow Slash</div>
         </div>
       </div>
-      <button class="menu-btn cs-back" data-cs-back>BACK</button>
+      <div class="cs-actions">
+        <button class="menu-btn cs-back" data-cs-back>BACK</button>
+        <button class="menu-btn cs-confirm" data-cs-confirm disabled>CONFIRM</button>
+      </div>
     </div>
 
     <!-- MAIN MENU (it.36): the title screen. -->
@@ -1996,6 +2019,7 @@
         <button class="menu-btn" data-act="resume">RESUME</button>
         <button class="menu-btn" data-act="settings">SETTINGS &amp; CONTROLS</button>
         <button class="menu-btn" data-act="restart">RESTART RUN</button>
+        <button class="menu-btn" data-act="class">CHANGE CLASS</button>
         <button class="menu-btn danger" data-act="menu">RETURN TO MAIN MENU</button>
       </div>
     </div>
@@ -2008,6 +2032,7 @@
         <div class="dm-stats"></div>
         <button class="menu-btn" data-act="respawn">RISE AGAIN<span class="mm-sub">wake at this depth's entrance</span></button>
         <button class="menu-btn" data-act="restart">RESTART RUN</button>
+        <button class="menu-btn" data-act="class">CHANGE CLASS</button>
         <button class="menu-btn danger" data-act="menu">RETURN TO MAIN MENU</button>
       </div>
     </div>
@@ -2017,20 +2042,23 @@
       <div class="modal-panel">
         <h2>CREDITS</h2>
         <div class="cr-list">
-          <b>DESIGN &amp; CODE</b>
-          A deterministic isometric ARPG core — TypeScript, Vite, Pixi.js v8.
+          <b>DEVELOPER</b>
+          Illia Komissarov &mdash; design, code, art direction. Built in a studio session with Claude Code.
+          <b>ENGINE</b>
+          Pixi.js 8 (WebGL rendering) &middot; TypeScript &middot; Vite. Deterministic 60 Hz fixed-step simulation,
+          tile lightmap fog, seeded BSP dungeons, A* pathing.
           <b>CHARACTER ART</b>
-          2D HD Character Knight · the "big pack 8 moves" paperdoll set · the 256/320/512-px
-          creature packs (naga, werewolf, lizardman, halberdier, hydra, villager) · the
-          zombie cinematic pack · Lords of Pain (demo) · Infernus tiles.
-          <b>ICONS</b>
-          Oubliette weapon icons by Timberwolf Games.
-          <b>MUSIC &amp; SOUND</b>
-          Whispers of the Abyss, Shadowforge Convergence, Eclipsed Desolation, Cursed Citadel,
-          Dread March, Veil of Eternal Nightfall · universfield · alesiadavina · yodguard ·
-          kave_msri · Free Fantasy SFX Pack by TomMusic · Horror SFX Free.
-          <b>TYPE</b>
-          Cinzel · IM Fell English.
+          2D HD Character Knight &middot; the &ldquo;big pack 8 moves&rdquo; paperdoll set &middot;
+          the 256/320/512&nbsp;px creature packs (naga, werewolf, lizardman, halberdier, hydra, villager) &middot;
+          zombie cinematic pack &middot; Lords of Pain (demo) &middot; Infernus tiles.
+          <b>ICONS &amp; TYPE</b>
+          Oubliette weapon icons by Timberwolf Games &middot; Cinzel &middot; IM Fell English.
+          <b>SOUND EFFECTS</b>
+          Free Fantasy SFX Pack by TomMusic &middot; Horror SFX Free &middot; universfield &middot;
+          alesiadavina &middot; yodguard &middot; kave_msri.
+          <b>MUSIC</b>
+          Whispers of the Abyss &middot; Shadowforge Convergence &middot; Eclipsed Desolation &middot;
+          Cursed Citadel &middot; Dread March &middot; Veil of Eternal Nightfall.
         </div>
         <button class="menu-btn" data-credits-close>CLOSE</button>
       </div>

@@ -209,6 +209,36 @@ export function stableDir(fx: number, fy: number, lastDir: number): number {
   return Math.round(deg / 45) % 8;
 }
 
+/**
+ * DIRECTION ROW FIXES (it.37 ground-truth audit). Every atlas row was
+ * rendered to a labeled grid and read against the knight reference
+ * (E = right profile, N = back, W = left profile, S = face). Three pack
+ * families store their rows in a different order than our canonical
+ * [E, NE, N, NW, W, SW, S, SE]:
+ *   - MIRRORED (left/right swapped, N/S right): ranger sheets, zombie
+ *     folders, halberdier, werewolf, lizardman  -> row = (4 - d) mod 8
+ *   - REFLECTED across the NW-SE diagonal (E showed the face, W the back,
+ *     S the right profile): hydra, naga, villager -> row = (6 - d) mod 8
+ * Everything else (knight, big pack, LoP props) is identity.
+ * `rowForDir(anim, d)` = which atlas row FACES canonical direction d.
+ */
+const MIRROR_LR = (d: number): number => (4 - d + 8) % 8;
+const REFLECT_NWSE = (d: number): number => (6 - d + 8) % 8;
+const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> = [
+  ['ranger_', MIRROR_LR],
+  ['zombie_', MIRROR_LR],
+  ['guard_', MIRROR_LR],
+  ['wolf_', MIRROR_LR],
+  ['lizard_', MIRROR_LR],
+  ['hydra_', REFLECT_NWSE],
+  ['naga_', REFLECT_NWSE],
+  ['shambler_', REFLECT_NWSE],
+];
+export function rowForDir(anim: string, d: number): number {
+  for (const [prefix, fix] of DIR_ROW_FIX) if (anim.startsWith(prefix)) return fix(d);
+  return d;
+}
+
 export class SpriteLibrary {
   private manifest: AtlasManifest | null = null;
   private readonly anims = new Map<string, LoadedAnim>();
@@ -295,7 +325,7 @@ export class SpriteLibrary {
     const inv = 1 / e.scale;
     const cellW = e.cellW * inv;
     const cellH = e.cellH * inv;
-    const frames: Texture[][] = [];
+    const rows: Texture[][] = [];
     for (let d = 0; d < e.dirCount; d++) {
       const row: Texture[] = [];
       for (let f = 0; f < e.frameCount; f++) {
@@ -308,8 +338,11 @@ export class SpriteLibrary {
           }),
         );
       }
-      frames.push(row);
+      rows.push(row);
     }
+    // Canonical order out: frames[d] is the row that FACES direction d.
+    const frames: Texture[][] =
+      e.dirCount === 8 ? Array.from({ length: 8 }, (_, d) => rows[rowForDir(name, d)]) : rows;
     this.anims.set(name, { frames, frameCount: e.frameCount, dirCount: e.dirCount });
   }
 

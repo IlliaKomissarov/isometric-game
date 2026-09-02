@@ -1,5 +1,63 @@
 # Development Log
 
+## 2026-09-02 (iteration 37) — Stability: transition freeze, direction
+## remaps, slow idles, select→confirm flow, gold visibility, impact FX
+
+### Level-transition freeze (root cause + fix)
+- CAUSE: `buildWorld` awaited the atlas fetch AFTER `destroyWorld(old)`.
+  With rAF live, the game loop kept ticking a destroyed world during that
+  async gap → Pixi threw inside `update()` → the rAF chain died silently
+  (the it.36 hidden-tab QA never saw it because rAF was paused there).
+- FIX: `preloadFloor()` streams atlases while the old floor still runs;
+  `buildWorld` is synchronous; `swapWorld()` builds the NEXT floor first,
+  then destroys the old one (`destroyWorld` only detaches the hero if it
+  still owns them). A build error keeps the player on the current floor.
+- Error boundaries: the loop's update/render are wrapped (first 5 errors
+  logged, loop survives); atlas preload failures fall back to procedural
+  markers; a 20 s watchdog releases a stuck fade.
+- Verified: stepping the loop while a preload is pending leaves the old
+  floor intact (no errors); real stair descent 16→17; arena travel.
+
+### Direction audit (ground truth, every unit)
+- Rendered all 8 rows of every idle/walk atlas to a labeled grid and read
+  them against the knight reference (E = right profile, N = back, W =
+  left profile, S = face). Big pack (skeletons, shaman, ghast, wardens,
+  Hollow King forms, mage, rogue) and the knight: correct.
+- MIRRORED (E/W swapped): ranger, zombie, halberdier, werewolf, lizardman
+  → `rowForDir = (4 - d) mod 8`. REFLECTED across NW–SE (E showed the face,
+  W the back, S the right profile): hydra, naga, villager → `(6 - d) mod 8`.
+  Fix lives in `SpriteLibrary.rowForDir` (applied at slice time); the
+  post-fix grid shows all 64 cells of the 8 packs facing correctly.
+
+### Idle pacing
+- 4-frame big-pack idles (mage, rogue, skeletons): ping-pong at 2.2 fps
+  (≈2.7 s breath, was 3.6 fps); long idles 5–7 fps.
+
+### Menu flow
+- START (DESCEND) always opens the character selection; a card click
+  SELECTS (gold highlight), CONFIRM / Enter starts, BACK / ESC returns.
+  The remembered delver comes pre-selected.
+- Pause menu and death overlay gained CHANGE CLASS (tears the run down,
+  reopens selection — no refresh). Credits rewritten: developer, engine
+  (Pixi.js 8 · TypeScript · Vite), art, icons/type, SFX, music.
+
+### Loot & gold
+- Ground icons compact: pack icons 1.0× (≤33 px), pixel icons 0.7× (28 px);
+  pick box adjusted.
+- Gold piles: TREASURE mode — saturated gold tint floor with a slow
+  shimmer (never sinks into the shadow ramp), stronger pulsing glow
+  (alpha 1.0 × 1.35), twinkle sparks every ~0.4 s.
+
+### Combat FX
+- `Ambience.impactFlash` (additive bloom at the victim) + `slashArc`
+  (crescent flashed at the victim along the blow axis, melee only) on
+  every landed player hit, on top of the it.36 sparks/blood/trails.
+
+### QA
+- Menu → select → confirm → floor 1 → stairs 16→17 → cheat/arena travel
+  → change class from pause and death → restart → credits. Zero console
+  errors, no loop-boundary reports, no 404s.
+
 ## 2026-09-02 (iteration 36) — Studio overhaul: atlas purge, main menu, run
 ## lifecycle, unit scale standard, UI visibility, audio map, VFX
 

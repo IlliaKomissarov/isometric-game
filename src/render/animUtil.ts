@@ -28,11 +28,13 @@ export interface LightDir {
 export function idleFrame(frameCount: number, t: number, phase: number): number {
   if (frameCount <= 1) return 0;
   if (frameCount <= 6) {
+    // It.37: SLOW. 2.2 fps over a 6-step ping-pong = a ~2.7 s breath —
+    // the mage/rogue no longer twitch between their four uneven frames.
     const cycle = frameCount * 2 - 2; // 4 frames → 0 1 2 3 2 1
-    const fps = 3.6;
+    const fps = 2.2;
     const i = Math.floor(t * fps + phase) % cycle;
     return i < frameCount ? i : cycle - i;
   }
-  const fps = frameCount >= 12 ? 8 : 6;
+  const fps = frameCount >= 12 ? 7 : 5;
   return Math.floor(t * fps + phase) % frameCount;
 }

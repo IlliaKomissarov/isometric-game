@@ -294,6 +294,16 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [ ] Positional audio (pan/attenuate by distance) - still open
 - [ ] Item drop back to the ground from the inventory - still open
 
+## Iteration 37 - Stability Pass (2026-09-02)
+
+- [x] Level-transition freeze: preload-then-build-then-swap, sync buildWorld, loop error boundary, fade watchdog
+- [x] Direction audit of every unit; ranger/zombie/halberdier/werewolf/lizardman mirrored, hydra/naga/villager reflected - fixed via SpriteLibrary.rowForDir
+- [x] Mage/rogue/skeleton idle slowed to a 2.2 fps ping-pong breath
+- [x] START -> class select -> CONFIRM flow; CHANGE CLASS from pause and death; credits filled
+- [x] Ground drops compact (<= 33 px); gold piles saturated + pulsing glow + twinkles
+- [x] Impact flash + victim-side slash arc on every landed hit
+- [x] QA loop: menu -> select -> floor 1 -> floor change -> directions -> gold; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

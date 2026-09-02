@@ -70,8 +70,8 @@ export class LootSystem {
     glow.anchor.set(0.5);
     glow.blendMode = 'add';
     glow.tint = RARITY_COLOR[def.rarity];
-    glow.scale.set(0.5);
-    glow.alpha = 0.7;
+    glow.scale.set(0.42);
+    glow.alpha = 0.75;
     glow.position.y = -6;
     root.addChild(glow);
 
@@ -79,16 +79,18 @@ export class LootSystem {
     // the item-colored paperdoll glyph.
     let glyph: Sprite;
     if (def.icon && spriteLib.loaded && spriteLib.hasSingle(`wicon_${def.icon}`)) {
+      // COMPACT DROPS (it.37): ground icons stay ≤ 32 px so a boss loot
+      // burst never carpets the floor.
       glyph = new Sprite(spriteLib.single(`wicon_${def.icon}`));
       glyph.anchor.set(0.5, 0.5);
-      glyph.scale.set(1.8);
-      glyph.position.y = -8;
+      glyph.scale.set(1.0);
+      glyph.position.y = -7;
     } else {
-      // Non-pack gear drops as its crisp generated pixel icon (no vector shapes).
+      // Non-pack gear drops as its crisp generated pixel icon (40 px source → 28 px).
       glyph = new Sprite(itemIconTexture(def));
       glyph.anchor.set(0.5, 0.5);
-      glyph.scale.set(1.1);
-      glyph.position.y = -8;
+      glyph.scale.set(0.7);
+      glyph.position.y = -7;
     }
     root.addChild(glyph);
 
@@ -132,8 +134,8 @@ export class LootSystem {
   /** Screen-space pick: the visible ground item whose glyph contains the point. */
   pickAtCanvas(canvasX: number, canvasY: number, camera: Camera, lighting: Lighting): number | null {
     const zoom = camera.currentZoom;
-    const halfW = 14 * zoom + 4;
-    const height = 34 * zoom + 4;
+    const halfW = 16 * zoom + 6;
+    const height = 28 * zoom + 8;
     let best: number | null = null;
     let bestDist = Infinity;
     for (const item of this.items.values()) {

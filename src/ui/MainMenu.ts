@@ -84,9 +84,9 @@ export class MainMenuUI {
     });
   }
 
-  /** The remembered hero decides the PLAY button's subtitle. */
+  /** The remembered hero is shown on the START button (pre-selected in the class select). */
   setLastHero(cls: ClassArchetype | null): void {
-    this.playLabel.textContent = cls ? `as the ${CLASS_LABEL[cls]}` : 'choose a delver first';
+    this.playLabel.textContent = cls ? `choose your delver · last: ${CLASS_LABEL[cls]}` : 'choose your delver';
   }
 
   show(): void {

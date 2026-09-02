@@ -266,6 +266,11 @@ const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> =
   ['villager_', ROTATE_SW],
   ['merchant_', ROTATE_SW],
 ];
+/** Public URL of an atlas file (bestiary CSS sprites, it.42). */
+export function atlasUrl(file: string): string {
+  return `${ATLAS_BASE}/${file}`;
+}
+
 export function rowForDir(anim: string, d: number): number {
   for (const [prefix, fix] of DIR_ROW_FIX) if (anim.startsWith(prefix)) return fix(d);
   return d;
@@ -309,6 +314,11 @@ export class SpriteLibrary {
   /** True once the animation's atlas is resident and sliced. */
   hasAnim(name: string): boolean {
     return this.anims.has(name);
+  }
+
+  /** The manifest entry for an animation (cell geometry, file, painted bounds). */
+  entry(name: string): AtlasAnimEntry | null {
+    return this.manifest?.anims[name] ?? null;
   }
 
   /** Painted bounds (original px, south-facing union) from the manifest. */

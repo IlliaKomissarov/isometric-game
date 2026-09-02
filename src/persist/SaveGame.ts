@@ -50,6 +50,8 @@ export interface PlayerSave {
   unlocked: string[];
   loadout: Array<string | null>;
   passives: string[];
+  /** Bestiary (it.42): creatures seen / slain by kind. */
+  bestiary?: Record<string, { seen: number; killed: number }>;
 }
 
 export interface SaveGame {

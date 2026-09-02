@@ -18,13 +18,15 @@ import type { EquipmentSlot } from '@/network/Serialization';
 
 import { itemIconHtml } from './itemIcons';
 
-const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string }> = [
-  { slot: 'mainHand', label: 'MAIN' },
-  { slot: 'offHand', label: 'OFF' },
-  { slot: 'head', label: 'HEAD' },
-  { slot: 'torso', label: 'BODY' },
-  { slot: 'legs', label: 'LEGS' },
-  { slot: 'cloak', label: 'BACK' },
+/** Paperdoll layout (it.42): a body-shaped cross — head on top, hands beside the torso, ring and cloak below. */
+const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: string }> = [
+  { slot: 'head', label: 'HEAD', area: 'head' },
+  { slot: 'mainHand', label: 'MAIN HAND', area: 'main' },
+  { slot: 'torso', label: 'BODY', area: 'body' },
+  { slot: 'offHand', label: 'OFF HAND', area: 'off' },
+  { slot: 'ring', label: 'RING', area: 'ring' },
+  { slot: 'legs', label: 'LEGS', area: 'legs' },
+  { slot: 'cloak', label: 'BACK', area: 'back' },
 ];
 
 function hex(color: number): string {
@@ -101,14 +103,25 @@ export class InventoryUI {
 
   private render(): void {
     // Equipment: one labeled cell per slot (grid of 3×2).
-    const equipmentCells = SLOT_ORDER.map(({ slot, label }) => {
+    const equipmentCells = SLOT_ORDER.map(({ slot, label, area }) => {
       const itemId = this.player.getEquipped(slot);
       const def = itemId ? ITEMS[itemId] : undefined;
       const cell = def
         ? `<button class="inv-cell inv-item rarity-${def.rarity}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}</button>`
-        : `<div class="inv-cell inv-cell-empty"></div>`;
-      return `<div class="inv-slot-wrap"><span class="inv-slot-label">${label}</span>${cell}</div>`;
+        : `<div class="inv-cell inv-cell-empty" data-slot="${slot}"><span class="inv-slot-ghost">${label[0]}</span></div>`;
+      return `<div class="inv-slot-wrap" style="grid-area:${area}"><span class="inv-slot-label">${label}</span>${cell}</div>`;
     }).join('');
+    // BELT (it.42): the Q / R quick draughts, read straight from the pack.
+    const belt = (['health_potion', 'mana_potion'] as const)
+      .map((id, i) => {
+        const def = ITEMS[id];
+        const count = this.player.backpack.filter((x) => x === id).length;
+        const firstIndex = this.player.backpack.indexOf(id);
+        return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${
+          count ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use" data-use="${firstIndex}" data-item="${def.id}">${iconHtml(def)}<span class="inv-qty">${count}</span></button>` : `<div class="inv-cell inv-cell-empty"><span class="inv-slot-ghost">${i === 0 ? '♥' : '◈'}</span></div>`
+        }</div>`;
+      })
+      .join('');
 
     // Backpack: duplicates STACK into one cell with a quantity badge;
     // the grid scrolls in its own compartment, never cutting items off.
@@ -136,6 +149,7 @@ export class InventoryUI {
       <h3 class="drag-handle">INVENTORY</h3>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
+      <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts</span></div>
       <div class="inv-divider"></div>
       <h4>BACKPACK &nbsp;<span class="inv-count">${this.player.backpack.length}</span>
         <span class="inv-gold">◆ Gold: ${this.player.gold}</span></h4>

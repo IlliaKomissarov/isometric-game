@@ -10,7 +10,7 @@
 
 import type { EquipmentSlot } from '@/network/Serialization';
 
-export type Rarity = 'common' | 'magic' | 'rare';
+export type Rarity = 'common' | 'magic' | 'rare' | 'legendary';
 
 /** Where an item lives: a paperdoll slot, or the consumable pouch (it.39). */
 export type ItemSlot = EquipmentSlot | 'consumable';
@@ -42,6 +42,8 @@ export interface ItemDef {
   icon?: string;
   /** Painted 64 px icon under assets/ui/items (it.40) — wins over `icon` in panels. */
   art?: string;
+  /** Worn bonuses (rings, relics — it.42): fractions for dmg/dodge/regen, flat hp/armor. */
+  bonus?: { hp?: number; dmg?: number; armor?: number; dodge?: number; regen?: number };
 }
 
 /**
@@ -76,7 +78,7 @@ export const WEAPON_FAMILY: Record<
 /** Gold worth of an item (it.39): explicit value, else rarity tier + stat weight. */
 export function itemValue(def: ItemDef): number {
   if (def.value !== undefined) return def.value;
-  const tier = def.rarity === 'rare' ? 420 : def.rarity === 'magic' ? 140 : 35;
+  const tier = def.rarity === 'legendary' ? 1400 : def.rarity === 'rare' ? 420 : def.rarity === 'magic' ? 140 : 35;
   const dmg = def.maxDamage !== undefined && def.minDamage !== undefined ? (def.minDamage + def.maxDamage) * 4 : 0;
   const arm = (def.armor ?? 0) * 18;
   return tier + dmg + arm;
@@ -97,7 +99,8 @@ export function overlayTextureFor(def: ItemDef): string {
 export const RARITY_COLOR: Record<Rarity, number> = {
   common: 0xb8b0a0,
   magic: 0x5f7fdf,
-  rare: 0xd8a83c,
+  rare: 0xf0d24a,
+  legendary: 0xffb347,
 };
 
 export const ITEMS: Record<string, ItemDef> = {
@@ -130,9 +133,21 @@ export const ITEMS: Record<string, ItemDef> = {
   mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', art: 'mana_potion', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8 },
   scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'magic', art: 'scroll_town_portal', value: 80, use: { portal: true }, color: 0xd8c890 },
   elixir: { id: 'elixir', name: 'Violet Elixir', slot: 'consumable', rarity: 'magic', art: 'elixir', value: 65, use: { heal: 0.35, resource: 0.5 }, color: 0x9a5ad8 },
+  // ---- Starter kit (it.42): every class leaves town armed and clothed ----
+  apprentice_wand: { id: 'apprentice_wand', name: 'Apprentice Wand', slot: 'mainHand', rarity: 'common', weaponKind: 'wand', range: 5, minDamage: 3, maxDamage: 6, color: 0xb08a5a, icon: 'stick_0' },
+  worn_katana: { id: 'worn_katana', name: 'Worn Katana', slot: 'mainHand', rarity: 'common', weaponKind: 'katana', minDamage: 3, maxDamage: 6, color: 0x9aa0a8, icon: 'iron_katana_0' },
+  cloth_robe: { id: 'cloth_robe', name: 'Cloth Robe', slot: 'torso', rarity: 'common', armor: 1, color: 0x6a5a9a },
+  // ---- Rings (it.42): worn bonuses in the new ring slot ----
+  copper_ring: { id: 'copper_ring', name: 'Copper Ring', slot: 'ring', rarity: 'common', bonus: { hp: 8 }, color: 0xb87a48 },
+  ring_of_embers: { id: 'ring_of_embers', name: 'Ring of Embers', slot: 'ring', rarity: 'magic', bonus: { dmg: 0.08 }, color: 0xe0803a },
+  wardens_signet: { id: 'wardens_signet', name: "Warden's Signet", slot: 'ring', rarity: 'rare', bonus: { armor: 2, dodge: 0.05 }, color: 0x9fb4e8 },
+  hollow_seal: { id: 'hollow_seal', name: 'Seal of the Hollow King', slot: 'ring', rarity: 'legendary', bonus: { dmg: 0.15, hp: 20, regen: 0.2 }, color: 0xffb347 },
+  // ---- Legendary trophies (it.42): boss-only rolls ----
+  kingsbane: { id: 'kingsbane', name: 'Kingsbane', slot: 'mainHand', rarity: 'legendary', minDamage: 16, maxDamage: 28, color: 0xffb347, icon: 'steel_large_0', bonus: { dmg: 0.1 } },
+  crown_of_the_hollow: { id: 'crown_of_the_hollow', name: 'Crown of the Hollow', slot: 'head', rarity: 'legendary', armor: 5, bonus: { hp: 15, dodge: 0.04 }, color: 0xffb347 },
 };
 
-const BY_RARITY: Record<Rarity, ItemDef[]> = { common: [], magic: [], rare: [] };
+const BY_RARITY: Record<Rarity, ItemDef[]> = { common: [], magic: [], rare: [], legendary: [] };
 for (const def of Object.values(ITEMS)) BY_RARITY[def.rarity].push(def);
 // Potions drop from the dead too (it.39): a healing potion joins the common pool twice.
 BY_RARITY.common.push(ITEMS.health_potion, ITEMS.health_potion, ITEMS.mana_potion);
@@ -157,9 +172,9 @@ export function rollChestItem(rand: () => number): ItemDef {
   return pool[Math.floor(rand() * pool.length)];
 }
 
-/** Guaranteed RARE roll (boss trophies). */
+/** Guaranteed RARE roll (boss trophies) — one in six comes up LEGENDARY (it.42). */
 export function rollRareItem(rand: () => number): ItemDef {
-  const pool = BY_RARITY.rare;
+  const pool = rand() < 1 / 6 && BY_RARITY.legendary.length > 0 ? BY_RARITY.legendary : BY_RARITY.rare;
   return pool[Math.floor(rand() * pool.length)];
 }
 
@@ -174,5 +189,12 @@ export function statLine(def: ItemDef): string {
   if (def.use?.heal) parts.push(`heals ${Math.round(def.use.heal * 100)}% life`);
   if (def.use?.resource) parts.push(`restores ${Math.round(def.use.resource * 100)}% mana/stamina`);
   if (def.use?.portal) parts.push('opens a portal to town');
+  if (def.bonus) {
+    if (def.bonus.hp) parts.push(`+${def.bonus.hp} life`);
+    if (def.bonus.dmg) parts.push(`+${Math.round(def.bonus.dmg * 100)}% damage`);
+    if (def.bonus.armor) parts.push(`+${def.bonus.armor} armor`);
+    if (def.bonus.dodge) parts.push(`+${Math.round(def.bonus.dodge * 100)}% dodge`);
+    if (def.bonus.regen) parts.push(`+${Math.round(def.bonus.regen * 100)}% regeneration`);
+  }
   return parts.join(', ') || 'No bonuses';
 }

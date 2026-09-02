@@ -1,5 +1,71 @@
 # Development Log
 
+## 2026-09-02 (iteration 42) - Feet-true mob anchors + painted hitboxes, legendary tier + rings, starter gear, inventory redesign, bestiary, typography, depth scaling
+
+### Enemy anchors and hit-testing (`entities/Enemy.ts`)
+- FEET-TRUE ANCHOR: every atlas frame goes through `setFrame()`, which
+  sets the body anchor from the manifest's painted bounds
+  ((painted.bottom + 1) / origH, minus a 7% sliver for sheets with a baked
+  shadow) — the lowest painted pixel sits on the tile, no matter how much
+  padding a sheet carries. The hand-tuned `anchorY` is now only the
+  fallback for anims without painted data.
+- PAINTED HITBOX: `clickBox()` returns the painted region of the CURRENT
+  strip (not the whole cell) — the click target hugs the visible torso,
+  head included, and never reaches into empty cell padding. Verified live
+  on floor-1 mobs: a canvas pointerdown on the torso centre and on the
+  head both target the creature.
+- DEPTH SCALING (audit): `levelHpScale(level) = 1 + 0.3·(level − 1)`
+  (floor-1 mobs are their base; +30% of base per level after), damage
+  +1/level (unchanged), and a new `armor` def field (+½ per level; Grave
+  Guard 2, Crypt Sentinel 1) read through `Enemy.armor` by the damage
+  formula. Phase transitions use the same scale.
+
+### Items (`items/catalog.ts`)
+- LEGENDARY rarity (gold) joins common / magic / rare; `rollRareItem`
+  (boss trophies) rolls legendary one time in six. Kingsbane (16–28,
+  +10% dmg) and the Crown of the Hollow (+5 armor, +15 life, +4% dodge).
+- RING slot (`EquipmentSlot` + paperdoll order, no overlay): Copper Ring
+  (+8 life), Ring of Embers (+8% dmg), Warden's Signet (+2 armor, +5%
+  dodge), Seal of the Hollow King (legendary: +15% dmg, +20 life, +20%
+  regen). Item `bonus` fields feed the same `Player.passiveBonus()` the
+  passives use; max HP re-derives on equip / unequip.
+- Starter kit: Apprentice Wand, Worn Katana, Cloth Robe; a new hero
+  auto-equips the class weapon (rusty sword / short bow / apprentice wand
+  / worn katana) and a chest piece (leather jerkin / cloth robe).
+
+### Inventory (`ui/Inventory.ts`, index.html)
+- Paperdoll as a body-shaped cross (HEAD / MAIN·BODY·OFF / RING·LEGS·BACK)
+  with ghost glyphs in empty slots; a BELT row shows the Q / R quick
+  draughts with counts; the backpack is a 5-wide grid of 52 px cells with
+  hover lift and rarity halos.
+- Crisp icons: generated pixel icons are drawn at 2× and shown at exactly
+  40 px (integer scaling, `image-rendering: pixelated`), pack weapon icons
+  at 2×, painted art contain-fit at 42 px; rarity borders gray / blue /
+  yellow / gold (`--rar` custom property per rarity class) across the
+  inventory, merchant, stash and cheat arsenal. A ring pixel icon joins
+  the generator.
+
+### Bestiary (`ui/Bestiary.ts`, hotkey B)
+- Every creature kind listed; unseen kinds are silhouettes ("???"). A
+  first sighting (visible on screen) and every kill update
+  `Player.bestiary` (persisted in the save). The detail pane animates the
+  south-facing idle strip straight from the atlas PNG as a CSS sprite,
+  gives a lore snippet per kind, base stats (life with the projection at
+  the hero's level, damage, armor, accuracy, speed, reach, wind-up, flee /
+  slow / summon traits) and the scaling formula.
+
+### Typography
+- Body face swapped from IM Fell English to Crimson Pro (Google Fonts;
+  Cinzel stays for headers); every HUD label, tooltip, panel and banner
+  carries a dark halo (`text-shadow` block); floating damage numbers get a
+  4 px stroke plus drop shadow.
+
+### Draggable windows + cheat menu
+- The bestiary joins the draggable set (inventory, merchant, stash, skill
+  tree, character sheet, cheat menu). The cheat menu is wider (300 px),
+  framed like the other panels, its power buttons no longer overflow, tabs
+  wrap, and the arsenal list owns the remaining height with its own scroll.
+
 ## 2026-09-02 (iteration 41) - Skill tree + progression, cross-class synergy, animated spell VFX, draggable windows, E toggles, HUD cleanup
 
 ### Asset audit (`public/assets/test-models`, third upload: 884 PNG, 205 MB)

@@ -46,7 +46,8 @@ export class DamageTextSystem {
           fontWeight: 'bold',
           fontSize: 15,
           fill: 0xffffff,
-          stroke: { color: 0x0a0806, width: 3 },
+          stroke: { color: 0x0a0806, width: 4 },
+          dropShadow: { color: 0x000000, alpha: 0.85, blur: 2, distance: 2, angle: Math.PI / 2 },
         },
         resolution: 2,
       });

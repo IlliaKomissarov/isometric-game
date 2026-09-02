@@ -22,7 +22,7 @@ export interface ISerializable<TSnapshot> {
 export type ClassArchetype = 'warrior' | 'mage' | 'ranger' | 'rogue';
 
 /** Paperdoll equipment slots — mirrors the visual layer stack on the model. */
-export type EquipmentSlot = 'head' | 'torso' | 'legs' | 'mainHand' | 'offHand' | 'cloak';
+export type EquipmentSlot = 'head' | 'torso' | 'legs' | 'mainHand' | 'offHand' | 'cloak' | 'ring';
 
 /** Minimal wire representation of an equipped item. */
 export interface ItemSnapshot {

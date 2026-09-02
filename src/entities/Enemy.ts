@@ -99,6 +99,8 @@ export interface EnemyTypeDef {
     /** Height flavor × the MOB/BOSS standard (0.85 = runt, 1.25 = elite). */
     heightMult?: number;
   };
+  /** Flat damage reduction at level 1 (it.42; grows +½ per level). */
+  armor?: number;
   /** Boss/elite mechanics. */
   hitEffect?: 'slow';
   projectile?: 'arrow' | 'bolt';
@@ -119,6 +121,15 @@ export interface EnemyTypeDef {
  */
 export const MOB_HEIGHT = 56;
 export const BOSS_HEIGHT = 128;
+
+/**
+ * DEPTH SCALING (it.42 audit): life grows 30% of base per level above the
+ * first — hp = base × (1 + 0.3·(level − 1)); floor-1 mobs are their base.
+ * Damage adds +1 per level (`damageBonus`), armor +½ per level.
+ */
+export function levelHpScale(level: number): number {
+  return 1 + 0.3 * (Math.max(1, level) - 1);
+}
 
 /** Every atlas an enemy kind can put on screen (phase chains included). */
 export function animsForKind(kind: EnemyKind): AnimName[] {
@@ -277,6 +288,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
   },
   graveGuard: {
     kind: 'graveGuard',
+    armor: 2,
     name: 'Grave Guard',
     hp: 58,
     minDamage: 7,
@@ -384,6 +396,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
   },
   guard: {
     kind: 'guard',
+    armor: 1,
     name: 'Crypt Sentinel',
     hp: 55,
     minDamage: 7,
@@ -804,7 +817,7 @@ export class Enemy extends Entity {
   spawn(kind: EnemyKind, x: number, y: number, level: number): void {
     this.def = ENEMY_TYPES[kind];
     this.level = Math.max(1, Math.round(level));
-    const scale = 1 + 0.12 * (this.level - 1);
+    const scale = levelHpScale(this.level);
     this.warpTo(x, y);
     this.hpMax = Math.round(this.def.hp * scale);
     this.hp = this.hpMax;
@@ -824,6 +837,7 @@ export class Enemy extends Entity {
     this.desperation = false;
     this.phase = 1;
     this.spawnIndex = -1;
+    this.noted = false;
     this.lastGoalTile.x = -1;
     this.lastGoalTile.y = -1;
     this.flashTicks = 0;
@@ -851,11 +865,40 @@ export class Enemy extends Entity {
    * shadow, feet at pack registration point) vs procedural marker (feet-
    * anchored, our shadow). Called at spawn AND on a phase model swap.
    */
+  /** Bestiary (it.42): first sighting already recorded for this body. */
+  noted = false;
+  /** The atlas animation currently on the body (painted-bounds lookups). */
+  private currentAnim: AnimName | null = null;
+
+  /**
+   * FEET-TRUE ANCHOR (it.42): the body's anchor comes from the atlas's
+   * painted bounds so the lowest painted pixel sits on the tile — no sprite
+   * floats above its feet, whatever the sheet's padding. Sheets with a
+   * baked shadow keep a sliver of it below the feet.
+   */
+  private paintedAnchorY(anim: AnimName): number {
+    const e = spriteLib.entry(anim);
+    const sprite = this.def.sprite;
+    if (!e || !e.painted || !sprite) return sprite?.anchorY ?? 1;
+    const paintedH = e.painted.bottom - e.painted.top + 1;
+    const shadow = sprite.ownShadow ? 0 : paintedH * 0.07;
+    return Math.max(0.5, Math.min(1, (e.painted.bottom + 1 - shadow) / e.origH));
+  }
+
+  /** Put an atlas frame on the body with its feet-true anchor. */
+  private setFrame(anim: AnimName, dir: number, frame: number): void {
+    this.body.texture = spriteLib.frame(anim, dir, frame);
+    if (this.currentAnim !== anim) {
+      this.currentAnim = anim;
+      this.body.anchor.set(0.5, this.paintedAnchorY(anim));
+    }
+  }
+
   private applyRig(): void {
     const sprite = this.usesSprite() ? this.def.sprite! : null;
     if (sprite) {
-      this.body.texture = spriteLib.frame(sprite.walk, 6, 0);
-      this.body.anchor.set(0.5, sprite.anchorY);
+      this.currentAnim = null;
+      this.setFrame(sprite.walk, 6, 0);
       this.body.position.set(0, 2);
       // DATA-DRIVEN SCALE (it.36): the standard height ÷ the atlas's painted
       // idle height. Bosses use the boss standard; flavor via heightMult.
@@ -866,6 +909,7 @@ export class Enemy extends Entity {
       this.shadow.visible = !!sprite.ownShadow;
     } else {
       this.rigScale = 1;
+      this.currentAnim = null;
       this.body.texture = assets.get(this.def.markerTexture);
       this.body.anchor.set(0.5, 1.0);
       this.body.position.set(0, 6);
@@ -893,14 +937,31 @@ export class Enemy extends Entity {
     const tex = this.body.texture;
     const sx = Math.abs(this.body.scale.x) || 1;
     const sy = Math.abs(this.body.scale.y) || 1;
-    const h = tex.height * sy;
     const ay = this.body.anchor.y;
     const offY = this.body.position.y;
+    // PAINTED BODY BOX (it.42): the box is the painted region of the current
+    // strip, not the whole cell — it hugs the visible torso exactly.
+    const e = this.currentAnim ? spriteLib.entry(this.currentAnim) : null;
+    if (e && e.painted) {
+      const p = e.painted;
+      const originY = offY - e.origH * ay * sy; // Screen y of the cell's top edge.
+      return {
+        halfW: Math.max(14, ((p.right - p.left + 1) / 2) * sx * 0.75),
+        top: originY + p.top * sy,
+        bottom: Math.max(originY + (p.bottom + 1) * sy, offY + 4),
+      };
+    }
+    const h = tex.height * sy;
     return {
       halfW: Math.max(16, tex.width * sx * 0.3),
       top: offY - h * ay,
       bottom: Math.max(offY + h * (1 - ay), offY + 4),
     };
+  }
+
+  /** Flat reduction: the kind's base plus half a point per level (it.42). */
+  override get armor(): number {
+    return (this.def.armor ?? 0) + Math.floor((this.level - 1) * 0.5);
   }
 
   /** XP this creature yields — a strict function of its base hp and level. */
@@ -1001,7 +1062,7 @@ export class Enemy extends Entity {
       if (this.actionTicks >= PHASE_DIE_TICKS + PHASE_RISE_TICKS) {
         // Reborn: a fresh, full 100% hp pool for the new phase.
         this.phase++;
-        this.hpMax = Math.round(this.def.hp * (1 + 0.12 * (this.level - 1)));
+        this.hpMax = Math.round(this.def.hp * levelHpScale(this.level));
         this.hp = this.hpMax;
         this.hitRecoveryTicks = this.def.hitRecoveryTicks;
         this.action = 'idle';
@@ -1334,7 +1395,7 @@ export class Enemy extends Entity {
         // replaces it seamlessly at reclaim.
         const animP = Math.min(1, p / 0.55);
         const frame = Math.min(fc - 1, Math.floor(animP * fc));
-        this.body.texture = spriteLib.frame(sprite.death, dir, frame);
+        this.setFrame(sprite.death, dir, frame);
         this.body.rotation = 0;
         this.body.scale.set(baseScale);
         this.flashTicks = 2; // Holds setLightTint off during the sequence.
@@ -1352,7 +1413,7 @@ export class Enemy extends Entity {
       }
       // Regular mobs: the pack's death animation, then a short fade.
       const frame = Math.min(fc - 1, Math.floor(p * fc));
-      this.body.texture = spriteLib.frame(sprite.death, dir, frame);
+      this.setFrame(sprite.death, dir, frame);
       this.body.rotation = 0;
       this.body.scale.set(baseScale);
       this.container.alpha = p > 0.8 ? 1 - (p - 0.8) * 4 : 1;
@@ -1376,7 +1437,7 @@ export class Enemy extends Entity {
         frame = Math.max(0, Math.min(fc - 1, Math.floor((1 - p) * fc)));
         glow = this.actionTicks + 40;
       }
-      this.body.texture = spriteLib.frame(sprite.death, dir, frame);
+      this.setFrame(sprite.death, dir, frame);
       this.body.rotation = 0;
       this.body.position.set(0, 2);
       this.body.scale.set(baseScale);
@@ -1398,7 +1459,7 @@ export class Enemy extends Entity {
         // windup+recover window so the visual matches the dodge timing.
         const fc = spriteLib.anim(sprite.attack).frameCount;
         const frame = Math.min(fc - 1, Math.floor((this.actionTicks / total) * fc));
-        this.body.texture = spriteLib.frame(sprite.attack, dir, frame);
+        this.setFrame(sprite.attack, dir, frame);
         this.body.rotation = 0;
         this.body.position.set(0, 2);
         this.body.scale.set(baseScale);
@@ -1409,7 +1470,7 @@ export class Enemy extends Entity {
       // living attack, never a frozen statue.
       const w = this.windup;
       const stepFrame = Math.floor(this.actionTicks * 0.18 * (spriteLib.anim(sprite.walk).frameCount / 8));
-      this.body.texture = spriteLib.frame(sprite.walk, dir, stepFrame);
+      this.setFrame(sprite.walk, dir, stepFrame);
       this.body.scale.set(baseScale);
       if (this.actionTicks < w) {
         const p = this.actionTicks / w;
@@ -1434,11 +1495,11 @@ export class Enemy extends Entity {
         const total = Math.max(1, this.def.hitRecoveryTicks);
         const progress = 1 - this.actionTicks / total; // actionTicks counts down.
         const frame = Math.min(fc - 1, Math.floor(progress * fc * 0.8));
-        this.body.texture = spriteLib.frame(sprite.hitAnim, dir, frame);
+        this.setFrame(sprite.hitAnim, dir, frame);
         this.body.rotation = 0;
         this.body.position.set(0, 2);
       } else {
-        this.body.texture = spriteLib.frame(sprite.idle ?? sprite.walk, dir, 0);
+        this.setFrame(sprite.idle ?? sprite.walk, dir, 0);
         this.body.rotation = Math.sin(this.actionTicks * 1.3) * 0.1;
         this.body.position.set(-2, 2);
       }
@@ -1452,14 +1513,14 @@ export class Enemy extends Entity {
     const moving = Math.hypot(this.pos.x - this.prevPos.x, this.pos.y - this.prevPos.y) > 1e-4;
     if (moving) {
       const fc = spriteLib.anim(sprite.walk).frameCount;
-      this.body.texture = spriteLib.frame(sprite.walk, dir, Math.floor(this.walkPhase * fc));
+      this.setFrame(sprite.walk, dir, Math.floor(this.walkPhase * fc));
       this.body.scale.set(baseScale);
     } else {
       const idleAnim = sprite.idle ?? sprite.walk;
       // Slow LIVE idle frames (guards breathe/shift) — never a frozen statue.
       // It.36: shared pacing helper (ping-pong for short 4-frame idles).
       const frame = sprite.idle ? idleFrame(spriteLib.anim(idleAnim).frameCount, this.elapsed, this.bobPhase) : 0;
-      this.body.texture = spriteLib.frame(idleAnim, dir, frame);
+      this.setFrame(idleAnim, dir, frame);
       this.body.scale.set(baseScale, baseScale * (1 + Math.sin(this.elapsed * 1.7 + this.bobPhase) * 0.012));
     }
   }

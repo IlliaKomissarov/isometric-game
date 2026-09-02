@@ -165,7 +165,7 @@ const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
 };
 
 /** Paperdoll layer draw order, back to front. */
-const PAPERDOLL_ORDER: readonly EquipmentSlot[] = ['cloak', 'legs', 'torso', 'head', 'offHand', 'mainHand'];
+const PAPERDOLL_ORDER: readonly EquipmentSlot[] = ['cloak', 'legs', 'torso', 'head', 'offHand', 'mainHand', 'ring'];
 
 /** Ticks the damage flash lasts. */
 const FLASH_TICKS = 8;
@@ -252,11 +252,39 @@ export class Player extends Entity {
   readonly loadout: Array<string | null> = [null, null, null, null];
   readonly passives = new Set<string>();
 
-  /** Sum of one passive effect across everything learned. */
+  /** Sum of one bonus across learned passives AND worn item bonuses (rings, relics — it.42). */
   passiveBonus(key: 'armor' | 'dmg' | 'regen' | 'speed' | 'dodge' | 'hp'): number {
     let total = 0;
     for (const id of this.passives) total += PASSIVE_BY_ID[id]?.effect[key] ?? 0;
+    for (const id of this.equipped.values()) {
+      const b = ITEMS[id]?.bonus;
+      if (!b) continue;
+      if (key !== 'speed') total += b[key] ?? 0;
+    }
     return total;
+  }
+
+  /** Re-derive max HP after a worn bonus changes; gains heal, losses clamp. */
+  private syncHpMax(): void {
+    const was = this.hpMax;
+    this.hpMax = this.baseHpMax();
+    if (this.hpMax > was) this.hp = Math.min(this.hpMax, this.hp + (this.hpMax - was));
+    else this.hp = Math.min(this.hp, this.hpMax);
+  }
+
+  // ---- Bestiary (it.42): creatures seen and slain, persisted in the save ----
+  readonly bestiary = new Map<string, { seen: number; killed: number }>();
+
+  noteSeen(kind: string): void {
+    const rec = this.bestiary.get(kind);
+    if (rec) rec.seen++;
+    else this.bestiary.set(kind, { seen: 1, killed: 0 });
+  }
+
+  noteKill(kind: string): void {
+    const rec = this.bestiary.get(kind);
+    if (rec) rec.killed++;
+    else this.bestiary.set(kind, { seen: 1, killed: 1 });
   }
 
   /** Max HP the sheet should have at this level with these passives. */
@@ -807,12 +835,15 @@ export class Player extends Entity {
     if (previous) this.backpack.push(previous);
     this.equipped.set(def.slot, def.id);
 
-    // Instant paperdoll update: overlay texture for the slot, item-colored.
-    const overlay = new Sprite(assets.get(overlayTextureFor(def)));
-    overlay.anchor.set(0.5, 1.0);
-    overlay.position.y = 6; // Matches the body sprite's feet offset.
-    overlay.tint = def.color;
-    this.setEquipmentVisual(def.slot, overlay);
+    if (def.slot !== 'ring') {
+      // Instant paperdoll update: overlay texture for the slot, item-colored.
+      const overlay = new Sprite(assets.get(overlayTextureFor(def)));
+      overlay.anchor.set(0.5, 1.0);
+      overlay.position.y = 6; // Matches the body sprite's feet offset.
+      overlay.tint = def.color;
+      this.setEquipmentVisual(def.slot, overlay);
+    }
+    this.syncHpMax();
     eventBus.emit('inventory:changed', {});
   }
 
@@ -821,6 +852,7 @@ export class Player extends Entity {
     if (!itemId) return;
     this.equipped.delete(slot);
     this.backpack.push(itemId);
+    this.syncHpMax();
     this.paperdollLayers.get(slot)?.removeChildren();
     eventBus.emit('inventory:changed', {});
   }

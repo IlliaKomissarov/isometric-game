@@ -46,6 +46,8 @@ export interface GameEvents {
   'town:changed': Record<string, never>;
   'town:traded': { kind: 'buy' | 'sell'; itemId: string; gold: number };
   'town:refused': { reason: 'gold' | 'stashFull' };
+  /** A creature was first seen or slain (it.42 bestiary). */
+  'bestiary:changed': Record<string, never>;
   /** Skill points spent / hotbar changed (it.41). */
   'skills:changed': Record<string, never>;
   /** A consumable was used (potion drunk, scroll read). */

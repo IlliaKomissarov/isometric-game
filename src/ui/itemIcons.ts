@@ -187,6 +187,29 @@ const SHAPES: Record<string, string[]> = {
   ],
 };
 
+const RING_SHAPE: string[] = [
+  '....................',
+  '....................',
+  '........oooo........',
+  '.......o5GG5o.......',
+  '......o5GrrG5o......',
+  '......oGrrrrGo......',
+  '......o5GrrG5o......',
+  '.......o5GG5o.......',
+  '......oo4444oo......',
+  '.....o44o..o44o.....',
+  '....o44o....o44o....',
+  '....o33o....o33o....',
+  '....o33o....o33o....',
+  '....o22o....o22o....',
+  '.....o22o..o22o.....',
+  '......oo2222oo......',
+  '........oooo........',
+  '....................',
+  '....................',
+  '....................',
+];
+
 const CONSUMABLE_SHAPES: Record<string, string[]> = {
   potion: [
     '....................',
@@ -236,6 +259,7 @@ const CONSUMABLE_SHAPES: Record<string, string[]> = {
 
 function shapeFor(def: ItemDef): string[] {
   if (def.slot === 'consumable') return def.use?.portal ? CONSUMABLE_SHAPES.scroll : CONSUMABLE_SHAPES.potion;
+  if (def.slot === 'ring') return RING_SHAPE;
   if (def.slot === 'mainHand') return SHAPES[def.weaponKind ?? 'bow'] ?? SHAPES.bow;
   return SHAPES[def.slot] ?? SHAPES.torso;
 }
@@ -308,7 +332,8 @@ export function itemIconHtml(def: ItemDef, base = '', px = 'px'): string {
 export function itemIconDataUrl(def: ItemDef): string {
   const cached = cache.get(def.id);
   if (cached) return cached;
-  const url = drawIconCanvas(def, 3).toDataURL();
+  // CRISP (it.42): 2× source shown at exactly 40 px — integer scaling, no resample blur.
+  const url = drawIconCanvas(def, 2).toDataURL();
   cache.set(def.id, url);
   return url;
 }

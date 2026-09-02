@@ -336,6 +336,18 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Boss notes + depth banner top-anchored; enemy HP bars slimmer and zoom-stable; damage numbers zoom-stable
 - [x] QA: unlocks, cross-class, drag + clamp, E toggles, fireball + burn on floor 1, zoom, zero console errors
 
+## Iteration 42 - Anchors, Hitboxes, Legendary + Rings, Starter Gear, Bestiary, Typography (2026-09-02)
+
+- [x] Feet-true painted anchors for every mob strip; click box = painted body of the current strip
+- [x] Depth scaling audited: life ×(1 + 0.3·(level−1)), +1 dmg / level, +½ armor / level (new armor field)
+- [x] Legendary rarity + boss-only legendary rolls; ring slot with four rings; item bonuses feed the stat getters
+- [x] New heroes auto-equip class weapon + chest piece (new apprentice wand / worn katana / cloth robe)
+- [x] Inventory redesign: paperdoll cross, belt Q/R, 5-wide pack grid, crisp integer-scaled icons, gray/blue/yellow/gold borders
+- [x] Bestiary (B): seen/slain tracking in the save, animated atlas previews, lore, stats, scaling
+- [x] Crimson Pro body face, dark halos on all UI text, heavier damage numbers
+- [x] Cheat menu reframed and scrollable; bestiary draggable like the rest
+- [x] QA: starters equipped, drags, torso/head hit-tests on live mobs, bestiary, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

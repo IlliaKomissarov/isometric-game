@@ -69,6 +69,7 @@ import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
 import { CharacterSheetUI } from '@/ui/CharacterSheet';
+import { BestiaryUI } from '@/ui/Bestiary';
 import { makeDraggable } from '@/ui/draggable';
 import { auditTownLayout } from '@/town/TownMap';
 import { TownSystem } from '@/systems/Town';
@@ -560,6 +561,7 @@ async function boot(): Promise<void> {
       player.skillPoints = loaded.player.skillPoints;
       for (const id of loaded.player.unlocked) player.unlockedSkills.add(id);
       for (const id of loaded.player.passives) player.passives.add(id);
+      for (const [k, v] of Object.entries(loaded.player.bestiary ?? {})) player.bestiary.set(k, { seen: v.seen, killed: v.killed });
       loaded.player.loadout.forEach((id, i) => {
         player.loadout[i] = id && player.unlockedSkills.has(id) ? id : null;
       });
@@ -570,8 +572,14 @@ async function boot(): Promise<void> {
         player.equipFromBackpack(player.backpack.length - 1);
       }
     } else {
-      if (chosenClass === 'ranger') player.addItem('short_bow');
-      else if (chosenClass !== 'mage') player.addItem('rusty_sword');
+      // STARTER KIT (it.42): the class weapon and a chest piece go straight
+      // onto the paperdoll — nobody walks out of town bare-handed.
+      const starterWeapon = chosenClass === 'ranger' ? 'short_bow' : chosenClass === 'mage' ? 'apprentice_wand' : chosenClass === 'rogue' ? 'worn_katana' : 'rusty_sword';
+      const starterChest = chosenClass === 'mage' ? 'cloth_robe' : 'leather_jerkin';
+      for (const id of [starterWeapon, starterChest]) {
+        player.addItem(id);
+        player.equipFromBackpack(player.backpack.length - 1);
+      }
       // Every delver leaves town with two draughts and a way back (it.39).
       player.addItem('health_potion');
       player.addItem('health_potion');
@@ -1280,7 +1288,7 @@ async function boot(): Promise<void> {
       if (!alive) return false;
       if (!world.town) captureFloor();
       const equipped: SaveGame['player']['equipped'] = [];
-      for (const s of ['head', 'torso', 'legs', 'mainHand', 'offHand', 'cloak'] as const) {
+      for (const s of ['head', 'torso', 'legs', 'mainHand', 'offHand', 'cloak', 'ring'] as const) {
         const itemId = player.getEquipped(s);
         if (itemId) equipped.push({ slot: s, itemId });
       }
@@ -1307,6 +1315,7 @@ async function boot(): Promise<void> {
           unlocked: [...player.unlockedSkills],
           loadout: [...player.loadout],
           passives: [...player.passives],
+          bestiary: Object.fromEntries([...player.bestiary].map(([k, v]) => [k, { ...v }])),
         },
         stash: { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
@@ -1912,6 +1921,8 @@ async function boot(): Promise<void> {
       const entity = state.getEntity(entityId);
       if (entity instanceof Enemy) {
         if (entity.spawnIndex >= 0) world.killed.add(entity.spawnIndex); // FloorMemory (it.39).
+        player.noteKill(entity.def.kind); // Bestiary (it.42).
+        eventBus.emit('bestiary:changed', {});
         // PHASED BOSS (it.30): a form with a nextPhase does not die.
         if (entity.beginPhaseTransition()) {
           audio.sfx('bossDie');
@@ -2294,6 +2305,12 @@ async function boot(): Promise<void> {
           const visible = entityVisible(enemy.pos.x, enemy.pos.y);
           enemy.container.visible = visible;
           if (visible) {
+            if (!enemy.noted && enemy.hp > 0) {
+              // BESTIARY (it.42): first sighting of this body.
+              enemy.noted = true;
+              player.noteSeen(enemy.def.kind);
+              eventBus.emit('bestiary:changed', {});
+            }
             const tint = world.lighting.getTintAt(enemy.pos.x, enemy.pos.y, 0.5);
             // Own tile unseen (neighbor-visible corner case): dim neutral, not black.
             enemy.setLightTint(tint === 0 ? 0x6b6472 : tint);
@@ -2401,6 +2418,7 @@ async function boot(): Promise<void> {
     const stashUI = new StashUI(player, town, inputQueue);
     const skillTreeUI = new SkillTreeUI(player, inputQueue);
     const charSheetUI = new CharacterSheetUI(player);
+    const bestiaryUI = new BestiaryUI(player);
     // DRAGGABLE WINDOWS (it.41): every panel by its header, remembered per panel.
     const undrag = [
       ['inv-panel', 'inventory'],
@@ -2408,6 +2426,7 @@ async function boot(): Promise<void> {
       ['stash-panel', 'stash'],
       ['skill-tree', 'skilltree'],
       ['char-sheet', 'charsheet'],
+      ['bestiary', 'bestiary'],
       ['cheat-menu', 'cheat'],
     ]
       .map(([id, key]) => {
@@ -2587,6 +2606,7 @@ async function boot(): Promise<void> {
         stashUI.destroy();
         skillTreeUI.destroy();
         charSheetUI.destroy();
+        bestiaryUI.destroy();
         for (const off of undrag) off();
         for (const id of timers) clearTimeout(id);
         timers.clear();

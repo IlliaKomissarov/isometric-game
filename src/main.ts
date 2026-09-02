@@ -1637,6 +1637,11 @@ async function boot(): Promise<void> {
       configurable: true,
       get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, ...world, floor }),
     });
+    // Atlas baker (it.36): `await __bake()` in the console writes atlases.
+    (window as unknown as { __bake: () => Promise<unknown> }).__bake = async () => {
+      const mod = await import('@/dev/AtlasBaker');
+      return mod.bakeAtlases(app);
+    };
   }
 }
 

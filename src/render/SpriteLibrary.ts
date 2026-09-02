@@ -262,6 +262,11 @@ export class SpriteLibrary {
     return this.anims.has(name);
   }
 
+  /** DEV ONLY: raw registries for the atlas baker (src/dev/AtlasBaker). */
+  debugEntries(): { anims: Map<string, LoadedAnim>; singles: Map<string, Texture> } {
+    return { anims: this.anims, singles: this.singles };
+  }
+
   /** Fetch every pack asset. Call once at boot (before buildWorld). */
   async load(renderer: Renderer): Promise<void> {
     this.renderer = renderer;
@@ -374,10 +379,10 @@ export class SpriteLibrary {
         }
         return framesPerDir;
       };
-      this.anims.set('zombie_walk', { frames: await zAnim('WALK', 25, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('zombie_attack', { frames: await zAnim('ATTACK', 70, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('zombie_death', { frames: await zAnim('DYING', 69, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('zombie_idle', { frames: await zAnim('IDLE', 170, 8), frameCount: 8, dirCount: 8 });
+      this.anims.set('zombie_walk', { frames: await zAnim('WALK', 25, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('zombie_attack', { frames: await zAnim('ATTACK', 70, 16), frameCount: 16, dirCount: 8 });
+      this.anims.set('zombie_death', { frames: await zAnim('DYING', 69, 16), frameCount: 16, dirCount: 8 });
+      this.anims.set('zombie_idle', { frames: await zAnim('IDLE', 170, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] zombie pack unavailable:', err);
     }
@@ -401,11 +406,11 @@ export class SpriteLibrary {
         }
         return framesPerDir;
       };
-      this.anims.set('ranger_idle', { frames: await rAnim('Idle_Bow', 16, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('ranger_run', { frames: await rAnim('Run_Bow', 20, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('ranger_attack', { frames: await rAnim('Attack_Bow', 24, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('ranger_idle', { frames: await rAnim('Idle_Bow', 16, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('ranger_run', { frames: await rAnim('Run_Bow', 20, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('ranger_attack', { frames: await rAnim('Attack_Bow', 24, 16), frameCount: 16, dirCount: 8 });
       this.anims.set('ranger_hit', { frames: await rAnim('Hit_Bow', 20, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('ranger_death', { frames: await rAnim('Death_Bow', 30, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('ranger_death', { frames: await rAnim('Death_Bow', 30, 15), frameCount: 15, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] ranger pack unavailable:', err);
     }
@@ -452,11 +457,11 @@ export class SpriteLibrary {
           SpriteLibrary.picks(total, count).map((n) => n - 1),
           0.5,
         );
-      this.anims.set('naga_idle', { frames: await nagaAnim('Idle1', 20, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('naga_walk', { frames: await nagaAnim('Walk', 20, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('naga_attack', { frames: await nagaAnim('Attack1', 16, 8), frameCount: 8, dirCount: 8 });
+      this.anims.set('naga_idle', { frames: await nagaAnim('Idle1', 20, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('naga_walk', { frames: await nagaAnim('Walk', 20, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('naga_attack', { frames: await nagaAnim('Attack1', 16, 12), frameCount: 12, dirCount: 8 });
       this.anims.set('naga_hit', { frames: await nagaAnim('Hit', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('naga_death', { frames: await nagaAnim('Death', 24, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('naga_death', { frames: await nagaAnim('Death', 24, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] naga pack unavailable:', err);
     }
@@ -477,11 +482,11 @@ export class SpriteLibrary {
         }
         return framesPerDir;
       };
-      this.anims.set('wolf_idle', { frames: await wolfAnim('Idle_Simple', 12, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('wolf_idle', { frames: await wolfAnim('Idle_Simple', 12, 8), frameCount: 8, dirCount: 8 });
       this.anims.set('wolf_run', { frames: await wolfAnim('Run', 8, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('wolf_attack', { frames: await wolfAnim('Attack_01', 12, 8), frameCount: 8, dirCount: 8 });
+      this.anims.set('wolf_attack', { frames: await wolfAnim('Attack_01', 12, 12), frameCount: 12, dirCount: 8 });
       this.anims.set('wolf_hit', { frames: await wolfAnim('Hit', 6, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('wolf_death', { frames: await wolfAnim('Death_from_Idle', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('wolf_death', { frames: await wolfAnim('Death_from_Idle', 16, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] werewolf pack unavailable:', err);
     }
@@ -498,11 +503,11 @@ export class SpriteLibrary {
           SpriteLibrary.picks(total, count),
           0.4,
         );
-      this.anims.set('lizard_idle', { frames: await lizAnim('Idle_BattlePose', 10, 6), frameCount: 6, dirCount: 8 });
+      this.anims.set('lizard_idle', { frames: await lizAnim('Idle_BattlePose', 10, 8), frameCount: 8, dirCount: 8 });
       this.anims.set('lizard_run', { frames: await lizAnim('Run_Forward', 10, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('lizard_attack', { frames: await lizAnim('Ground_Attack_01', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('lizard_attack', { frames: await lizAnim('Ground_Attack_01', 16, 12), frameCount: 12, dirCount: 8 });
       this.anims.set('lizard_hit', { frames: await lizAnim('Hit_Stomach', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('lizard_death', { frames: await lizAnim('Death_FallBack', 20, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('lizard_death', { frames: await lizAnim('Death_FallBack', 20, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] lizardman pack unavailable:', err);
     }
@@ -523,11 +528,11 @@ export class SpriteLibrary {
           SpriteLibrary.picks(total, count),
           0.4,
         );
-      this.anims.set('guard_idle', { frames: await guardAnim('Idle', 24, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('guard_walk', { frames: await guardAnim('Walk', 16, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('guard_attack', { frames: await guardAnim('Attack1', 24, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('guard_idle', { frames: await guardAnim('Idle', 24, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('guard_walk', { frames: await guardAnim('Walk', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('guard_attack', { frames: await guardAnim('Attack1', 24, 14), frameCount: 14, dirCount: 8 });
       this.anims.set('guard_hit', { frames: await guardAnim('Hit', 16, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('guard_death', { frames: await guardAnim('Death', 24, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('guard_death', { frames: await guardAnim('Death', 24, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] halberdier pack unavailable:', err);
     }
@@ -660,11 +665,11 @@ export class SpriteLibrary {
           SpriteLibrary.picks(total, count).map((n) => n - 1),
           0.35,
         );
-      this.anims.set('hydra_idle', { frames: await hyAnim('Idle1', 16, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('hydra_walk', { frames: await hyAnim('Walk', 16, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('hydra_attack', { frames: await hyAnim('Attack1', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('hydra_idle', { frames: await hyAnim('Idle1', 16, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('hydra_walk', { frames: await hyAnim('Walk', 16, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('hydra_attack', { frames: await hyAnim('Attack1', 16, 12), frameCount: 12, dirCount: 8 });
       this.anims.set('hydra_hit', { frames: await hyAnim('Hit', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('hydra_death', { frames: await hyAnim('Death', 24, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('hydra_death', { frames: await hyAnim('Death', 24, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] hydra pack unavailable:', err);
     }
@@ -684,11 +689,11 @@ export class SpriteLibrary {
         }
         return framesPerDir;
       };
-      this.anims.set('shambler_idle', { frames: await shAnim('Idle', 20, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('shambler_walk', { frames: await shAnim('Walk', 20, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('shambler_attack', { frames: await shAnim('Attack1', 20, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('shambler_idle', { frames: await shAnim('Idle', 20, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('shambler_walk', { frames: await shAnim('Walk', 20, 12), frameCount: 12, dirCount: 8 });
+      this.anims.set('shambler_attack', { frames: await shAnim('Attack1', 20, 12), frameCount: 12, dirCount: 8 });
       this.anims.set('shambler_hit', { frames: await shAnim('Hit1', 16, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('shambler_death', { frames: await shAnim('Death1', 24, 10), frameCount: 10, dirCount: 8 });
+      this.anims.set('shambler_death', { frames: await shAnim('Death1', 24, 12), frameCount: 12, dirCount: 8 });
     } catch (err) {
       console.warn('[SpriteLibrary] shambler pack unavailable:', err);
     }

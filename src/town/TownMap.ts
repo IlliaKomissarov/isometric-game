@@ -13,8 +13,8 @@
  *                      the lower plaza, dirt lanes to seven cottages and
  *                      the TAVERN, the STASH VAULT (NW), the CAMPSITE
  *                      clearing (SW), the portal yard (SE), torch posts
- *                      along every street, two gate guards, a hidden
- *                      ritual circle in the south-east woods
+ *                      along every street, two gate guards (the gate
+ *                      is NORTH-WEST since it.45; no ritual circle)
  *   every open patch:  tree clusters and bush tufts — no empty lawns
  *
  * Every standing object claims a TILE_BLOCKED footprint BEFORE the scene
@@ -118,7 +118,7 @@ export function buildTownLayout(): TownLayout {
   const CX = 30;
   const CY = 27;
   const radiusAt = (theta: number): number => {
-    const bump = 4.5 * Math.exp(-((theta + Math.PI / 2) ** 2) / 0.1);
+    const bump = 5 * Math.exp(-((theta + (3 * Math.PI) / 4) ** 2) / 0.14); // The gate sits NORTH-WEST (it.45).
     return 24.5 + 2.6 * Math.sin(2 * theta + 1.3) + 1.8 * Math.sin(5 * theta + 0.4) + 1.4 * Math.sin(3 * theta + 2.6) + bump;
   };
   const polar = (x: number, y: number): { r: number; theta: number } => {
@@ -173,9 +173,9 @@ export function buildTownLayout(): TownLayout {
   };
 
   // ---- STREETS ----
-  const gate = { x: 30, y: 5 }; // In front of the archway (its footprint is y 3–4).
+  const gate = { x: 11, y: 10 }; // NORTH-WEST (it.45): in front of the archway (footprint 10–12 × 8–9).
   ellipse(30, 22, 9.5, 6.5, KIND_COBBLE); // The market square.
-  street([[30, 5], [30, 10], [31, 14], [30, 18]], KIND_COBBLE, 1.4); // Main street: gate -> square.
+  street([[11, 10], [13, 13], [17, 15], [21, 18], [24, 20]], KIND_COBBLE, 1.4); // Main street: NW gate -> square.
   street([[30, 28], [29, 33], [30, 38], [30, 44]], KIND_COBBLE, 1.3); // South street -> lower plaza.
   street([[8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.1); // High street.
   ellipse(30, 44.5, 3.5, 2.2, KIND_COBBLE); // Lower plaza.
@@ -190,10 +190,8 @@ export function buildTownLayout(): TownLayout {
   street([[30, 38], [36, 42]], KIND_DIRT, 0.9); // SE cottage.
   street([[30, 38], [24, 42]], KIND_DIRT, 0.9); // SW cottage.
   street([[20, 13], [24, 16]], KIND_DIRT, 0.9); // N cottage.
-  street([[50, 33], [53, 40]], KIND_DIRT, 0.8); // The forest track to the ritual circle.
   ellipse(17.5, 37.5, 4.5, 3.6, KIND_DIRT); // Camp clearing.
   ellipse(43.5, 37.5, 2.5, 2, KIND_DIRT); // Portal stone yard.
-  ellipse(53.5, 41.5, 2.2, 1.8, KIND_DIRT); // The ritual clearing.
 
   // ---- PROPS ----
   const props: TownProp[] = [];
@@ -227,20 +225,37 @@ export function buildTownLayout(): TownLayout {
     houses.push({ x, y, w: 3, h: 3 });
   };
 
-  // The DUNGEON GATE (NORTH, top centre): the ruin archway on its 3×2 footprint, braziers, guards.
-  clearFor(27, 3, 7, 5, 0, KIND_COBBLE);
-  props.push({ kind: 'ruingate', x: 29, y: 3, w: 3, h: 2 });
-  for (let y = 3; y <= 4; y++) for (let x = 29; x <= 31; x++) grid[idx(x, y)] = TILE_BLOCKED;
+  // The DUNGEON GATE (NORTH-WEST, it.45): the ruin archway on its 3×2 footprint
+  // set into the cliff, a cobbled forecourt, braziers and two guards; the
+  // gate road runs south-east to the square through a built-up quarter.
+  clearFor(8, 8, 7, 5, 0, KIND_COBBLE);
+  props.push({ kind: 'ruingate', x: 10, y: 8, w: 3, h: 2 });
+  for (let y = 8; y <= 9; y++) for (let x = 10; x <= 12; x++) grid[idx(x, y)] = TILE_BLOCKED;
   grid[idx(gate.x, gate.y)] = TILE_FLOOR;
   tileKind[idx(gate.x, gate.y)] = KIND_COBBLE;
-  for (let y = 0; y <= 2; y++) for (let x = 27; x <= 33; x++) grid[idx(x, y)] = TILE_WALL;
-  block({ kind: 'brazier', x: 27, y: 5 });
-  block({ kind: 'brazier', x: 33, y: 5 });
+  for (let y = 4; y <= 7; y++) for (let x = 8; x <= 14; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL;
+  block({ kind: 'brazier', x: 8, y: 10 });
+  block({ kind: 'brazier', x: 14, y: 10 });
   const guards = [
-    { x: 28, y: 7 },
-    { x: 32, y: 7 },
+    { x: 9, y: 12 },
+    { x: 13, y: 12 },
   ];
   for (const g of guards) block({ kind: 'guard', x: g.x, y: g.y });
+  // The gate quarter: cottages, a stall, stores and fences crowd the road.
+  house(16, 7, 'house_d');
+  house(6, 14, 'house_b');
+  for (const x of [16, 18, 19]) block({ kind: 'fence', x, y: 10 });
+  for (const x of [6, 8, 9]) block({ kind: 'fence', x, y: 17 });
+  block({ kind: 'stall', x: 15, y: 12, w: 3, h: 2, variant: 'stall_a' });
+  block({ kind: 'stall', x: 19, y: 13, w: 3, h: 2, variant: 'stall_d' });
+  block({ kind: 'crates_wood', x: 14, y: 14 });
+  block({ kind: 'barrels_stacked', x: 18, y: 16 });
+  block({ kind: 'barrel', x: 22, y: 16, variant: 'barrel_b' });
+  block({ kind: 'wood_pile', x: 11, y: 14 });
+  decal({ kind: 'pots', x: 16, y: 15 });
+  decal({ kind: 'hanging_sign', x: 18, y: 15 });
+  decal({ kind: 'signpost', x: 13, y: 15 });
+  for (const [x, y] of [[9, 13], [13, 13], [15, 17], [20, 19]] as const) block({ kind: 'torch', x, y });
 
   // The tavern (NE of the square): 5×4, a stone stair and a table outside.
   clearFor(35, 9, 5, 4, 1);
@@ -290,10 +305,9 @@ export function buildTownLayout(): TownLayout {
   house(48, 31, 'house_d');
   house(35, 41, 'house_a');
   house(22, 41, 'house_b');
-  house(19, 10, 'house_c');
+  house(22, 9, 'house_c');
   for (const x of [8, 9, 11, 12]) block({ kind: 'fence', x, y: 19 });
   for (const x of [45, 46, 48, 49]) block({ kind: 'fence', x, y: 18 });
-  for (const x of [18, 19, 21, 22]) block({ kind: 'fence', x, y: 13 });
   block({ kind: 'torch', x: 13, y: 33 });
   block({ kind: 'torch', x: 46, y: 34 });
   block({ kind: 'torch', x: 25, y: 44 });
@@ -312,11 +326,8 @@ export function buildTownLayout(): TownLayout {
   decal({ kind: 'pots', x: 19, y: 39 });
   block({ kind: 'torch', x: 21, y: 39 });
 
-  // The ritual circle in the south-east woods.
-  decal({ kind: 'pentagram', x: 53, y: 41 });
-
   // Torch posts along the streets.
-  for (const [x, y] of [[28, 8], [32, 8], [28, 12], [33, 12], [27, 32], [31, 32], [28, 36], [32, 36], [28, 41], [32, 41], [11, 26], [17, 27], [24, 27], [36, 27], [43, 26], [50, 24]] as const) {
+  for (const [x, y] of [[27, 32], [31, 32], [28, 36], [32, 36], [28, 41], [32, 41], [11, 26], [17, 27], [24, 27], [36, 27], [43, 26], [50, 24], [30, 8], [26, 12]] as const) {
     if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'torch', x, y });
   }
 

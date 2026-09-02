@@ -1,5 +1,36 @@
 # Development Log
 
+## 2026-09-03 (iteration 45) - North-west gate, dusk-lit town, no town pentagram, music playlists, Darinia font, gargoyle globe + framed bars
+
+- GATE: the ruin archway now sits NORTH-WEST, set into the cliff (footprint
+  10-12 x 8-9, front tile (11,10)) with a cobbled forecourt, braziers and
+  guards; the blob's bump follows it. The gate road runs south-east to the
+  square through a new built-up quarter (two cottages with fences, two
+  stalls, crates, stacked barrels, a wood pile, signs, four torch posts).
+  Touching the front tile descends at once (unchanged contact rule).
+- TOWN: the ritual circle, its track and clearing are gone from floor 0
+  (pentagrams stay in arenas and hidden dungeon rooms). Lighting builds the
+  town with `fullRadius 5 / sightRadius 36` instead of 14 / 40: full light
+  only beside the hero, the rest of the streets lit by the baked warm
+  sources (torch posts, two braziers, the campfire, the stash glow).
+- MUSIC: `TOWN_PLAYLIST` (Whispers of the Abyss, dark magic, spell chant)
+  and `DUNGEON_PLAYLIST` (dark mystery, unleashed demon, gloomy drone,
+  demonic presence). Town and dungeon beds no longer loop one file: an
+  `ended` listener steps the playlist and keeps playing; every new dungeon
+  floor steps it too; entering the deep band jumps to the drone. Menu,
+  boss and victory beds still loop.
+- FONT: `Darinia.ttf` from the upload registered via `@font-face`
+  (`assets/ui/fonts`) as `--font-display`; applied to every panel header,
+  sheet / tree / bestiary titles, tooltip names, skill and item names,
+  menu and endgame buttons, banners and the depth label.
+- HUD: `health_globe.png` (the gargoyles' red glass) is the health orb; the
+  old fill circle sits over the sphere in multiply blend so the glass
+  visibly drains. `enemy_health_bars_2.0` supplies the bar background, the
+  gold frame + blue fill for the hero's resource bar (stamina hue-rotated)
+  and the silver frame + red fill for the warden's bar. The left HUD stack
+  shifted right to clear the wider globe. `rpg - hud.psd` was inspected
+  (portrait ring + bars with baked "100%" text) and not used.
+
 ## 2026-09-02 (iteration 44) - Portal softlock fix, north gate on contact, orc anchor, pack stairs + chests, pentagrams, skill point cap, HUD frames, UI voice
 
 ### Town-portal softlock (root cause + fix)

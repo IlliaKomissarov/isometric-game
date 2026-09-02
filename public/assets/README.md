@@ -7,6 +7,8 @@ Everything the game loads at runtime lives here, and ONLY what it loads:
 | `atlas/` | Pre-baked sprite atlases (`<anim>.png`, columns = frames, rows = the 8 canonical directions) + singles (`single_<name>.png`) + `manifest.json` (cell/orig/trim/scale + painted bounds per animation) | `src/render/SpriteLibrary.ts` — lazily, per floor |
 | `atlas/vfx_*.png` | Single-direction spell effect strips (it.41: fireball comet, explosion, burst, firewall loop, ring, vortex, splash, whirl, slash, aura, orb, strike) | `render/Vfx.ts` via `SkillDeps.vfx`; projectile heads in `systems/Projectiles.ts` |
 | `ui/skills/*.png`, `ui/items/*.png` | DOM-only art (it.40): 64 px skill glyphs (one per active skill) and painted item icons, referenced by `<img>` via `uiAssetUrl()` | `ui/itemIcons.ts`, the skill bar in `main.ts` |
+| `ui/fonts/Darinia.ttf` | Darinia display face (it.45 `--font-display`: headers, titles, tooltips, buttons) | `index.html` @font-face |
+| `ui/hud/*.png` | health_globe (gargoyle orb) + enemy_health_bars_2.0 frames/fills (it.45 HUD) | `index.html` CSS |
 | `audio/gore/*.wav` | Gore vol 1: bone cracks / snaps / rattle, guts (it.43 `goreKill` / `goreHit`) | `AudioManager` gore banks |
 | `audio/*.mp3` | Intro sting, dungeon beds, war horn, spell/boss stings | `src/engine/AudioManager.ts` |
 | `audio/boss fight/` | Title theme (1), arena tracks (2, 3, 5, 6), epilogue (4) | `AudioManager` music state machine |

@@ -369,6 +369,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] 2 skill points per level (59 at cap); cheat +10 / max
 - [x] Minimap frame, HUD backing panels, iron/oak UI sounds
 
+## Iteration 45 - NW Gate, Dusk Town, Playlists, Darinia Font, Globe HUD (2026-09-03)
+
+- [x] Gate north-west in the cliff with a cobbled forecourt and a built-up gate quarter; touch-to-descend
+- [x] Town pentagram removed; town lit at dusk by its torches, braziers and campfire
+- [x] Town + dungeon music playlists rotate on track end and on floor change
+- [x] Darinia display font on headers, titles, tooltips, buttons and banners
+- [x] Gargoyle health globe, framed resource and boss bars, HUD stack re-spaced
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

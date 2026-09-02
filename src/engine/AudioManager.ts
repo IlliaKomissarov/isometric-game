@@ -166,6 +166,13 @@ const BOSS_TRACKS: Record<number, string> = {
 const BOSS_TRACK_DEFAULT = `${BOSS_MUSIC_DIR}/2. Shadowforge Convergence.mp3`;
 /** Title screen theme (it.36) and the epilogue theme. */
 const MENU_TRACK = `${BOSS_MUSIC_DIR}/1. Whispers of the Abyss.mp3`;
+/**
+ * PLAYLISTS (it.45): the town and dungeon beds rotate through a set instead
+ * of looping one file — the next track starts when one ends, and every
+ * floor change steps the dungeon playlist forward.
+ */
+const TOWN_PLAYLIST = [MENU_TRACK, FILES.magic6, FILES.chant];
+const DUNGEON_PLAYLIST = [FILES.bgm, FILES.doom, FILES.bgmDeep, FILES.beast];
 const VICTORY_TRACK = `${BOSS_MUSIC_DIR}/4. Cursed Citadel .mp3`; // (Filename really has the space.)
 
 /**
@@ -245,6 +252,8 @@ export class AudioManager {
   };
   private musicState: MusicState = 'none';
   private musicFloor = 0;
+  /** Playlist cursors (it.45). */
+  private readonly playlistIndex = { town: 0, dungeon: 0 };
   private musicTimer: number | null = null;
   /** Pause-menu ducking: music/ambience sink while a modal owns the screen. */
   private ducked = false;
@@ -303,8 +312,12 @@ export class AudioManager {
       // MUSIC (it.36): one element per bed, crossfaded by the state machine.
       this.music.menu = this.hookMediaElement(MENU_TRACK, true);
       // The town shares the title theme (Tristram plays in the menu too).
-      this.music.town = this.hookMediaElement(MENU_TRACK, true);
-      this.music.dungeon = this.hookMediaElement(FILES.bgm, true);
+      this.music.town = this.hookMediaElement(TOWN_PLAYLIST[0], false);
+      this.music.dungeon = this.hookMediaElement(DUNGEON_PLAYLIST[0], false);
+      // Rotation: when a bed ends, step its playlist and keep playing.
+      for (const key of ['town', 'dungeon'] as const) {
+        this.music[key]?.addEventListener('ended', () => this.advancePlaylist(key));
+      }
       this.music.boss = this.hookMediaElement(BOSS_TRACK_DEFAULT, true);
       this.music.victory = this.hookMediaElement(VICTORY_TRACK, false);
       for (const el of Object.values(this.music)) if (el) el.volume = 0;
@@ -903,8 +916,31 @@ export class AudioManager {
    * boss (per-arena track) · victory (epilogue). Ambience rides ONLY with
    * the dungeon bed; ducking sinks everything while a modal owns the screen.
    */
+  /** Step a playlist (track ended / floor changed) and, if it is the live bed, keep it playing. */
+  private advancePlaylist(key: 'town' | 'dungeon'): void {
+    const list = key === 'town' ? TOWN_PLAYLIST : DUNGEON_PLAYLIST;
+    this.playlistIndex[key] = (this.playlistIndex[key] + 1) % list.length;
+    const el = this.music[key];
+    if (!el) return;
+    el.src = encodeURI(list[this.playlistIndex[key]]);
+    el.loop = false;
+    if (this.musicState === key) el.play().catch(() => undefined);
+  }
+
+  /** The playlist track a bed is on (QA). */
+  playlistTrack(key: 'town' | 'dungeon'): string {
+    const list = key === 'town' ? TOWN_PLAYLIST : DUNGEON_PLAYLIST;
+    return list[this.playlistIndex[key]].split('/').pop() ?? '';
+  }
+
   setMusic(state: MusicState, floor = this.musicFloor): void {
     const trackChanged = state === 'boss' && floor !== this.musicFloor;
+    // A new dungeon floor steps the dungeon playlist (it.45).
+    if (state === 'dungeon' && this.musicState === 'dungeon' && floor !== this.musicFloor && floor > 0) {
+      this.musicFloor = floor;
+      this.advancePlaylist('dungeon');
+      return;
+    }
     if (state === 'dungeon' || state === 'boss') this.preloadRunBanks();
     if (state === this.musicState && !trackChanged) return;
     this.musicState = state;
@@ -932,10 +968,11 @@ export class AudioManager {
       const want = encodeURI(url);
       if (!el.src.endsWith(want.split('/').pop() ?? '')) {
         el.src = want;
-        el.loop = true;
+        el.loop = el === this.music.boss || el === this.music.menu;
       }
     };
-    if (this.musicState === 'dungeon') retarget(this.music.dungeon, this.bgmDeep ? FILES.bgmDeep : FILES.bgm);
+    if (this.musicState === 'dungeon') retarget(this.music.dungeon, DUNGEON_PLAYLIST[this.playlistIndex.dungeon]);
+    if (this.musicState === 'town') retarget(this.music.town, TOWN_PLAYLIST[this.playlistIndex.town]);
     if (this.musicState === 'boss') retarget(this.music.boss, BOSS_TRACKS[this.musicFloor] ?? BOSS_TRACK_DEFAULT);
     const duckMul = this.ducked ? 0.25 : 1;
     const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0 };
@@ -983,12 +1020,16 @@ export class AudioManager {
   setBgmDeep(deep: boolean): void {
     if (deep === this.bgmDeep) return;
     this.bgmDeep = deep;
+    // Entering the deep band jumps the dungeon playlist to the gloomy drone.
+    if (deep) this.playlistIndex.dungeon = Math.max(0, DUNGEON_PLAYLIST.indexOf(FILES.bgmDeep));
     if (this.musicState === 'dungeon') this.applyMusic();
   }
 
   /** Boss arena music: the floor's intense track while `on`. */
-  setBossMusic(on: boolean, floor = 0): void {
-    this.setMusic(on ? 'boss' : 'dungeon', on ? floor : this.musicFloor);
+  setBossMusic(on: boolean, floor = this.musicFloor): void {
+    // The floor always travels with the call (it.45): a new dungeon floor
+    // steps the playlist; leaving an arena on the same floor does not.
+    this.setMusic(on ? 'boss' : 'dungeon', floor);
   }
 
   /** The mystic reveal sting (run start). */

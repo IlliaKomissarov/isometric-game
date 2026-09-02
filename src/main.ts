@@ -824,7 +824,9 @@ async function boot(): Promise<void> {
       const lighting = new Lighting();
       // Sight is blocked by ARCHITECTURE only — solid props don't cast fog.
       // The town is daylight-wide: every stall visible from the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 40, fullRadius: 14 } : undefined);
+      // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
+      // of the square falls to the torches, lanterns and the campfire.
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : undefined);
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
       const theme = !spriteLib.loaded

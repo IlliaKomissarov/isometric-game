@@ -2651,6 +2651,123 @@
       #cheat-menu .cheat-points span { font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.12em; color: #ffd070; flex: 1; }
       #cheat-menu .cheat-points button { flex: 0 0 auto; padding: 5px 8px; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.1em; color: var(--ink); background: linear-gradient(180deg, #221b2c, #0f0c14); border: 1px solid var(--frame-iron); cursor: pointer; }
       #cheat-menu .cheat-points button:hover { border-color: var(--frame-gold); }
+
+      /* ===================================================================
+         IT.45 — DARINIA DISPLAY FONT, GARGOYLE HEALTH GLOBE, FRAMED BARS
+         =================================================================== */
+      @font-face {
+        font-family: 'Darinia';
+        src: url('assets/ui/fonts/Darinia.ttf') format('truetype');
+        font-display: swap;
+      }
+      :root { --font-display: 'Darinia', 'Cinzel', 'Georgia', serif; }
+      /* Headers, sheet and tree titles, tooltip names, menu buttons, banners. */
+      #inv-panel h3, .town-panel h3, .st-head h3, .cs-head h3, .bs-head h3, #cheat-menu .cheat-head-text h3,
+      .cs-block h4, .st-col h4, .bs-title h4, .skill-tip b, #item-tip .tip-name, #inv-tooltip .tip-name,
+      #main-menu button, .menu-btn, #endgame h1, #endgame-again, #endgame-town, #boss-bar-name, #depth-label,
+      #descend-note, #boss-note, #pause-menu h2, .modal h2, .modal h1, #class-select h2, #save-panel h2, .st-text b, .bs-row-name, .cheat-item-name {
+        font-family: var(--font-display) !important;
+        letter-spacing: 0.08em;
+      }
+      #main-menu button, .menu-btn { font-size: 15px; }
+      #endgame h1 { letter-spacing: 0.16em; }
+      /* THE HEALTH GLOBE: the gargoyles' red glass, drained by a multiply mask. */
+      #orb-wrap {
+        width: 190px;
+        height: 150px;
+        left: 12px;
+        bottom: 4px;
+        background: url('assets/ui/hud/health_globe.png') center top / 190px auto no-repeat;
+        filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.9));
+      }
+      #orb {
+        position: absolute;
+        left: 41px;
+        top: 20px;
+        width: 108px;
+        height: 108px;
+        margin: 0;
+        border: none;
+        box-shadow: none;
+        background: #2a1616;
+        mix-blend-mode: multiply;
+      }
+      #orb-fill { background: linear-gradient(180deg, #ffd0c0 0%, #ffb0a0 40%, #f08070 100%); }
+      #orb-gloss { display: none; }
+      #orb-label {
+        position: absolute;
+        left: 41px;
+        top: 66px;
+        width: 108px;
+        margin: 0;
+        font-family: var(--font-display);
+        font-size: 17px;
+        color: #fff1e0;
+        text-shadow: 0 1px 2px #000, 0 0 8px #000, 0 0 14px rgba(255, 80, 60, 0.6);
+        pointer-events: none;
+        z-index: 2;
+      }
+      #hud-bar { left: 200px; }
+      #char-stats { left: 214px; }
+      /* Framed bars: the pack's iron-and-gold bar for the hero's resource, silver for the warden. */
+      #resource-bar {
+        position: relative;
+        height: 18px;
+        border: none;
+        border-radius: 0;
+        background: url('assets/ui/hud/bar_bg.png') center / 100% 100% no-repeat;
+        overflow: visible;
+        padding: 0;
+      }
+      #resource-fill {
+        position: absolute;
+        left: 11.7%;
+        top: 25%;
+        height: 50%;
+        max-width: 76.6%;
+        background: url('assets/ui/hud/bar_fill_blue.png') left center / 100% 100% no-repeat;
+        transition: width 0.12s linear;
+      }
+      #resource-fill.stamina { background-image: url('assets/ui/hud/bar_fill_red.png'); filter: hue-rotate(95deg) saturate(0.8); }
+      #resource-bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: url('assets/ui/hud/bar_frame_gold.png') center / 100% 100% no-repeat;
+        pointer-events: none;
+      }
+      #boss-bar-track {
+        height: 22px;
+        border: none;
+        background: url('assets/ui/hud/bar_bg.png') center / 100% 100% no-repeat;
+        box-shadow: none;
+        overflow: visible;
+      }
+      #boss-bar-track::before, #boss-bar-track::after { content: ''; }
+      #boss-bar-track::after {
+        position: absolute;
+        inset: 0;
+        transform: none;
+        background: url('assets/ui/hud/bar_frame_silver.png') center / 100% 100% no-repeat;
+        pointer-events: none;
+      }
+      #boss-bar-fill {
+        position: absolute;
+        left: 11.7%;
+        top: 25%;
+        height: 50%;
+        max-width: 76.6%;
+        background: url('assets/ui/hud/bar_fill_red.png') left center / 100% 100% no-repeat;
+      }
+      #boss-bar-notches { display: none; }
+      /* Contrast: every HUD control sits on a dark backing. */
+      /* The left HUD stack, re-spaced beside the wider globe (it.45):
+         stats line / resource bar / level · xp · gold on one row. */
+      #char-stats { left: 214px; bottom: 64px; }
+      #resource-wrap { left: 214px; bottom: 32px; width: 170px; }
+      #progress-hud { left: 214px; bottom: 9px; display: flex; align-items: center; gap: 8px; }
+      #level-label { margin-right: 0; }
+      #xp-bar { width: 64px; margin-top: 0; }
     </style>
   </head>
   <body>

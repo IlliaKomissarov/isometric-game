@@ -106,6 +106,12 @@ export class InputBindings {
           if (!e.repeat) this.inputQueue.enqueue({ type: 'PICKUP_NEAREST', playerId: this.playerId });
           return;
         }
+        // Q / R (it.39): quaff the first healing / mana potion carried.
+        if (e.code === 'KeyQ' || e.code === 'KeyR') {
+          e.preventDefault();
+          if (!e.repeat) this.inputQueue.enqueue({ type: 'USE_QUICK', playerId: this.playerId, kind: e.code === 'KeyQ' ? 'health' : 'mana' });
+          return;
+        }
         // Active skills (it.32): hotkeys 1–4 cast the class skill bar.
         if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'Digit4') {
           e.preventDefault();

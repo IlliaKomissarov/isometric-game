@@ -103,6 +103,25 @@ export class ChestSystem {
     return this.chests.get(id) ?? null;
   }
 
+  /** Indexes (placement order, id - 1) of chests already opened — for FloorMemory. */
+  openedIndexes(): number[] {
+    const out: number[] = [];
+    for (const c of this.chests.values()) if (c.opened) out.push(c.id - 1);
+    return out;
+  }
+
+  /** Re-apply a floor's memory: those chests stand open and yield nothing. */
+  applyMemory(opened: ReadonlyArray<number>): void {
+    for (const i of opened) {
+      const chest = this.chests.get(i + 1);
+      if (!chest || chest.opened) continue;
+      chest.opened = true;
+      chest.sprite.texture = assets.get('chest_open');
+      if (chest.indicator) chest.indicator.visible = false;
+      chest.halo.visible = false;
+    }
+  }
+
   /** Nearest unopened chest to a world point within `range` (E interaction). */
   findNearestUnopened(x: number, y: number, range: number): Chest | null {
     let best: ChestView | null = null;

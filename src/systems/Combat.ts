@@ -416,6 +416,18 @@ export class CombatSystem {
     this.dealDamage({ sourceId, targetId: p.id, amount, knockX: dirX, knockY: dirY, knockDist: KNOCKBACK_TILES });
   }
 
+  /**
+   * Restore hp (it.39 potions / shrines). The ONLY other legal hp mutator
+   * besides dealDamage — same guards (dead things stay dead).
+   */
+  heal(targetId: number, amount: number): number {
+    const target = state.getEntity(targetId);
+    if (!target || target.hp <= 0 || target.action === 'dead') return 0;
+    const before = target.hp;
+    target.hp = Math.min(target.hpMax, target.hp + Math.max(0, Math.round(amount)));
+    return target.hp - before;
+  }
+
   /** Apply damage. The only legal way hp changes anywhere in the game. */
   dealDamage(event: DamageEvent): void {
     const target = state.getEntity(event.targetId);

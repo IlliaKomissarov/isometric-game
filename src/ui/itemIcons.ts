@@ -186,7 +186,55 @@ const SHAPES: Record<string, string[]> = {
   ],
 };
 
+const CONSUMABLE_SHAPES: Record<string, string[]> = {
+  potion: [
+    '....................',
+    '.......ooooo........',
+    '......oWWWWWo.......',
+    '......oWwwwWo.......',
+    '.......ooooo........',
+    '.......o444o........',
+    '.......o444o........',
+    '......oo444oo.......',
+    '.....o4455544o......',
+    '....o445555544o.....',
+    '...o44555555444o....',
+    '...o44555555433o....',
+    '...o4455554433 3o....',
+    '...o445544333322o...',
+    '...o444433332222o...',
+    '...o333333222221o...',
+    '....o33322222211o...',
+    '.....o2222211111o...',
+    '......oooooooooo....',
+    '....................',
+  ],
+  scroll: [
+    '....................',
+    '..oooooooooooooo....',
+    '.oWWWWWWWWWWWWWWo...',
+    '.oW555555555555Wo...',
+    '.oW5555555555555Wo..',
+    '..oo555555555555Wo..',
+    '...o55g5gg5g5555Wo..',
+    '...o555555555555Wo..',
+    '...o5g5gggg5g555Wo..',
+    '...o555555555555Wo..',
+    '...o5gg5g5ggg555Wo..',
+    '...o555555555555Wo..',
+    '...o55g5gg55g555Wo..',
+    '...o555555555555Wo..',
+    '...oWWWWWWWWWWWWo...',
+    '..oWWWWWWWWWWWWWWo..',
+    '..o4444444444444o...',
+    '...ooooooooooooo....',
+    '....................',
+    '....................',
+  ],
+};
+
 function shapeFor(def: ItemDef): string[] {
+  if (def.slot === 'consumable') return def.use?.portal ? CONSUMABLE_SHAPES.scroll : CONSUMABLE_SHAPES.potion;
   if (def.slot === 'mainHand') return SHAPES[def.weaponKind ?? 'bow'] ?? SHAPES.bow;
   return SHAPES[def.slot] ?? SHAPES.torso;
 }

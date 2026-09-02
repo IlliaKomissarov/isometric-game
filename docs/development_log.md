@@ -1,5 +1,127 @@
 # Development Log
 
+## 2026-09-02 (iteration 39) - Town hub (floor 0), vendors, save/load, stash, town assets
+
+### New assets (baked from `public/assets/test-models`, then pruned)
+- Audit verdict: KEEP the cottage renders (`house/rem_0002/0006/0010/0014`),
+  the Ancient Isometric Tileset (ground diamonds, stalls, fence, pillar,
+  trees, crates, signs, grass), Dungeon Pry placeables (barrels, chest
+  open/closed), the campfire + torch sheets, the animated well, and the
+  coc_chars peasant / peasantGold walk sheets. REJECT: the hob sheets (a
+  goblin, not townsfolk), PSD/PNG junk exports, re-uploads of packs that
+  were already atlased in it.36, and the "Alpha" edge-mask sheets (faint
+  masks that only speckle a bake).
+- Baked into `atlas/` by the one-shot `src/dev/TownBaker.ts`
+  (`await __bakeTown()` in the browser; kept in this commit's history,
+  deleted afterwards): singles `town_cobble/grass/dirt` (64x32),
+  `house_a..d` (276x253 @0.28), `stall_a..d`, `fence`, `pillar`,
+  `barrel_a/b`, `crates`, `stash_closed/open`, `tree_a/b`, `signpost`,
+  `hanging_sign`, `grassclump`, `pots`; anims `campfire` (6 f), `torch`
+  (4 f), `well` (12 f), `villager_walk` + `merchant_walk` (8 dirs x 8 f,
+  96 px cells, nearest).
+- Direction audit of the peasant sheets: rows run counter-clockwise from
+  SW ([SW, S, SE, E, NE, N, NW, W]) -> `ROTATE_SW` row fix
+  (`(d + 3) mod 8`) registered for `villager_` / `merchant_` in
+  `SpriteLibrary.DIR_ROW_FIX`. Villager body height 62/57 painted
+  (~44-52 px on screen; the union bounds overstate the 40 px walking body).
+- The raw `test-models` folder (929 MB) was deleted after the bake.
+
+### Floor 0 - the town (`src/town/`)
+- `TownMap.buildTownLayout()`: hand-authored 34x30 square - walled
+  border, cobble plaza, dirt lanes, four corner cottages (3x3
+  footprints), merchant stall + shopkeeper NE, stash chest + barrels NW,
+  central campfire, well, six torches, gate pillars, fences, trees,
+  decals. The map is a `DungeonMap` subclass with a per-tile `tileKind`
+  (cobble/grass/dirt) so the scene builder, pathfinder, lighting and
+  minimap work untouched; theme `'town'` maps to `floor_town_<kind>`.
+- `TownProps.placeTownProps()`: dresses the layout; standing props anchor
+  at the footprint's south corner with `depthKey(x+w-.5, y+h-.5)`; the
+  campfire (9 fps), torches (8 fps) and well (6 fps) loop through
+  `Ambience.addLoopingAnim`; the fire and torches are `Lighting` sources
+  + ember hotspots. Returns OCCLUDERS (cottages, trees) and INTERACTABLES
+  (merchant, stash).
+- `Villagers`: render-only townsfolk (never sim entities) that stroll a
+  wander room with hysteresis facing (`stableDir`), pause, breathe; the
+  shopkeeper stands behind the stall. Lit by `getTintAt(x, y, 0.8)`.
+- ROOF CUTAWAY: each frame an occluder the hero stands behind (screen
+  point inside the sprite's inner 76% x 90% box and hero depth < prop
+  depth) lerps to alpha 0.38 (k = 1 - e^(-12 dt)), back to 1 otherwise.
+- Lighting builds with `{ sightRadius: 40, fullRadius: 14 }` in town;
+  music state `'town'` (the title theme, Tristram rule); gate = the
+  regular stairs prop placed at `layout.gate` -> descend to floor 1.
+  `updateDepth` shows THE TOWN; the first descent reads "The gate seals
+  behind you".
+
+### Economy, consumables, stash (`systems/Town.ts`, `ui/Shop.ts`, `ui/Stash.ts`)
+- Items gained `value`, `use` (heal / resource / portal) and the
+  `'consumable'` slot; `health_potion` (30 g, +50% hp), `mana_potion`
+  (30 g, +60% resource), `scroll_town_portal` (80 g). Q / R quaff the
+  first health / mana potion; clicking a consumable in the inventory uses
+  it. `CombatSystem.heal()` is the second (and only other) hp mutator.
+- `TownSystem`: merchant stock restocked per visit from the run seed +
+  deepest floor (staples: 3 health, 2 mana, 2 scrolls; 3 gear rolls; a
+  magic/rare piece past floor 3/6); buy = `itemValue`, sell = 25%.
+  Commands BUY / SELL / STASH_PUT / STASH_TAKE / STASH_GOLD flow through
+  the InputQueue like everything else (determinism rule intact); events
+  `town:changed / traded / refused`.
+- Shop and Stash panels (`.town-panel`): FOR SALE <-> YOUR PACK, gold
+  purse, deposit/withdraw 100/all, shared `#item-tip` hover tooltip with
+  the gold line, ESC closes (capture), click sfx. Stash = 24 slots + gold,
+  owned by the SAVE SLOT (restart / change class keep it).
+- Interaction: E near the stall / chest opens it (`PICKUP_NEAREST` in
+  town); clicking the stall / chest walks up (`pendingInteract`) and
+  opens on arrival; non-blocking chips: E TRADE / E STASH / THE DUNGEON
+  GATE / PORTAL back to depth N.
+
+### Town portal + floor memory
+- Reading a scroll (outside town, not while transitioning) sets
+  `pendingPortal`; the tick fades to a freshly built town, warps the hero
+  to the portal stone, drops a blue rift (glow + ring + light source) and
+  remembers `{floor, arena, x, y}`. Stepping off the stone arms it; stepping
+  back fades to the remembered floor and spot.
+- `FloorMemory` per floor key (`floor`, arena = `1000 + floor`): opened
+  chest indexes, taken gold pile indexes, killed roster indexes, packed
+  explored bits (base64), `arenaCleared`. `captureFloor()` runs before
+  every departure (descend, arena, portal, cheat travel, save);
+  `buildWorld` re-applies it: `chests.applyMemory`, taken piles destroyed,
+  `spawnFloorEnemies(..., skip)` rolls the identical roster (the RNG
+  stream is consumed for skipped entries) and tags `Enemy.spawnIndex`,
+  `lighting.unpackExplored`; a cleared arena rebuilds empty with the
+  stair open.
+- Double-descend guard: `swapWorld` clears `pendingDescend` /
+  `pendingArena` so a stale "on the stairs" flag from the old floor can
+  never fire on the new one (found in stepped QA).
+
+### Save / load (`persist/SaveGame.ts`, `ui/SavePanel.ts`)
+- 3 LocalStorage slots (`iso-arpg-save-<n>`, version 1, ~0.8 KB each):
+  seed, floor, deepest floor, playtime ticks, the sheet (archetype,
+  level, xp, gold, hp/hpMax, resource, backpack, equipped), the stash,
+  the floor memories. `saves.read/write/remove/list/firstFree/latest`.
+- Autosave on arriving in town (spawn, portal, cheat), on opening the
+  pause menu, and SAVE & EXIT; "PROGRESS SAVED" floats over the hero.
+- Main menu: CONTINUE (latest slot, shown only when one exists), START
+  GAME (class select -> first free slot; all full -> OVERWRITE picker),
+  LOAD GAME (slot list with LOAD / DELETE). Loading restores the hero and
+  starts in town; the gate leads back down, remembered floors intact.
+- `?class=` test entry still drops straight onto floor 1.
+
+### UI polish
+- Panels share the Diablo frame (double gold rule, dark violet ground),
+  `:active` opacity 0.75 on every button, high-contrast serif labels,
+  hover tooltips with gold values on shop / stash / inventory cells,
+  Q - R row in the command reference, SAVE & EXIT in the pause menu.
+
+### Live QA (Chrome, stepped sim)
+Start -> town spawn (autosave) -> E at the stall: buy Healing Potion
+(500 -> 470 g), sell Rusty Sword (+19 g) -> E at the chest: potion + scroll
+stashed, 100 g deposited, taken back -> gate -> floor 1 (roster 11 + kill
+one, `killed = {10}`) -> scroll -> town (portal chip, floors memory `{1}`)
+-> back through the rift -> floor 1 rebuilt with index 10 dead ->
+SAVE & EXIT (panels torn down, no run left) -> CONTINUE -> town with 777 g,
+pack, floor memory -> gate -> floor 1 still remembers. Roof cutaway 0.38
+behind the NW cottage. Zero console errors; the Pixi addChild deprecation
+(shadow root was a Sprite) fixed.
+
 ## 2026-09-02 (iteration 38) - Chest chip leak, menu streamlining, aim/firewall alignment
 
 - STUCK "E OPEN": the interact chip set an INLINE opacity (0.25) during

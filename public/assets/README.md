@@ -17,6 +17,10 @@ Everything the game loads at runtime lives here, and ONLY what it loads:
   `07c386cd` keeps the raw-pack loaders + the in-browser baker
   (`src/dev/AtlasBaker.ts`, `/__bake` Vite endpoint) for reference: to
   re-bake, check that commit out with the packs restored.
+- The town kit (it.39: cottages, tileset ground/props, campfire, torch,
+  well, peasant walk sheets) was baked the same way by
+  `src/dev/TownBaker.ts` from the raw `test-models` uploads, which were
+  then deleted; the baker lives in the it.39 commit history.
 - To add a creature/hero: bake a grid atlas (cells alpha-cropped; record
   `origW/origH/trimX/trimY/scale/painted` in the manifest — see
   `docs/skills/external-sprite-pipeline.md`), then register its

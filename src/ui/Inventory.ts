@@ -13,7 +13,7 @@ import { eventBus } from '@/core/EventBus';
 import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
-import { ITEMS, RARITY_COLOR, statLine, type ItemDef } from '@/items/catalog';
+import { ITEMS, RARITY_COLOR, itemValue, statLine, type ItemDef } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { weaponIconUrl } from '@/render/SpriteLibrary';
 import { itemIconDataUrl } from './itemIcons';
@@ -131,7 +131,7 @@ export class InventoryUI {
         : [...stacks.values()]
             .map(
               ({ def, count, firstIndex }) =>
-                `<button class="inv-cell inv-item rarity-${def.rarity}" data-equip="${firstIndex}" data-item="${def.id}">
+                `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
                    ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}
                  </button>`,
             )
@@ -183,8 +183,11 @@ export class InventoryUI {
     this.panel.querySelectorAll<HTMLButtonElement>('button.inv-item').forEach((btn) => {
       btn.addEventListener('click', () => {
         const equipIndex = btn.dataset.equip;
+        const useIndex = btn.dataset.use;
         const unequipSlot = btn.dataset.unequip as EquipmentSlot | undefined;
-        if (equipIndex !== undefined) {
+        if (useIndex !== undefined) {
+          this.queue.enqueue({ type: 'USE_ITEM', playerId: this.playerId, backpackIndex: Number(useIndex) });
+        } else if (equipIndex !== undefined) {
           this.queue.enqueue({ type: 'EQUIP', playerId: this.playerId, backpackIndex: Number(equipIndex) });
           audio.sfx('equip'); // Steel drawn from the sheath (it.26).
         } else if (unequipSlot) {
@@ -207,6 +210,7 @@ export class InventoryUI {
       <div class="tip-name" style="color:${hex(RARITY_COLOR[def.rarity])}">${def.name}</div>
       <div class="tip-slot">${def.rarity} · ${def.slot}</div>
       <div class="tip-stats">${statLine(def)}</div>
+      <div class="tip-gold">◆ worth ${itemValue(def)} gold${def.slot === 'consumable' ? ' · click to use' : ''}</div>
     `;
     this.tooltip.classList.add('show');
     const pad = 14;

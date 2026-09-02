@@ -18,6 +18,8 @@ export interface RunMenuHooks {
   mainMenu: () => void;
   /** Tear the run down and reopen the class selection (it.37). */
   changeClass: () => void;
+  /** Write the save slot, then return to the title (it.39). */
+  saveExit: () => void;
   settings: () => void;
   /** Death overlay only: respawn at the floor entrance. */
   respawn: () => void;
@@ -73,6 +75,10 @@ export class RunMenusUI {
               audio.sfx('uiConfirm');
               this.hideAll();
               this.hooks.changeClass();
+            } else if (act === 'saveExit') {
+              audio.sfx('save');
+              this.hideAll();
+              this.hooks.saveExit();
             } else if (act === 'settings') {
               audio.sfx('uiClick');
               this.hooks.settings();

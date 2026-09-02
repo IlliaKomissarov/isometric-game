@@ -134,7 +134,13 @@ export type AnimName =
   | 'guard_hit'
   | 'guard_death'
   | 'gold_drop'
-  | 'glint';
+  | 'glint'
+  // Town (it.39)
+  | 'villager_walk'
+  | 'merchant_walk'
+  | 'campfire'
+  | 'torch'
+  | 'well';
 
 export interface PaintedBounds {
   top: number;
@@ -224,6 +230,12 @@ export function stableDir(fx: number, fy: number, lastDir: number): number {
  */
 const MIRROR_LR = (d: number): number => (4 - d + 8) % 8;
 const REFLECT_NWSE = (d: number): number => (6 - d + 8) % 8;
+/**
+ * ROTATED (it.39 audit): the coc_chars peasant sheets store their rows
+ * counter-clockwise from SW — [SW, S, SE, E, NE, N, NW, W] — so canonical
+ * direction d lives on row (d + 3) mod 8.
+ */
+const ROTATE_SW = (d: number): number => (d + 3) % 8;
 const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> = [
   ['ranger_', MIRROR_LR],
   ['zombie_', MIRROR_LR],
@@ -233,6 +245,8 @@ const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> =
   ['hydra_', REFLECT_NWSE],
   ['naga_', REFLECT_NWSE],
   ['shambler_', REFLECT_NWSE],
+  ['villager_', ROTATE_SW],
+  ['merchant_', ROTATE_SW],
 ];
 export function rowForDir(anim: string, d: number): number {
   for (const [prefix, fix] of DIR_ROW_FIX) if (anim.startsWith(prefix)) return fix(d);

@@ -22,13 +22,14 @@ import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
 
-export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember';
+export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town';
 
 const THEME_SUFFIX: Record<FloorTheme, string> = {
   stone: '',
   temple: '_deep',
   frost: '_frost',
   ember: '_ember',
+  town: '',
 };
 
 export class SceneManager {
@@ -39,6 +40,7 @@ export class SceneManager {
   /** Build sprites into the viewport layers and register them for lighting. */
   build(map: DungeonMap, viewport: Viewport, lighting: Lighting, theme: FloorTheme = 'stone'): void {
     this.map = map;
+    this.theme = theme;
     this.themeSuffix = THEME_SUFFIX[theme];
     const { width, height, grid } = map;
 
@@ -84,10 +86,18 @@ export class SceneManager {
     return false;
   }
 
+  private theme: FloorTheme = 'stone';
+
   private addFloorSprite(gx: number, gy: number, viewport: Viewport, lighting: Lighting): void {
     // Variant chosen deterministically from tile coords (stable across peers).
     const variant = (gx * 7 + gy * 13) % assets.floorVariants;
-    const sprite = new Sprite(assets.get(`floor_${variant}${this.themeSuffix}`));
+    // TOWN (it.39): the map's tileKind layer paints cobble / grass / dirt.
+    const kinds = (this.map as { tileKind?: Uint8Array }).tileKind;
+    const key =
+      this.theme === 'town' && kinds
+        ? `floor_town_${kinds[gy * this.map.width + gx]}`
+        : `floor_${variant}${this.themeSuffix}`;
+    const sprite = new Sprite(assets.get(key));
     const s = worldToScreen(gx, gy, this.scratch);
     sprite.position.set(s.x - TILE_W / 2, s.y);
     viewport.groundLayer.addChild(sprite);

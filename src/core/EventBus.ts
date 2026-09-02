@@ -42,6 +42,12 @@ export interface GameEvents {
   'inventory:changed': Record<string, never>;
   /** Simulation tick completed (deterministic hook for state sync). */
   'sim:tick': { tick: number };
+  /** Town (it.39): stock/stash changed, a trade happened, a trade was refused. */
+  'town:changed': Record<string, never>;
+  'town:traded': { kind: 'buy' | 'sell'; itemId: string; gold: number };
+  'town:refused': { reason: 'gold' | 'stashFull' };
+  /** A consumable was used (potion drunk, scroll read). */
+  'item:used': { itemId: string };
 }
 
 type Handler<T> = (payload: T) => void;

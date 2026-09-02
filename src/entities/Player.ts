@@ -765,7 +765,7 @@ export class Player extends Entity {
   equipFromBackpack(index: number): void {
     const itemId = this.backpack[index];
     const def = itemId ? ITEMS[itemId] : undefined;
-    if (!def) return;
+    if (!def || def.slot === 'consumable') return; // Potions are used, not worn.
     this.backpack.splice(index, 1);
     const previous = this.equipped.get(def.slot);
     if (previous) this.backpack.push(previous);

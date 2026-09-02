@@ -755,6 +755,8 @@ export class Enemy extends Entity {
   private desperation = false;
   /** Multi-phase boss counter (it.30): which form/pool the boss is on. */
   phase = 1;
+  /** Roster index on its floor (it.39 FloorMemory); -1 = summoned/unrecorded. */
+  spawnIndex = -1;
   private readonly lastGoalTile = vec2(-1, -1);
   private readonly scratchA = vec2();
   private readonly scratchB = vec2();
@@ -821,6 +823,7 @@ export class Enemy extends Entity {
     this.hasSummoned = false;
     this.desperation = false;
     this.phase = 1;
+    this.spawnIndex = -1;
     this.lastGoalTile.x = -1;
     this.lastGoalTile.y = -1;
     this.flashTicks = 0;

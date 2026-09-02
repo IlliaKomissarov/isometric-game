@@ -32,7 +32,16 @@ export type InputCommand =
   | { type: 'EQUIP'; playerId: number; backpackIndex: number }
   | { type: 'UNEQUIP'; playerId: number; slot: EquipmentSlot }
   /** Active skill hotkeys 1–4 (it.32): cast the class skill in `slot`. */
-  | { type: 'SKILL'; playerId: number; slot: number };
+  | { type: 'SKILL'; playerId: number; slot: number }
+  /** Consumables (it.39): drink/read the backpack item; Q = quickest healing potion. */
+  | { type: 'USE_ITEM'; playerId: number; backpackIndex: number }
+  | { type: 'USE_QUICK'; playerId: number; kind: 'health' | 'mana' }
+  /** Town economy (it.39). */
+  | { type: 'BUY'; playerId: number; index: number }
+  | { type: 'SELL'; playerId: number; backpackIndex: number }
+  | { type: 'STASH_PUT'; playerId: number; backpackIndex: number }
+  | { type: 'STASH_TAKE'; playerId: number; index: number }
+  | { type: 'STASH_GOLD'; playerId: number; amount: number };
 
 export class InputQueue {
   private queue: InputCommand[] = [];

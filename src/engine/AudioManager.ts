@@ -73,10 +73,17 @@ export type SfxName =
   | 'mapOpen'
   | 'mapClose'
   | 'rarePickup'
-  | 'heroSelect';
+  | 'heroSelect'
+  // ---- Town (it.39) ----
+  | 'buy'
+  | 'sell'
+  | 'stash'
+  | 'potion'
+  | 'portal'
+  | 'save';
 
 /** Which music bed is wanted (main drives; crossfades happen here). */
-export type MusicState = 'none' | 'menu' | 'dungeon' | 'boss' | 'victory';
+export type MusicState = 'none' | 'menu' | 'town' | 'dungeon' | 'boss' | 'victory';
 
 // Base-aware root (it.31): '/' in dev, '/isometric-game/' on GitHub Pages.
 const AUDIO_BASE = `${import.meta.env.BASE_URL}assets/audio`;
@@ -221,6 +228,7 @@ export class AudioManager {
   /** Music beds by state (it.36). Crossfaded by `applyMusic`. */
   private readonly music: Record<Exclude<MusicState, 'none'>, HTMLAudioElement | null> = {
     menu: null,
+    town: null,
     dungeon: null,
     boss: null,
     victory: null,
@@ -284,6 +292,8 @@ export class AudioManager {
 
       // MUSIC (it.36): one element per bed, crossfaded by the state machine.
       this.music.menu = this.hookMediaElement(MENU_TRACK, true);
+      // The town shares the title theme (Tristram plays in the menu too).
+      this.music.town = this.hookMediaElement(MENU_TRACK, true);
       this.music.dungeon = this.hookMediaElement(FILES.bgm, true);
       this.music.boss = this.hookMediaElement(BOSS_TRACK_DEFAULT, true);
       this.music.victory = this.hookMediaElement(VICTORY_TRACK, false);
@@ -760,6 +770,30 @@ export class AudioManager {
       case 'mapClose':
         this.playVariant('mapClose', 0.5, 1.0, 0.03);
         break;
+      // ---- Town (it.39) ----
+      case 'buy':
+        this.playVariant('coinCollect', 0.65, 0.95, 0.06);
+        this.playVariant('itemEquip', 0.35, 1.1, 0.05, 0.08);
+        break;
+      case 'sell':
+        this.playVariant('coinCollect', 0.7, 1.15, 0.06);
+        break;
+      case 'stash':
+        this.playVariant('chestOpen', 0.6, 1.0, 0.05);
+        break;
+      case 'potion':
+        // A quaff: the heart-collect chime under a soft gulp blip.
+        this.playVariant('heartCollect', 0.45, 1.2, 0.05);
+        this.blip('sine', 260, 120, 0.16, 0.25);
+        break;
+      case 'portal':
+        this.playVariant('iceFreeze', 0.5, 0.8, 0.05);
+        this.playVariant('firebuff', 0.6, 1.1, 0.05, 0.1);
+        break;
+      case 'save':
+        this.playVariant('uiConfirm', 0.4, 1.3, 0.03);
+        this.playVariant('bookClose', 0.4, 1.0, 0.03, 0.06);
+        break;
       case 'levelUp':
         // The Firebuff shimmer + a rising chime — POWER settles into you.
         this.playVariant('heartCollect', 0.5, 1.0, 0.03);
@@ -884,7 +918,7 @@ export class AudioManager {
     if (this.musicState === 'dungeon') retarget(this.music.dungeon, this.bgmDeep ? FILES.bgmDeep : FILES.bgm);
     if (this.musicState === 'boss') retarget(this.music.boss, BOSS_TRACKS[this.musicFloor] ?? BOSS_TRACK_DEFAULT);
     const duckMul = this.ducked ? 0.25 : 1;
-    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, dungeon: 0, boss: 0, victory: 0 };
+    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0 };
     if (this.musicState !== 'none') targets[this.musicState] = duckMul;
     const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'boss' ? 0.16 : 0) * duckMul;
     // Kick the wanted bed (autoplay-safe: retried by the crossfade ticker).

@@ -14,6 +14,10 @@ import type { ClassArchetype } from '@/network/Serialization';
 export interface MainMenuHooks {
   /** START GAME → the character selection screen (it.38: the only way in). */
   play: () => void;
+  /** CONTINUE → resume the most recent save in town (it.39). */
+  continueGame: () => void;
+  /** LOAD GAME → the slot panel. */
+  loadGame: () => void;
   /** Open the settings + controls panel. */
   settings: () => void;
 }
@@ -49,6 +53,12 @@ export class MainMenuUI {
         if (act === 'play') {
           audio.sfx('uiConfirm');
           this.hooks.play();
+        } else if (act === 'continue') {
+          audio.sfx('uiConfirm');
+          this.hooks.continueGame();
+        } else if (act === 'load') {
+          audio.sfx('uiClick');
+          this.hooks.loadGame();
         } else if (act === 'settings') {
           audio.sfx('uiClick');
           this.hooks.settings();
@@ -73,6 +83,12 @@ export class MainMenuUI {
   /** The remembered hero is pre-selected on the class screen; the menu stays clean. */
   setLastHero(_cls: ClassArchetype | null): void {
     /* no menu label — see the class select's CONFIRM button */
+  }
+
+  /** CONTINUE only shows when a save exists (it.39). */
+  setHasSave(has: boolean): void {
+    const btn = this.root.querySelector<HTMLElement>('[data-menu="continue"]');
+    if (btn) btn.hidden = !has;
   }
 
   show(): void {

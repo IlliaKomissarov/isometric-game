@@ -12,14 +12,21 @@ import type { EquipmentSlot } from '@/network/Serialization';
 
 export type Rarity = 'common' | 'magic' | 'rare';
 
+/** Where an item lives: a paperdoll slot, or the consumable pouch (it.39). */
+export type ItemSlot = EquipmentSlot | 'consumable';
+
 /** Main-hand weapon families — drive attack style, timing, and visuals. */
 export type WeaponKind = 'blade' | 'katana' | 'axe' | 'mace' | 'polearm' | 'bow' | 'wand';
 
 export interface ItemDef {
   id: string;
   name: string;
-  slot: EquipmentSlot;
+  slot: ItemSlot;
   rarity: Rarity;
+  /** Merchant price in gold (derived from rarity/stats when omitted). */
+  value?: number;
+  /** Consumables (it.39): what using it does. Fractions of max. */
+  use?: { heal?: number; resource?: number; portal?: boolean };
   /** Weapon damage roll range (Diablo-style min–max, replaces bare fists). */
   minDamage?: number;
   maxDamage?: number;
@@ -64,6 +71,15 @@ export const WEAPON_FAMILY: Record<
   wand: { range: 5.5, critChance: 0.1, stuns: false },
 };
 
+/** Gold worth of an item (it.39): explicit value, else rarity tier + stat weight. */
+export function itemValue(def: ItemDef): number {
+  if (def.value !== undefined) return def.value;
+  const tier = def.rarity === 'rare' ? 420 : def.rarity === 'magic' ? 140 : 35;
+  const dmg = def.maxDamage !== undefined && def.minDamage !== undefined ? (def.minDamage + def.maxDamage) * 4 : 0;
+  const arm = (def.armor ?? 0) * 18;
+  return tier + dmg + arm;
+}
+
 /** Paperdoll/ground-glyph texture key for an item. */
 export function overlayTextureFor(def: ItemDef): string {
   if (def.slot === 'mainHand') {
@@ -107,10 +123,16 @@ export const ITEMS: Record<string, ItemDef> = {
   warden_halberd: { id: 'warden_halberd', name: 'Warden Halberd', slot: 'mainHand', rarity: 'rare', weaponKind: 'polearm', range: 2.0, minDamage: 11, maxDamage: 19, color: 0xa8b0c0, icon: 'steel_halberd_0' },
   iron_katana: { id: 'iron_katana', name: 'Iron Katana', slot: 'mainHand', rarity: 'magic', weaponKind: 'katana', minDamage: 5, maxDamage: 9, color: 0xb0b8c8, icon: 'iron_katana_0' },
   falcon_edge: { id: 'falcon_edge', name: 'Falcon Edge', slot: 'mainHand', rarity: 'rare', weaponKind: 'katana', minDamage: 7, maxDamage: 12, color: 0xd8cfa0, icon: 'steel_falcon_0' },
+  // --- Consumables (it.39): the belt-less Diablo essentials ------------------
+  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', value: 30, use: { heal: 0.5 }, color: 0xc83030 },
+  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8 },
+  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'magic', value: 80, use: { portal: true }, color: 0xd8c890 },
 };
 
 const BY_RARITY: Record<Rarity, ItemDef[]> = { common: [], magic: [], rare: [] };
 for (const def of Object.values(ITEMS)) BY_RARITY[def.rarity].push(def);
+// Potions drop from the dead too (it.39): a healing potion joins the common pool twice.
+BY_RARITY.common.push(ITEMS.health_potion, ITEMS.health_potion, ITEMS.mana_potion);
 
 /** Chance an enemy drops anything at all. */
 export const DROP_CHANCE = 0.6;
@@ -146,5 +168,8 @@ export function statLine(def: ItemDef): string {
   }
   if (def.range) parts.push(`range ${def.range}`);
   if (def.armor) parts.push(`+${def.armor} armor`);
+  if (def.use?.heal) parts.push(`heals ${Math.round(def.use.heal * 100)}% life`);
+  if (def.use?.resource) parts.push(`restores ${Math.round(def.use.resource * 100)}% mana/stamina`);
+  if (def.use?.portal) parts.push('opens a portal to town');
   return parts.join(', ') || 'No bonuses';
 }

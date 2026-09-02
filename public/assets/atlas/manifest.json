@@ -1691,6 +1691,101 @@
     "left": 24,
     "right": 203
    }
+  },
+  "campfire": {
+   "file": "campfire.png",
+   "cellW": 72,
+   "cellH": 96,
+   "frameCount": 6,
+   "dirCount": 1,
+   "nearest": true,
+   "origW": 72,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 2,
+    "bottom": 93,
+    "left": 2,
+    "right": 67
+   }
+  },
+  "torch": {
+   "file": "torch.png",
+   "cellW": 64,
+   "cellH": 64,
+   "frameCount": 4,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 64,
+   "origH": 64,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 15,
+    "bottom": 59,
+    "left": 23,
+    "right": 39
+   }
+  },
+  "well": {
+   "file": "well.png",
+   "cellW": 95,
+   "cellH": 118,
+   "frameCount": 12,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 95,
+   "origH": 118,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 1,
+    "bottom": 116,
+    "left": 2,
+    "right": 92
+   }
+  },
+  "villager_walk": {
+   "file": "villager_walk.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 8,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 27,
+    "bottom": 84,
+    "left": 27,
+    "right": 69
+   }
+  },
+  "merchant_walk": {
+   "file": "merchant_walk.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 8,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 27,
+    "bottom": 83,
+    "left": 28,
+    "right": 66
+   }
   }
  },
  "singles": {
@@ -1806,6 +1901,150 @@
    "file": "single_candelabra.png",
    "w": 64,
    "h": 96,
+   "nearest": false
+  },
+  "town_cobble": {
+   "file": "single_town_cobble.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_grass": {
+   "file": "single_town_grass.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_dirt": {
+   "file": "single_town_dirt.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "house_a": {
+   "file": "single_house_a.png",
+   "w": 276,
+   "h": 253,
+   "nearest": false
+  },
+  "house_b": {
+   "file": "single_house_b.png",
+   "w": 261,
+   "h": 238,
+   "nearest": false
+  },
+  "house_c": {
+   "file": "single_house_c.png",
+   "w": 276,
+   "h": 232,
+   "nearest": false
+  },
+  "house_d": {
+   "file": "single_house_d.png",
+   "w": 261,
+   "h": 254,
+   "nearest": false
+  },
+  "stall_a": {
+   "file": "single_stall_a.png",
+   "w": 172,
+   "h": 158,
+   "nearest": false
+  },
+  "stall_b": {
+   "file": "single_stall_b.png",
+   "w": 164,
+   "h": 151,
+   "nearest": false
+  },
+  "stall_c": {
+   "file": "single_stall_c.png",
+   "w": 164,
+   "h": 151,
+   "nearest": false
+  },
+  "stall_d": {
+   "file": "single_stall_d.png",
+   "w": 165,
+   "h": 151,
+   "nearest": false
+  },
+  "fence": {
+   "file": "single_fence.png",
+   "w": 66,
+   "h": 68,
+   "nearest": false
+  },
+  "pillar": {
+   "file": "single_pillar.png",
+   "w": 35,
+   "h": 98,
+   "nearest": false
+  },
+  "barrel_a": {
+   "file": "single_barrel_a.png",
+   "w": 27,
+   "h": 29,
+   "nearest": false
+  },
+  "barrel_b": {
+   "file": "single_barrel_b.png",
+   "w": 47,
+   "h": 39,
+   "nearest": false
+  },
+  "crates": {
+   "file": "single_crates.png",
+   "w": 97,
+   "h": 92,
+   "nearest": false
+  },
+  "stash_closed": {
+   "file": "single_stash_closed.png",
+   "w": 46,
+   "h": 40,
+   "nearest": false
+  },
+  "stash_open": {
+   "file": "single_stash_open.png",
+   "w": 52,
+   "h": 48,
+   "nearest": false
+  },
+  "tree_a": {
+   "file": "single_tree_a.png",
+   "w": 174,
+   "h": 215,
+   "nearest": false
+  },
+  "tree_b": {
+   "file": "single_tree_b.png",
+   "w": 174,
+   "h": 215,
+   "nearest": false
+  },
+  "signpost": {
+   "file": "single_signpost.png",
+   "w": 22,
+   "h": 95,
+   "nearest": false
+  },
+  "hanging_sign": {
+   "file": "single_hanging_sign.png",
+   "w": 37,
+   "h": 56,
+   "nearest": false
+  },
+  "grassclump": {
+   "file": "single_grassclump.png",
+   "w": 50,
+   "h": 50,
+   "nearest": false
+  },
+  "pots": {
+   "file": "single_pots.png",
+   "w": 26,
+   "h": 35,
    "nearest": false
   }
  }

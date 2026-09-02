@@ -21,7 +21,7 @@ import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
 import { GameLoop } from '@/core/GameLoop';
 import { InputBindings } from '@/core/InputBindings';
-import { InputQueue } from '@/core/InputQueue';
+import { InputQueue, type InputCommand } from '@/core/InputQueue';
 import { state } from '@/core/StateManager';
 import { Ambience } from '@/engine/Ambience';
 import { Camera } from '@/engine/Camera';
@@ -62,6 +62,14 @@ import { itemIconDataUrl } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
+import { buildTownLayout, type TownLayout } from '@/town/TownMap';
+import { placeTownProps, type Interactable, type Occluder } from '@/town/TownProps';
+import { Villagers } from '@/town/Villagers';
+import { TownSystem } from '@/systems/Town';
+import { ShopUI } from '@/ui/Shop';
+import { StashUI } from '@/ui/Stash';
+import { SavePanelUI } from '@/ui/SavePanel';
+import { base64ToBytes, bytesToBase64, saves, type FloorMemory, type SaveGame, type StashState } from '@/persist/SaveGame';
 
 /** Everything owned by one dungeon floor. */
 interface World {
@@ -96,11 +104,29 @@ interface World {
   boss: Enemy | null;
   bossSeen: boolean;
   unsubscribe: () => void;
+  /** Town-only (it.39): the layout, its folk, cutaway occluders, interactables. */
+  town: {
+    layout: TownLayout;
+    villagers: Villagers;
+    occluders: Occluder[];
+    interactables: Interactable[];
+    stashSprite: Sprite | null;
+  } | null;
+  /** Roster spawn indexes killed on this floor (FloorMemory). */
+  killed: Set<number>;
 }
+
+type FloorMode = 'normal' | 'arena' | 'hub';
 
 /** What `startRun` hands back: the only handle the menus need. */
 interface RunHandle {
   archetype: ClassArchetype;
+  /** Save slot this run writes to (it.39). */
+  slot: number;
+  /** The slot's shared stash (restart/change-class keep it). */
+  stash: () => StashState;
+  /** Write the slot now; false when storage refused. */
+  save: () => boolean;
   destroy: () => void;
 }
 
@@ -153,6 +179,10 @@ async function boot(): Promise<void> {
     // ONE environment pipeline (it.17 revert): the proven stone set for all
     // depths; the bands are subtle tints baked inside buildStoneEnvironment.
     assets.buildStoneEnvironment(spriteLib.single('ground_stone'));
+    // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
+    ['town_cobble', 'town_grass', 'town_dirt'].forEach((name, i) => {
+      if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
+    });
   } catch (err) {
     console.warn('[boot] Sprite atlases unavailable — using procedural art.', err);
   }
@@ -320,9 +350,39 @@ async function boot(): Promise<void> {
   // --- Run lifecycle --------------------------------------------------------
   let run: RunHandle | null = null;
 
+  /** A new game waiting for a slot (every slot was taken → OVERWRITE). */
+  let pendingNewClass: ClassArchetype | null = null;
+  const savePanel = new SavePanelUI({
+    load: (slot) => {
+      const s = saves.read(slot);
+      if (s) void beginRun(s.player.archetype, 0, { slot, save: s });
+      else mainMenu.show();
+    },
+    overwrite: (slot) => {
+      const cls = pendingNewClass;
+      pendingNewClass = null;
+      if (!cls) {
+        mainMenu.show();
+        return;
+      }
+      saves.remove(slot);
+      void beginRun(cls, 0, { slot });
+    },
+    onClose: () => {
+      pendingNewClass = null;
+      if (!run) mainMenu.show();
+    },
+  });
+
   const mainMenu = new MainMenuUI({
     // START GAME always opens the character selection (it.37 flow rule).
     play: () => void openClassSelect(),
+    // CONTINUE resumes the most recent slot in town (it.39).
+    continueGame: () => {
+      const s = saves.latest();
+      if (s) void beginRun(s.player.archetype, 0, { slot: s.slot, save: s });
+    },
+    loadGame: () => savePanel.open('load'),
     settings: () => settings.open(),
   });
   mainMenu.setLastHero(lastHero);
@@ -330,6 +390,7 @@ async function boot(): Promise<void> {
   const showMainMenu = (): void => {
     document.body.classList.remove('in-run');
     audio.setMusic('menu');
+    mainMenu.setHasSave(!!saves.latest());
     mainMenu.show();
     performance.mark('boot:menu'); // Boot-time telemetry (QA reads it).
   };
@@ -337,12 +398,30 @@ async function boot(): Promise<void> {
   const openClassSelect = async (): Promise<void> => {
     mainMenu.hide();
     const cls = await pickClass();
-    if (cls) await beginRun(cls);
+    if (cls) await startNewGame(cls);
     else mainMenu.show();
   };
 
+  /** A fresh descent claims the first empty slot; when none is free, pick one to overwrite. */
+  const startNewGame = async (cls: ClassArchetype): Promise<void> => {
+    const slot = saves.firstFree();
+    if (slot === null) {
+      pendingNewClass = cls;
+      savePanel.open('new');
+      return;
+    }
+    await beginRun(cls, 0, { slot });
+  };
+
+  interface RunOptions {
+    slot: number;
+    save?: SaveGame;
+    /** Restart / change class: a fresh hero that keeps the slot's stash. */
+    stash?: StashState;
+  }
+
   let starting = false;
-  const beginRun = async (cls: ClassArchetype, startFloor = 1): Promise<void> => {
+  const beginRun = async (cls: ClassArchetype, startFloor = 0, opts: RunOptions = { slot: saves.firstFree() ?? 1 }): Promise<void> => {
     if (starting) return;
     starting = true;
     mainMenu.hide();
@@ -358,7 +437,7 @@ async function boot(): Promise<void> {
     try {
       run?.destroy();
       run = null;
-      run = await startRun(cls, startFloor);
+      run = await startRun(cls, startFloor, opts);
       performance.mark('run:ready');
     } catch (err) {
       console.error('[run] failed to start:', err);
@@ -372,7 +451,9 @@ async function boot(): Promise<void> {
 
   const restartRun = (): void => {
     const cls = run?.archetype ?? lastHero ?? 'warrior';
-    void beginRun(cls);
+    const slot = run?.slot ?? saves.firstFree() ?? 1;
+    const stash = run?.stash();
+    void beginRun(cls, 0, { slot, stash });
   };
   const exitToMenu = (): void => {
     run?.destroy();
@@ -381,11 +462,18 @@ async function boot(): Promise<void> {
   };
   /** Pause/death → CHANGE CLASS: tear the run down and reopen the selection. */
   const changeClass = (): void => {
+    const slot = run?.slot ?? saves.firstFree() ?? 1;
+    const stash = run?.stash();
     run?.destroy();
     run = null;
     document.body.classList.remove('in-run');
     audio.setMusic('menu');
-    void openClassSelect();
+    mainMenu.hide();
+    void (async () => {
+      const cls = await pickClass();
+      if (cls) await beginRun(cls, 0, { slot, stash });
+      else showMainMenu();
+    })();
   };
 
   // Epilogue buttons are wired ONCE (the overlay outlives runs).
@@ -404,8 +492,10 @@ async function boot(): Promise<void> {
    * ONE RUN: everything from hero creation to the game loop, torn down by
    * the returned handle. `?class=` (tests/links) skips the menu.
    */
-  async function startRun(chosenClass: ClassArchetype, startFloor: number): Promise<RunHandle> {
+  async function startRun(chosenClass: ClassArchetype, startFloor: number, opts: RunOptions): Promise<RunHandle> {
     let alive = true;
+    const loaded = opts.save ?? null;
+    const slot = opts.slot;
     const subs: Array<() => void> = [];
     const on = <K extends keyof GameEvents>(event: K, handler: (payload: GameEvents[K]) => void): void => {
       subs.push(eventBus.on(event, handler));
@@ -426,7 +516,13 @@ async function boot(): Promise<void> {
     const inputQueue = new InputQueue();
 
     const seedParam = new URLSearchParams(location.search).get('seed');
-    const baseSeed = seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
+    const baseSeed = loaded ? loaded.seed : seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
+    /** Per-floor memory (it.39): rebuilt floors look the way they were left. */
+    const floors: Record<number, FloorMemory> = loaded ? { ...loaded.floors } : {};
+    const memKey = (f: number, arena: boolean): number => (arena ? 1000 + f : f);
+    let deepestFloor = loaded?.deepestFloor ?? 0;
+    const playtimeBase = loaded?.playtimeTicks ?? 0;
+    const createdAt = loaded?.createdAt ?? Date.now();
 
     // `?depth=N` starts on a deeper floor (debug/testing convenience).
     const depthParam = Number(new URLSearchParams(location.search).get('depth'));
@@ -440,8 +536,28 @@ async function boot(): Promise<void> {
     const player = new Player(chosenClass);
     state.register(player);
     // Starter kit fits the trade (it.32): the class's basic arms.
-    if (chosenClass === 'ranger') player.addItem('short_bow');
-    else if (chosenClass !== 'mage') player.addItem('rusty_sword');
+    if (loaded) {
+      // RESTORE (it.39): the sheet, the bags, the worn gear.
+      player.level = loaded.player.level;
+      player.xp = loaded.player.xp;
+      player.gold = loaded.player.gold;
+      player.hpMax = loaded.player.hpMax;
+      player.hp = Math.min(loaded.player.hpMax, Math.max(1, loaded.player.hp));
+      player.resource = Math.min(player.resourceMax, loaded.player.resource);
+      for (const id of loaded.player.backpack) if (ITEMS[id]) player.addItem(id);
+      for (const { itemId } of loaded.player.equipped) {
+        if (!ITEMS[itemId]) continue;
+        player.addItem(itemId);
+        player.equipFromBackpack(player.backpack.length - 1);
+      }
+    } else {
+      if (chosenClass === 'ranger') player.addItem('short_bow');
+      else if (chosenClass !== 'mage') player.addItem('rusty_sword');
+      // Every delver leaves town with two draughts and a way back (it.39).
+      player.addItem('health_potion');
+      player.addItem('health_potion');
+      player.addItem('scroll_town_portal');
+    }
     if (spriteLib.loaded) player.enableKnightRig(); // The class body replaces the crystal.
 
     /**
@@ -509,7 +625,34 @@ async function boot(): Promise<void> {
       return frames.length <= 6 && frames.length > 2 ? [...frames, ...frames.slice(1, -1).reverse()] : frames;
     };
 
-    const inventorySystem = new InventorySystem(player);
+    // Town economy + stash (it.39): the stash belongs to the SLOT.
+    const town = new TownSystem(player, opts.stash ?? loaded?.stash ?? { items: [], gold: 0 });
+    let townVisits = loaded ? 1 : 0;
+    let pendingPortal = false;
+    let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
+    let portalArmed = false;
+    let pendingInteract: number | null = null;
+    const inventorySystem = new InventorySystem(player, {
+      heal: (fraction) => {
+        const healed = world.combat.heal(player.id, Math.round(player.hpMax * fraction));
+        audio.sfx('potion');
+        if (healed > 0) {
+          world.dmgText.show(player.pos.x, player.pos.y - 0.3, `+${healed}`, 'miss');
+          world.ambience.burst(player.pos.x, player.pos.y, 0xd83030, 10);
+        }
+        updateOrb();
+      },
+      restore: (fraction) => {
+        player.resource = Math.min(player.resourceMax, player.resource + player.resourceMax * fraction);
+        audio.sfx('potion');
+        world.ambience.burst(player.pos.x, player.pos.y, 0x6f86b8, 10);
+      },
+      portal: () => {
+        if (world.town || transitioning || pendingPortal) return false;
+        pendingPortal = true;
+        return true;
+      },
+    });
     const stateSync = new StateSyncSystem(inputQueue);
     const inventoryUI = new InventoryUI(player, inputQueue, 0, buildPaperdollFrames);
     const tutorial = new TutorialUI();
@@ -553,7 +696,7 @@ async function boot(): Promise<void> {
       orb?.classList.toggle('low', frac < 0.3 && frac > 0);
     };
     const updateDepth = (): void => {
-      if (depthLabel) depthLabel.textContent = `DEPTH ${ROMAN[floor - 1] ?? floor}`;
+      if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
     };
     updateOrb();
     updateDepth();
@@ -582,7 +725,7 @@ async function boot(): Promise<void> {
      * fetch only costs sprites (procedural markers fall back); it can never
      * hang a transition (it.37 error boundary).
      */
-    const preloadFloor = async (floorNum: number, mode: 'normal' | 'arena'): Promise<void> => {
+    const preloadFloor = async (floorNum: number, mode: FloorMode): Promise<void> => {
       try {
         await spriteLib.ensure(animsForFloor(floorNum, mode));
       } catch (err) {
@@ -593,20 +736,25 @@ async function boot(): Promise<void> {
     // SYNCHRONOUS world construction (it.37): no await between the old
     // floor's teardown and the new floor's first tick — the freeze was the
     // loop touching a destroyed world during the old async gap.
-    const buildWorld = (floorNum: number, mode: 'normal' | 'arena' = 'normal'): World => {
+    const buildWorld = (floorNum: number, mode: FloorMode = 'normal'): World => {
       const isArena = mode === 'arena';
-      const seed = ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isHub = mode === 'hub';
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
+      const layout = isHub ? buildTownLayout() : null;
+      const memory: FloorMemory | undefined = isHub ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
       // BOSS ARENAS (it.28): boss floors funnel into a dedicated sealed hall —
       // one vast open room, ringed by candelabra fire, no internal clutter.
-      const dungeon = isArena ? generateArenaMap(30, 22, seed) : generateDungeon(MAP_W, MAP_H, seed);
+      const dungeon = layout ? layout.map : isArena ? generateArenaMap(30, 22, seed) : generateDungeon(MAP_W, MAP_H, seed);
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isArena) {
+      if (isHub) {
+        hearths = []; // The town lights itself (campfire, torches).
+      } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
         const my = room.y + Math.floor(room.h / 2);
@@ -634,11 +782,14 @@ async function boot(): Promise<void> {
       const scene = new SceneManager();
       const lighting = new Lighting();
       // Sight is blocked by ARCHITECTURE only — solid props don't cast fog.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy));
+      // The town is daylight-wide: every stall visible from the campfire.
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 40, fullRadius: 14 } : undefined);
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
       const theme = !spriteLib.loaded
         ? 'stone'
+        : isHub
+          ? 'town'
         : floorNum <= 2
           ? 'stone'
           : floorNum <= 9
@@ -647,21 +798,36 @@ async function boot(): Promise<void> {
               ? 'frost'
               : 'ember';
       scene.build(dungeon, viewport, lighting, theme);
-      audio.setBgmDeep(floorNum >= 10); // The deep bands breathe a darker drone.
-      // Boss arena music (it.28): the floor's intense track fades in the
-      // moment the arena builds — and back to the dungeon BGM when we leave.
-      audio.setBossMusic(isArena, floorNum);
+      if (isHub) {
+        audio.setMusic('town'); // The title theme keeps the town (Tristram rule).
+      } else {
+        audio.setBgmDeep(floorNum >= 10); // The deep bands breathe a darker drone.
+        // Boss arena music (it.28): the floor's intense track fades in the
+        // moment the arena builds — and back to the dungeon BGM when we leave.
+        audio.setBossMusic(isArena, floorNum);
+      }
 
       const ambience = new Ambience(viewport);
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
-      const goldPiles = placeProps(dungeon, viewport, lighting, ambience, hearths);
+      const goldPiles = isHub ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      // Gold already scooped on a remembered floor stays gone.
+      if (memory) {
+        for (const i of memory.takenGold) {
+          const pile = goldPiles[i];
+          if (pile && !pile.taken) {
+            pile.taken = true;
+            pile.sprite.destroy();
+            pile.glow.destroy();
+          }
+        }
+      }
       // BOSS FLOORS (it.29): NO stairs on the base floor at all — the
       // farthest room IS the boss chamber threshold: a crimson seal burns at
       // its heart, and stepping anywhere inside the room instantly teleports
       // into the arena. Arena stairs sit at the hall's far east end, hidden
       // until every combatant inside the seal is dead.
       const arenaRoom = dungeon.rooms[0];
-      const isPortalFloor = !isArena && isBossFloor(floorNum);
+      const isPortalFloor = !isArena && !isHub && isBossFloor(floorNum);
       let arenaThreshold: World['arenaThreshold'] = null;
       let stairs: { x: number; y: number; sprite: Sprite };
       if (isPortalFloor) {
@@ -692,15 +858,18 @@ async function boot(): Promise<void> {
           dungeon,
           viewport,
           lighting,
-          isArena
-            ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
-            : undefined,
+          layout
+            ? { at: layout.gate } // The sealed dungeon gate.
+            : isArena
+              ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
+              : undefined,
         );
       }
 
       const loot = new LootSystem(viewport, seed);
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena) chests.place(dungeon, [stairs]); // The arena floor stays clean.
+      if (!isArena && !isHub) chests.place(dungeon, [stairs]); // The arena floor stays clean.
+      if (memory) chests.applyMemory(memory.openedChests);
       const pathfinder = new Pathfinder(dungeon.width, dungeon.height, scene.isWalkable);
       // Attack/approach range follows the wielded weapon (reach or fire range).
       const getAttackRange = (): number => Math.max(ATTACK_RANGE, player.weaponProfile.range);
@@ -858,7 +1027,11 @@ async function boot(): Promise<void> {
       // small honor guard of the depth's flesh. Regular floors roll their
       // seeded packs — boss floors now spawn NO boss outside the arena.
       let boss: Enemy | null = null;
-      if (isArena) {
+      const killed = new Set<number>(memory?.killedSpawns ?? []);
+      const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
+      if (isHub || arenaAlreadyCleared) {
+        // No enemies in town; a cleared arena stays empty with its stair open.
+      } else if (isArena) {
         const room = dungeon.rooms[0];
         const cx = room.x + Math.floor(room.w * 0.68) + 0.5;
         const cy = room.y + Math.floor(room.h / 2) + 0.5;
@@ -877,7 +1050,20 @@ async function boot(): Promise<void> {
           enemies.spawn(pool[Math.floor(rand() * pool.length)], cx + off.dx, cy + off.dy, floorNum);
         }
       } else {
-        spawnFloorEnemies(dungeon, enemies, floorNum, stairs, seed);
+        spawnFloorEnemies(dungeon, enemies, floorNum, stairs, seed, killed);
+      }
+      if (arenaAlreadyCleared) {
+        stairs.sprite.renderable = true;
+        lighting.registerProp(stairs.x, stairs.y, stairs.sprite);
+      }
+
+      // TOWN DRESSING (it.39): cottages, stall, campfire, torches, well,
+      // the stash chest, and the folk who live here.
+      let townState: World['town'] = null;
+      if (layout) {
+        const dressing = placeTownProps(layout, viewport, lighting, ambience);
+        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 4, layout.merchant);
+        townState = { layout, villagers, occluders: dressing.occluders, interactables: dressing.interactables, stashSprite: dressing.stashSprite };
       }
 
       // Target ring: unmistakable marker under whatever the player is striking.
@@ -960,11 +1146,22 @@ async function boot(): Promise<void> {
       };
       const pickItem = (canvasX: number, canvasY: number): number | null =>
         loot.pickAtCanvas(canvasX, canvasY, camera, lighting);
-      const pickChest = (canvasX: number, canvasY: number): number | null =>
-        chests.pickAtCanvas(canvasX, canvasY, camera);
+      const pickChest = (canvasX: number, canvasY: number): number | null => {
+        if (townState) {
+          // Town: clicking the stall or the stash walks up and opens it.
+          const zoom = camera.currentZoom;
+          for (const it of townState.interactables) {
+            const p = camera.worldToCanvas(it.x, it.y, pickScratch);
+            if (Math.abs(canvasX - p.x) <= 44 * zoom && canvasY >= p.y - 70 * zoom && canvasY <= p.y + 14 * zoom) return it.id;
+          }
+          return null;
+        }
+        return chests.pickAtCanvas(canvasX, canvasY, camera);
+      };
       const input = new InputBindings(app.canvas, camera, inputQueue, 0, scene.isWalkable, pickEnemy, pickItem, pickChest);
 
       lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+      if (memory?.explored) lighting.unpackExplored(base64ToBytes(memory.explored));
       minimap.setWorld(dungeon, lighting, stairs);
       const unsubscribe = eventBus.on('player:tileChanged', ({ gx, gy }) => {
         lighting.updateVisibility(gx, gy);
@@ -975,6 +1172,7 @@ async function boot(): Promise<void> {
       // while this one is played, so the next descent is instant.
       if (!isArena && floorNum < MAX_DEPTH) void spriteLib.ensure(animsForFloor(floorNum + 1, 'normal'));
       if (isPortalFloor) void spriteLib.ensure(animsForFloor(floorNum, 'arena'));
+      if (!isHub) void spriteLib.ensure(animsForFloor(0, 'hub')); // A portal home is always one scroll away.
 
       return {
         dungeon,
@@ -1001,11 +1199,14 @@ async function boot(): Promise<void> {
         boss,
         bossSeen: false,
         unsubscribe,
+        town: townState,
+        killed,
       };
     };
 
     const destroyWorld = (w: World): void => {
       w.unsubscribe();
+      w.town?.villagers.destroy();
       w.input.destroy();
       w.projectiles.clear();
       w.enemies.destroyAll();
@@ -1015,8 +1216,65 @@ async function boot(): Promise<void> {
       w.viewport.destroy();
     };
 
-    await preloadFloor(floor, 'normal');
-    let world = buildWorld(floor);
+    await preloadFloor(floor, floor === 0 ? 'hub' : 'normal');
+    let world = buildWorld(floor, floor === 0 ? 'hub' : 'normal');
+
+    /** Remember the current dungeon floor exactly as the hero leaves it (it.39). */
+    const captureFloor = (): void => {
+      if (world.town) return;
+      const key = memKey(floor, world.isArena);
+      const takenGold: number[] = [];
+      world.goldPiles.forEach((p, i) => {
+        if (p.taken) takenGold.push(i);
+      });
+      floors[key] = {
+        openedChests: world.chests.openedIndexes(),
+        takenGold,
+        killedSpawns: [...world.killed],
+        explored: bytesToBase64(world.lighting.packExplored()),
+        arenaCleared: world.isArena ? world.arenaCleared : (floors[key]?.arenaCleared ?? false),
+      };
+    };
+
+    /** Write the save slot (it.39): the sheet, bags, stash, floor memories. */
+    const saveNow = (): boolean => {
+      if (!alive) return false;
+      if (!world.town) captureFloor();
+      const equipped: SaveGame['player']['equipped'] = [];
+      for (const s of ['head', 'torso', 'legs', 'mainHand', 'offHand', 'cloak'] as const) {
+        const itemId = player.getEquipped(s);
+        if (itemId) equipped.push({ slot: s, itemId });
+      }
+      const save: SaveGame = {
+        version: 1,
+        slot,
+        seed: baseSeed,
+        createdAt,
+        updatedAt: Date.now(),
+        floor,
+        deepestFloor,
+        playtimeTicks: playtimeBase + state.tick,
+        player: {
+          archetype: player.archetype,
+          level: player.level,
+          xp: player.xp,
+          gold: player.gold,
+          hp: player.hp,
+          hpMax: player.hpMax,
+          resource: player.resource,
+          backpack: [...player.backpack],
+          equipped,
+        },
+        stash: { items: [...town.stash.items], gold: town.stash.gold },
+        floors: { ...floors },
+      };
+      const ok = saves.write(save);
+      if (ok) {
+        audio.sfx('save');
+        world.dmgText.show(player.pos.x, player.pos.y - 0.6, 'PROGRESS SAVED', 'miss');
+      }
+      return ok;
+    };
 
     /**
      * BUILD-THEN-SWAP (it.37): the next floor is constructed while the
@@ -1041,8 +1299,90 @@ async function boot(): Promise<void> {
       skills.clearZones(); // Firewalls/traps stay in the old world's grave.
       destroyWorld(old);
       interactHint?.classList.remove('show', 'dim'); // No floating chips survive a floor.
+      pendingInteract = null;
+      // A stale "on the stairs" flag from the old floor must never fire on
+      // the new one (double-descend guard, it.39).
+      pendingDescend = false;
+      pendingArena = false;
       return true;
     };
+
+    /**
+     * Arriving in town (it.39): restock the merchant, drop a return portal
+     * when the hero came by scroll, and AUTOSAVE.
+     */
+    const enterTown = (viaPortal: boolean): void => {
+      const t = world.town;
+      if (!t) return;
+      floor = 0;
+      updateDepth();
+      floorStartTick = state.tick;
+      player.action = 'idle';
+      if (viaPortal) {
+        player.warpTo(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5);
+        world.lighting.updateVisibility(t.layout.portal.x, t.layout.portal.y);
+        audio.sfx('portal');
+      }
+      if (portalReturn) {
+        // The way back: a cold blue rift at the portal stone.
+        const s = worldToScreen(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5, vec2());
+        const glow = new Sprite(assets.get('glow'));
+        glow.anchor.set(0.5);
+        glow.blendMode = 'add';
+        glow.tint = 0x6fa0ff;
+        glow.scale.set(1.7, 2.4);
+        glow.position.set(s.x, s.y - 22);
+        world.viewport.ambienceLayer.addChild(glow);
+        world.ambience.addGlow(glow, t.layout.portal.x, t.layout.portal.y, 0.8, 1.7);
+        const ring = new Sprite(assets.get('targetRing'));
+        ring.anchor.set(0.5);
+        ring.tint = 0x8fb8ff;
+        ring.alpha = 0.8;
+        ring.position.set(s.x, s.y);
+        world.viewport.groundLayer.addChild(ring);
+        world.lighting.addSource(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5, 2.6, 90, 140, 255, 0.6);
+        portalArmed = false;
+      }
+      townVisits++;
+      town.restock(baseSeed, deepestFloor, townVisits);
+      minimap.markDirty();
+      saveNow();
+    };
+
+    /** Scroll of Town Portal: remember where we stood, then fade to town. */
+    const castPortal = (): void =>
+      withFade(async () => {
+        portalReturn = { floor, arena: world.isArena, x: player.pos.x, y: player.pos.y };
+        captureFloor();
+        await preloadFloor(0, 'hub');
+        if (!swapWorld(() => buildWorld(0, 'hub'))) {
+          portalReturn = null;
+          return;
+        }
+        enterTown(true);
+      });
+
+    /** Step back through the town portal to the remembered floor and spot. */
+    const returnThroughPortal = (): void =>
+      withFade(async () => {
+        const r = portalReturn;
+        if (!r) return;
+        portalReturn = null;
+        const mode: FloorMode = r.arena ? 'arena' : 'normal';
+        await preloadFloor(r.floor, mode);
+        if (!swapWorld(() => buildWorld(r.floor, mode))) return;
+        floor = r.floor;
+        updateDepth();
+        floorStartTick = state.tick;
+        player.warpTo(r.x, r.y);
+        player.action = 'idle';
+        world.lighting.updateVisibility(Math.floor(r.x), Math.floor(r.y));
+        minimap.markDirty();
+        updateOrb();
+        audio.sfx('portal');
+      });
+
+    if (world.town) enterTown(false);
 
     // MOUSE AIM TRACKING (it.33): skills cast toward the cursor's world
     // point — the last known pointer position feeds the aim vector.
@@ -1232,13 +1572,16 @@ async function boot(): Promise<void> {
         const next = floor + 1;
         await preloadFloor(next, 'normal');
         const clearTime = formatTime(state.tick - floorStartTick);
+        const fromTown = !!world.town;
+        if (!fromTown) captureFloor();
         if (!swapWorld(() => buildWorld(next))) return;
         floor = next;
+        deepestFloor = Math.max(deepestFloor, floor);
         updateDepth();
         levelSelect.unlock(floor);
         // The run timer resets cleanly on every floor transition.
         floorStartTick = state.tick;
-        if (descendSub) descendSub.textContent = `Depth ${ROMAN[floor - 2] ?? floor - 1} delved in ${clearTime}`;
+        if (descendSub) descendSub.textContent = fromTown ? 'The gate seals behind you' : `Depth ${ROMAN[floor - 2] ?? floor - 1} delved in ${clearTime}`;
         descendNote?.classList.add('show');
         descendSub?.classList.add('show');
         later(() => {
@@ -1254,6 +1597,7 @@ async function boot(): Promise<void> {
     const enterArena = (): void =>
       withFade(async () => {
         await preloadFloor(floor, 'arena');
+        captureFloor();
         if (!swapWorld(() => buildWorld(floor, 'arena'))) return;
         player.action = 'idle';
         updateOrb();
@@ -1265,8 +1609,10 @@ async function boot(): Promise<void> {
       if (target === floor) return;
       withFade(async () => {
         await preloadFloor(target, 'normal');
+        if (!world.town) captureFloor();
         if (!swapWorld(() => buildWorld(target))) return;
         floor = target;
+        deepestFloor = Math.max(deepestFloor, floor);
         updateDepth();
         floorStartTick = state.tick;
         player.action = 'idle';
@@ -1324,10 +1670,12 @@ async function boot(): Promise<void> {
       teleport: (target: number, arena: boolean) => {
         const dest = Math.max(1, Math.min(target, MAX_DEPTH));
         withFade(async () => {
-          const mode = arena && isBossFloor(dest) ? 'arena' : 'normal';
+          const mode: FloorMode = arena && isBossFloor(dest) ? 'arena' : 'normal';
           await preloadFloor(dest, mode);
+          if (!world.town) captureFloor();
           if (!swapWorld(() => buildWorld(dest, mode))) return;
           floor = dest;
+          deepestFloor = Math.max(deepestFloor, floor);
           updateDepth();
           floorStartTick = state.tick;
           player.action = 'idle';
@@ -1479,6 +1827,7 @@ async function boot(): Promise<void> {
     on('entity:died', ({ entityId }) => {
       const entity = state.getEntity(entityId);
       if (entity instanceof Enemy) {
+        if (entity.spawnIndex >= 0) world.killed.add(entity.spawnIndex); // FloorMemory (it.39).
         // PHASED BOSS (it.30): a form with a nextPhase does not die.
         if (entity.beginPhaseTransition()) {
           audio.sfx('bossDie');
@@ -1669,6 +2018,12 @@ async function boot(): Promise<void> {
         world.combat.applyCommands(commands);
         inventorySystem.apply(commands);
         skills.apply(commands); // Hotkeys 1–4 (it.32).
+        town.apply(commands); // Buy / sell / stash (it.39).
+        if (world.town) handleTownInteraction(commands);
+        if (pendingPortal) {
+          pendingPortal = false;
+          castPortal();
+        }
         world.movement.update(dt);
         world.combat.update();
         skills.update();
@@ -1735,8 +2090,16 @@ async function boot(): Promise<void> {
           }
         }
 
+        // Town portal home → back through the rift (armed once the hero steps off it).
+        if (world.town && portalReturn && !transitioning) {
+          const pt = world.town.layout.portal;
+          const d = Math.hypot(player.pos.x - (pt.x + 0.5), player.pos.y - (pt.y + 0.5));
+          if (!portalArmed && d > 1.4) portalArmed = true;
+          if (portalArmed && d < 0.7) returnThroughPortal();
+        }
+
         if (player.action !== 'dead' && stairsDist < 0.8) {
-          if (!world.isArena && isBossFloor(floor)) {
+          if (!world.isArena && floor > 0 && isBossFloor(floor)) {
             pendingArena = true; // Fallback portal (the seal itself).
           } else if (world.isArena && !world.arenaCleared) {
             tutorial.notify('bossgate', 'The arena is sealed. Nothing leaves while anything inside still breathes.');
@@ -1785,13 +2148,23 @@ async function boot(): Promise<void> {
         world.playerHalo.alpha = 0.3 + Math.sin(timeSec * 3.1) * 0.05;
         if (timerLabel) timerLabel.textContent = formatTime(state.tick - floorStartTick);
 
-        // Proximity prompt: an "E — OPEN" chip floats over a nearby chest.
-        const nearChest = world.chests.findNearestUnopened(player.pos.x, player.pos.y, 2.2);
-        if (
+        // Proximity prompt: an "E — OPEN" chip floats over a nearby chest —
+        // or, in town, over the stall / stash / gate / portal (it.39).
+        const nearChest = world.town ? null : world.chests.findNearestUnopened(player.pos.x, player.pos.y, 2.2);
+        const townPrompt = world.town ? nearestTownPrompt() : null;
+        if (interactHint && townPrompt) {
+          const p = world.camera.worldToCanvas(townPrompt.x, townPrompt.y, pickRingScratch);
+          interactHint.style.left = `${Math.round(p.x)}px`;
+          interactHint.style.top = `${Math.round(p.y - townPrompt.lift)}px`;
+          interactHint.innerHTML = townPrompt.html;
+          interactHint.classList.remove('dim');
+          interactHint.classList.add('show');
+        } else if (
           interactHint &&
           nearChest &&
           world.lighting.isVisible(Math.floor(nearChest.x), Math.floor(nearChest.y))
         ) {
+          interactHint.innerHTML = '<kbd>E</kbd> OPEN';
           const p = world.camera.worldToCanvas(nearChest.x, nearChest.y, pickRingScratch);
           interactHint.style.left = `${Math.round(p.x)}px`;
           interactHint.style.top = `${Math.round(p.y - 64)}px`;
@@ -1834,6 +2207,31 @@ async function boot(): Promise<void> {
         // The hero sits in the same lighting language as the world.
         player.setSceneTint(world.lighting.getTintAt(player.pos.x, player.pos.y, 0.7));
         player.setShadowLight(world.lighting.lightDirAt(player.pos.x, player.pos.y));
+
+        if (world.town) {
+          const t = world.town;
+          t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          // ROOF CUTAWAY (it.39): a cottage or tree the hero stands behind fades
+          // so the body never disappears under a roof.
+          const hs = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
+          const heroDepth = (cameraFocus.x + cameraFocus.y) * 16;
+          const k = 1 - Math.exp(-12 * frameDt);
+          for (const o of t.occluders) {
+            const spr = o.sprite;
+            const w = spr.width;
+            const h = spr.height;
+            const left = spr.position.x - w * spr.anchor.x + w * 0.12;
+            const right = left + w * 0.76;
+            const top = spr.position.y - h * spr.anchor.y;
+            const bottom = top + h * 0.9;
+            const behind = o.depth > heroDepth && hs.x > left && hs.x < right && hs.y - 30 > top && hs.y - 30 < bottom;
+            const target = behind ? 0.38 : 1;
+            spr.alpha += (target - spr.alpha) * k;
+          }
+          if (t.stashSprite && spriteLib.hasSingle('stash_open')) {
+            t.stashSprite.texture = spriteLib.single(stashUI.isOpen ? 'stash_open' : 'stash_closed');
+          }
+        }
 
         // Target ring: pulsing bracket under the foe the player is striking.
         const target = world.combat.getDisplayTarget();
@@ -1895,8 +2293,97 @@ async function boot(): Promise<void> {
     }
 
     // --- Pause / death menus (it.36) -----------------------------------------
+    // --- Town panels + interaction (it.39) ------------------------------------
+    const shopUI = new ShopUI(player, town, inputQueue);
+    const stashUI = new StashUI(player, town, inputQueue);
+    const interactableDist = (it: Interactable): number => {
+      let best = Infinity;
+      for (const tile of it.tiles) best = Math.min(best, Math.hypot(player.pos.x - (tile.x + 0.5), player.pos.y - (tile.y + 0.5)));
+      return best;
+    };
+    const openInteractable = (it: Interactable): void => {
+      if (it.kind === 'merchant') shopUI.open();
+      else stashUI.open();
+    };
+    /** E in town / a click on the stall or stash: walk up, then open. */
+    function handleTownInteraction(commands: ReadonlyArray<InputCommand>): void {
+      const t = world.town;
+      if (!t) return;
+      for (const cmd of commands) {
+        if (cmd.type === 'PICKUP_NEAREST') {
+          let best: Interactable | null = null;
+          let bestD = 2.1;
+          for (const it of t.interactables) {
+            const d = interactableDist(it);
+            if (d < bestD) {
+              bestD = d;
+              best = it;
+            }
+          }
+          if (best) openInteractable(best);
+        } else if (cmd.type === 'OPEN_CHEST') {
+          const it = t.interactables.find((i) => i.id === cmd.chestId);
+          if (!it) continue;
+          pendingInteract = it.id;
+          // Walk to the nearest walkable tile beside the footprint.
+          let goal: { x: number; y: number } | null = null;
+          let goalD = Infinity;
+          for (const tile of it.tiles) {
+            for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+              const gx = tile.x + ox;
+              const gy = tile.y + oy;
+              if (!world.scene.isWalkable(gx, gy)) continue;
+              const d = Math.hypot(player.pos.x - (gx + 0.5), player.pos.y - (gy + 0.5));
+              if (d < goalD) {
+                goalD = d;
+                goal = { x: gx, y: gy };
+              }
+            }
+          }
+          if (goal) world.movement.applyCommands([{ type: 'MOVE_TO', playerId: 0, gx: goal.x, gy: goal.y }]);
+        }
+      }
+      if (pendingInteract !== null) {
+        const it = t.interactables.find((i) => i.id === pendingInteract);
+        if (!it) pendingInteract = null;
+        else if (interactableDist(it) <= 1.9) {
+          pendingInteract = null;
+          openInteractable(it);
+        }
+      }
+    }
+    /** The nearest town prompt within reach: stall / stash / gate / portal. */
+    const nearestTownPrompt = (): { x: number; y: number; html: string; lift: number } | null => {
+      const t = world.town;
+      if (!t) return null;
+      let best: { x: number; y: number; html: string; lift: number } | null = null;
+      let bestD = 2.6;
+      for (const it of t.interactables) {
+        const d = interactableDist(it);
+        if (d < bestD) {
+          bestD = d;
+          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' ? 96 : 54 };
+        }
+      }
+      const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
+      if (gd < bestD && gd < 3.2) {
+        bestD = gd;
+        best = { x: t.layout.gate.x + 0.5, y: t.layout.gate.y + 0.5, html: 'THE DUNGEON GATE · walk in to descend', lift: 44 };
+      }
+      if (portalReturn) {
+        const pd = Math.hypot(player.pos.x - (t.layout.portal.x + 0.5), player.pos.y - (t.layout.portal.y + 0.5));
+        if (pd < bestD && pd < 3) {
+          best = { x: t.layout.portal.x + 0.5, y: t.layout.portal.y + 0.5, html: `PORTAL · back to depth ${ROMAN[portalReturn.floor - 1] ?? portalReturn.floor}`, lift: 60 };
+        }
+      }
+      return best;
+    };
+
     const runMenus = new RunMenusUI({
-      pause: () => loop.stop(),
+      pause: () => {
+        loop.stop();
+        saveNow(); // Autosave on pause (it.39).
+      },
       resume: () => {
         inputQueue.clear(); // Keys mashed while paused never replay.
         lastRenderTime = performance.now();
@@ -1905,12 +2392,16 @@ async function boot(): Promise<void> {
       restart: () => restartRun(),
       mainMenu: () => exitToMenu(),
       changeClass: () => changeClass(),
+      saveExit: () => {
+        saveNow();
+        exitToMenu();
+      },
       settings: () => settings.open(),
       respawn: () => respawnPlayer(),
       canPause: () => !transitioning && !victoryShown,
     });
 
-    audio.setMusic('dungeon');
+    if (!world.town) audio.setMusic('dungeon');
     audio.playIntroSting();
     loop.start();
 
@@ -1920,11 +2411,14 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = Math.max(1, Math.min(target, MAX_DEPTH));
-        const mode = arena && isBossFloor(dest) ? 'arena' : 'normal';
+        const dest = Math.max(0, Math.min(target, MAX_DEPTH));
+        const mode: FloorMode = dest === 0 ? 'hub' : arena && isBossFloor(dest) ? 'arena' : 'normal';
         await preloadFloor(dest, mode);
+        if (!world.town) captureFloor();
         if (!swapWorld(() => buildWorld(dest, mode))) return;
         floor = dest;
+        deepestFloor = Math.max(deepestFloor, floor);
+        if (mode === 'hub') enterTown(false);
         updateDepth();
         floorStartTick = state.tick;
         player.action = 'idle';
@@ -1933,16 +2427,21 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, ...world, floor }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor }),
       });
     }
 
     return {
       archetype: chosenClass,
+      slot,
+      stash: () => ({ items: [...town.stash.items], gold: town.stash.gold }),
+      save: saveNow,
       destroy: () => {
         if (!alive) return;
         alive = false;
         loop.stop();
+        shopUI.destroy();
+        stashUI.destroy();
         for (const id of timers) clearTimeout(id);
         timers.clear();
         for (const off of subs) off();
@@ -1977,7 +2476,7 @@ async function boot(): Promise<void> {
   // --- Entry: `?class=` skips the menu (tests/links); otherwise the title. --
   const classParam = new URLSearchParams(location.search).get('class');
   if (classParam && (VALID_CLASSES as readonly string[]).includes(classParam)) {
-    await beginRun(classParam as ClassArchetype);
+    await beginRun(classParam as ClassArchetype, 1, { slot: saves.firstFree() ?? 1 });
   } else {
     showMainMenu();
   }
@@ -1996,7 +2495,8 @@ export function isBossFloor(floor: number): boolean {
  * Every atlas a floor can put on screen: its roster's kinds (with phased
  * boss chains), the summoned wretches, and — for arenas — the keeper.
  */
-function animsForFloor(floor: number, mode: 'normal' | 'arena'): string[] {
+function animsForFloor(floor: number, mode: FloorMode): string[] {
+  if (mode === 'hub') return ['villager_walk', 'merchant_walk', 'campfire', 'torch', 'well'];
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));
   kinds.add('fallen'); // Hollow King summons; cheap (shares the knight sheets).
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);
@@ -2106,11 +2606,14 @@ function spawnFloorEnemies(
   floor: number,
   stairs: { x: number; y: number },
   seed: number,
+  /** Roster indexes already killed (FloorMemory) — rolled but not spawned. */
+  skip: ReadonlySet<number> = new Set(),
 ): void {
   const rand = mulberry32(seed ^ 0x5e5e5e5e);
   const kindPool = kindPoolFor(floor);
   const bossFloor = isBossFloor(floor);
   const perRoom = bossFloor ? Math.max(1, Math.min(floor, 3) - 1) : Math.min(1 + floor, 4);
+  let spawnIndex = 0;
 
   for (let i = 1; i < dungeon.rooms.length; i++) {
     const room = dungeon.rooms[i];
@@ -2125,7 +2628,12 @@ function spawnFloorEnemies(
       // STRICT LEVEL MATRIX (it.23): floor-N mobs are level N; ~15% spawn
       // as rare variants at N+1 — never higher.
       const level = floor + (rand() < 0.15 ? 1 : 0);
-      enemies.spawn(kind, gx + 0.5, gy + 0.5, level);
+      // The RNG stream is consumed identically whether or not this one
+      // spawns, so a remembered floor rolls the same roster.
+      const index = spawnIndex++;
+      if (skip.has(index)) continue;
+      const enemy = enemies.spawn(kind, gx + 0.5, gy + 0.5, level);
+      enemy.spawnIndex = index;
     }
   }
 }

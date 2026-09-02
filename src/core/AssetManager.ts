@@ -67,6 +67,11 @@ export class AssetManager {
     this.register('chest_open', this.buildChest(true));
   }
 
+  /** Register an already-built texture (atlas singles reused as floor tiles, it.39). */
+  registerTexture(key: string, tex: Texture): void {
+    this.textures.set(key, tex);
+  }
+
   /** Fetch a texture by key. Throws on unknown keys — fail loudly, never render blanks. */
   get(key: string): Texture {
     const tex = this.textures.get(key);

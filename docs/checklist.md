@@ -304,6 +304,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Impact flash + victim-side slash arc on every landed hit
 - [x] QA loop: menu -> select -> floor 1 -> floor change -> directions -> gold; zero console errors
 
+## Iteration 39 - Town Hub, Vendors, Save/Load, Stash (2026-09-02)
+
+- [x] Town assets audited, baked (houses, tileset, placeables, campfire, torch, well, peasants), raw test-models pruned
+- [x] Floor 0 town: handcrafted square, cottages with roof cutaway, campfire/torch lighting, villagers, town music
+- [x] Merchant buy/sell UI; potions (Q/R) and Scroll of Town Portal; stash UI with gold
+- [x] Town portal there and back with exact FloorMemory (chests, gold, kills, explored, arena)
+- [x] SaveGame: 3 LocalStorage slots, autosave on town arrival / pause / SAVE & EXIT; CONTINUE / LOAD GAME / overwrite picker
+- [x] QA loop: start -> town -> vendor -> stash -> gate -> floor 1 -> portal -> town -> save & exit -> load; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

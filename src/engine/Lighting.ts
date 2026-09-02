@@ -92,10 +92,21 @@ export class Lighting {
   private readonly fadingWalls = new Set<number>();
   private readonly scratch = vec2();
 
-  build(width: number, height: number, isOpaque: (gx: number, gy: number) => boolean): void {
+  /** Sight radius (LOS reveal) and full-brightness radius; the town widens both. */
+  private sight = FOG_RADIUS;
+  private full = LIGHT_FULL_RADIUS;
+
+  build(
+    width: number,
+    height: number,
+    isOpaque: (gx: number, gy: number) => boolean,
+    opts?: { sightRadius?: number; fullRadius?: number },
+  ): void {
     this.width = width;
     this.height = height;
     this.isOpaque = isOpaque;
+    this.sight = opts?.sightRadius ?? FOG_RADIUS;
+    this.full = opts?.fullRadius ?? LIGHT_FULL_RADIUS;
     this.states = new Uint8Array(width * height).fill(FogState.HIDDEN);
     this.floorSprites = new Array<Sprite | null>(width * height).fill(null);
     this.wallSprites = new Array<Sprite | null>(width * height).fill(null);
@@ -242,7 +253,7 @@ export class Lighting {
   /** Recompute the LOS visible set. Call on player:tileChanged only. */
   updateVisibility(originX: number, originY: number): void {
     const newVisible = new Set<number>();
-    const r = FOG_RADIUS;
+    const r = this.sight;
     const r2 = r * r;
 
     for (let dy = -r; dy <= r; dy++) {
@@ -386,9 +397,34 @@ export class Lighting {
   }
 
   private falloff(d: number): number {
-    if (d <= LIGHT_FULL_RADIUS) return 1;
-    const t = (FOG_RADIUS - d) / (FOG_RADIUS - LIGHT_FULL_RADIUS);
+    if (d <= this.full) return 1;
+    const t = (this.sight - d) / (this.sight - this.full);
     return t <= 0 ? 0 : t >= 1 ? 1 : t;
+  }
+
+  /** Restore an explored-fog bitset (FloorMemory) — tiles become EXPLORED and render. */
+  unpackExplored(packed: Uint8Array): void {
+    for (let i = 0; i < this.states.length; i++) {
+      if (!(packed[i >> 3] & (1 << (i & 7)))) continue;
+      if (this.states[i] !== FogState.HIDDEN) continue;
+      this.states[i] = FogState.EXPLORED;
+      const floor = this.floorSprites[i];
+      if (floor) {
+        floor.visible = true;
+        floor.tint = EXPLORED_TINT;
+      }
+      const wall = this.wallSprites[i];
+      if (wall) {
+        wall.visible = true;
+        wall.tint = EXPLORED_TINT;
+      }
+      const props = this.propSprites.get(i);
+      if (props)
+        for (const p of props) {
+          p.visible = true;
+          p.tint = EXPLORED_TINT;
+        }
+    }
   }
 
   /** Smoothly fade walls whose sprite covers the player and sorts in front. */

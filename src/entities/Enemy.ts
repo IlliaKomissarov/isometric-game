@@ -24,6 +24,7 @@ import { PLAYER_SPEED } from '@/core/config';
 import { eventBus } from '@/core/EventBus';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import { multiplyColors } from '@/utils/color';
+import { idleFrame, type LightDir } from '@/render/animUtil';
 import type { EntitySnapshot } from '@/network/Serialization';
 import { hasLineOfSight } from '@/utils/los';
 import { tileCenter, worldToTile } from '@/utils/iso';
@@ -87,11 +88,16 @@ export interface EnemyTypeDef {
     attack?: AnimName;
     hitAnim?: AnimName;
     anchorY: number;
+    /** Legacy rig scale — FALLBACK only when the atlas manifest lacks painted bounds. */
     scale: number;
     tint: number;
+    /** Walk cycle: CYCLES advanced per tile of ground covered (it.36 —
+     *  frame-count independent, so denser atlases stride identically). */
     stride: number;
     /** The pack has no baked shadow — show our procedural one. */
     ownShadow?: boolean;
+    /** Height flavor × the MOB/BOSS standard (0.85 = runt, 1.25 = elite). */
+    heightMult?: number;
   };
   /** Boss/elite mechanics. */
   hitEffect?: 'slow';
@@ -104,6 +110,33 @@ export interface EnemyTypeDef {
    * 100% hp pool. The chain ends at a form with no nextPhase.
    */
   nextPhase?: EnemyKind;
+}
+
+/**
+ * UNIT HEIGHT STANDARD (it.36): painted body height on screen at zoom 1.
+ * Standard mobs match the hero exactly (56 px); bosses alone are enlarged
+ * (2.3×) — ratio preserved from the accepted it.34 look.
+ */
+export const MOB_HEIGHT = 56;
+export const BOSS_HEIGHT = 128;
+
+/** Every atlas an enemy kind can put on screen (phase chains included). */
+export function animsForKind(kind: EnemyKind): AnimName[] {
+  const out: AnimName[] = [];
+  let k: EnemyKind | undefined = kind;
+  const seen = new Set<EnemyKind>();
+  while (k && !seen.has(k)) {
+    seen.add(k);
+    const sp: EnemyTypeDef['sprite'] = ENEMY_TYPES[k].sprite;
+    if (sp) {
+      out.push(sp.walk, sp.death);
+      if (sp.idle) out.push(sp.idle);
+      if (sp.attack) out.push(sp.attack);
+      if (sp.hitAnim) out.push(sp.hitAnim);
+    }
+    k = ENEMY_TYPES[k].nextPhase;
+  }
+  return [...new Set(out)];
 }
 
 export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
@@ -132,7 +165,8 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 0.68,
       tint: 0xd08858,
-      stride: 4.5,
+      stride: 0.3,
+      heightMult: 0.86, // A runt — reads small next to the risen.
     },
   },
   zombie: {
@@ -157,7 +191,8 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.78,
       scale: 0.26,
       tint: 0xffffff,
-      stride: 4,
+      stride: 0.5,
+      heightMult: 1.08, // Bulky rot.
     },
   },
   skeleton: {
@@ -183,7 +218,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 0.62,
       tint: 0xffffff,
-      stride: 4.2,
+      stride: 0.42,
       ownShadow: true,
     },
   },
@@ -209,7 +244,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 0.62,
       tint: 0xd8ddc8, // Grave-pale.
-      stride: 4.4,
+      stride: 0.44,
       ownShadow: true,
     },
   },
@@ -236,7 +271,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 0.62,
       tint: 0xffffff,
-      stride: 4,
+      stride: 0.36,
       ownShadow: true,
     },
   },
@@ -262,7 +297,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 0.62,
       tint: 0xffffff,
-      stride: 4.2,
+      stride: 0.42,
       ownShadow: true,
     },
   },
@@ -289,7 +324,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 0.62,
       tint: 0xffffff,
-      stride: 4,
+      stride: 0.36,
       ownShadow: true,
     },
   },
@@ -315,7 +350,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 1.35,
       tint: 0xc8a090, // Blood-bronze.
-      stride: 3.2,
+      stride: 0.29,
       ownShadow: true,
     },
   },
@@ -343,7 +378,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.72,
       scale: 0.36, // it.14 size normalization.
       tint: 0xffffff,
-      stride: 4.2,
+      stride: 0.42,
       ownShadow: true, // The Body sheets carry no baked shadow.
     },
   },
@@ -370,7 +405,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.72,
       scale: 0.42, // it.14: was a "tiny spearman" at 0.3 — normalized.
       tint: 0xffffff,
-      stride: 4.2,
+      stride: 0.52,
       ownShadow: true,
     },
   },
@@ -397,8 +432,9 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.72,
       scale: 0.42,
       tint: 0xffffff,
-      stride: 3.8,
+      stride: 0.48,
       ownShadow: true,
+      heightMult: 1.1, // A loping brute.
     },
   },
   lizard: {
@@ -424,7 +460,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.72,
       scale: 0.4,
       tint: 0xd8ccc4, // Cooled a step toward the palette.
-      stride: 4,
+      stride: 0.5,
       ownShadow: true,
     },
   },
@@ -452,7 +488,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 1.35,
       tint: 0x9cc4ee, // Hoarfrost shroud.
-      stride: 3.2,
+      stride: 0.29,
       ownShadow: true,
     },
   },
@@ -483,8 +519,9 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.62,
       scale: 1.0,
       tint: 0xe0c4b4, // Cooled toward the palette — she still reads ember-warm.
-      stride: 3.6,
+      stride: 0.45,
       ownShadow: true,
+      heightMult: 0.8, // A low, WIDE serpent — boss mass reads in her width.
     },
   },
   shambler: {
@@ -511,7 +548,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.72,
       scale: 0.4, // 256px raw cells (it.32 live calibration).
       tint: 0x9aa4b4,
-      stride: 3.4,
+      stride: 0.43,
       ownShadow: true,
     },
   },
@@ -538,8 +575,9 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.68,
       scale: 0.36, // 512px raw frames → elite presence (it.32 calibration).
       tint: 0xf0d8d0,
-      stride: 3.0,
+      stride: 0.38,
       ownShadow: true,
+      heightMult: 1.25, // Elite of the ember depths.
     },
   },
   // === THE HOLLOW KING (it.30): three forms, three fresh hp pools, ======
@@ -568,7 +606,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.78,
       scale: 0.58,
       tint: 0xb8c4a8, // Grave-pale green — reads huge and dead.
-      stride: 2.6,
+      stride: 0.33,
       ownShadow: false,
     },
   },
@@ -597,7 +635,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 1.5, // Uniform boss presence (148px pack frames vs 512 zombie).
       tint: 0xd8c8b0, // Tarnished grave-gold armor.
-      stride: 3.2,
+      stride: 0.29,
       ownShadow: true,
     },
   },
@@ -626,7 +664,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.8,
       scale: 1.5, // It.30: uniform LARGE across all three phases.
       tint: 0xe8e2d0, // Ancient bone, near-white against the dark.
-      stride: 4,
+      stride: 0.36,
       ownShadow: true,
     },
   },
@@ -685,6 +723,18 @@ export class Enemy extends Entity {
 
   private readonly bobPhase = Math.random() * Math.PI * 2;
   private elapsed = 0;
+  private rigScale = 1;
+  private shadowLight: LightDir = { x: 0, y: 0, k: 0 };
+
+  /** The rig's live body scale (corpse sprites reuse it). */
+  get bodyScale(): number {
+    return this.rigScale;
+  }
+
+  /** Scene light direction for the dynamic floor shadow (wired by main). */
+  setShadowLight(dir: LightDir): void {
+    this.shadowLight = dir;
+  }
   private walkPhase = 0;
   private lastDir = 6; // Direction hysteresis (render-side).
   private readonly body: Sprite;
@@ -804,9 +854,15 @@ export class Enemy extends Entity {
       this.body.texture = spriteLib.frame(sprite.walk, 6, 0);
       this.body.anchor.set(0.5, sprite.anchorY);
       this.body.position.set(0, 2);
-      this.body.scale.set(sprite.scale);
+      // DATA-DRIVEN SCALE (it.36): the standard height ÷ the atlas's painted
+      // idle height. Bosses use the boss standard; flavor via heightMult.
+      const painted = spriteLib.paintedHeight(sprite.idle ?? sprite.walk);
+      const target = (this.isBoss() ? BOSS_HEIGHT : MOB_HEIGHT) * (sprite.heightMult ?? 1);
+      this.rigScale = painted > 0 ? target / painted : sprite.scale;
+      this.body.scale.set(this.rigScale);
       this.shadow.visible = !!sprite.ownShadow;
     } else {
+      this.rigScale = 1;
       this.body.texture = assets.get(this.def.markerTexture);
       this.body.anchor.set(0.5, 1.0);
       this.body.position.set(0, 6);
@@ -1134,7 +1190,7 @@ export class Enemy extends Entity {
     this.facing.x = dx / len;
     this.facing.y = dy / len;
     // Walk cycle advances WITH the ground covered — no foot-sliding.
-    this.walkPhase += step * (this.def.sprite?.stride ?? 5);
+    this.walkPhase += step * (this.def.sprite?.stride ?? 0.4);
     return moveWithCollision(this.pos, (dx / len) * step, (dy / len) * step, this.ai.isWalkable);
   }
 
@@ -1152,7 +1208,7 @@ export class Enemy extends Entity {
     const step = Math.min(PLAYER_SPEED * this.def.speedMult * dt, dist);
     this.facing.x = dx / dist;
     this.facing.y = dy / dist;
-    this.walkPhase += step * (this.def.sprite?.stride ?? 5);
+    this.walkPhase += step * (this.def.sprite?.stride ?? 0.4);
     moveWithCollision(this.pos, (dx / dist) * step, (dy / dist) * step, this.ai.isWalkable);
   }
 
@@ -1253,8 +1309,9 @@ export class Enemy extends Entity {
     const dir = stableDir(this.facing.x, this.facing.y, this.lastDir);
     this.lastDir = dir;
     this.container.scale.x = 1; // Real directions — never mirror.
+    this.syncShadow();
 
-    const baseScale = sprite.scale;
+    const baseScale = this.rigScale;
 
     if (this.action === 'dead') {
       const fc = spriteLib.anim(sprite.death).frameCount;
@@ -1342,7 +1399,7 @@ export class Enemy extends Entity {
       // steps during the rear-back, then a violent forward surge. Reads as a
       // living attack, never a frozen statue.
       const w = this.windup;
-      const stepFrame = Math.floor(this.actionTicks * 0.18);
+      const stepFrame = Math.floor(this.actionTicks * 0.18 * (spriteLib.anim(sprite.walk).frameCount / 8));
       this.body.texture = spriteLib.frame(sprite.walk, dir, stepFrame);
       this.body.scale.set(baseScale);
       if (this.actionTicks < w) {
@@ -1385,15 +1442,25 @@ export class Enemy extends Entity {
     this.body.position.set(0, 2);
     const moving = Math.hypot(this.pos.x - this.prevPos.x, this.pos.y - this.prevPos.y) > 1e-4;
     if (moving) {
-      this.body.texture = spriteLib.frame(sprite.walk, dir, Math.floor(this.walkPhase));
+      const fc = spriteLib.anim(sprite.walk).frameCount;
+      this.body.texture = spriteLib.frame(sprite.walk, dir, Math.floor(this.walkPhase * fc));
       this.body.scale.set(baseScale);
     } else {
       const idleAnim = sprite.idle ?? sprite.walk;
       // Slow LIVE idle frames (guards breathe/shift) — never a frozen statue.
-      const idleFrame = sprite.idle ? Math.floor(this.elapsed * 6 + this.bobPhase * 2) : 0;
-      this.body.texture = spriteLib.frame(idleAnim, dir, idleFrame);
+      // It.36: shared pacing helper (ping-pong for short 4-frame idles).
+      const frame = sprite.idle ? idleFrame(spriteLib.anim(idleAnim).frameCount, this.elapsed, this.bobPhase) : 0;
+      this.body.texture = spriteLib.frame(idleAnim, dir, frame);
       this.body.scale.set(baseScale, baseScale * (1 + Math.sin(this.elapsed * 1.7 + this.bobPhase) * 0.012));
     }
+  }
+
+  /** Dynamic floor shadow (it.36): stretched away from the dominant light. */
+  private syncShadow(): void {
+    if (!this.shadow.visible) return;
+    const l = this.shadowLight;
+    this.shadow.scale.set(1 + Math.abs(l.x) * l.k * 0.6, 1 + Math.abs(l.y) * l.k * 0.35);
+    this.shadow.position.set(l.x * 7 * l.k, 1 + l.y * 3 * l.k);
   }
 
   /** SEGMENTED health bar (it.23): quarter-notches make remaining health

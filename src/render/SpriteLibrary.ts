@@ -1,99 +1,59 @@
 /**
  * @module render/SpriteLibrary
- * Loader + registry for the external art packs:
+ * ATLAS-BASED sprite registry (it.36).
  *
- *  - "2D HD Character Knight": 1920×1024 sheets, a 15-frame × 8-direction
- *    grid of 128×128 cells (one DIRECTION per row, 15 columns of frames).
- *    Used as the player character (idle/run/melee×2/spin/cast/hit/die).
- *  - "(DEMO) Lords Of Pain": per-frame 256×256 PNGs named
- *    `<anim>_<DIR>_<angle>_<frame>.png`, 16 directions of which we load the
- *    8 principal ones. Characters register at the FRAME CENTER (128,128 =
- *    ground point) with shadows baked in. Used for the skeleton enemy,
- *    the gold-pile prop, the glint VFX, and UI markers.
+ * Every character animation ships as ONE pre-baked grid PNG under
+ * public/assets/atlas/ (columns = frames, rows = the 8 canonical
+ * directions) described by `manifest.json`. The atlases were baked
+ * pixel-for-pixel from the retired raw packs by an in-browser baker
+ * (renderer extract of the exact textures the game rendered before the
+ * purge — rebakes, layer composites and canvas tone-baking included):
  *
- * All frames become Pixi Textures held here as `frames[dir][frame]`.
+ *  - cells are ALPHA-CROPPED per animation; Pixi `trim`/`orig` restore the
+ *    uncropped frame so every anchor calibrated against the raw packs
+ *    stays valid (texture.width/height still report the original cell);
+ *  - packs that only ever render at ≤0.42 rig scale are baked at HALF
+ *    resolution (`scale: 0.5`) and mounted with source resolution 0.5, so
+ *    all frame math stays in original pixels.
+ *
+ * LAZY LOADING CONTRACT: `load()` fetches the manifest + the tiny
+ * always-needed singles + the two ambient loops. Everything else streams in
+ * through `ensure()`: the hero rig at run start, each floor's roster under
+ * the transition fade, the next floor prefetched in the background.
+ * `hasAnim` is true only once an atlas is resident — rigs fall back to
+ * procedural art otherwise, never to a blank.
+ *
  * Direction convention everywhere in the game: index 0..7 =
  * [E, NE, N, NW, W, SW, S, SE] in SCREEN space (`dirIndexFromFacing`).
  *
- * SUB-AGENT BOUNDARY: to add an animation, extend the manifest constants —
- * never hand-build URLs elsewhere. If a pack's row order looks wrong on
- * screen, fix KNIGHT_ROW_FOR_DIR only.
+ * SUB-AGENT BOUNDARY: to add an animation, bake an atlas (see
+ * docs/skills/external-sprite-pipeline.md) and add its manifest entry —
+ * never hand-build URLs elsewhere.
  */
 
-import { Assets, Container, Rectangle, Sprite, Texture, type Renderer } from 'pixi.js';
+import { Assets, Rectangle, Texture } from 'pixi.js';
 
 /** Canonical direction order (math angles 0°,45°,…,315° in screen space). */
 export const DIRS = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'] as const;
 
-/** Lords-of-Pain filename angle per direction (matches DIRS order). */
-const LOP_ANGLE: Record<string, string> = {
-  E: '0.0',
-  NE: '45.0',
-  N: '90.0',
-  NW: '135.0',
-  W: '180.0',
-  SW: '225.0',
-  S: '270.0',
-  SE: '315.0',
-};
-
 // Base-aware asset root (it.31): '/' in dev, '/isometric-game/' on Pages.
 const ROOT = `${import.meta.env.BASE_URL}assets`;
-const LOP_BASE = `${ROOT}/(DEMO) Lords Of Pain - Old School Isometric Assets`;
-const KNIGHT_BASE = `${ROOT}/2D HD Character Knight/Spritesheets/With shadows`;
-const WEAPON_ICON_BASE = `${ROOT}/oubliette_weapons - free`;
+const ATLAS_BASE = `${ROOT}/atlas`;
 
-/** Weapon icon file URL (28×12 pixel art) — also used directly by DOM <img>. */
+/** Weapon icon file URL (28×12 pixel art) — used directly by DOM <img>. */
 export function weaponIconUrl(stem: string): string {
-  return encodeURI(`${WEAPON_ICON_BASE}/spr_wep_${stem}.png`);
+  return `${ATLAS_BASE}/single_wicon_${stem}.png`;
 }
 
-/** Every oubliette icon stem referenced by the item catalog. */
-const ICON_STEMS = [
-  'bronze_sword_0',
-  'iron_sword_0',
-  'steel_large_0',
-  'stick_0',
-  'heal_0',
-  'iron_axe_0',
-  'iron_baxe_0',
-  'mace_0',
-  'mace_big_0',
-  'steel_ghammer_0',
-  'iron_scythe_0',
-  'steel_halberd_0',
-  'iron_katana_0',
-  'steel_falcon_0',
-] as const;
-
-/**
- * Knight sheet row for each canonical dir index. Calibrated in-game from a
- * row strip: sheet rows 0..7 face [SE, S, SW, W, NW, N, NE, E], i.e. exactly
- * the reverse of our canonical [E, NE, N, NW, W, SW, S, SE] order.
- */
-export const KNIGHT_ROW_FOR_DIR = [7, 6, 5, 4, 3, 2, 1, 0];
-
-const KNIGHT_SHEETS = {
-  knight_idle: 'Idle',
-  knight_run: 'Run',
-  knight_melee: 'Melee',
-  knight_melee2: 'Melee2',
-  knight_spin: 'MeleeSpin',
-  knight_cast: 'CastSpell',
-  knight_hit: 'TakeDamage',
-  knight_die: 'Die',
-} as const;
-
-const KNIGHT_COLS = 15;
-const KNIGHT_ROWS = 8;
-const KNIGHT_CELL = 128;
-
 export type AnimName =
-  | keyof typeof KNIGHT_SHEETS
-  | 'skeleton_walk'
-  | 'skeleton_death'
-  | 'warrior_idle'
-  | 'warrior_walk'
+  | 'knight_idle'
+  | 'knight_run'
+  | 'knight_melee'
+  | 'knight_melee2'
+  | 'knight_spin'
+  | 'knight_cast'
+  | 'knight_hit'
+  | 'knight_die'
   | 'zombie_walk'
   | 'zombie_idle'
   | 'zombie_attack'
@@ -176,6 +136,46 @@ export type AnimName =
   | 'gold_drop'
   | 'glint';
 
+export interface PaintedBounds {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+export interface AtlasAnimEntry {
+  file: string;
+  /** Atlas cell size in ATLAS pixels (cropped, possibly downscaled). */
+  cellW: number;
+  cellH: number;
+  frameCount: number;
+  dirCount: number;
+  nearest: boolean;
+  /** Original (uncropped, full-res) frame size — anchors are relative to it. */
+  origW: number;
+  origH: number;
+  /** Crop offset of the cell inside the original frame (full-res px). */
+  trimX: number;
+  trimY: number;
+  /** Atlas pixels per original pixel (0.5 = half-resolution bake). */
+  scale: number;
+  /** Painted bounds (ORIGINAL px) of the south-facing frames, union over frames. */
+  painted: PaintedBounds;
+}
+
+export interface AtlasSingleEntry {
+  file: string;
+  w: number;
+  h: number;
+  nearest: boolean;
+}
+
+export interface AtlasManifest {
+  generated: string;
+  anims: Record<string, AtlasAnimEntry>;
+  singles: Record<string, AtlasSingleEntry>;
+}
+
 export interface LoadedAnim {
   /** frames[dirIndex][frameIndex]; single-direction anims use dirIndex 0. */
   frames: Texture[][];
@@ -210,545 +210,112 @@ export function stableDir(fx: number, fy: number, lastDir: number): number {
 }
 
 export class SpriteLibrary {
+  private manifest: AtlasManifest | null = null;
   private readonly anims = new Map<string, LoadedAnim>();
   private readonly singles = new Map<string, Texture>();
+  /** Atlas fetches in flight, keyed by anim name (dedupes concurrent ensures). */
+  private readonly inflight = new Map<string, Promise<void>>();
+  /** Manifest + singles resident; `ensure()` may be called. */
   loaded = false;
-  private renderer!: Renderer;
-
-  /** Evenly-spaced 1-based frame indexes: pick `count` out of `total`. */
-  private static picks(total: number, count: number): number[] {
-    return Array.from({ length: count }, (_, i) => 1 + Math.round((i * (total - 1)) / (count - 1)));
-  }
 
   /**
-   * Load a list of frame URLs and RE-BAKE each at `scale` into fresh small
-   * GPU textures, unloading the large originals. This is what makes the
-   * 512²-per-frame packs (zombie, bonfire) affordable: fetched once,
-   * downsampled once, originals freed.
+   * Boot load: manifest, singles (icons, tiles, stairs, candelabra) and the
+   * two ambient loops. Under 1 MB — the menu appears immediately after.
    */
-  private async rebakeUrls(urls: string[], scale: number): Promise<Texture[]> {
+  async load(): Promise<void> {
+    const res = await fetch(`${ATLAS_BASE}/manifest.json`, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`[SpriteLibrary] manifest.json missing (${res.status})`);
+    this.manifest = (await res.json()) as AtlasManifest;
+
+    const entries = Object.entries(this.manifest.singles);
+    const urls = entries.map(([, e]) => `${ATLAS_BASE}/${e.file}`);
     const loaded = (await Assets.load(urls)) as Record<string, Texture>;
-    const out: Texture[] = [];
-    for (const url of urls) {
-      const spr = new Sprite(loaded[url]);
-      spr.scale.set(scale);
-      out.push(this.renderer.generateTexture({ target: spr, antialias: true }));
-      spr.destroy();
-    }
-    await Assets.unload(urls);
-    return out;
+    entries.forEach(([name, e], i) => {
+      const t = loaded[urls[i]];
+      if (e.nearest) t.source.scaleMode = 'nearest';
+      this.singles.set(name, t);
+    });
+    await this.ensure(['gold_drop', 'glint']);
+    this.loaded = true;
   }
 
-  /** Load one grid sheet, slice `cellW`² cells, rebake chosen frame indexes. */
-  private async rebakeSheet(url: string, cell: number, frameIndexes: number[], scale: number): Promise<Texture[]> {
-    const base = (await Assets.load(url)) as Texture;
-    const cols = Math.floor(base.width / cell);
-    const out: Texture[] = [];
-    for (const idx of frameIndexes) {
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
-      const sub = new Texture({ source: base.source, frame: new Rectangle(col * cell, row * cell, cell, cell) });
-      const spr = new Sprite(sub);
-      spr.scale.set(scale);
-      out.push(this.renderer.generateTexture({ target: spr, antialias: true }));
-      spr.destroy();
-      sub.destroy();
-    }
-    await Assets.unload(url);
-    return out;
+  /** True when the atlas exists on disk (whether or not it is resident yet). */
+  knows(name: string): boolean {
+    return !!this.manifest?.anims[name];
   }
 
+  /** True once the animation's atlas is resident and sliced. */
   hasAnim(name: string): boolean {
     return this.anims.has(name);
   }
 
-  /** DEV ONLY: raw registries for the atlas baker (src/dev/AtlasBaker). */
-  debugEntries(): { anims: Map<string, LoadedAnim>; singles: Map<string, Texture> } {
-    return { anims: this.anims, singles: this.singles };
+  /** Painted bounds (original px, south-facing union) from the manifest. */
+  painted(name: string): PaintedBounds | null {
+    return this.manifest?.anims[name]?.painted ?? null;
   }
 
-  /** Fetch every pack asset. Call once at boot (before buildWorld). */
-  async load(renderer: Renderer): Promise<void> {
-    this.renderer = renderer;
-    const urls: Record<string, string> = {};
+  /** Painted height in original px (0 when unknown) — rig scale normalization. */
+  paintedHeight(name: string): number {
+    const p = this.painted(name);
+    return p ? p.bottom - p.top + 1 : 0;
+  }
 
-    for (const sheet of Object.values(KNIGHT_SHEETS)) {
-      urls[`sheet_${sheet}`] = encodeURI(`${KNIGHT_BASE}/${sheet}.png`);
-    }
-    const lopFrame = (anim: string, group: string, dir: string, frame: number) =>
-      encodeURI(`${LOP_BASE}/${group}/${anim}/${dir}/${anim}_${dir}_${LOP_ANGLE[dir]}_${frame}.png`);
-    for (const dir of DIRS) {
-      for (let f = 0; f < 8; f++) {
-        urls[`skw_${dir}_${f}`] = lopFrame('skeleton_default_walk', 'enemy/skeleton', dir, f);
-        urls[`skd_${dir}_${f}`] = lopFrame('skeleton_special_death', 'enemy/skeleton', dir, f);
-        urls[`waw_${dir}_${f}`] = lopFrame('warrior_armed_walk', 'playable character/warrior', dir, f);
-      }
-      urls[`wai_${dir}_0`] = lopFrame('warrior_armed_idle', 'playable character/warrior', dir, 0);
-    }
-    for (let f = 0; f < 8; f++) {
-      urls[`gold_${f}`] = encodeURI(`${LOP_BASE}/prop/gold_drop/S/gold_drop_S_270.0_${f}.png`);
-      urls[`glint_${f}`] = encodeURI(`${LOP_BASE}/vfx/glint/glint_${f}.png`);
-    }
-    urls['tile_highlight'] = encodeURI(`${LOP_BASE}/user interface/highlight/highlight_yellow.png`);
-    urls['loot_indicator'] = encodeURI(`${LOP_BASE}/user interface/loot-indicator/loot_indicator_yellow.png`);
-    urls['ground_stone'] = encodeURI(`${LOP_BASE}/environment/ground_stone1.png`);
-    for (const stem of ICON_STEMS) {
-      urls[`wicon_${stem}`] = weaponIconUrl(stem);
-    }
-
-    const loadedAssets = (await Assets.load(Object.values(urls))) as Record<string, Texture>;
-    const tex = (key: string): Texture => loadedAssets[urls[key]];
-
-    // --- Knight sheets → [dir][frame] slices --------------------------------
-    for (const [animName, sheet] of Object.entries(KNIGHT_SHEETS)) {
-      const base = tex(`sheet_${sheet}`);
-      const frames: Texture[][] = [];
-      for (let dir = 0; dir < KNIGHT_ROWS; dir++) {
-        const row = KNIGHT_ROW_FOR_DIR[dir];
-        const rowFrames: Texture[] = [];
-        for (let col = 0; col < KNIGHT_COLS; col++) {
-          rowFrames.push(
-            new Texture({
-              source: base.source,
-              frame: new Rectangle(col * KNIGHT_CELL, row * KNIGHT_CELL, KNIGHT_CELL, KNIGHT_CELL),
-            }),
-          );
+  /**
+   * Make the named animations resident (fetch + slice their atlases).
+   * Unknown names are ignored; already-resident names are free; concurrent
+   * calls for the same atlas share one fetch. Resolves when ALL are ready.
+   */
+  async ensure(names: ReadonlyArray<string>): Promise<void> {
+    const manifest = this.manifest;
+    if (!manifest) return;
+    const wanted = [...new Set(names)].filter((n) => !this.anims.has(n) && !!manifest.anims[n]);
+    const fresh = wanted.filter((n) => !this.inflight.has(n));
+    if (fresh.length > 0) {
+      const urls = fresh.map((n) => `${ATLAS_BASE}/${manifest.anims[n].file}`);
+      const job = (async () => {
+        try {
+          const loaded = (await Assets.load(urls)) as Record<string, Texture>;
+          fresh.forEach((n, i) => this.slice(n, manifest.anims[n], loaded[urls[i]]));
+        } finally {
+          for (const n of fresh) this.inflight.delete(n);
         }
-        frames.push(rowFrames);
-      }
-      this.anims.set(animName, { frames, frameCount: KNIGHT_COLS, dirCount: KNIGHT_ROWS });
+      })();
+      for (const n of fresh) this.inflight.set(n, job);
     }
+    await Promise.all(wanted.map((n) => this.inflight.get(n)).filter((p): p is Promise<void> => !!p));
+  }
 
-    // --- Lords-of-Pain per-frame anims --------------------------------------
-    // Pixel-art characters upscale in-game: nearest-neighbor keeps them
-    // CRISP (old-school chunky pixels) instead of blurry linear smears.
-    const crisp = (t: Texture): Texture => {
-      t.source.scaleMode = 'nearest';
-      return t;
-    };
-    const buildLop = (prefix: string, frameCount: number): LoadedAnim => {
-      const frames: Texture[][] = DIRS.map((dir) => {
-        const row: Texture[] = [];
-        for (let f = 0; f < frameCount; f++) row.push(crisp(tex(`${prefix}_${dir}_${f}`)));
-        return row;
-      });
-      return { frames, frameCount, dirCount: 8 };
-    };
-    this.anims.set('skeleton_walk', buildLop('skw', 8));
-    this.anims.set('skeleton_death', buildLop('skd', 8));
-    this.anims.set('warrior_walk', buildLop('waw', 8));
-    this.anims.set('warrior_idle', buildLop('wai', 1));
-
-    // --- Single-direction anims + singles -----------------------------------
-    this.anims.set('gold_drop', {
-      frames: [Array.from({ length: 8 }, (_, f) => crisp(tex(`gold_${f}`)))],
-      frameCount: 8,
-      dirCount: 1,
-    });
-    this.anims.set('glint', {
-      frames: [Array.from({ length: 8 }, (_, f) => crisp(tex(`glint_${f}`)))],
-      frameCount: 8,
-      dirCount: 1,
-    });
-    this.singles.set('tile_highlight', crisp(tex('tile_highlight')));
-    this.singles.set('loot_indicator', crisp(tex('loot_indicator')));
-    this.singles.set('ground_stone', tex('ground_stone')); // Linear: it downsamples into floors.
-
-    // Weapon inventory/ground icons (28×12 pixel art).
-    for (const stem of ICON_STEMS) {
-      this.singles.set(`wicon_${stem}`, crisp(tex(`wicon_${stem}`)));
-    }
-
-    // NOTE (it.17): the Temple Kit material path was retired — every depth
-    // renders through the proven stone pipeline with band tints only.
-
-    // ------ FULLY-ANIMATED MOB PACKS (rebaked from huge frames) -----------
-    // Each pack loads inside its own guard: a failure skips that species
-    // (its enemy def falls back to the knight variant), never the whole game.
-
-    // The zombie: 512² per-frame PNGs, 8 dirs named exactly like DIRS.
-    try {
-      const zBase = `${ROOT}/zombie`;
-      const zAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> => {
-        const framesPerDir: Texture[][] = [];
-        for (const dir of DIRS) {
-          const urls = SpriteLibrary.picks(total, count).map(
-            (n) => `${zBase}/${folder}/${dir}/${String(n).padStart(4, '0')}.png`,
-          );
-          framesPerDir.push(await this.rebakeUrls(urls, 0.28));
-        }
-        return framesPerDir;
-      };
-      this.anims.set('zombie_walk', { frames: await zAnim('WALK', 25, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('zombie_attack', { frames: await zAnim('ATTACK', 70, 16), frameCount: 16, dirCount: 8 });
-      this.anims.set('zombie_death', { frames: await zAnim('DYING', 69, 16), frameCount: 16, dirCount: 8 });
-      this.anims.set('zombie_idle', { frames: await zAnim('IDLE', 170, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] zombie pack unavailable:', err);
-    }
-
-    // The ranger (x320p bow set): one 320px-cell grid sheet per 22.5° dir.
-    // It.34 GROUND-TRUTH REMAP: every stored row was rendered to a labeled
-    // grid and read off — the old it.23 half-turn list was still rotated
-    // 90° (slot E showed S, slot N showed E, slot S showed W: a consistent
-    // (d+6)%8 error). This list aligns each canonical dir [E,NE,N,NW,W,
-    // SW,S,SE] with the sheet angle that actually FACES that way.
-    try {
-      const rBase = `${ROOT}/x320p_Spritesheets`;
-      const R_ANGLES = ['270', '315', '000', '045', '090', '135', '180', '225'];
-      const rAnim = async (name: string, total: number, count: number): Promise<Texture[][]> => {
-        const framesPerDir: Texture[][] = [];
-        for (const angle of R_ANGLES) {
-          const url = encodeURI(`${rBase}/${name}/${name}_Body_${angle}.png`);
-          framesPerDir.push(
-            await this.rebakeSheet(url, 320, SpriteLibrary.picks(total, count).map((n) => n - 1), 0.36),
-          );
-        }
-        return framesPerDir;
-      };
-      this.anims.set('ranger_idle', { frames: await rAnim('Idle_Bow', 16, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('ranger_run', { frames: await rAnim('Run_Bow', 20, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('ranger_attack', { frames: await rAnim('Attack_Bow', 24, 16), frameCount: 16, dirCount: 8 });
-      this.anims.set('ranger_hit', { frames: await rAnim('Hit_Bow', 20, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('ranger_death', { frames: await rAnim('Death_Bow', 30, 15), frameCount: 15, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] ranger pack unavailable:', err);
-    }
-
-    // NOTE (it.13): the vfx Bonfire animation was PURGED per user direction
-    // ("ugly fire") — brazier light sources are now invisible hearths; the
-    // atmosphere layer is Ambience's crypt mist + hotspot ember motes.
-
-    // Generic per-frame angle-folder loader shared by the audit packs
-    // (`<Anim>/<bodyDir>/<angle>/<Anim>_Body_<angle>_<frame%04d>.png`).
-    // Angle order matches the ranger convention verified on screen:
-    // [0°,45°,…,315°] maps to canonical dirs [E,NE,N,NW,W,SW,S,SE].
-    const rebakeAnglePack = async (
-      urlFor: (angle: string, frame: number) => string,
-      angles: string[],
-      frameIndexes: number[],
-      scale: number,
-    ): Promise<Texture[][]> => {
-      const framesPerDir: Texture[][] = [];
-      for (const angle of angles) {
-        framesPerDir.push(
-          await this.rebakeUrls(
-            frameIndexes.map((f) => urlFor(angle, f)),
-            scale,
-          ),
-        );
-      }
-      return framesPerDir;
-    };
-    const pad4 = (n: number): string => String(n).padStart(4, '0');
-
-    // The NAGA (256×256 audit pack): serpent spear-maiden — the unique
-    // Depth XV boss. Frames are 0-based. MORPH-GLITCH PURGE (it.14): the
-    // pack's FireBreath folder contains a DIFFERENT creature (a dragon!) —
-    // it is banned; her spear Attack1 set is the attack animation instead.
-    try {
-      // It.24 DIRECTION AUDIT: this vendor's angle-0 faces WEST (verified
-      // frame-by-frame) — all four angle packs get the half-turn rotation.
-      const ANGLES = ['180', '225', '270', '315', '0', '45', '90', '135'];
-      const nagaAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
-        rebakeAnglePack(
-          (angle, f) => `${ROOT}/256x256/${folder}/Body_Only/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
-          ANGLES,
-          SpriteLibrary.picks(total, count).map((n) => n - 1),
-          0.5,
-        );
-      this.anims.set('naga_idle', { frames: await nagaAnim('Idle1', 20, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('naga_walk', { frames: await nagaAnim('Walk', 20, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('naga_attack', { frames: await nagaAnim('Attack1', 16, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('naga_hit', { frames: await nagaAnim('Hit', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('naga_death', { frames: await nagaAnim('Death', 24, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] naga pack unavailable:', err);
-    }
-
-    // The WEREWOLF BERSERKER (x320p_Spritesheets1234 audit pack): armored
-    // axe-beast — the "Moon-Cursed Ravager" elite. Grid sheets per 22.5°
-    // angle, 320px cells, same convention as the ranger.
-    try {
-      const wBase = `${ROOT}/x320p_Spritesheets1234`;
-      const W_ANGLES = ['180', '225', '270', '315', '000', '045', '090', '135']; // It.24: half-turn fix.
-      const wolfAnim = async (name: string, total: number, count: number): Promise<Texture[][]> => {
-        const framesPerDir: Texture[][] = [];
-        for (const angle of W_ANGLES) {
-          const url = encodeURI(`${wBase}/${name}/${name}_Body_${angle}.png`);
-          framesPerDir.push(
-            await this.rebakeSheet(url, 320, SpriteLibrary.picks(total, count).map((n) => n - 1), 0.36),
-          );
-        }
-        return framesPerDir;
-      };
-      this.anims.set('wolf_idle', { frames: await wolfAnim('Idle_Simple', 12, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('wolf_run', { frames: await wolfAnim('Run', 8, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('wolf_attack', { frames: await wolfAnim('Attack_01', 12, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('wolf_hit', { frames: await wolfAnim('Hit', 6, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('wolf_death', { frames: await wolfAnim('Death_from_Idle', 16, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] werewolf pack unavailable:', err);
-    }
-
-    // The LIZARDMAN DUELIST (Frames_320x320 audit pack): crested scimitar
-    // raider — the "Ashscale Duelist". Per-frame angle folders, 1-based.
-    // (Also in the pack, unloaded: a full AERIAL moveset — future flier.)
-    try {
-      const L_ANGLES = ['180', '225', '270', '315', '000', '045', '090', '135']; // It.24: half-turn fix.
-      const lizAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
-        rebakeAnglePack(
-          (angle, f) => `${ROOT}/Frames_320x320/${folder}/Body/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
-          L_ANGLES,
-          SpriteLibrary.picks(total, count),
-          0.4,
-        );
-      this.anims.set('lizard_idle', { frames: await lizAnim('Idle_BattlePose', 10, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('lizard_run', { frames: await lizAnim('Run_Forward', 10, 8), frameCount: 8, dirCount: 8 });
-      this.anims.set('lizard_attack', { frames: await lizAnim('Ground_Attack_01', 16, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('lizard_hit', { frames: await lizAnim('Hit_Stomach', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('lizard_death', { frames: await lizAnim('Death_FallBack', 20, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] lizardman pack unavailable:', err);
-    }
-
-    // NOTE (it.16): the orc-brute loads were benched (the final boss is now
-    // the zombie colossus per user direction — no knights, and no need to
-    // pay ~250 rebakes for an unused body). The 320x320p_Frames pack itself
-    // is intact and working if a future elite wants it.
-
-    // The HALBERDIER (320x320 audit pack): armored polearm soldier — the new
-    // "Crypt Sentinel" regular mob for the deep floors. Frames are 1-based.
-    try {
-      const ANGLES = ['180', '225', '270', '315', '000', '045', '090', '135']; // It.24: half-turn fix.
-      const guardAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
-        rebakeAnglePack(
-          (angle, f) => `${ROOT}/320x320/${folder}/Body/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
-          ANGLES,
-          SpriteLibrary.picks(total, count),
-          0.4,
-        );
-      this.anims.set('guard_idle', { frames: await guardAnim('Idle', 24, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('guard_walk', { frames: await guardAnim('Walk', 16, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('guard_attack', { frames: await guardAnim('Attack1', 24, 14), frameCount: 14, dirCount: 8 });
-      this.anims.set('guard_hit', { frames: await guardAnim('Hit', 16, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('guard_death', { frames: await guardAnim('Death', 24, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] halberdier pack unavailable:', err);
-    }
-
-    // THE BIG PACK (it.25, exact path /assets/big pack 8 moves): per-frame
-    // 148×130 PNGs named {seq}_{Anim}_CAM{0-7}_{frame}. Frame-audit: CAM0
-    // faces WEST, cameras rotate 45°/step → CAM_FOR_DIR maps our canonical
-    // [E,NE,N,NW,W,SW,S,SE]. Frames load directly (small — no rebake).
-    // Integrated models: SkeletonWarrior1 (the Risen Blade's REAL bones),
-    // SkeletonMage1 + Shaman7 (new casters), BaseAhoul (new ghast), and
-    // MITHRAS the minotaur — the Tomb/Frost wardens' non-knight body.
-    try {
-      const BP = `${ROOT}/big pack 8 moves`;
-      const CAM_FOR_DIR = [4, 3, 2, 1, 0, 7, 6, 5];
-      const F = {
-        idle: [20, 25, 35, 40],
-        attack: [60, 62, 63, 65, 67, 70, 72, 74, 76, 78],
-        cast: [140, 143, 146, 148, 151, 153, 155, 157, 158],
-        walk: [180, 182, 184, 186, 188, 190, 192, 194, 196, 198, 200],
-        run: [220, 222, 224, 226, 228, 230, 232, 234, 236, 238],
-        death: [261, 262, 264, 265, 270, 273, 276, 280],
-      };
-      const camAnim = async (model: string, seqAnim: string, frameNums: number[]): Promise<Texture[][]> => {
-        const urlOf = (cam: number, f: number) => encodeURI(`${BP}/${model}/${seqAnim}_CAM${cam}_${f}.png`);
-        const urls: string[] = [];
-        for (let cam = 0; cam < 8; cam++) for (const f of frameNums) urls.push(urlOf(cam, f));
-        const loadedFrames = (await Assets.load(urls)) as Record<string, Texture>;
-        return CAM_FOR_DIR.map((cam) => frameNums.map((f) => crisp(loadedFrames[urlOf(cam, f)])));
-      };
-      const reg = (name: AnimName, frames: Texture[][], fc: number): void => {
-        this.anims.set(name, { frames, frameCount: fc, dirCount: 8 });
-      };
-      reg('skelw_idle', await camAnim('SkeletonWarrior1', '1_Idle', F.idle), F.idle.length);
-      reg('skelw_run', await camAnim('SkeletonWarrior1', '6_Run', F.run), F.run.length);
-      reg('skelw_attack', await camAnim('SkeletonWarrior1', '2_Attack', F.attack), F.attack.length);
-      reg('skelw_death', await camAnim('SkeletonWarrior1', '7_Death', F.death), F.death.length);
-      reg('skelm_idle', await camAnim('SkeletonMage1', '1_Idle', F.idle), F.idle.length);
-      reg('skelm_walk', await camAnim('SkeletonMage1', '5_Walk', F.walk), F.walk.length);
-      reg('skelm_cast', await camAnim('SkeletonMage1', '4_Cast', F.cast), F.cast.length);
-      reg('skelm_death', await camAnim('SkeletonMage1', '7_Death', F.death), F.death.length);
-      reg('shaman_idle', await camAnim('Shaman7', '1_Idle', F.idle), F.idle.length);
-      reg('shaman_walk', await camAnim('Shaman7', '5_Walk', F.walk), F.walk.length);
-      reg('shaman_cast', await camAnim('Shaman7', '4_Cast', F.cast), F.cast.length);
-      reg('shaman_death', await camAnim('Shaman7', '7_Death', F.death), F.death.length);
-      reg('ahoul_idle', await camAnim('BaseAhoul', '1_Idle', F.idle), F.idle.length);
-      reg('ahoul_run', await camAnim('BaseAhoul', '6_Run', F.run), F.run.length);
-      reg('ahoul_attack', await camAnim('BaseAhoul', '2_Attack', F.attack), F.attack.length);
-      reg('ahoul_death', await camAnim('BaseAhoul', '7_Death', F.death), F.death.length);
-      reg('mithras_idle', await camAnim('Mithras', '1_Idle', F.idle), F.idle.length);
-      reg('mithras_walk', await camAnim('Mithras', '5_Walk', F.walk), F.walk.length);
-      // It.27 INVISIBILITY FIX: Mithras's 2_Attack (and 3_Bow) PNGs are
-      // BLANK 0.7 KB exports (all 8 cams) — the boss vanished for the whole
-      // windup. His 4_Cast set is intact and reads as a poleaxe lunge, so
-      // the Tomb Warden strikes with it instead.
-      reg('mithras_attack', await camAnim('Mithras', '4_Cast', F.cast), F.cast.length);
-      reg('mithras_death', await camAnim('Mithras', '7_Death', F.death), F.death.length);
-      // It.26: the FROST WARDEN's own body — the robed wight (SkeletonWarrior4).
-      reg('frost_idle', await camAnim('SkeletonWarrior4', '1_Idle', F.idle), F.idle.length);
-      reg('frost_walk', await camAnim('SkeletonWarrior4', '5_Walk', F.walk), F.walk.length);
-      reg('frost_attack', await camAnim('SkeletonWarrior4', '2_Attack', F.attack), F.attack.length);
-      reg('frost_death', await camAnim('SkeletonWarrior4', '7_Death', F.death), F.death.length);
-      // It.26: the Grave Guard mob — the shield-bearing SkeletonWarrior7.
-      reg('grave_idle', await camAnim('SkeletonWarrior7', '1_Idle', F.idle), F.idle.length);
-      reg('grave_run', await camAnim('SkeletonWarrior7', '6_Run', F.run), F.run.length);
-      reg('grave_attack', await camAnim('SkeletonWarrior7', '2_Attack', F.attack), F.attack.length);
-      reg('grave_death', await camAnim('SkeletonWarrior7', '7_Death', F.death), F.death.length);
-      // It.30: the Hollow King's PHASE 2 war-form — SkeletonWarrior10, the
-      // horned-helm armored knight (heaviest, most ornate skeleton in the
-      // pack; size-audited: every anim healthy, 2_Attack included).
-      reg('hollow2_idle', await camAnim('SkeletonWarrior10', '1_Idle', F.idle), F.idle.length);
-      reg('hollow2_walk', await camAnim('SkeletonWarrior10', '5_Walk', F.walk), F.walk.length);
-      reg('hollow2_attack', await camAnim('SkeletonWarrior10', '2_Attack', F.attack), F.attack.length);
-      reg('hollow2_death', await camAnim('SkeletonWarrior10', '7_Death', F.death), F.death.length);
-
-      // PAPERDOLL COMPOSITES (it.32/33): the big pack is a layer system —
-      // hero bodies are COMPOSITED per frame from aligned layers (all
-      // size-audited healthy; sub-2KB weapon/hood frames are legitimately
-      // tiny accessories) and baked into single textures at load.
-      const compositeCamAnim = async (layers: string[], seqAnim: string, frameNums: number[]): Promise<Texture[][]> => {
-        const urlOf = (model: string, cam: number, f: number) =>
-          encodeURI(`${BP}/${model}/${seqAnim}_CAM${cam}_${f}.png`);
-        const urls: string[] = [];
-        for (const m of layers) {
-          for (let cam = 0; cam < 8; cam++) for (const f of frameNums) urls.push(urlOf(m, cam, f));
-        }
-        const loaded = (await Assets.load(urls)) as Record<string, Texture>;
-        const out = CAM_FOR_DIR.map((cam) =>
-          frameNums.map((f) => {
-            const stack = new Container();
-            for (const m of layers) stack.addChild(new Sprite(loaded[urlOf(m, cam, f)]));
-            const baked = this.renderer.generateTexture({ target: stack, antialias: true });
-            baked.source.scaleMode = 'nearest';
-            stack.destroy({ children: true });
-            return baked;
+  /** Slice a loaded atlas into [dir][frame] textures (trim/orig restore the raw cell). */
+  private slice(name: string, e: AtlasAnimEntry, base: Texture): void {
+    if (this.anims.has(name)) return;
+    base.source.scaleMode = e.nearest ? 'nearest' : 'linear';
+    // Half-res atlases mount at resolution 0.5: every rectangle below is
+    // then expressed in ORIGINAL pixels, exactly like the raw frames were.
+    if (e.scale !== 1) base.source.resolution = e.scale;
+    const inv = 1 / e.scale;
+    const cellW = e.cellW * inv;
+    const cellH = e.cellH * inv;
+    const frames: Texture[][] = [];
+    for (let d = 0; d < e.dirCount; d++) {
+      const row: Texture[] = [];
+      for (let f = 0; f < e.frameCount; f++) {
+        row.push(
+          new Texture({
+            source: base.source,
+            frame: new Rectangle(f * cellW, d * cellH, cellW, cellH),
+            orig: new Rectangle(0, 0, e.origW, e.origH),
+            trim: new Rectangle(e.trimX, e.trimY, cellW, cellH),
           }),
         );
-        await Assets.unload(urls);
-        return out;
-      };
-      // THE MAGE HERO: base body + red robes + hood + staff.
-      const MAGE_LAYERS = ['BaseHumanMale', 'RobesMage1', 'MageHood2', 'MageStaff1'];
-      reg('mage_idle', await compositeCamAnim(MAGE_LAYERS, '1_Idle', F.idle), F.idle.length);
-      reg('mage_walk', await compositeCamAnim(MAGE_LAYERS, '5_Walk', F.walk), F.walk.length);
-      reg('mage_cast', await compositeCamAnim(MAGE_LAYERS, '4_Cast', F.cast), F.cast.length);
-      reg('mage_death', await compositeCamAnim(MAGE_LAYERS, '7_Death', F.death), F.death.length);
-      // THE ROGUE HERO (it.33, replaces hero1 — user: too close to the
-      // warrior): a hooded shadow in dark studded leather, DUAL-WIELDING
-      // a dagger and a kuhkri. Completely distinct silhouette.
-      const ROGUE_LAYERS = ['BaseHumanMale', 'DrkPant', 'DrkStudLeth', 'DrkBoot', 'DrkHood', 'Dagger', 'LeftKuhkri'];
-      reg('rogue_idle', await compositeCamAnim(ROGUE_LAYERS, '1_Idle', F.idle), F.idle.length);
-      reg('rogue_run', await compositeCamAnim(ROGUE_LAYERS, '6_Run', F.run), F.run.length);
-      reg('rogue_attack', await compositeCamAnim(ROGUE_LAYERS, '2_Attack', F.attack), F.attack.length);
-      reg('rogue_death', await compositeCamAnim(ROGUE_LAYERS, '7_Death', F.death), F.death.length);
-    } catch (err) {
-      console.warn('[SpriteLibrary] big pack 8 moves unavailable:', err);
-    }
-
-    // (It.33: the hero1 rogue was replaced by the big-pack dual-dagger
-    // composite above — the pack remains on disk for future use.)
-
-    // THE CRIMSON HYDRA (it.32): 512x512 pack — a three-headed red horror
-    // for the ember depths. Naga-style per-frame angle folders (0-based),
-    // 16 angles on disk; the 8 diagonals are loaded, half-turn rotated.
-    try {
-      const HY_ANGLES = ['180', '225', '270', '315', '0', '45', '90', '135'];
-      const hyAnim = async (folder: string, total: number, count: number): Promise<Texture[][]> =>
-        rebakeAnglePack(
-          (angle, f) => `${ROOT}/512x512/${folder}/Body_Only/${angle}/${folder}_Body_${angle}_${pad4(f)}.png`,
-          HY_ANGLES,
-          SpriteLibrary.picks(total, count).map((n) => n - 1),
-          0.35,
-        );
-      this.anims.set('hydra_idle', { frames: await hyAnim('Idle1', 16, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('hydra_walk', { frames: await hyAnim('Walk', 16, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('hydra_attack', { frames: await hyAnim('Attack1', 16, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('hydra_hit', { frames: await hyAnim('Hit', 12, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('hydra_death', { frames: await hyAnim('Death', 24, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] hydra pack unavailable:', err);
-    }
-
-    // THE RISEN VILLAGER (it.32): x256_Spritesheets — a shambling dead
-    // townsman. 16 grid sheets per anim (one per 22.5°); 8 diagonal picks,
-    // half-turn rotated; audited zero empty cells.
-    try {
-      const SH_ANGLES = ['180', '225', '270', '315', '0', '045', '090', '135'];
-      const shAnim = async (name: string, total: number, count: number): Promise<Texture[][]> => {
-        const framesPerDir: Texture[][] = [];
-        for (const angle of SH_ANGLES) {
-          const url = encodeURI(`${ROOT}/x256_Spritesheets/${name}/${name} Body ${angle}.png`);
-          framesPerDir.push(
-            await this.rebakeSheet(url, 256, SpriteLibrary.picks(total, count).map((n) => n - 1), 0.4),
-          );
-        }
-        return framesPerDir;
-      };
-      this.anims.set('shambler_idle', { frames: await shAnim('Idle', 20, 10), frameCount: 10, dirCount: 8 });
-      this.anims.set('shambler_walk', { frames: await shAnim('Walk', 20, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('shambler_attack', { frames: await shAnim('Attack1', 20, 12), frameCount: 12, dirCount: 8 });
-      this.anims.set('shambler_hit', { frames: await shAnim('Hit1', 16, 6), frameCount: 6, dirCount: 8 });
-      this.anims.set('shambler_death', { frames: await shAnim('Death1', 24, 12), frameCount: 12, dirCount: 8 });
-    } catch (err) {
-      console.warn('[SpriteLibrary] shambler pack unavailable:', err);
-    }
-
-    // NOTE (it.16): the Stairs pack was DELETED — every variant ASCENDS,
-    // which contradicts a dungeon descent. The stairwell-down visual is the
-    // procedural 'stairs_down' pit in AssetManager.
-
-    // THE REAL STAIRCASE (it.18/19): the Infernus "Stairs_Inverted" — a
-    // pre-rendered DESCENDING stairwell carved into a tile diamond, 64px =
-    // exactly TILE_W. It.19: its cool grey stone is TONE-BAKED into the
-    // warm floor palette on a canvas (per-pixel multiply), so it sits in
-    // the floor grid seamlessly instead of popping bright.
-    try {
-      const stairsTex = (await Assets.load(`${ROOT}/Infernus_Tiles/Building_Infernus_1/Stairs_Inverted_1.png`)) as Texture;
-      const cnv = document.createElement('canvas');
-      cnv.width = stairsTex.width;
-      cnv.height = stairsTex.height;
-      const c2d = cnv.getContext('2d')!;
-      c2d.drawImage(stairsTex.source.resource as CanvasImageSource, 0, 0);
-      const px = c2d.getImageData(0, 0, cnv.width, cnv.height);
-      for (let i = 0; i < px.data.length; i += 4) {
-        px.data[i] = Math.round(px.data[i] * 0.62); // Warm-dark multiply:
-        px.data[i + 1] = Math.round(px.data[i + 1] * 0.53); // matches the
-        px.data[i + 2] = Math.round(px.data[i + 2] * 0.4); // stone floors.
       }
-      c2d.putImageData(px, 0, 0);
-      this.singles.set('stairs_inverted', Texture.from(cnv));
-    } catch (err) {
-      console.warn('[SpriteLibrary] inverted stairs unavailable:', err);
+      frames.push(row);
     }
-
-    // Infernus candelabra (it.16 corrections): the sheet's 3×4 cells are
-    // ROTATION POSES, not flame frames — cycling them spun the prop on its
-    // axis. ONE cell is loaded as a STATIC texture; the prop's tile is
-    // TILE_BLOCKED (real collision, Diablo brazier rule). The walk-through
-    // clutter loads (altar/graves/bones/gore/dragon) are PURGED.
-    try {
-      const candleSheet = (await Assets.load(`${ROOT}/Infernus_Tiles/Anim_Infernus_Lightsources_1.png`)) as Texture;
-      const cw = Math.floor(candleSheet.width / 3);
-      const ch = Math.floor(candleSheet.height / 4);
-      this.singles.set(
-        'candelabra',
-        new Texture({ source: candleSheet.source, frame: new Rectangle(0, 0, cw, ch) }),
-      );
-    } catch (err) {
-      console.warn('[SpriteLibrary] candelabra unavailable:', err);
-    }
-
-    this.loaded = true;
+    this.anims.set(name, { frames, frameCount: e.frameCount, dirCount: e.dirCount });
   }
 
   anim(name: AnimName): LoadedAnim {
     const a = this.anims.get(name);
-    if (!a) throw new Error(`[SpriteLibrary] Unknown animation: ${name}`);
+    if (!a) throw new Error(`[SpriteLibrary] Animation not resident: ${name} (call ensure() first)`);
     return a;
   }
 
@@ -768,7 +335,12 @@ export class SpriteLibrary {
   hasSingle(name: string): boolean {
     return this.singles.has(name);
   }
+
+  /** Resident animation names (debug/QA). */
+  residentAnims(): string[] {
+    return [...this.anims.keys()];
+  }
 }
 
-/** Shared instance, loaded in main before world construction. */
+/** Shared instance, loaded in main before the menu appears. */
 export const spriteLib = new SpriteLibrary();

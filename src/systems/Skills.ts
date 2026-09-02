@@ -105,13 +105,21 @@ export class SkillSystem {
     return this.deps.combat().rng;
   }
 
+  private readonly offSwing: () => void;
+
   constructor(private readonly deps: SkillDeps) {
     // Poison Blade: every landed player hit while coated envenoms the victim.
-    eventBus.on('combat:swing', ({ sourceId, targetId, result }) => {
+    this.offSwing = eventBus.on('combat:swing', ({ sourceId, targetId, result }) => {
       const p = this.deps.player;
       if (sourceId !== p.id || result === 'miss' || p.poisonBladeTicks <= 0) return;
       this.poisons.set(targetId, { ticksLeft: 160, nextBite: 25 });
     });
+  }
+
+  /** Run teardown (it.36): drop the bus subscription and any zones. */
+  destroy(): void {
+    this.offSwing();
+    this.clearZones();
   }
 
   /** The active class's skill defs (HUD + casting). */

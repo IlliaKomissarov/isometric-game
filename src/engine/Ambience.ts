@@ -161,6 +161,71 @@ export class Ambience {
     this.burst(x, y, 0x5a5248, 2, { lowEnergy: true });
   }
 
+  /**
+   * IMPACT SPARKS (it.36): hot additive flecks thrown along the blow's
+   * travel axis — fast, tiny, gravity-bound, gone in a quarter second.
+   */
+  sparks(x: number, y: number, dirX: number, dirY: number, count: number, color = 0xffe2a0): void {
+    const hasDir = dirX !== 0 || dirY !== 0;
+    const baseAngle = hasDir ? Math.atan2(dirY, dirX) : 0;
+    for (let i = 0; i < count; i++) {
+      const p = this.acquireBurst();
+      const angle = hasDir ? baseAngle + (Math.random() - 0.5) * 2.2 : Math.random() * Math.PI * 2;
+      const speed = 2.2 + Math.random() * 3.4;
+      p.active = true;
+      p.wx = x;
+      p.wy = y;
+      p.z = 20 + Math.random() * 14;
+      p.vx = Math.cos(angle) * speed;
+      p.vy = Math.sin(angle) * speed;
+      p.vz = 20 + Math.random() * 60;
+      p.life = 0;
+      p.maxLife = 0.18 + Math.random() * 0.22;
+      p.sprite.tint = color;
+      p.sprite.blendMode = 'add';
+      p.baseAlpha = 1;
+      p.sprite.scale.set(0.22 + Math.random() * 0.3);
+      p.sprite.visible = true;
+    }
+  }
+
+  /**
+   * PROJECTILE TRAIL (it.36): one soft mote left behind a flying bolt or
+   * arrow each frame — additive ember smear for spells, faint dust for
+   * arrows. `z` = height above the floor (screen px).
+   */
+  trail(x: number, y: number, z: number, color: number, additive: boolean): void {
+    const p = this.acquireBurst();
+    p.active = true;
+    p.wx = x + (Math.random() - 0.5) * 0.08;
+    p.wy = y + (Math.random() - 0.5) * 0.08;
+    p.z = z + (Math.random() - 0.5) * 4;
+    p.vx = (Math.random() - 0.5) * 0.3;
+    p.vy = (Math.random() - 0.5) * 0.3;
+    p.vz = additive ? 6 + Math.random() * 8 : 2;
+    p.life = 0;
+    p.maxLife = additive ? 0.28 + Math.random() * 0.14 : 0.16 + Math.random() * 0.1;
+    p.sprite.tint = color;
+    p.sprite.blendMode = additive ? 'add' : 'normal';
+    p.baseAlpha = additive ? 0.8 : 0.35;
+    p.sprite.scale.set(additive ? 0.5 + Math.random() * 0.5 : 0.3);
+    p.sprite.visible = true;
+  }
+
+  /** Pooled burst particle (grows the pool on demand). */
+  private acquireBurst(): BurstParticle {
+    let p = this.bursts.find((b) => !b.active);
+    if (!p) {
+      const sprite = new Sprite(assets.get('mote'));
+      sprite.anchor.set(0.5);
+      sprite.visible = false;
+      this.viewport.ambienceLayer.addChild(sprite);
+      p = { active: false, sprite, wx: 0, wy: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0, baseAlpha: 1 };
+      this.bursts.push(p);
+    }
+    return p;
+  }
+
   /** Provide the glint VFX frames (Lords of Pain pack, set after load). */
   setGlintFrames(frames: Texture[]): void {
     this.glintFrames = frames;

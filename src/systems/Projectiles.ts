@@ -13,6 +13,7 @@
 import { Sprite } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { eventBus } from '@/core/EventBus';
+import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
 import type { Entity } from '@/entities/Entity';
@@ -125,8 +126,8 @@ export class ProjectileSystem {
     }
   }
 
-  /** Per-frame: position, depth-sort, fog gating, lighting. */
-  updateRender(lighting: Lighting): void {
+  /** Per-frame: position, depth-sort, fog gating, lighting, trails (it.36). */
+  updateRender(lighting: Lighting, ambience?: Ambience): void {
     for (const p of this.pool) {
       if (!p.active) continue;
       const visible = lighting.isVisible(Math.floor(p.x), Math.floor(p.y));
@@ -136,6 +137,15 @@ export class ProjectileSystem {
       p.sprite.position.set(s.x, s.y - 18); // Flies at torso height.
       p.sprite.zIndex = depthKey(p.x, p.y);
       p.sprite.tint = p.kind === 'bolt' ? (p.tint ?? 0xffcf90) : lighting.getTintAt(p.x, p.y, 0.35);
+      // Spell trails smear ember light behind bolts; arrows shed faint dust.
+      if (ambience) {
+        if (p.kind === 'bolt') {
+          ambience.trail(p.x, p.y, 18, p.tint ?? 0xffcf90, true);
+          if (Math.random() < 0.5) ambience.trail(p.x, p.y, 18, 0xffe8c0, true);
+        } else if (Math.random() < 0.6) {
+          ambience.trail(p.x, p.y, 18, 0x9a9080, false);
+        }
+      }
     }
   }
 

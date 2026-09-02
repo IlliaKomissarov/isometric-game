@@ -47,6 +47,8 @@ export class InventoryUI {
   private visible = false;
   /** Interval driving the animated paperdoll while the panel is rendered. */
   private previewTimer: number | null = null;
+  private readonly abort = new AbortController();
+  private readonly offChanged: () => void;
 
   constructor(
     private readonly player: Player,
@@ -70,14 +72,18 @@ export class InventoryUI {
     this.statsBar.id = 'char-stats';
     document.body.appendChild(this.statsBar);
 
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.code === 'KeyI' && !e.repeat) {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.code === 'KeyI' && !e.repeat) {
+          e.preventDefault();
+          this.toggle();
+        }
+      },
+      { signal: this.abort.signal },
+    );
 
-    eventBus.on('inventory:changed', () => this.render());
+    this.offChanged = eventBus.on('inventory:changed', () => this.render());
     this.render();
   }
 
@@ -85,7 +91,17 @@ export class InventoryUI {
     this.visible = !this.visible;
     this.panel.classList.toggle('open', this.visible);
     if (!this.visible) this.hideTooltip();
-    audio.sfx('ui');
+    audio.sfx(this.visible ? 'invOpen' : 'invClose');
+  }
+
+  /** Run teardown: listeners, timers and DOM (it.36). */
+  destroy(): void {
+    this.abort.abort();
+    this.offChanged();
+    if (this.previewTimer !== null) clearInterval(this.previewTimer);
+    this.panel.remove();
+    this.tooltip.remove();
+    this.statsBar.remove();
   }
 
   private render(): void {
@@ -173,13 +189,14 @@ export class InventoryUI {
           audio.sfx('equip'); // Steel drawn from the sheath (it.26).
         } else if (unequipSlot) {
           this.queue.enqueue({ type: 'UNEQUIP', playerId: this.playerId, slot: unequipSlot });
-          audio.sfx('ui');
+          audio.sfx('uiClick');
         }
         this.hideTooltip();
       });
       btn.addEventListener('mouseenter', (e) => {
         const def = btn.dataset.item ? ITEMS[btn.dataset.item] : undefined;
         if (def) this.showTooltip(def, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
+        audio.sfx('uiHover');
       });
       btn.addEventListener('mouseleave', () => this.hideTooltip());
     });

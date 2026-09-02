@@ -60,7 +60,23 @@ export type SfxName =
   | 'skillTrap'
   | 'skillTrapSet'
   | 'skillPoison'
-  | 'skillVanish';
+  | 'skillVanish'
+  // ---- UI voice (it.36): every menu/panel interaction speaks ----
+  | 'uiHover'
+  | 'uiClick'
+  | 'uiConfirm'
+  | 'uiBack'
+  | 'pause'
+  | 'unpause'
+  | 'invOpen'
+  | 'invClose'
+  | 'mapOpen'
+  | 'mapClose'
+  | 'rarePickup'
+  | 'heroSelect';
+
+/** Which music bed is wanted (main drives; crossfades happen here). */
+export type MusicState = 'none' | 'menu' | 'dungeon' | 'boss' | 'victory';
 
 // Base-aware root (it.31): '/' in dev, '/isometric-game/' on GitHub Pages.
 const AUDIO_BASE = `${import.meta.env.BASE_URL}assets/audio`;
@@ -131,7 +147,35 @@ const BOSS_TRACKS: Record<number, string> = {
   15: `${BOSS_MUSIC_DIR}/3. Eclipsed Desolation.mp3`,
   20: `${BOSS_MUSIC_DIR}/5. Dread March .mp3`, // (Filename really has the space.)
 };
-const BOSS_TRACK_DEFAULT = `${BOSS_MUSIC_DIR}/1. Whispers of the Abyss.mp3`;
+const BOSS_TRACK_DEFAULT = `${BOSS_MUSIC_DIR}/2. Shadowforge Convergence.mp3`;
+/** Title screen theme (it.36) and the epilogue theme. */
+const MENU_TRACK = `${BOSS_MUSIC_DIR}/1. Whispers of the Abyss.mp3`;
+const VICTORY_TRACK = `${BOSS_MUSIC_DIR}/4. Cursed Citadel .mp3`; // (Filename really has the space.)
+
+/**
+ * UI voice banks (it.36) from the Fantasy pack's UI/Items folders: tiny
+ * WAVs, decoded once. Hover = a soft pop, click = a parchment select,
+ * confirm = a double-click latch, back = the cancel tick, panels open and
+ * close like books and maps.
+ */
+const UI_DIR = `${AUDIO_BASE}/Free Fantasy SFX Pack By TomMusic/UI`;
+const ITEMS_DIR = `${AUDIO_BASE}/Free Fantasy SFX Pack By TomMusic/Items`;
+const UI_BANKS: Record<string, string[]> = {
+  uiHover: [`${UI_DIR}/pop_1.wav`, `${UI_DIR}/pop_2.wav`, `${UI_DIR}/pop_3.wav`],
+  uiClick: [`${UI_DIR}/select_1.wav`, `${UI_DIR}/select_2.wav`, `${UI_DIR}/select_3.wav`],
+  uiConfirm: [`${UI_DIR}/click_double_on.wav`, `${UI_DIR}/click_double_on_2.wav`],
+  uiBack: [`${UI_DIR}/cancel.wav`],
+  toggleOn: [`${UI_DIR}/toggle_on.wav`],
+  toggleOff: [`${UI_DIR}/toggle_off.wav`],
+  bookOpen: [`${ITEMS_DIR}/book_open.wav`],
+  bookClose: [`${ITEMS_DIR}/book_close.wav`],
+  mapOpen: [`${ITEMS_DIR}/map_open.wav`],
+  mapClose: [`${ITEMS_DIR}/map_close.wav`],
+  itemEquip: [`${ITEMS_DIR}/item_equip.wav`],
+  coinCollect: [`${ITEMS_DIR}/coin_collect.wav`, `${ITEMS_DIR}/coins_gather_small.wav`, `${ITEMS_DIR}/coins_gather_quick.wav`],
+  gemCollect: [`${ITEMS_DIR}/gem_collect.wav`],
+  heartCollect: [`${ITEMS_DIR}/heart_collect.wav`],
+};
 
 /**
  * HORROR SFX hard-map (it.25, from the exact path
@@ -175,8 +219,18 @@ export class AudioManager {
    *  music and combat so layers never fight (it.21). */
   private ambGain!: GainNode;
   private unlocked = false;
-  private introEl: HTMLAudioElement | null = null;
-  private bgmEl: HTMLAudioElement | null = null;
+  /** Music beds by state (it.36). Crossfaded by `applyMusic`. */
+  private readonly music: Record<Exclude<MusicState, 'none'>, HTMLAudioElement | null> = {
+    menu: null,
+    dungeon: null,
+    boss: null,
+    victory: null,
+  };
+  private musicState: MusicState = 'none';
+  private musicFloor = 0;
+  private musicTimer: number | null = null;
+  /** Pause-menu ducking: music/ambience sink while a modal owns the screen. */
+  private ducked = false;
   private ambEl: HTMLAudioElement | null = null;
   /** Wall-clock time before which no new ambient stinger may start —
    *  the NON-OVERLAP guarantee (one stinger at a time, with breathing room). */
@@ -237,34 +291,27 @@ export class AudioManager {
       // audio data ever lands there — currently 0-byte stubs).
       void this.probeVoicePack();
 
-      // THE REVEAL: the mystic intro sting, then the dark-mystery loop.
-      this.introEl = this.hookMediaElement(FILES.intro, false);
-      this.bgmEl = this.hookMediaElement(FILES.bgm, true);
-      // The cave breathes underneath everything (own channel, quiet loop).
-      this.ambEl = this.hookMediaElement(AMBIENT_BED, true, this.ambGain);
-      if (this.ambEl) {
-        this.ambEl.volume = 0.55;
-        this.ambEl.play().catch(() => undefined);
+      // UI voice banks (tiny WAVs) decode first — menus speak immediately.
+      for (const [group, urls] of Object.entries(UI_BANKS)) {
+        urls.forEach((url, i) => void this.loadBuffer(`${group}_${i}`, url));
       }
+      void this.loadBuffer('intro', FILES.intro);
+
+      // MUSIC (it.36): one element per bed, crossfaded by the state machine.
+      this.music.menu = this.hookMediaElement(MENU_TRACK, true);
+      this.music.dungeon = this.hookMediaElement(FILES.bgm, true);
+      this.music.boss = this.hookMediaElement(BOSS_TRACK_DEFAULT, true);
+      this.music.victory = this.hookMediaElement(VICTORY_TRACK, false);
+      for (const el of Object.values(this.music)) if (el) el.volume = 0;
+      // The cave breathes underneath the dungeon (own channel, quiet loop).
+      this.ambEl = this.hookMediaElement(AMBIENT_BED, true, this.ambGain);
+      if (this.ambEl) this.ambEl.volume = 0;
       // Random atmospheric stingers: checked every 4 s, at most ONE at a
       // time and never inside another's quiet window (non-overlap).
-      // It.27 density boost: tighter check interval + shorter quiet gaps.
       window.setInterval(() => this.maybeStinger(), 4000);
-      this.stingerQuietUntil = performance.now() + 15000; // Let the intro land first.
-      const startBgm = (): void => {
-        if (this.bgmEl) void this.bgmEl.play().catch(() => undefined);
-      };
-      if (this.introEl) {
-        this.introEl.addEventListener('ended', startBgm, { once: true });
-        this.introEl.play().catch(() => this.retryOnNextGesture());
-        // Safety: if the intro stalls, the loop still arrives.
-        setTimeout(() => {
-          if (this.introEl && this.introEl.ended) return;
-          if (this.bgmEl && this.bgmEl.paused && this.introEl?.paused !== false) startBgm();
-        }, 12000);
-      } else {
-        startBgm();
-      }
+      this.stingerQuietUntil = performance.now() + 15000;
+      this.applyMusic(); // Whatever main asked for before the gesture landed.
+      this.retryOnNextGesture(); // Autoplay safety: re-kick on the next real gesture.
     } catch (err) {
       console.warn('[Audio] Web Audio unavailable:', err);
       this.ctx = null;
@@ -278,12 +325,7 @@ export class AudioManager {
   private retryOnNextGesture(): void {
     const retry = (): void => {
       void this.ctx?.resume();
-      if (this.introEl && !this.introEl.ended) {
-        this.introEl.play().catch(() => undefined);
-      } else if (this.bgmEl) {
-        void this.bgmEl.play().catch(() => undefined);
-      }
-      this.ambEl?.play().catch(() => undefined);
+      this.applyMusic();
     };
     window.addEventListener('pointerdown', retry, { once: true });
     window.addEventListener('keydown', retry, { once: true });
@@ -310,6 +352,8 @@ export class AudioManager {
    */
   private maybeStinger(): void {
     if (!this.ctx || this.settings.muted) return;
+    if (this.musicState !== 'dungeon' && this.musicState !== 'boss') return; // The crypt only.
+    if (this.ducked) return;
     const now = performance.now();
     if (now < this.stingerQuietUntil) return;
     if (Math.random() < 0.25) return; // Unpredictable, but rarely silent long.
@@ -476,7 +520,7 @@ export class AudioManager {
    */
   private playVariant(group: string, vol: number, rate = 1, jitter = 0.07, delay = 0, bus?: GainNode): boolean {
     if (!this.ctx) return false;
-    const urls = VARIANTS[group] ?? HORROR_BANKS[group];
+    const urls = VARIANTS[group] ?? HORROR_BANKS[group] ?? UI_BANKS[group];
     if (!urls) return false;
     // Collect decoded takes (loading is async — play whatever is ready).
     const ready: AudioBuffer[] = [];
@@ -647,8 +691,9 @@ export class AudioManager {
         this.playVariant('bowBlocked', 0.4, 1.1, 0.1);
         break;
       case 'equip':
-        // Steel drawn from the sheath — gearing up.
-        this.playVariant('unsheath', 0.55, 1.05, 0.08);
+        // Leather-and-buckle equip clack under the steel unsheath.
+        this.playVariant('itemEquip', 0.6, 1.0, 0.05);
+        this.playVariant('unsheath', 0.45, 1.05, 0.08, 0.04);
         break;
       case 'bow':
         if (!this.playVariant('bowAttack', 0.6)) this.blip('triangle', 480, 170, 0.1, 0.5);
@@ -702,12 +747,53 @@ export class AudioManager {
         }
         break;
       case 'gold':
-        // Coins: the lock-clink sped up bright, twice.
-        if (!this.playVariant('coin', 0.45, 1.6, 0.1)) this.blip('triangle', 1200, 900, 0.06, 0.35);
-        this.playVariant('coin', 0.3, 1.9, 0.1, 0.09);
+        // Coins gathered (real jingle takes); the lock-clink fallback.
+        if (!this.playVariant('coinCollect', 0.6, 1.0, 0.08)) {
+          if (!this.playVariant('coin', 0.45, 1.6, 0.1)) this.blip('triangle', 1200, 900, 0.06, 0.35);
+          this.playVariant('coin', 0.3, 1.9, 0.1, 0.09);
+        }
+        break;
+      case 'rarePickup':
+        this.playVariant('gemCollect', 0.7, 1.0, 0.04);
+        break;
+      case 'heroSelect':
+        this.playVariant('uiConfirm', 0.6, 1.0, 0.02);
+        this.playVariant('unsheath', 0.55, 1.0, 0.06, 0.08);
+        break;
+      // ---- UI (it.36) ----
+      case 'uiHover':
+        this.playVariant('uiHover', 0.16, 1.1, 0.12);
+        break;
+      case 'uiClick':
+        if (!this.playVariant('uiClick', 0.45, 1.0, 0.06)) this.blip('square', 840, 620, 0.04, 0.18);
+        break;
+      case 'uiConfirm':
+        if (!this.playVariant('uiConfirm', 0.55, 1.0, 0.03)) this.blip('square', 660, 880, 0.06, 0.2);
+        break;
+      case 'uiBack':
+        if (!this.playVariant('uiBack', 0.45, 1.0, 0.03)) this.blip('square', 520, 380, 0.05, 0.18);
+        break;
+      case 'pause':
+        this.playVariant('toggleOn', 0.5, 0.9, 0.02);
+        break;
+      case 'unpause':
+        this.playVariant('toggleOff', 0.5, 0.95, 0.02);
+        break;
+      case 'invOpen':
+        if (!this.playVariant('bookOpen', 0.55, 1.0, 0.04)) this.playVariant('parry', 0.14, 1.85);
+        break;
+      case 'invClose':
+        if (!this.playVariant('bookClose', 0.55, 1.0, 0.04)) this.playVariant('parry', 0.14, 1.85);
+        break;
+      case 'mapOpen':
+        this.playVariant('mapOpen', 0.5, 1.0, 0.03);
+        break;
+      case 'mapClose':
+        this.playVariant('mapClose', 0.5, 1.0, 0.03);
         break;
       case 'levelUp':
         // The Firebuff shimmer + a rising chime — POWER settles into you.
+        this.playVariant('heartCollect', 0.5, 1.0, 0.03);
         if (!this.playVariant('firebuff', 0.85)) this.blip('triangle', 523, 1047, 0.5, 0.6);
         this.blip('triangle', 659, 659, 0.12, 0.35, 0.05);
         this.blip('triangle', 988, 988, 0.14, 0.35, 0.19);
@@ -787,55 +873,83 @@ export class AudioManager {
     }
   }
 
-  private bossMusicEl: HTMLAudioElement | null = null;
-  private bossMusicOn = false;
-  private crossfadeTimer: number | null = null;
-
   /**
-   * Boss arena music (it.28): crossfades the dungeon BGM + ambience out
-   * and the floor's boss track in (~1.4 s), and back on `false`.
+   * MUSIC STATE MACHINE (it.36). `setMusic` records the wanted bed (safe
+   * before unlock); `applyMusic` crossfades element volumes over ~1.4 s.
+   * Beds: menu (title theme) · dungeon (mystery / gloomy drone on 10+) ·
+   * boss (per-arena track) · victory (epilogue). Ambience rides ONLY with
+   * the dungeon bed; ducking sinks everything while a modal owns the screen.
    */
-  setBossMusic(on: boolean, floor = 0): void {
-    if (!this.ctx || on === this.bossMusicOn) return;
-    this.bossMusicOn = on;
-    if (on) {
-      const track = BOSS_TRACKS[floor] ?? BOSS_TRACK_DEFAULT;
-      if (!this.bossMusicEl) {
-        this.bossMusicEl = this.hookMediaElement(track, true);
-      } else if (!this.bossMusicEl.src.endsWith(encodeURI(track).split('/').pop() ?? '')) {
-        this.bossMusicEl.src = encodeURI(track);
-        this.bossMusicEl.loop = true;
+  setMusic(state: MusicState, floor = this.musicFloor): void {
+    const trackChanged = state === 'boss' && floor !== this.musicFloor;
+    if (state === this.musicState && !trackChanged) return;
+    this.musicState = state;
+    this.musicFloor = floor;
+    this.applyMusic();
+  }
+
+  /** Current music bed (QA/debug). */
+  get currentMusic(): MusicState {
+    return this.musicState;
+  }
+
+  /** Modal ducking: music and ambience sink to a murmur while true. */
+  duck(on: boolean): void {
+    if (this.ducked === on) return;
+    this.ducked = on;
+    this.applyMusic();
+  }
+
+  private applyMusic(): void {
+    if (!this.ctx) return;
+    // Pick the concrete track for the dungeon/boss beds before fading.
+    const retarget = (el: HTMLAudioElement | null, url: string): void => {
+      if (!el) return;
+      const want = encodeURI(url);
+      if (!el.src.endsWith(want.split('/').pop() ?? '')) {
+        el.src = want;
+        el.loop = true;
       }
-      if (this.bossMusicEl) {
-        this.bossMusicEl.volume = 0;
-        this.bossMusicEl.play().catch(() => undefined);
+    };
+    if (this.musicState === 'dungeon') retarget(this.music.dungeon, this.bgmDeep ? FILES.bgmDeep : FILES.bgm);
+    if (this.musicState === 'boss') retarget(this.music.boss, BOSS_TRACKS[this.musicFloor] ?? BOSS_TRACK_DEFAULT);
+    const duckMul = this.ducked ? 0.25 : 1;
+    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, dungeon: 0, boss: 0, victory: 0 };
+    if (this.musicState !== 'none') targets[this.musicState] = duckMul;
+    const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'boss' ? 0.16 : 0) * duckMul;
+    // Kick the wanted bed (autoplay-safe: retried by the crossfade ticker).
+    for (const key of Object.keys(targets) as Array<Exclude<MusicState, 'none'>>) {
+      const el = this.music[key];
+      if (el && targets[key] > 0 && el.paused) {
+        if (key === 'victory') el.currentTime = 0;
+        el.play().catch(() => undefined);
       }
-    } else {
-      void this.bgmEl?.play().catch(() => undefined);
-      void this.ambEl?.play().catch(() => undefined);
     }
-    // Smooth crossfade (element volumes; the bus gains stay user-owned).
-    if (this.crossfadeTimer !== null) clearInterval(this.crossfadeTimer);
-    let i = 0;
-    const steps = 24;
-    this.crossfadeTimer = window.setInterval(() => {
-      i++;
-      const t = Math.min(1, i / steps);
-      const boss = on ? t : 1 - t;
-      if (this.bossMusicEl) {
-        this.bossMusicEl.volume = boss;
-        // Autoplay-policy safety: keep retrying until the element runs.
-        if (on && this.bossMusicEl.paused) this.bossMusicEl.play().catch(() => undefined);
+    if (this.ambEl && ambTarget > 0 && this.ambEl.paused) this.ambEl.play().catch(() => undefined);
+
+    if (this.musicTimer !== null) clearInterval(this.musicTimer);
+    const STEP = 60;
+    const RATE = 1 / 24; // ~1.4 s full crossfade.
+    this.musicTimer = window.setInterval(() => {
+      let settled = true;
+      const approach = (el: HTMLAudioElement | null, target: number): void => {
+        if (!el) return;
+        const v = el.volume;
+        const next = v < target ? Math.min(target, v + RATE) : Math.max(target, v - RATE);
+        el.volume = next;
+        if (Math.abs(next - target) > 1e-6) settled = false;
+        if (next === 0 && !el.paused) el.pause();
+        if (target > 0 && el.paused) el.play().catch(() => undefined);
+      };
+      for (const key of Object.keys(targets) as Array<Exclude<MusicState, 'none'>>) {
+        approach(this.music[key], targets[key]);
       }
-      if (this.bgmEl) this.bgmEl.volume = 1 - boss;
-      if (this.ambEl) this.ambEl.volume = 0.55 * (1 - boss * 0.7);
-      if (i >= steps) {
-        clearInterval(this.crossfadeTimer!);
-        this.crossfadeTimer = null;
-        if (!on) this.bossMusicEl?.pause();
-        else this.bgmEl?.pause();
+      approach(this.ambEl, ambTarget);
+      if (settled && this.musicTimer !== null) {
+        clearInterval(this.musicTimer);
+        this.musicTimer = null;
       }
-    }, 60);
+    }, STEP);
   }
 
   private bgmDeep = false;
@@ -845,11 +959,18 @@ export class AudioManager {
   setBgmDeep(deep: boolean): void {
     if (deep === this.bgmDeep) return;
     this.bgmDeep = deep;
-    if (!this.bgmEl) return;
-    const wasPlaying = !this.bgmEl.paused;
-    this.bgmEl.src = encodeURI(deep ? FILES.bgmDeep : FILES.bgm);
-    this.bgmEl.loop = true;
-    if (wasPlaying) void this.bgmEl.play().catch(() => undefined);
+    if (this.musicState === 'dungeon') this.applyMusic();
+  }
+
+  /** Boss arena music: the floor's intense track while `on`. */
+  setBossMusic(on: boolean, floor = 0): void {
+    this.setMusic(on ? 'boss' : 'dungeon', on ? floor : this.musicFloor);
+  }
+
+  /** The mystic reveal sting (run start). */
+  playIntroSting(): void {
+    if (!this.ctx || this.settings.muted) return;
+    this.playBuffer('intro', 0.7);
   }
 
   get isUnlocked(): boolean {

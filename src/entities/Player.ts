@@ -16,10 +16,22 @@ import { ITEMS, overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type WeaponKind
 import type { ClassArchetype, EntitySnapshot, EquipmentSlot } from '@/network/Serialization';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import { multiplyColors } from '@/utils/color';
+import { idleFrame, type LightDir } from '@/render/animUtil';
 import { Entity } from './Entity';
 
 /** Ticks the knight's death animation plays before respawn (main drives it). */
 export const PLAYER_DEATH_TICKS = 80;
+
+/**
+ * HERO HEIGHT STANDARD (it.36): every archetype's painted body lands at
+ * this many screen pixels at zoom 1 (measured from the atlas manifest's
+ * painted bounds) — identical ground height across all four heroes.
+ * Standard mobs share the same standard (Enemy.MOB_HEIGHT); bosses alone
+ * are enlarged.
+ */
+export const HERO_HEIGHT = 56;
+/** Walk/run cycle: fraction of a full cycle advanced per tile of travel. */
+const HERO_CYCLES_PER_TILE = 0.36;
 
 /** Everything combat + animation need to know about the wielded weapon. */
 export interface WeaponProfile {
@@ -109,6 +121,16 @@ interface HeroRig {
   dirOffset?: number;
 }
 
+/** Every atlas a class rig needs resident (lazy loading, it.36). */
+export function animsForHero(cls: ClassArchetype): AnimName[] {
+  const rig = CLASS_RIGS[cls];
+  const out = new Set<AnimName>([rig.idle, rig.run, ...rig.attacks, rig.death]);
+  if (rig.rangedAttack) out.add(rig.rangedAttack);
+  if (rig.hit) out.add(rig.hit);
+  if (rig.attacks[0] === 'knight_melee') out.add('knight_spin'); // Great-weapon flourish.
+  return [...out];
+}
+
 const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
   warrior: {
     idle: 'knight_idle', run: 'knight_run',
@@ -186,6 +208,22 @@ export class Player extends Entity {
   // Hero sprite mode (external art per class, it.32) — render-only state.
   private useKnight = false;
   private heroRig: HeroRig = CLASS_RIGS.warrior;
+  private rigScale = 1;
+  /** Render-side wall clock for time-based idle pacing (never sim-read). */
+  private idleClock = 0;
+  private lastSyncTime = 0;
+  /** Light direction at the hero's tile (drives the grounded shadow). */
+  private shadowLight: LightDir = { x: 0, y: 0, k: 0 };
+
+  /** Scene light direction for the dynamic floor shadow (wired by main). */
+  setShadowLight(dir: LightDir): void {
+    this.shadowLight = dir;
+  }
+
+  /** The rig's live body scale (paperdoll previews, corpses). */
+  get bodyScale(): number {
+    return this.rigScale;
+  }
 
   // ---- Skill resource + timed buffs (it.32, simulation state) ----
   resource = 100;
@@ -353,7 +391,11 @@ export class Player extends Entity {
     this.shadow.visible = this.heroRig.ownShadow;
     this.body.anchor.set(0.5, this.heroRig.anchorY);
     this.body.position.set(0, 2);
-    this.body.scale.set(this.heroRig.scale);
+    // DATA-DRIVEN SCALE (it.36): the atlas manifest knows each idle's painted
+    // height — every hero lands on HERO_HEIGHT exactly (legacy scale = fallback).
+    const painted = spriteLib.paintedHeight(this.heroRig.idle);
+    this.rigScale = painted > 0 ? HERO_HEIGHT / painted : this.heroRig.scale;
+    this.body.scale.set(this.rigScale);
     for (const layer of this.paperdollLayers.values()) layer.visible = false;
     this.body.texture = spriteLib.frame(this.heroRig.idle, 6, 0);
   }
@@ -434,8 +476,9 @@ export class Player extends Entity {
     if (this.moving) {
       this.bobPhase += dt * 11;
       // Run cycle advances WITH the ground covered — no foot-sliding.
-      // 15 frames ≈ 3 tiles of travel: a grounded, deliberate cadence.
-      this.runClock += moved * 5;
+      // It.36: measured in CYCLES per tile so rigs with different frame
+      // counts (knight 15, mage 11, ranger 12) all stride at the same pace.
+      this.runClock += moved * HERO_CYCLES_PER_TILE;
       // Face the way we walk (drives the 8-direction sprite + mirroring).
       this.facing.x = dx / moved;
       this.facing.y = dy / moved;
@@ -455,6 +498,12 @@ export class Player extends Entity {
 
   override syncRender(alpha: number): void {
     super.syncRender(alpha);
+    // Render wall-clock (frame-rate independent idle pacing).
+    const now = performance.now();
+    const rdt = this.lastSyncTime === 0 ? 0 : Math.min(0.1, (now - this.lastSyncTime) / 1000);
+    this.lastSyncTime = now;
+    this.idleClock += rdt;
+    this.syncShadow();
 
     if (this.useKnight) {
       this.syncKnight();
@@ -604,15 +653,14 @@ export class Player extends Entity {
       frame = 0;
     } else if (this.moving) {
       animName = rig.run;
-      frame = Math.floor(this.runClock); // Distance-coupled (see update()).
+      frame = Math.floor(this.runClock * fcOf(animName)); // Distance-coupled (see update()).
     } else {
-      // IDLE PACING (it.34 jitter fix): the big-pack idles are only 4
-      // unevenly-sampled frames — at the old 0.12/frame they twitched.
-      // 0.05 (~3 fps) steps cleanly 0→N and reads as slow breathing.
-      this.animClock += 0.05;
+      // IDLE PACING (it.36): time-based (frame-rate independent); short
+      // 4-frame idles PING-PONG so the loop breathes instead of snapping.
       animName = rig.idle;
-      frame = Math.floor(this.animClock);
+      frame = idleFrame(fcOf(animName), this.idleClock, 0);
     }
+    void this.animClock;
 
     this.body.texture = spriteLib.frame(animName, dir, frame);
     // Rig transforms belong to the procedural rig; the sheets carry their own weight.
@@ -627,6 +675,22 @@ export class Player extends Entity {
       this.body.tint = tint;
     }
     this.container.alpha = this.stealthTicks > 0 ? 0.35 : 1;
+  }
+
+  /**
+   * DYNAMIC FLOOR SHADOW (it.36): the grounded ellipse stretches AWAY from
+   * the dominant light and thins with distance from it — a cheap, readable
+   * cue that the hero stands on lit ground (render-only).
+   */
+  private syncShadow(): void {
+    if (!this.shadow.visible) return;
+    const l = this.shadowLight;
+    const stretch = 1 + l.k * 0.55;
+    this.shadow.scale.set(this.shadow.scale.x < 0 ? -1 : 1, 1); // Reset before re-shaping.
+    this.shadow.scale.x = 1 + Math.abs(l.x) * l.k * 0.6;
+    this.shadow.scale.y = 1 + Math.abs(l.y) * l.k * 0.35;
+    this.shadow.position.set(l.x * 7 * l.k, 1 + l.y * 3 * l.k);
+    this.shadow.alpha = 0.55 + 0.45 * Math.min(1, stretch - 0.6);
   }
 
   /** Slash arc VFX (frame-based decay; positioned ahead of the body). */

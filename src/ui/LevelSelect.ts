@@ -29,6 +29,7 @@ export class LevelSelectUI {
   private readonly panel: HTMLElement;
   private visible = false;
   private maxDepth = 1;
+  private readonly abort = new AbortController();
 
   constructor(private readonly onSelect: (floor: number) => void) {
     try {
@@ -42,13 +43,23 @@ export class LevelSelectUI {
     this.panel.id = 'level-select';
     document.body.appendChild(this.panel);
 
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.code === 'KeyL' && !e.repeat) {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.code === 'KeyL' && !e.repeat) {
+          e.preventDefault();
+          this.toggle();
+        }
+      },
+      { signal: this.abort.signal },
+    );
     this.render();
+  }
+
+  /** Run teardown (it.36). */
+  destroy(): void {
+    this.abort.abort();
+    this.panel.remove();
   }
 
   /** Record reaching a floor (unlocks it in the menu, persists best). */
@@ -67,7 +78,7 @@ export class LevelSelectUI {
   toggle(): void {
     this.visible = !this.visible;
     this.panel.classList.toggle('open', this.visible);
-    audio.sfx('ui');
+    audio.sfx(this.visible ? 'mapOpen' : 'mapClose');
   }
 
   private render(): void {
@@ -83,7 +94,9 @@ export class LevelSelectUI {
     }).join('');
     this.panel.innerHTML = `<h3>DESCEND TO…</h3><div class="lvl-scroll">${rows}</div><div class="lvl-tip">Reach new depths to unlock them</div>`;
     this.panel.querySelectorAll<HTMLButtonElement>('.lvl-row').forEach((btn) => {
+      btn.addEventListener('mouseenter', () => audio.sfx('uiHover'));
       btn.addEventListener('click', () => {
+        audio.sfx('uiConfirm');
         this.toggle();
         this.onSelect(Number(btn.dataset.floor));
       });

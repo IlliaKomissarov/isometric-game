@@ -31,6 +31,11 @@ export class TutorialUI {
     document.body.appendChild(this.banner);
   }
 
+  /** Run teardown (it.36). */
+  destroy(): void {
+    this.banner.remove();
+  }
+
   /** Replace the proximity zones (called by each floor build). */
   setZones(zones: ReadonlyArray<HintZone>): void {
     this.zones = zones;

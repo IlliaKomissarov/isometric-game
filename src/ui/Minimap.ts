@@ -11,6 +11,7 @@
  * composites every frame from the cached base.
  */
 
+import { audio } from '@/engine/AudioManager';
 import type { Lighting } from '@/engine/Lighting';
 import { TILE_FLOOR, type DungeonMap } from '@/scenes/DungeonGenerator';
 
@@ -35,6 +36,7 @@ export class MinimapUI {
   private stairs: { x: number; y: number } | null = null;
   private dirty = true;
   private visible = true;
+  private readonly abort = new AbortController();
 
   constructor() {
     this.wrap = document.createElement('div');
@@ -46,12 +48,23 @@ export class MinimapUI {
     this.ctx = this.canvas.getContext('2d')!;
     this.baseCtx = this.base.getContext('2d')!;
 
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
-      if (e.code === 'KeyM' && !e.repeat) {
-        this.visible = !this.visible;
-        this.wrap.classList.toggle('hidden', !this.visible);
-      }
-    });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.code === 'KeyM' && !e.repeat) {
+          this.visible = !this.visible;
+          this.wrap.classList.toggle('hidden', !this.visible);
+          audio.sfx(this.visible ? 'mapOpen' : 'mapClose');
+        }
+      },
+      { signal: this.abort.signal },
+    );
+  }
+
+  /** Run teardown (it.36). */
+  destroy(): void {
+    this.abort.abort();
+    this.wrap.remove();
   }
 
   /** Bind to a floor's dungeon + fog state (called by each world build). */

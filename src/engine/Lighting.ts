@@ -75,6 +75,8 @@ export class Lighting {
   private visibleSet = new Set<number>();
   private isOpaque!: (gx: number, gy: number) => boolean;
 
+  /** Baked point sources (for shadow direction queries, it.36). */
+  private readonly sources: Array<{ x: number; y: number; radius: number; intensity: number }> = [];
   /** Static colored light contributions (braziers, runes), premultiplied per tile. */
   private srcR!: Float32Array;
   private srcG!: Float32Array;
@@ -98,6 +100,7 @@ export class Lighting {
     this.floorSprites = new Array<Sprite | null>(width * height).fill(null);
     this.wallSprites = new Array<Sprite | null>(width * height).fill(null);
     this.propSprites.clear();
+    this.sources.length = 0;
     this.srcR = new Float32Array(width * height);
     this.srcG = new Float32Array(width * height);
     this.srcB = new Float32Array(width * height);
@@ -109,6 +112,7 @@ export class Lighting {
    * multiple sources sum. Call during scene build only.
    */
   addSource(x: number, y: number, radius: number, r: number, g: number, b: number, intensity = 1): void {
+    this.sources.push({ x, y, radius, intensity });
     const minX = Math.max(0, Math.floor(x - radius));
     const maxX = Math.min(this.width - 1, Math.ceil(x + radius));
     const minY = Math.max(0, Math.floor(y - radius));
@@ -200,6 +204,39 @@ export class Lighting {
       this.falloff(Math.hypot(x - this.lastPx, y - this.lastPy)) * this.lastFlicker,
     );
     return this.composeTint(base, idx);
+  }
+
+  /**
+   * DOMINANT LIGHT DIRECTION at a world point (it.36 dynamic shadows):
+   * a SCREEN-space unit vector pointing AWAY from the strongest light
+   * (the hero's torch or a nearby baked source) plus a strength 0..1 —
+   * the grounded shadow stretches along it. Render-only.
+   */
+  lightDirAt(x: number, y: number): { x: number; y: number; k: number } {
+    // The hero's torch: strength by falloff, direction away from them.
+    let bx = x - this.lastPx;
+    let by = y - this.lastPy;
+    let bd = Math.hypot(bx, by);
+    let best = bd < 0.35 ? 0 : this.falloff(bd) * 0.6;
+    for (const s of this.sources) {
+      const dx = x - s.x;
+      const dy = y - s.y;
+      const d = Math.hypot(dx, dy);
+      if (d > s.radius || d < 0.2) continue;
+      const k = (1 - d / s.radius) * s.intensity;
+      if (k > best) {
+        best = k;
+        bx = dx;
+        by = dy;
+        bd = d;
+      }
+    }
+    if (best <= 0.02 || bd < 1e-4) return { x: 0, y: 0, k: 0 };
+    // World → screen axes (2:1 diamond), normalized.
+    const sx = bx - by;
+    const sy = (bx + by) * 0.5;
+    const len = Math.hypot(sx, sy) || 1;
+    return { x: sx / len, y: sy / len, k: Math.min(1, best) };
   }
 
   /** Recompute the LOS visible set. Call on player:tileChanged only. */

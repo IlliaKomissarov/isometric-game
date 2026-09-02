@@ -64,18 +64,23 @@ export class CheatMenuUI {
   private tab: ArsenalTab = 'weapons';
   private portraitTimer: number | null = null;
   private portraitFrame = 0;
+  private readonly abort = new AbortController();
 
   constructor(private readonly hooks: CheatHooks) {
     this.panel = document.createElement('div');
     this.panel.id = 'cheat-menu';
     document.body.appendChild(this.panel);
 
-    window.addEventListener('keydown', (e: KeyboardEvent) => {
-      if ((e.code === 'F1' || e.code === 'Backquote') && !e.repeat) {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if ((e.code === 'F1' || e.code === 'Backquote') && !e.repeat) {
+          e.preventDefault();
+          this.toggle();
+        }
+      },
+      { signal: this.abort.signal },
+    );
     this.render();
   }
 
@@ -84,7 +89,14 @@ export class CheatMenuUI {
     this.panel.classList.toggle('open', this.visible);
     if (this.visible) this.startPortrait();
     else this.stopPortrait();
-    audio.sfx('ui');
+    audio.sfx(this.visible ? 'invOpen' : 'invClose');
+  }
+
+  /** Run teardown (it.36). */
+  destroy(): void {
+    this.abort.abort();
+    this.stopPortrait();
+    this.panel.remove();
   }
 
   /** Drive the idle portrait at a slow, breathing cadence while open. */
@@ -174,7 +186,9 @@ export class CheatMenuUI {
     `;
 
     this.panel.querySelectorAll<HTMLButtonElement>('button').forEach((btn) => {
+      btn.addEventListener('mouseenter', () => audio.sfx('uiHover'));
       btn.addEventListener('click', () => {
+        audio.sfx('uiClick');
         const act = btn.dataset.act;
         const give = btn.dataset.give;
         const tab = btn.dataset.tab as ArsenalTab | undefined;

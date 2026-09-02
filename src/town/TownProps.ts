@@ -11,7 +11,7 @@
  * and an `update(dt)` for the render-side fog drift at the gate.
  */
 
-import { Graphics, Sprite } from 'pixi.js';
+import { Sprite } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
@@ -113,92 +113,24 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const footprint = (p: TownProp): Occluder['tiles'] => ({ x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 });
 
   /**
-   * THE DUNGEON GATE: a dark stone archway spanning the street. Piers on
-   * the two blocked tiles, a rounded arch with a keystone, a translucent
-   * black throat (the hero stays dimly visible walking in) and cold fog.
+   * THE DUNGEON GATE (it.43): the ruin archway sprite stands on its 3×2
+   * footprint; cold light and drifting fog roll out of its throat.
    */
-  const archway = (p: TownProp): void => {
-    const g = new Graphics();
-    // The piers stand on the two blocked tiles either side of the stair; in
-    // the 2:1 projection those centres are offset diagonally, so the span
-    // is a SKEWED band — an arch drawn in the world, not a flat facade.
-    const pl = worldToScreen(p.x + 0.5, p.y + 0.5, vec2());
-    const pr = worldToScreen(p.x + 2.5, p.y + 0.5, vec2());
-    const mid = worldToScreen(p.x + 1.5, p.y + 0.5, vec2());
-    const pierW = 26;
-    const pierH = 98;
-    const lintel = 16;
-    const pierTop = (s: { x: number; y: number }): number => s.y - pierH;
-    // Throat: translucent dark between the piers, so whoever walks in fades.
-    g.moveTo(pl.x, pl.y);
-    g.lineTo(pl.x, pierTop(pl) - 2);
-    g.quadraticCurveTo(mid.x, pierTop(mid) - 70, pr.x, pierTop(pr) - 2);
-    g.lineTo(pr.x, pr.y);
-    g.closePath();
-    g.fill({ color: 0x04030a, alpha: 0.7 });
-    // Piers with a lit face, a shaded edge and mortar lines.
-    for (const s of [pl, pr]) {
-      const top = pierTop(s);
-      g.rect(s.x - pierW / 2, top, pierW, pierH);
-      g.fill({ color: 0x3b3642 });
-      g.rect(s.x - pierW / 2, top, 7, pierH);
-      g.fill({ color: 0x57515f });
-      g.rect(s.x + pierW / 2 - 6, top, 6, pierH);
-      g.fill({ color: 0x1d1922 });
-      for (let yy = top + 12; yy < top + pierH - 4; yy += 13) {
-        g.rect(s.x - pierW / 2 + 1, yy, pierW - 2, 1);
-        g.fill({ color: 0x24202a, alpha: 0.9 });
-      }
-      g.rect(s.x - pierW / 2 - 4, top - 5, pierW + 8, 7); // Capital.
-      g.fill({ color: 0x4c4654 });
-      g.ellipse(s.x, s.y + 2, pierW * 0.8, 6); // Footing shadow.
-      g.fill({ color: 0x000000, alpha: 0.4 });
-    }
-    // The arch: a thick pointed band from capital to capital.
-    const apex = { x: mid.x, y: pierTop(mid) - 62 };
-    g.moveTo(pl.x - pierW / 2 - 4, pierTop(pl) - 4);
-    g.quadraticCurveTo(apex.x - 8, apex.y - lintel - 4, apex.x, apex.y - lintel);
-    g.quadraticCurveTo(apex.x + 8, apex.y - lintel - 4, pr.x + pierW / 2 + 4, pierTop(pr) - 4);
-    g.lineTo(pr.x + pierW / 2 - 6, pierTop(pr) + 2);
-    g.quadraticCurveTo(apex.x + 6, apex.y + 4, apex.x, apex.y + 6);
-    g.quadraticCurveTo(apex.x - 6, apex.y + 4, pl.x - pierW / 2 + 6, pierTop(pl) + 2);
-    g.closePath();
-    g.fill({ color: 0x433e4c });
-    // Voussoir joints.
-    const segs = 10;
-    for (let i = 1; i < segs; i++) {
-      const t = i / segs;
-      const ox = pl.x - pierW / 2 + (pr.x + pierW / 2 - (pl.x - pierW / 2)) * t;
-      const inner = (1 - t) * (1 - t) * (pierTop(pl) + 2) + 2 * (1 - t) * t * (apex.y + 4) + t * t * (pierTop(pr) + 2);
-      const outer = inner - lintel - 6;
-      g.moveTo(ox, inner);
-      g.lineTo(ox + (t < 0.5 ? -3 : 3), outer);
-      g.stroke({ color: 0x24202a, width: 1.5, alpha: 0.9 });
-    }
-    // Keystone with the carved sigil.
-    g.rect(apex.x - 8, apex.y - lintel - 10, 16, lintel + 14);
-    g.fill({ color: 0x5e5868 });
-    g.circle(apex.x, apex.y - 2, 3.5);
-    g.fill({ color: 0x14111a });
-    g.zIndex = depthKey(p.x + 1.5, p.y + 0.5) + 2; // Just past the stair tile: the hero walks INTO it.
-    viewport.objectLayer.addChild(g); // Always lit: the town's sight radius covers the gate.
-    const base = mid;
-
-    // Cold fog rolling out of the throat (render-side drift in update()).
+  const gateFog = (p: TownProp): void => {
+    const base = worldToScreen(p.x + 1.5, p.y + 1.5, vec2());
     for (let i = 0; i < 5; i++) {
       const f = new Sprite(assets.get('glow'));
       f.anchor.set(0.5);
       f.tint = 0x6f7fa8;
       f.alpha = 0.16;
       f.scale.set(1.6 + i * 0.25, 0.8 + i * 0.1);
-      f.zIndex = g.zIndex + 1;
+      f.zIndex = depthKey(p.x + 3, p.y + 2) + 2;
       viewport.objectLayer.addChild(f);
       lighting.registerProp(p.x + 1, p.y, f);
-      fog.push({ sprite: f, x: base.x + (i - 2) * 10, y: base.y - 22 - i * 4, phase: i * 1.3, speed: 0.35 + i * 0.07 });
+      fog.push({ sprite: f, x: base.x + (i - 2) * 10, y: base.y - 26 - i * 4, phase: i * 1.3, speed: 0.35 + i * 0.07 });
     }
-    // A cold light from the deep, and a warm one from each brazier later.
-    lighting.addSource(p.x + 1.5, p.y + 0.5, 3.6, 110, 130, 200, 0.55);
-    glowAt(p.x + 1, p.y, 0x5060a0, 0.35, 1.6, 30);
+    lighting.addSource(p.x + 1.5, p.y + 1.5, 3.6, 110, 130, 200, 0.55);
+    glowAt(p.x + 1, p.y + 1, 0x5060a0, 0.35, 1.6, 30);
   };
 
   let nextId = 1;
@@ -246,9 +178,49 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
         break;
       }
-      case 'arch':
-        archway(p);
+      case 'ruingate': {
+        const spr = standing(p, 'ruin_gate', 0.97);
+        if (spr) spr.zIndex = depthKey(p.x + 1.5, p.y + 1.5) + 2; // The hero walks INTO the throat.
+        gateFog(p);
         break;
+      }
+      case 'tavern': {
+        const spr = standing(p, p.variant ?? 'tavern_a', 0.95);
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        break;
+      }
+      case 'well':
+        standing(p, p.variant ?? 'well_b', 0.9);
+        break;
+      case 'pine':
+      case 'deadtree': {
+        const spr = standing(p, p.variant ?? 'pine_a', 0.97);
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        break;
+      }
+      case 'column':
+        standing(p, 'column', 0.95);
+        break;
+      case 'barrels_stacked':
+        standing(p, 'barrels_stacked', 0.9);
+        break;
+      case 'crates_wood':
+        standing(p, 'crates_wood', 0.9);
+        break;
+      case 'wood_pile':
+        standing(p, 'wood_pile', 0.9);
+        break;
+      case 'table_chairs':
+        standing(p, 'table_chairs', 0.9);
+        break;
+      case 'supports':
+        standing(p, 'supports', 0.95);
+        break;
+      case 'stairs_stone':
+        standing(p, 'stairs_stone', 0.85, 'ground');
+        break;
+      case 'guard':
+        break; // Drawn by Villagers.
       case 'pillar':
         standing(p, 'pillar', 0.94);
         break;

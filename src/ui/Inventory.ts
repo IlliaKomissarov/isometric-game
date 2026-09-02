@@ -17,6 +17,7 @@ import { ITEMS, RARITY_COLOR, itemValue, statLine, type ItemDef } from '@/items/
 import type { EquipmentSlot } from '@/network/Serialization';
 
 import { itemIconHtml } from './itemIcons';
+import { uiAssetUrl } from '@/render/SpriteLibrary';
 
 /** Paperdoll layout (it.42): a body-shaped cross — head on top, hands beside the torso, ring and cloak below. */
 const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: string }> = [
@@ -28,6 +29,10 @@ const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: stri
   { slot: 'legs', label: 'LEGS', area: 'legs' },
   { slot: 'cloak', label: 'BACK', area: 'back' },
 ];
+
+const SLOT_LABEL: Record<string, string> = {
+  head: 'Head', torso: 'Body', legs: 'Legs', mainHand: 'Main Hand', offHand: 'Off Hand', cloak: 'Back', ring: 'Ring', consumable: 'Consumable',
+};
 
 function hex(color: number): string {
   return `#${color.toString(16).padStart(6, '0')}`;
@@ -108,7 +113,7 @@ export class InventoryUI {
       const def = itemId ? ITEMS[itemId] : undefined;
       const cell = def
         ? `<button class="inv-cell inv-item rarity-${def.rarity}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}</button>`
-        : `<div class="inv-cell inv-cell-empty" data-slot="${slot}"><span class="inv-slot-ghost">${label[0]}</span></div>`;
+        : `<div class="inv-cell inv-cell-empty inv-cell-framed" data-slot="${slot}" style="background-image:url(${uiAssetUrl(`slots/${slot}.png`)})"></div>`;
       return `<div class="inv-slot-wrap" style="grid-area:${area}"><span class="inv-slot-label">${label}</span>${cell}</div>`;
     }).join('');
     // BELT (it.42): the Q / R quick draughts, read straight from the pack.
@@ -217,7 +222,7 @@ export class InventoryUI {
   private showTooltip(def: ItemDef, x: number, y: number): void {
     this.tooltip.innerHTML = `
       <div class="tip-name" style="color:${hex(RARITY_COLOR[def.rarity])}">${def.name}</div>
-      <div class="tip-slot">${def.rarity} · ${def.slot}</div>
+      <div class="tip-slot">${def.rarity[0].toUpperCase() + def.rarity.slice(1)} · ${SLOT_LABEL[def.slot] ?? def.slot}</div>
       <div class="tip-stats">${statLine(def)}</div>
       <div class="tip-gold">◆ worth ${itemValue(def)} gold${def.slot === 'consumable' ? ' · click to use' : ''}</div>
     `;

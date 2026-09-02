@@ -154,6 +154,24 @@ export type AnimName =
   | 'vfx_aura'
   | 'vfx_orb'
   | 'vfx_strike'
+  | 'folk_walk'
+  | 'folk_death'
+  | 'poacher_walk'
+  | 'poacher_run'
+  | 'poacher_idle'
+  | 'poacher_attack'
+  | 'poacher_death'
+  | 'orc_walk'
+  | 'orc_attack'
+  | 'orc_idle'
+  | 'orc_death'
+  | 'orc_hit'
+  | 'vfx_splat'
+  | 'vfx_bloodhit'
+  | 'vfx_cut1'
+  | 'vfx_cut3'
+  | 'vfx_cut4'
+  | 'vfx_cut5'
   | 'villager_walk'
   | 'merchant_walk'
   | 'campfire'
@@ -254,15 +272,29 @@ const REFLECT_NWSE = (d: number): number => (6 - d + 8) % 8;
  * direction d lives on row (d + 3) mod 8.
  */
 const ROTATE_SW = (d: number): number => (d + 3) % 8;
+/**
+ * IT.43 GROUND-TRUTH RE-AUDIT (every mob sheet rendered per row against the
+ * knight reference): the zombie pack stores its rows CLOCKWISE on screen
+ * [E, SE, S, SW, W, NW, N, NE] -> row = (8 - d) mod 8, and the grave-guard
+ * pack is a half turn out -> row = (d + 4) mod 8. Both were mis-mapped
+ * before (the Hollow King's first form ran left while facing right).
+ */
+const CLOCKWISE = (d: number): number => (8 - d) % 8;
+const ROTATE_180 = (d: number): number => (d + 4) % 8;
+/** The Villager_01 / archer packs (it.43): rows run counter-clockwise from S -> row = (d + 2) mod 8. */
+const FROM_SOUTH = (d: number): number => (d + 2) % 8;
 const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> = [
   ['ranger_', MIRROR_LR],
-  ['zombie_', MIRROR_LR],
+  ['zombie_', CLOCKWISE],
   ['guard_', MIRROR_LR],
   ['wolf_', MIRROR_LR],
   ['lizard_', MIRROR_LR],
   ['hydra_', REFLECT_NWSE],
   ['naga_', REFLECT_NWSE],
   ['shambler_', REFLECT_NWSE],
+  ['grave_', ROTATE_180],
+  ['folk_', FROM_SOUTH],
+  ['poacher_', FROM_SOUTH],
   ['villager_', ROTATE_SW],
   ['merchant_', ROTATE_SW],
 ];

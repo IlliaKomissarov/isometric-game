@@ -348,6 +348,18 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Cheat menu reframed and scrollable; bestiary draggable like the rest
 - [x] QA: starters equipped, drags, torso/head hit-tests on live mobs, bestiary, zero console errors
 
+## Iteration 43 - Deploy, Gore, Free Portal, Boss Victory, Organic Town, Pack Integration (2026-09-02)
+
+- [x] Milestone commit pushed (rewritten without the 1.1 GB raw upload, folder ignored), Pages deployed (200)
+- [x] Direction re-audit: zombie clockwise map + grave-guard half turn; new packs mapped
+- [x] God mode reveals the bestiary; unknown creatures are black silhouettes with ??? stats
+- [x] ARPG item phrasing (+N to Max HP, N–M Damage, ...)
+- [x] Free town portal on T + HUD button (12 s cooldown); scrolls retired from kits and stock
+- [x] Floor-20 victory runs itself; RETURN TO TOWN keeps the run
+- [x] Persistent floor gore (splats, drips, boss pools), blood-impact strip, gore audio; 7 s boss disintegration
+- [x] Fourth upload audited and preserved; tavern, well, ruin gate, iso props, pines, blood, slashes, villagers, poacher, orc, slot frames, armor icons baked
+- [x] Organic 56×50 town with winding streets, market square, tavern, guards; orc + poacher mobs in the pools
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

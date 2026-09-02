@@ -30,6 +30,12 @@ export const VFX_ANIMS = [
   'vfx_aura',
   'vfx_orb',
   'vfx_strike',
+  'vfx_splat',
+  'vfx_bloodhit',
+  'vfx_cut1',
+  'vfx_cut3',
+  'vfx_cut4',
+  'vfx_cut5',
 ] as const;
 export type VfxAnim = (typeof VFX_ANIMS)[number];
 

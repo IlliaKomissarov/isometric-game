@@ -80,7 +80,9 @@ export type SfxName =
   | 'stash'
   | 'potion'
   | 'portal'
-  | 'save';
+  | 'save'
+  | 'goreKill'
+  | 'goreHit';
 
 /** Which music bed is wanted (main drives; crossfades happen here). */
 export type MusicState = 'none' | 'menu' | 'town' | 'dungeon' | 'boss' | 'victory';
@@ -106,7 +108,12 @@ const FILES = {
 const PACK = `${AUDIO_BASE}/Free Fantasy SFX Pack By TomMusic/OGG Files/SFX`;
 const SWORDS = `${PACK}/Attacks/Sword Attacks Hits and Blocks`;
 const BOWS = `${PACK}/Attacks/Bow Attacks Hits and Blocks`;
+const GORE = `${AUDIO_BASE}/gore`;
 const VARIANTS: Record<string, string[]> = {
+  // Gore vol 1 (it.43): bone and viscera on kills and heavy hits.
+  goreCrack: ['S_Bone_crack.wav', 'S_Bone_crack_002.wav', 'S_Bone_crack_003.wav', 'S_Bone_snap.wav', 'S_Bone_snap_002.wav'].map((f) => `${GORE}/${f}`),
+  goreGuts: ['S_Guts.wav', 'S_Guts_002.wav', 'S_Guts_003.wav'].map((f) => `${GORE}/${f}`),
+  goreRattle: [`${GORE}/S_Bone_rattle.wav`],
   swordAttack: [1, 2, 3].map((n) => `${SWORDS}/Sword Attack ${n}.ogg`),
   swordHit: [1, 2, 3].map((n) => `${SWORDS}/Sword Impact Hit ${n}.ogg`),
   swordBlocked: [1, 2, 3].map((n) => `${SWORDS}/Sword Blocked ${n}.ogg`),
@@ -793,6 +800,13 @@ export class AudioManager {
       case 'save':
         this.playVariant('uiConfirm', 0.4, 1.3, 0.03);
         this.playVariant('bookClose', 0.4, 1.0, 0.03, 0.06);
+        break;
+      case 'goreKill':
+        this.playVariant('goreGuts', 0.55, 1.0, 0.08);
+        this.playVariant('goreCrack', 0.45, 1.0, 0.1, 0.05);
+        break;
+      case 'goreHit':
+        this.playVariant('goreCrack', 0.3, 1.1, 0.12);
         break;
       case 'levelUp':
         // The Firebuff shimmer + a rising chime — POWER settles into you.

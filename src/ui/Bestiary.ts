@@ -36,6 +36,8 @@ const LORE: Partial<Record<EnemyKind, string>> = {
   bossHollow: 'The Hollow King, as he was crowned: a man, once. Beneath the crown there is only the wanting.',
   bossHollowKnight: 'The Hollow King rises again in the plate he was buried in. The oath that holds the wardens holds him too.',
   bossHollowLich: 'What remains when even the armour is spent: the hunger itself, robed in the dark. The last seal.',
+  orc: 'Orc slingers slipped in through the drowned levels. Small, quick, and never alone; they throw first and rush the stunned.',
+  poacher: 'Crypt poachers came for the burial gold and stayed for the dark. Good with a bow, better at running.',
 };
 
 const CATEGORY = (kind: EnemyKind): string => (kind.startsWith('boss') ? 'WARDEN' : 'CREATURE');
@@ -120,16 +122,18 @@ export class BestiaryUI {
     this.stopAnim();
     const p = this.player;
     const kinds = Object.keys(ENEMY_TYPES) as EnemyKind[];
-    const seenKinds = kinds.filter((k) => p.bestiary.has(k));
-    if (!this.selected || !p.bestiary.has(this.selected)) this.selected = seenKinds[0] ?? null;
+    const revealed = p.bestiaryRevealed;
+    const isKnown = (k: EnemyKind): boolean => revealed || p.bestiary.has(k);
+    const seenKinds = kinds.filter(isKnown);
+    if (!this.selected) this.selected = seenKinds[0] ?? kinds[0];
     const list = kinds
       .map((k) => {
         const rec = p.bestiary.get(k);
         const def = ENEMY_TYPES[k];
-        const known = !!rec;
-        return `<button class="bs-row${known ? '' : ' unknown'}${this.selected === k ? ' lit' : ''}" data-kind="${k}" ${known ? '' : 'disabled'}>
+        const known = isKnown(k);
+        return `<button class="bs-row${known ? '' : ' unknown'}${this.selected === k ? ' lit' : ''}" data-kind="${k}">
           <span class="bs-row-name">${known ? def.name : '???'}</span>
-          <span class="bs-row-meta">${known ? `${CATEGORY(k)} · ${rec.killed} slain` : 'unseen'}</span>
+          <span class="bs-row-meta">${known ? `${CATEGORY(k)} · ${rec?.killed ?? 0} slain${revealed && !rec ? ' · revealed' : ''}` : 'unseen · a shadow in the dark'}</span>
         </button>`;
       })
       .join('');
@@ -137,18 +141,21 @@ export class BestiaryUI {
     let detail = '<div class="bs-empty">Nothing has crossed your path yet. The dark keeps its census.</div>';
     if (sel) {
       const def = ENEMY_TYPES[sel];
-      const rec = p.bestiary.get(sel)!;
+      const known = isKnown(sel);
+      const rec = p.bestiary.get(sel) ?? { seen: 0, killed: 0 };
       const css = this.spriteCss(sel, sel.startsWith('boss') ? 150 : 96);
+      // UNKNOWN (it.43): a solid black silhouette — the fog-of-war shadow of a thing not yet met.
+      const look = known ? 'filter:drop-shadow(0 6px 6px rgba(0,0,0,.8)) sepia(0.15);' : 'filter:brightness(0) drop-shadow(0 0 6px rgba(0,0,0,.9));opacity:0.9;';
       const preview = css
-        ? `<div class="bs-stage"><div class="bs-sprite" data-anim style="${css.style}${def.sprite ? `filter:drop-shadow(0 6px 6px rgba(0,0,0,.8)) sepia(0.15);` : ''}"></div></div>`
-        : `<div class="bs-stage"><div class="bs-nosprite">${def.name}</div></div>`;
-      const stat = (k: string, v: string, note = ''): string => `<div class="bs-stat"><span>${k}</span><b>${v}</b>${note ? `<i>${note}</i>` : ''}</div>`;
+        ? `<div class="bs-stage${known ? '' : ' unknown'}"><div class="bs-sprite" data-anim style="${css.style}${look}"></div></div>`
+        : `<div class="bs-stage"><div class="bs-nosprite">${known ? def.name : '???'}</div></div>`;
+      const stat = (k: string, v: string, note = ''): string => `<div class="bs-stat"><span>${k}</span><b>${known ? v : '???'}</b>${known && note ? `<i>${note}</i>` : ''}</div>`;
       const level = Math.max(1, p.level);
       const scaled = Math.round(def.hp * levelHpScale(level));
       detail = `
         ${preview}
-        <div class="bs-title"><h4>${def.name}</h4><span>${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}</span></div>
-        <p class="bs-lore">${LORE[sel] ?? 'No scholar survived long enough to write of this one.'}</p>
+        <div class="bs-title"><h4>${known ? def.name : '???'}</h4><span>${known ? `${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}` : 'unseen'}</span></div>
+        <p class="bs-lore">${known ? (LORE[sel] ?? 'No scholar survived long enough to write of this one.') : 'Something moves down there. Meet it, or switch on the Forbidden Arts, and its page fills in.'}</p>
         <div class="bs-stats">
           ${stat('Vitality', `${def.hp}`, `≈${scaled} at level ${level}`)}
           ${stat('Damage', `${def.minDamage}–${def.maxDamage}`, '+1 per level')}

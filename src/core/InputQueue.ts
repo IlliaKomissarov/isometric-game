@@ -39,6 +39,7 @@ export type InputCommand =
   /** Consumables (it.39): drink/read the backpack item; Q = quickest healing potion. */
   | { type: 'USE_ITEM'; playerId: number; backpackIndex: number }
   | { type: 'USE_QUICK'; playerId: number; kind: 'health' | 'mana' }
+  | { type: 'TOWN_PORTAL'; playerId: number }
   /** Town economy (it.39). */
   | { type: 'BUY'; playerId: number; index: number }
   | { type: 'SELL'; playerId: number; backpackIndex: number }

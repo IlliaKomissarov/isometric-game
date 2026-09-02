@@ -70,6 +70,7 @@ import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
 import { CharacterSheetUI } from '@/ui/CharacterSheet';
 import { BestiaryUI } from '@/ui/Bestiary';
+import { GoreSystem } from '@/render/Gore';
 import { makeDraggable } from '@/ui/draggable';
 import { auditTownLayout } from '@/town/TownMap';
 import { TownSystem } from '@/systems/Town';
@@ -109,6 +110,8 @@ interface World {
   dmgText: DamageTextSystem;
   /** Animated spell strips (it.41). */
   vfx: VfxSystem;
+  /** Persistent floor gore (it.43). */
+  gore: GoreSystem;
   /** The floor's boss (every 5th depth) — stairs stay barred while it lives. */
   boss: Enemy | null;
   bossSeen: boolean;
@@ -141,6 +144,8 @@ interface RunHandle {
   stash: () => StashState;
   /** Write the slot now; false when storage refused. */
   save: () => boolean;
+  /** Endgame (it.43): back to the town camp with the run intact. */
+  returnToTown: () => void;
   destroy: () => void;
 }
 
@@ -496,6 +501,11 @@ async function boot(): Promise<void> {
     document.getElementById('endgame')?.classList.remove('show');
     restartRun();
   });
+  document.getElementById('endgame-town')?.addEventListener('click', () => {
+    audio.sfx('uiConfirm');
+    document.getElementById('endgame')?.classList.remove('show');
+    run?.returnToTown();
+  });
   document.getElementById('endgame-menu')?.addEventListener('click', () => {
     audio.sfx('uiBack');
     document.getElementById('endgame')?.classList.remove('show');
@@ -583,7 +593,6 @@ async function boot(): Promise<void> {
       // Every delver leaves town with two draughts and a way back (it.39).
       player.addItem('health_potion');
       player.addItem('health_potion');
-      player.addItem('scroll_town_portal');
     }
     if (spriteLib.loaded) player.enableKnightRig(); // The class body replaces the crystal.
 
@@ -656,6 +665,7 @@ async function boot(): Promise<void> {
     const town = new TownSystem(player, opts.stash ?? loaded?.stash ?? { items: [], gold: 0 });
     let townVisits = loaded ? 1 : 0;
     let pendingPortal = false;
+    let portalCooldown = 0;
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
     let portalArmed = false;
     let pendingInteract: number | null = null;
@@ -958,6 +968,7 @@ async function boot(): Promise<void> {
       };
       const projectiles = new ProjectileSystem(viewport, scene.isWalkable, player, findEnemyAt);
       const vfx = new VfxSystem(viewport.objectLayer, viewport.ambienceLayer);
+      const gore = new GoreSystem(viewport.groundLayer);
       projectiles.combat = combat;
       combat.fireProjectile = (opts) => {
         audio.sfx(opts.kind === 'bolt' ? 'bolt' : 'bow');
@@ -1090,7 +1101,7 @@ async function boot(): Promise<void> {
       let townState: World['town'] = null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
-        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 6, layout.merchant);
+        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 7, layout.merchant, layout.guards);
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
         const audit = auditTownLayout(layout);
@@ -1240,6 +1251,7 @@ async function boot(): Promise<void> {
         playerHalo,
         dmgText,
         vfx,
+        gore,
         boss,
         bossSeen: false,
         unsubscribe,
@@ -1256,6 +1268,7 @@ async function boot(): Promise<void> {
       w.input.destroy();
       w.projectiles.clear();
       w.vfx.clear();
+      w.gore.clear();
       w.enemies.destroyAll();
       // The hero survives the viewport teardown — but only detach them if
       // they still stand in THIS world (the next one may already own them).
@@ -1536,12 +1549,33 @@ async function boot(): Promise<void> {
       },
     });
     subs.push(() => skills.destroy());
+    // BOSS DISINTEGRATION (it.43): embers lift off the collapsing body each frame.
+    Enemy.onBossDeathFrame = (e, p) => {
+      if (p < 0.45) return;
+      const n = p > 0.8 ? 3 : 1;
+      for (let i = 0; i < n; i++) {
+        if (Math.random() > 0.7) continue;
+        const ox = (Math.random() - 0.5) * 1.4;
+        const oy = (Math.random() - 0.5) * 0.7;
+        world.ambience.trail(e.pos.x + ox, e.pos.y + oy, 10 + Math.random() * 80, Math.random() < 0.5 ? 0xffb060 : 0xff6a30, true);
+        if (Math.random() < 0.15) world.ambience.burst(e.pos.x + ox, e.pos.y + oy, 0xffd9a0, 2);
+      }
+    };
+    subs.push(() => {
+      Enemy.onBossDeathFrame = null;
+    });
 
     // Skill bar DOM (it.41): one slot per HOTBAR entry — rebuilt whenever
     // the tree changes the loadout. Empty slots point at the tree (K).
     const skillSlotEls: Array<{ root: HTMLElement; cd: HTMLElement; num: HTMLElement }> = [];
     const lastSkillCd: number[] = [0, 0, 0, 0];
     const skillBar = document.getElementById('skill-bar');
+    // TOWN PORTAL button (it.43): the built-in free way home, beside the hotbar.
+    const tpButton = document.createElement('button');
+    tpButton.id = 'tp-button';
+    tpButton.innerHTML = '<kbd>T</kbd><span>TOWN PORTAL</span><i></i>';
+    tpButton.addEventListener('click', () => inputQueue.enqueue({ type: 'TOWN_PORTAL', playerId: 0 }));
+    document.body.appendChild(tpButton);
     const buildSkillBar = (): void => {
       if (!skillBar) return;
       skillBar.innerHTML = '';
@@ -1582,6 +1616,9 @@ async function boot(): Promise<void> {
     const resourceFill = document.getElementById('resource-fill');
     const updateSkillHud = (): void => {
       if (resourceFill) resourceFill.style.width = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
+      const tpNote = tpButton.querySelector('i');
+      if (tpNote) tpNote.textContent = world.town ? 'in town' : portalCooldown > 0 ? `${Math.ceil(portalCooldown / 60)}s` : 'ready';
+      tpButton.classList.toggle('cooling', portalCooldown > 0 || !!world.town);
       skills.skills.forEach((def, i) => {
         const el = skillSlotEls[i];
         if (!el || !def) return;
@@ -1722,6 +1759,9 @@ async function boot(): Promise<void> {
       toggleGod: () => {
         cheatState.god = !cheatState.god;
         world.combat.godMode = cheatState.god;
+        // God mode reveals the bestiary (it.43) — every page fills in while it is on.
+        player.bestiaryRevealed = cheatState.god;
+        eventBus.emit('bestiary:changed', {});
         return cheatState.god;
       },
       healFull: () => {
@@ -1797,6 +1837,11 @@ async function boot(): Promise<void> {
       if (!entity) return;
       // Visceral directional blood — heavier hits bleed harder.
       world.ambience.bloodSpray(entity.pos.x, entity.pos.y, dirX, dirY, Math.min(18, 7 + amount));
+      if (amount >= 5) {
+        world.gore.drip(entity.pos.x, entity.pos.y, amount >= 12 ? 2 : 1);
+        world.vfx.play('vfx_bloodhit', entity.pos.x, entity.pos.y, { scale: 0.9, lift: 22, fps: 30, additive: false, overlay: true });
+        if (amount >= 12) audio.sfx('goreHit');
+      }
       const kind = entity === player ? 'player' : entityId === lastCritTarget ? 'crit' : 'enemy';
       world.dmgText.show(entity.pos.x, entity.pos.y, `${amount}`, kind);
       audio.sfx(entity === player ? 'hurt' : 'hit');
@@ -1994,6 +2039,10 @@ async function boot(): Promise<void> {
         // Death gore: a heavy radial blowout on top of the directional spray.
         world.ambience.bloodSpray(entity.pos.x, entity.pos.y, undefined, undefined, entity === world.boss ? 34 : 22);
         world.ambience.burst(entity.pos.x, entity.pos.y, 0x7c150c, entity === world.boss ? 18 : 10);
+        // PERSISTENT GORE (it.43): the floor keeps the kill.
+        world.gore.kill(entity.pos.x, entity.pos.y, entity.facing.x, entity.facing.y, entity === world.boss);
+        world.vfx.play('vfx_splat', entity.pos.x, entity.pos.y, { scale: entity === world.boss ? 2.2 : 1.3, flat: true, fps: 24, additive: false, depthBias: -30, alpha: 0.9 });
+        audio.sfx('goreKill');
         entity.beginDeath();
 
         // ARENA CLEAR (it.28): the stair stays hidden until EVERY combatant
@@ -2008,7 +2057,15 @@ async function boot(): Promise<void> {
             world.arenaCleared = true;
             const w = world;
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
-            const delay = entity === w.boss ? 3600 : 1100;
+            const delay = entity === w.boss ? 7600 : 1100;
+            if (entity === w.boss && floor >= MAX_DEPTH) {
+              // FINAL VICTORY (it.43): the Hollow King's last form falls -> the sequence runs itself.
+              later(() => {
+                if (world !== w || victoryShown) return;
+                victoryShown = true;
+                runEndgame();
+              }, 7800);
+            }
             later(() => {
               if (world !== w) return;
               w.stairs.sprite.renderable = true;
@@ -2119,6 +2176,19 @@ async function boot(): Promise<void> {
         skills.apply(commands); // Hotkeys 1–4 (it.32).
         town.apply(commands); // Buy / sell / stash (it.39).
         if (world.town) handleTownInteraction(commands);
+        for (const cmd of commands) {
+          if (cmd.type !== 'TOWN_PORTAL') continue;
+          // FREE TOWN PORTAL (it.43): T opens the way home on a 12 s cooldown.
+          if (world.town) world.dmgText.show(player.pos.x, player.pos.y - 1, 'YOU ARE HOME', 'miss');
+          else if (transitioning || pendingPortal) break;
+          else if (portalCooldown > 0) world.dmgText.show(player.pos.x, player.pos.y - 1, `PORTAL IN ${Math.ceil(portalCooldown / 60)}s`, 'miss');
+          else {
+            pendingPortal = true;
+            portalCooldown = 720;
+            audio.sfx('portal');
+          }
+        }
+        if (portalCooldown > 0) portalCooldown--;
         if (pendingPortal) {
           pendingPortal = false;
           castPortal();
@@ -2598,12 +2668,22 @@ async function boot(): Promise<void> {
       slot,
       stash: () => ({ items: [...town.stash.items], gold: town.stash.gold }),
       save: saveNow,
+      returnToTown: () => {
+        victoryShown = false;
+        withFade(async () => {
+          await preloadFloor(0, 'hub');
+          if (!world.town) captureFloor();
+          if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+          enterTown(false);
+        });
+      },
       destroy: () => {
         if (!alive) return;
         alive = false;
         loop.stop();
         shopUI.destroy();
         stashUI.destroy();
+        tpButton.remove();
         skillTreeUI.destroy();
         charSheetUI.destroy();
         bestiaryUI.destroy();
@@ -2662,7 +2742,7 @@ export function isBossFloor(floor: number): boolean {
  * boss chains), the summoned wretches, and — for arenas — the keeper.
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
-  if (mode === 'hub') return ['villager_walk', 'merchant_walk', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));
   kinds.add('fallen'); // Hollow King summons; cheap (shares the knight sheets).
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);
@@ -2751,11 +2831,11 @@ function kindPoolFor(floor: number): EnemyKind[] {
   return floor === 1
     ? ['fallen', 'fallen', 'skeleton', 'skeleton', 'zombie']
     : floor <= 3
-      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul']
+      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc']
       : floor <= 5
-        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman']
+        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher']
         : floor <= 9
-          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler']
+          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher']
           : floor <= 14
             ? ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'shambler']
             : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'hydra'];

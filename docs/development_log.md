@@ -1,5 +1,92 @@
 # Development Log
 
+## 2026-09-02 (iteration 43) - Deploy, direction re-audit, bestiary silhouettes, free town portal, boss victory, persistent gore, asset pack integration, organic town
+
+### Stage 1 - commit, push, GitHub Pages
+- `git add .` swept the untracked 1.1 GB `public/assets/test-models` upload
+  (13,454 files) into the milestone commit and GitHub accepted it with a
+  large-file warning. Rewrote that single commit without the folder
+  (`--force-with-lease`), added `public/assets/test-models/` to
+  `.gitignore`, then `npm run deploy` (PAGES=1 base + gh-pages) -> the
+  site answers 200. The raw folder is NOT deleted this time (the user's
+  preservation rule) - it stays local, ignored, indexed below.
+
+### Direction re-audit (ground truth, every mob sheet rendered per row)
+- Correct: hollow2, mithras, frost, naga, hydra, guard, wolf, lizard,
+  shambler, skelw, skelm, shaman, ahoul, knight.
+- WRONG and fixed in `SpriteLibrary.DIR_ROW_FIX`: the zombie pack (also
+  the Hollow King's first form) stores rows CLOCKWISE on screen ->
+  `(8 - d) mod 8` (it had the mirror map, which put W under E: the boss
+  ran left facing right); the grave-guard pack is a half turn out ->
+  `(d + 4) mod 8`. New packs: Villager_01 and archer rows run
+  counter-clockwise from South -> `(d + 2) mod 8`; the orc pack matches
+  the canonical order.
+
+### Bestiary
+- God mode (Forbidden Arts) sets `Player.bestiaryRevealed` (not saved):
+  every page reads as known while it is on. Unknown creatures are now
+  selectable and render as a solid black silhouette (`brightness(0)`)
+  with "???" for the name and every stat.
+
+### Item phrasing
+- `statLine()` now emits standardized ARPG statements joined by dots:
+  "3–7 Damage", "Range 6", "+2 Armor", "Restores 50% Life", "+8 to Max
+  HP", "+8% Damage", "+5% Dodge", "+20% Regeneration". Tooltip type line
+  reads "Common · Ring" / "Rare · Main Hand".
+
+### Free town portal + boss victory
+- T (or the TOWN PORTAL button beside the hotbar) casts the portal for
+  free on a 12 s cooldown (`TOWN_PORTAL` InputCommand); scrolls are gone
+  from the starter kit and the merchant staples (the item still works).
+- The Hollow King's final form: 7.8 s after the arena clears the victory
+  overlay runs itself; a new RETURN TO TOWN button fades the run back to
+  the camp with everything intact (`RunHandle.returnToTown`).
+
+### Gore
+- `render/Gore.ts`: persistent floor decals from the baked blood splats
+  (five singles, random turn/size/tint, squashed to the ground plane,
+  capped at 260 with the oldest recycled). Every kill drops a pool plus
+  directional spray (bosses larger) and plays the splat strip; hits of 5+
+  damage drip and flash the pixel blood-impact strip; 12+ crack bone.
+- Boss death is 420 ticks: the death frames play over the first 40%,
+  ember tint pulse throughout, flicker + alpha thinning over the back
+  half while `Enemy.onBossDeathFrame` lifts ember trails off the body;
+  the arena's stair reveal waits 7.6 s.
+- Gore vol 1 audio copied to `audio/gore/` and mapped: `goreKill`
+  (guts + bone crack) on every kill, `goreHit` (crack) on heavy hits.
+
+### Asset audit (fourth upload, 13,454 files - preserved, indexed)
+- KEEP -> baked: tavern (2 of 8 rotations), the well (new model),
+  the ruin gate archway + three ruin wall blocks, isometric props
+  (aged/spiral stairs, open/closed gates, archway, column, tables, bridge,
+  stacked barrels, crates, wood pile, supports), five Retro Tree Pack
+  pines/dead trees, blood splats (decals + strip), pixel blood impact,
+  four warrior slash strips (`vfx_cut1/3/4/5`), Villager_01 walk/death
+  (`folk_*`), the archer pack (`poacher_*`), the orc slinger pack
+  (`orc_*`), inventory slot frames (`ui/slots`), Wenrexa armor/helmet
+  icons for the armor items, Gore vol 1 WAVs.
+- INDEXED, not used yet: `_iso` (a heraldic knight, 2,176 frames),
+  Characters/Male (8 small townsfolk), Matthew's Dual Wielding (5,364
+  weapon overlay frames for a paperdoll we do not have the body sheets
+  for), the 20 `Effect_*` pixel packs, castle / dungeon-tiles PBR
+  textures (3D materials), Building/Roof tile sheets, Isometric Geo Pack
+  (low-poly), FREE ver UI kit, Darinia ornaments, the .blend/.fbx/.obj
+  sources, Wizard normal maps. No music tracks were in the upload - the
+  audio upgrade is the gore bank; town/dungeon beds stay as they were.
+
+### Town (organic, 56×50)
+- The map edge is a noise-carved blob (three sines + a bump toward the
+  gate): outside = cliffs, a 2.6-tile belt of pines/dead trees with brush
+  between, and a flood fill after carving turns any unreachable pocket
+  into brush. Winding cobbled main street from the ruin gate up to the
+  elliptical market square (four stalls, shopkeeper, the well, crates and
+  barrels), an east–west high street, dirt lanes to five cottages, the
+  tavern (5×4 with a stone stair and a table outside), the stash vault,
+  the campsite clearing and the portal yard; torch posts along every
+  street; two poacher guards flank the gate; villagers use the new
+  Villager_01 walk. New mobs: Orc Slinger (floors 2–9) and Crypt Poacher
+  (ranged, floors 4–14), with bestiary pages.
+
 ## 2026-09-02 (iteration 42) - Feet-true mob anchors + painted hitboxes, legendary tier + rings, starter gear, inventory redesign, bestiary, typography, depth scaling
 
 ### Enemy anchors and hit-testing (`entities/Enemy.ts`)

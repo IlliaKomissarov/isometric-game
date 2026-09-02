@@ -46,7 +46,7 @@ export class TownSystem {
    */
   restock(seed: number, deepestFloor: number, visit: number): void {
     const rand = mulberry32((seed ^ (visit * 0x9e37)) >>> 0);
-    const staples = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir', 'scroll_town_portal', 'scroll_town_portal'];
+    const staples = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir'];
     const gear = ['rusty_sword', 'short_bow', 'plank_shield', 'iron_cap', 'leather_jerkin', 'worn_boots', 'flanged_mace', 'war_axe'];
     const magic = Object.values(ITEMS).filter((d) => d.rarity === 'magic' && d.slot !== 'consumable').map((d) => d.id);
     const rare = Object.values(ITEMS).filter((d) => d.rarity === 'rare' && d.slot !== 'consumable').map((d) => d.id);

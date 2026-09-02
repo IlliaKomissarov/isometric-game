@@ -1,13 +1,13 @@
 /**
  * @module town/Villagers
- * Ambient townsfolk (it.39): render-only wanderers that stroll the square,
- * pause, and turn — never simulation entities (they cannot be hit, they
- * carry no state, and their randomness is render-side by design). The
- * shopkeeper stands behind the stall and breathes.
+ * Ambient townsfolk (it.39, re-skinned it.43): render-only wanderers that
+ * stroll the square, pause, and turn — never simulation entities (they
+ * cannot be hit, they carry no state, and their randomness is render-side
+ * by design). The shopkeeper stands behind the stall and breathes; two
+ * GATE GUARDS (the poacher pack's idle) keep watch at the dungeon gate.
  *
- * Bodies come from the `villager_walk` / `merchant_walk` atlases (8 walk
- * directions × 8 frames, from the coc_chars sheets); frame 0 doubles as
- * the standing pose.
+ * Bodies come from the `folk_walk` atlas (the Villager_01 pack: 8 walk
+ * directions × 15 frames, feet-true cells); frame 0 doubles as standing.
  */
 
 import { Container, Sprite } from 'pixi.js';
@@ -17,14 +17,12 @@ import type { Room } from '@/scenes/DungeonGenerator';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
 
-/**
- * Target height of the atlas cell's painted union. The peasant sheets paint
- * ~40 px bodies inside a 57 px union (raised tools / north poses), so 62
- * here lands the walking body at ~44–52 px on screen — a touch under the hero.
- */
-const VILLAGER_HEIGHT = 62;
-const WALK_SPEED = 1.35; // tiles / s
-const CYCLES_PER_TILE = 0.45;
+/** Painted height on screen — the hero standard. */
+const FOLK_HEIGHT = 56;
+const WALK_SPEED = 1.25; // tiles / s
+const CYCLES_PER_TILE = 0.5;
+const WALK = 'folk_walk';
+const GUARD_IDLE = 'poacher_idle';
 
 interface Villager {
   root: Container;
@@ -40,11 +38,19 @@ interface Villager {
   idleClock: number;
 }
 
+interface Guard {
+  body: Sprite;
+  clock: number;
+  x: number;
+  y: number;
+}
+
 export class Villagers {
   private readonly folk: Villager[] = [];
+  private readonly guards: Guard[] = [];
   private readonly scratch = vec2();
   private readonly scale: number;
-  private merchant: { body: Sprite; clock: number } | null = null;
+  private merchant: { body: Sprite; clock: number; scale: number } | null = null;
 
   constructor(
     layer: Container,
@@ -52,36 +58,53 @@ export class Villagers {
     private readonly area: Room,
     count: number,
     merchantAt: { x: number; y: number } | null,
+    guardsAt: ReadonlyArray<{ x: number; y: number }> = [],
   ) {
-    const painted = spriteLib.paintedHeight('villager_walk') || 36;
-    this.scale = VILLAGER_HEIGHT / painted;
-    if (spriteLib.hasAnim('villager_walk')) {
+    const painted = spriteLib.paintedHeight(WALK) || 50;
+    this.scale = FOLK_HEIGHT / painted;
+    if (spriteLib.hasAnim(WALK)) {
       for (let i = 0; i < count; i++) {
         const p = this.randomTile();
         const root = new Container();
         root.scale.set(0.8);
         const shadow = new Sprite(assets.get('shadow'));
         shadow.anchor.set(0.5, 0.5);
-        shadow.alpha = 0.7;
+        shadow.alpha = 0.6;
         root.addChild(shadow);
-        const body = new Sprite(spriteLib.frame('villager_walk', 6, 0));
-        body.anchor.set(0.5, 0.86);
+        const body = new Sprite(spriteLib.frame(WALK, 6, 0));
+        body.anchor.set(0.5, 1);
         body.scale.set(this.scale / 0.8); // Undo the shadow root's scale.
-        body.position.set(0, -1);
+        body.position.set(0, 2);
         root.addChild(body);
         layer.addChild(root);
         this.folk.push({ root, body, x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10 });
       }
     }
     if (merchantAt && spriteLib.hasAnim('merchant_walk')) {
+      const mp = spriteLib.paintedHeight('merchant_walk') || 57;
+      const mscale = 62 / mp;
       const body = new Sprite(spriteLib.frame('merchant_walk', 6, 0));
       body.anchor.set(0.5, 0.86);
-      body.scale.set(this.scale);
+      body.scale.set(mscale);
       const s = worldToScreen(merchantAt.x + 0.5, merchantAt.y + 0.5, this.scratch);
       body.position.set(s.x, s.y + 2);
       body.zIndex = depthKey(merchantAt.x + 0.5, merchantAt.y + 0.5);
       layer.addChild(body);
-      this.merchant = { body, clock: 0 };
+      this.merchant = { body, clock: 0, scale: mscale };
+    }
+    if (spriteLib.hasAnim(GUARD_IDLE)) {
+      const gp = spriteLib.paintedHeight(GUARD_IDLE) || 60;
+      const gscale = 60 / gp;
+      for (const at of guardsAt) {
+        const body = new Sprite(spriteLib.frame(GUARD_IDLE, 6, 0));
+        body.anchor.set(0.5, 1);
+        body.scale.set(gscale);
+        const s = worldToScreen(at.x + 0.5, at.y + 0.5, this.scratch);
+        body.position.set(s.x, s.y + 2);
+        body.zIndex = depthKey(at.x + 0.5, at.y + 0.5);
+        layer.addChild(body);
+        this.guards.push({ body, clock: Math.random() * 3, x: at.x + 0.5, y: at.y + 0.5 });
+      }
     }
   }
 
@@ -96,6 +119,7 @@ export class Villagers {
 
   /** Render-frame update: stroll, pause, breathe; scene-lit by the caller's tint. */
   update(dt: number, tint: (x: number, y: number) => number): void {
+    const fc = spriteLib.hasAnim(WALK) ? spriteLib.anim(WALK).frameCount : 1;
     for (const v of this.folk) {
       if (v.pause > 0) {
         v.pause -= dt;
@@ -127,9 +151,8 @@ export class Villagers {
         }
       }
       const walking = v.pause <= 0;
-      const fc = spriteLib.anim('villager_walk').frameCount;
       const frame = walking ? Math.floor(v.walkClock * fc) : 0;
-      v.body.texture = spriteLib.frame('villager_walk', v.dir, frame);
+      v.body.texture = spriteLib.frame(WALK, v.dir, frame);
       v.body.scale.y = (this.scale / 0.8) * (walking ? 1 : 1 + Math.sin(v.idleClock * 1.6) * 0.015);
       const s = worldToScreen(v.x, v.y, this.scratch);
       v.root.position.set(s.x, s.y);
@@ -138,7 +161,15 @@ export class Villagers {
     }
     if (this.merchant) {
       this.merchant.clock += dt;
-      this.merchant.body.scale.y = this.scale * (1 + Math.sin(this.merchant.clock * 1.4) * 0.02);
+      this.merchant.body.scale.y = this.merchant.scale * (1 + Math.sin(this.merchant.clock * 1.4) * 0.02);
+    }
+    if (this.guards.length && spriteLib.hasAnim(GUARD_IDLE)) {
+      const gfc = spriteLib.anim(GUARD_IDLE).frameCount;
+      for (const g of this.guards) {
+        g.clock += dt;
+        g.body.texture = spriteLib.frame(GUARD_IDLE, 6, Math.floor(g.clock * 6) % gfc);
+        g.body.tint = tint(g.x, g.y);
+      }
     }
   }
 
@@ -147,5 +178,7 @@ export class Villagers {
     this.folk.length = 0;
     this.merchant?.body.destroy();
     this.merchant = null;
+    for (const g of this.guards) g.body.destroy();
+    this.guards.length = 0;
   }
 }

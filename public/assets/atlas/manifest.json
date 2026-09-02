@@ -2014,6 +2014,348 @@
     "left": 0,
     "right": 96
    }
+  },
+  "vfx_splat": {
+   "file": "vfx_splat.png",
+   "cellW": 64,
+   "cellH": 64,
+   "frameCount": 15,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 64,
+   "origH": 64,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 36,
+    "bottom": 63,
+    "left": 17,
+    "right": 45
+   }
+  },
+  "vfx_bloodhit": {
+   "file": "vfx_bloodhit.png",
+   "cellW": 64,
+   "cellH": 64,
+   "frameCount": 30,
+   "dirCount": 1,
+   "nearest": true,
+   "origW": 64,
+   "origH": 64,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 12,
+    "bottom": 63,
+    "left": 1,
+    "right": 62
+   }
+  },
+  "vfx_cut1": {
+   "file": "vfx_cut1.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 10,
+   "dirCount": 1,
+   "nearest": true,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 28,
+    "bottom": 95,
+    "left": 14,
+    "right": 81
+   }
+  },
+  "vfx_cut3": {
+   "file": "vfx_cut3.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 10,
+   "dirCount": 1,
+   "nearest": true,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 22,
+    "bottom": 95,
+    "left": 12,
+    "right": 82
+   }
+  },
+  "vfx_cut4": {
+   "file": "vfx_cut4.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 7,
+   "dirCount": 1,
+   "nearest": true,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 20,
+    "bottom": 95,
+    "left": 2,
+    "right": 92
+   }
+  },
+  "vfx_cut5": {
+   "file": "vfx_cut5.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 8,
+   "dirCount": 1,
+   "nearest": true,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 5,
+    "bottom": 95,
+    "left": 5,
+    "right": 90
+   }
+  },
+  "folk_walk": {
+   "file": "folk_walk.png",
+   "cellW": 56,
+   "cellH": 96,
+   "frameCount": 15,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 56,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 7,
+    "bottom": 89,
+    "left": 3,
+    "right": 51
+   }
+  },
+  "folk_death": {
+   "file": "folk_death.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 17,
+    "bottom": 85,
+    "left": 3,
+    "right": 71
+   }
+  },
+  "poacher_walk": {
+   "file": "poacher_walk.png",
+   "cellW": 80,
+   "cellH": 96,
+   "frameCount": 15,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 80,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 9,
+    "bottom": 89,
+    "left": 1,
+    "right": 74
+   }
+  },
+  "poacher_run": {
+   "file": "poacher_run.png",
+   "cellW": 80,
+   "cellH": 96,
+   "frameCount": 12,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 80,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 7,
+    "bottom": 86,
+    "left": 1,
+    "right": 73
+   }
+  },
+  "poacher_idle": {
+   "file": "poacher_idle.png",
+   "cellW": 80,
+   "cellH": 96,
+   "frameCount": 13,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 80,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 10,
+    "bottom": 89,
+    "left": 1,
+    "right": 71
+   }
+  },
+  "poacher_attack": {
+   "file": "poacher_attack.png",
+   "cellW": 96,
+   "cellH": 112,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 112,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 2,
+    "bottom": 109,
+    "left": 15,
+    "right": 67
+   }
+  },
+  "poacher_death": {
+   "file": "poacher_death.png",
+   "cellW": 112,
+   "cellH": 112,
+   "frameCount": 13,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 112,
+   "origH": 112,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 8,
+    "bottom": 103,
+    "left": 2,
+    "right": 105
+   }
+  },
+  "orc_walk": {
+   "file": "orc_walk.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 61,
+    "bottom": 95,
+    "left": 29,
+    "right": 66
+   }
+  },
+  "orc_attack": {
+   "file": "orc_attack.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 34,
+    "bottom": 95,
+    "left": 18,
+    "right": 71
+   }
+  },
+  "orc_idle": {
+   "file": "orc_idle.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 65,
+    "bottom": 95,
+    "left": 31,
+    "right": 63
+   }
+  },
+  "orc_death": {
+   "file": "orc_death.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 48,
+    "bottom": 86,
+    "left": 16,
+    "right": 69
+   }
+  },
+  "orc_hit": {
+   "file": "orc_hit.png",
+   "cellW": 96,
+   "cellH": 96,
+   "frameCount": 11,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 45,
+    "bottom": 81,
+    "left": 20,
+    "right": 68
+   }
   }
  },
  "singles": {
@@ -2273,6 +2615,186 @@
    "file": "single_pots.png",
    "w": 26,
    "h": 35,
+   "nearest": false
+  },
+  "tavern_a": {
+   "file": "single_tavern_a.png",
+   "w": 274,
+   "h": 296,
+   "nearest": false
+  },
+  "tavern_b": {
+   "file": "single_tavern_b.png",
+   "w": 274,
+   "h": 289,
+   "nearest": false
+  },
+  "well_b": {
+   "file": "single_well_b.png",
+   "w": 157,
+   "h": 161,
+   "nearest": false
+  },
+  "ruin_gate": {
+   "file": "single_ruin_gate.png",
+   "w": 192,
+   "h": 220,
+   "nearest": true
+  },
+  "ruin_wall_a": {
+   "file": "single_ruin_wall_a.png",
+   "w": 64,
+   "h": 94,
+   "nearest": true
+  },
+  "ruin_wall_b": {
+   "file": "single_ruin_wall_b.png",
+   "w": 64,
+   "h": 92,
+   "nearest": true
+  },
+  "ruin_wall_c": {
+   "file": "single_ruin_wall_c.png",
+   "w": 56,
+   "h": 85,
+   "nearest": true
+  },
+  "stairs_stone": {
+   "file": "single_stairs_stone.png",
+   "w": 77,
+   "h": 62,
+   "nearest": false
+  },
+  "stairs_spiral": {
+   "file": "single_stairs_spiral.png",
+   "w": 48,
+   "h": 65,
+   "nearest": false
+  },
+  "gate_open": {
+   "file": "single_gate_open.png",
+   "w": 48,
+   "h": 71,
+   "nearest": false
+  },
+  "gate_closed": {
+   "file": "single_gate_closed.png",
+   "w": 48,
+   "h": 71,
+   "nearest": false
+  },
+  "archway": {
+   "file": "single_archway.png",
+   "w": 48,
+   "h": 71,
+   "nearest": false
+  },
+  "column": {
+   "file": "single_column.png",
+   "w": 19,
+   "h": 56,
+   "nearest": false
+  },
+  "table_short": {
+   "file": "single_table_short.png",
+   "w": 35,
+   "h": 27,
+   "nearest": false
+  },
+  "table_chairs": {
+   "file": "single_table_chairs.png",
+   "w": 37,
+   "h": 32,
+   "nearest": false
+  },
+  "bridge": {
+   "file": "single_bridge.png",
+   "w": 57,
+   "h": 31,
+   "nearest": false
+  },
+  "barrels_stacked": {
+   "file": "single_barrels_stacked.png",
+   "w": 53,
+   "h": 44,
+   "nearest": false
+  },
+  "crates_wood": {
+   "file": "single_crates_wood.png",
+   "w": 27,
+   "h": 29,
+   "nearest": false
+  },
+  "wood_pile": {
+   "file": "single_wood_pile.png",
+   "w": 46,
+   "h": 31,
+   "nearest": false
+  },
+  "supports": {
+   "file": "single_supports.png",
+   "w": 77,
+   "h": 85,
+   "nearest": false
+  },
+  "pine_a": {
+   "file": "single_pine_a.png",
+   "w": 77,
+   "h": 144,
+   "nearest": false
+  },
+  "pine_b": {
+   "file": "single_pine_b.png",
+   "w": 88,
+   "h": 151,
+   "nearest": false
+  },
+  "pine_c": {
+   "file": "single_pine_c.png",
+   "w": 97,
+   "h": 142,
+   "nearest": false
+  },
+  "dead_a": {
+   "file": "single_dead_a.png",
+   "w": 126,
+   "h": 144,
+   "nearest": false
+  },
+  "dead_b": {
+   "file": "single_dead_b.png",
+   "w": 100,
+   "h": 148,
+   "nearest": false
+  },
+  "blood_1": {
+   "file": "single_blood_1.png",
+   "w": 90,
+   "h": 90,
+   "nearest": false
+  },
+  "blood_2": {
+   "file": "single_blood_2.png",
+   "w": 90,
+   "h": 90,
+   "nearest": false
+  },
+  "blood_3": {
+   "file": "single_blood_3.png",
+   "w": 90,
+   "h": 90,
+   "nearest": false
+  },
+  "blood_4": {
+   "file": "single_blood_4.png",
+   "w": 90,
+   "h": 90,
+   "nearest": false
+  },
+  "blood_5": {
+   "file": "single_blood_5.png",
+   "w": 90,
+   "h": 90,
    "nearest": false
   }
  }

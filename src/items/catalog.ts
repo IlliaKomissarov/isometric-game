@@ -112,10 +112,10 @@ export const ITEMS: Record<string, ItemDef> = {
   emberwand: { id: 'emberwand', name: 'Emberwand', slot: 'mainHand', rarity: 'rare', art: 'emberwand', weaponKind: 'wand', range: 5.5, minDamage: 9, maxDamage: 15, color: 0xe0803a, icon: 'stick_0' },
   plank_shield: { id: 'plank_shield', name: 'Plank Shield', slot: 'offHand', rarity: 'common', art: 'plank_shield', armor: 2, color: 0x8a6f4d },
   tower_aegis: { id: 'tower_aegis', name: 'Tower Aegis', slot: 'offHand', rarity: 'magic', art: 'tower_aegis', armor: 4, color: 0x6f8fd0 },
-  iron_cap: { id: 'iron_cap', name: 'Iron Cap', slot: 'head', rarity: 'common', armor: 1, color: 0x9aa0a8 },
-  crown_of_embers: { id: 'crown_of_embers', name: 'Crown of Embers', slot: 'head', rarity: 'rare', armor: 3, color: 0xe09040 },
-  leather_jerkin: { id: 'leather_jerkin', name: 'Leather Jerkin', slot: 'torso', rarity: 'common', armor: 2, color: 0x8a6a48 },
-  dark_mail: { id: 'dark_mail', name: 'Dark Mail', slot: 'torso', rarity: 'magic', armor: 4, color: 0x5a6a9a },
+  iron_cap: { id: 'iron_cap', name: 'Iron Cap', slot: 'head', rarity: 'common', art: 'iron_cap', armor: 1, color: 0x9aa0a8 },
+  crown_of_embers: { id: 'crown_of_embers', name: 'Crown of Embers', slot: 'head', rarity: 'rare', art: 'crown_of_embers', armor: 3, color: 0xe09040 },
+  leather_jerkin: { id: 'leather_jerkin', name: 'Leather Jerkin', slot: 'torso', rarity: 'common', art: 'leather_jerkin', armor: 2, color: 0x8a6a48 },
+  dark_mail: { id: 'dark_mail', name: 'Dark Mail', slot: 'torso', rarity: 'magic', art: 'dark_mail', armor: 4, color: 0x5a6a9a },
   worn_boots: { id: 'worn_boots', name: 'Worn Boots', slot: 'legs', rarity: 'common', armor: 1, color: 0x7a6650 },
   shadow_cloak: { id: 'shadow_cloak', name: 'Shadow Cloak', slot: 'cloak', rarity: 'magic', armor: 1, color: 0x6a5a9a },
   // --- The expanded arsenal (oubliette icon pack) ---------------------------
@@ -136,7 +136,7 @@ export const ITEMS: Record<string, ItemDef> = {
   // ---- Starter kit (it.42): every class leaves town armed and clothed ----
   apprentice_wand: { id: 'apprentice_wand', name: 'Apprentice Wand', slot: 'mainHand', rarity: 'common', weaponKind: 'wand', range: 5, minDamage: 3, maxDamage: 6, color: 0xb08a5a, icon: 'stick_0' },
   worn_katana: { id: 'worn_katana', name: 'Worn Katana', slot: 'mainHand', rarity: 'common', weaponKind: 'katana', minDamage: 3, maxDamage: 6, color: 0x9aa0a8, icon: 'iron_katana_0' },
-  cloth_robe: { id: 'cloth_robe', name: 'Cloth Robe', slot: 'torso', rarity: 'common', armor: 1, color: 0x6a5a9a },
+  cloth_robe: { id: 'cloth_robe', name: 'Cloth Robe', slot: 'torso', rarity: 'common', art: 'cloth_robe', armor: 1, color: 0x6a5a9a },
   // ---- Rings (it.42): worn bonuses in the new ring slot ----
   copper_ring: { id: 'copper_ring', name: 'Copper Ring', slot: 'ring', rarity: 'common', bonus: { hp: 8 }, color: 0xb87a48 },
   ring_of_embers: { id: 'ring_of_embers', name: 'Ring of Embers', slot: 'ring', rarity: 'magic', bonus: { dmg: 0.08 }, color: 0xe0803a },
@@ -144,7 +144,7 @@ export const ITEMS: Record<string, ItemDef> = {
   hollow_seal: { id: 'hollow_seal', name: 'Seal of the Hollow King', slot: 'ring', rarity: 'legendary', bonus: { dmg: 0.15, hp: 20, regen: 0.2 }, color: 0xffb347 },
   // ---- Legendary trophies (it.42): boss-only rolls ----
   kingsbane: { id: 'kingsbane', name: 'Kingsbane', slot: 'mainHand', rarity: 'legendary', minDamage: 16, maxDamage: 28, color: 0xffb347, icon: 'steel_large_0', bonus: { dmg: 0.1 } },
-  crown_of_the_hollow: { id: 'crown_of_the_hollow', name: 'Crown of the Hollow', slot: 'head', rarity: 'legendary', armor: 5, bonus: { hp: 15, dodge: 0.04 }, color: 0xffb347 },
+  crown_of_the_hollow: { id: 'crown_of_the_hollow', name: 'Crown of the Hollow', slot: 'head', rarity: 'legendary', art: 'crown_of_the_hollow', armor: 5, bonus: { hp: 15, dodge: 0.04 }, color: 0xffb347 },
 };
 
 const BY_RARITY: Record<Rarity, ItemDef[]> = { common: [], magic: [], rare: [], legendary: [] };
@@ -180,21 +180,22 @@ export function rollRareItem(rand: () => number): ItemDef {
 
 /** One-line stat summary for tooltips and inventory rows. */
 export function statLine(def: ItemDef): string {
+  // ARPG phrasing (it.43): every line is a standardized "+N to Stat" / "N–M Damage" statement.
   const parts: string[] = [];
   if (def.minDamage !== undefined && def.maxDamage !== undefined) {
-    parts.push(`${def.minDamage}–${def.maxDamage} damage`);
+    parts.push(`${def.minDamage}–${def.maxDamage} Damage`);
   }
-  if (def.range) parts.push(`range ${def.range}`);
-  if (def.armor) parts.push(`+${def.armor} armor`);
-  if (def.use?.heal) parts.push(`heals ${Math.round(def.use.heal * 100)}% life`);
-  if (def.use?.resource) parts.push(`restores ${Math.round(def.use.resource * 100)}% mana/stamina`);
-  if (def.use?.portal) parts.push('opens a portal to town');
+  if (def.range) parts.push(`Range ${def.range}`);
+  if (def.armor) parts.push(`+${def.armor} Armor`);
+  if (def.use?.heal) parts.push(`Restores ${Math.round(def.use.heal * 100)}% Life`);
+  if (def.use?.resource) parts.push(`Restores ${Math.round(def.use.resource * 100)}% Mana / Stamina`);
+  if (def.use?.portal) parts.push('Opens a Town Portal');
   if (def.bonus) {
-    if (def.bonus.hp) parts.push(`+${def.bonus.hp} life`);
-    if (def.bonus.dmg) parts.push(`+${Math.round(def.bonus.dmg * 100)}% damage`);
-    if (def.bonus.armor) parts.push(`+${def.bonus.armor} armor`);
-    if (def.bonus.dodge) parts.push(`+${Math.round(def.bonus.dodge * 100)}% dodge`);
-    if (def.bonus.regen) parts.push(`+${Math.round(def.bonus.regen * 100)}% regeneration`);
+    if (def.bonus.hp) parts.push(`+${def.bonus.hp} to Max HP`);
+    if (def.bonus.dmg) parts.push(`+${Math.round(def.bonus.dmg * 100)}% Damage`);
+    if (def.bonus.armor) parts.push(`+${def.bonus.armor} Armor`);
+    if (def.bonus.dodge) parts.push(`+${Math.round(def.bonus.dodge * 100)}% Dodge`);
+    if (def.bonus.regen) parts.push(`+${Math.round(def.bonus.regen * 100)}% Regeneration`);
   }
-  return parts.join(', ') || 'No bonuses';
+  return parts.join(' · ') || 'No Bonuses';
 }

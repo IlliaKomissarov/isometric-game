@@ -2575,6 +2575,37 @@
       #cheat-menu .cheat-item-stats { font-family: 'Crimson Pro', serif; font-size: 11.5px; color: var(--ink-dim); }
       #cheat-menu .cheat-takeall { margin-top: 4px; }
       #cheat-menu .cheat-level-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+      /* ===================================================================
+         IT.43 — TOWN PORTAL BUTTON, BESTIARY SILHOUETTES, ENDGAME, SLOT FRAMES
+         =================================================================== */
+      #tp-button {
+        position: fixed;
+        right: calc(50% + 168px);
+        bottom: 22px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        font-family: 'Cinzel', serif;
+        font-size: 10.5px;
+        letter-spacing: 0.14em;
+        color: var(--ink);
+        background: linear-gradient(180deg, #1b1622, #0b0910);
+        border: 2px solid var(--frame-iron);
+        box-shadow: inset 0 0 0 1px var(--frame-gold), 0 0 14px rgba(0, 0, 0, 0.9);
+        cursor: pointer;
+        z-index: 30;
+      }
+      #tp-button kbd { font-family: 'Cinzel', serif; font-weight: 700; color: var(--frame-gold-hi); background: none; border: none; }
+      #tp-button i { font-style: normal; font-size: 9.5px; color: #9fb4e8; }
+      #tp-button.cooling { opacity: 0.6; }
+      #tp-button:hover { border-color: var(--frame-gold); }
+      body:not(.in-run) #tp-button { display: none; }
+      #endgame-town { display: block; margin: 14px auto 6px; padding: 12px 40px; font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.2em; color: #0b0910; background: linear-gradient(180deg, #e8c46a, #a8843a); border: 2px solid #3a3240; cursor: pointer; box-shadow: 0 0 18px rgba(200, 165, 88, 0.5); }
+      #endgame-town:hover { filter: brightness(1.1); }
+      .bs-stage.unknown { background: radial-gradient(ellipse at 50% 85%, rgba(60, 40, 80, 0.5), transparent 60%); }
+      #inv-panel .inv-cell.inv-cell-framed { background-size: 100% 100%; background-repeat: no-repeat; border: none; opacity: 0.9; }
     </style>
   </head>
   <body>
@@ -2607,6 +2638,7 @@
       <div class="row"><span>Skill Tree</span><kbd>K</kbd></div>
       <div class="row"><span>Character</span><kbd>C</kbd></div>
       <div class="row"><span>Bestiary</span><kbd>B</kbd></div>
+      <div class="row"><span>Town Portal</span><kbd>T</kbd></div>
       <div class="row"><span>Map</span><kbd>M</kbd></div>
       <div class="row"><span>Depths</span><kbd>L</kbd></div>
       <div class="row"><span>Zoom the Eye</span><kbd>WHEEL</kbd></div>
@@ -2633,6 +2665,7 @@
       </div>
       <div id="endgame-stats"></div>
       <div style="display:flex;gap:14px">
+        <button id="endgame-town">RETURN TO TOWN</button>
         <button id="endgame-again">DELVE AGAIN</button>
         <button id="endgame-menu" class="menu-btn" style="width:auto;margin:10px 0 0;padding:10px 34px">MAIN MENU</button>
       </div>

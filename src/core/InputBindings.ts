@@ -106,6 +106,12 @@ export class InputBindings {
           if (!e.repeat) this.inputQueue.enqueue({ type: 'PICKUP_NEAREST', playerId: this.playerId });
           return;
         }
+        // T (it.43): the built-in town portal — free, on a cooldown.
+        if (e.code === 'KeyT') {
+          e.preventDefault();
+          if (!e.repeat) this.inputQueue.enqueue({ type: 'TOWN_PORTAL', playerId: this.playerId });
+          return;
+        }
         // Q / R (it.39): quaff the first healing / mana potion carried.
         if (e.code === 'KeyQ' || e.code === 'KeyR') {
           e.preventDefault();

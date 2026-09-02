@@ -274,6 +274,8 @@ export class Player extends Entity {
 
   // ---- Bestiary (it.42): creatures seen and slain, persisted in the save ----
   readonly bestiary = new Map<string, { seen: number; killed: number }>();
+  /** God mode (it.43): every entry reads as known while on (not saved). */
+  bestiaryRevealed = false;
 
   noteSeen(kind: string): void {
     const rec = this.bestiary.get(kind);

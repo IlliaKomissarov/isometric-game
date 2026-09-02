@@ -52,7 +52,9 @@ export type EnemyKind =
   | 'hydra'
   | 'bossHollow'
   | 'bossHollowKnight'
-  | 'bossHollowLich';
+  | 'bossHollowLich'
+  | 'orc'
+  | 'poacher';
 
 export interface EnemyTypeDef {
   kind: EnemyKind;
@@ -119,6 +121,8 @@ export interface EnemyTypeDef {
  * Standard mobs match the hero exactly (56 px); bosses alone are enlarged
  * (2.3×) — ratio preserved from the accepted it.34 look.
  */
+/** EXTENDED BOSS DEATH (it.43): seven seconds of collapse, pulse and disintegration. */
+export const BOSS_DEATH_TICKS = 420;
 export const MOB_HEIGHT = 56;
 export const BOSS_HEIGHT = 128;
 
@@ -392,6 +396,61 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       tint: 0xffffff,
       stride: 0.42,
       ownShadow: true, // The Body sheets carry no baked shadow.
+    },
+  },
+  // ---- it.43 pack additions ----
+  orc: {
+    kind: 'orc',
+    name: 'Orc Slinger',
+    hp: 44,
+    minDamage: 4,
+    maxDamage: 9,
+    toHit: 0.7,
+    speedMult: 0.95,
+    windupTicks: 22,
+    recoverTicks: 26,
+    reach: 1.3,
+    hitRecoveryTicks: 16,
+    markerTexture: 'marker_fallen',
+    armor: 1,
+    sprite: {
+      walk: 'orc_walk',
+      idle: 'orc_idle',
+      death: 'orc_death',
+      attack: 'orc_attack',
+      hitAnim: 'orc_hit',
+      anchorY: 0.9,
+      scale: 0.55,
+      tint: 0xffffff,
+      stride: 0.45,
+      ownShadow: true,
+      heightMult: 0.95,
+    },
+  },
+  poacher: {
+    kind: 'poacher',
+    name: 'Crypt Poacher',
+    hp: 40,
+    minDamage: 5,
+    maxDamage: 10,
+    toHit: 0.74,
+    speedMult: 0.6,
+    windupTicks: 34,
+    recoverTicks: 30,
+    reach: 0,
+    hitRecoveryTicks: 18,
+    markerTexture: 'marker_archer',
+    ranged: { range: 6.5, kiteMin: 3.4 },
+    sprite: {
+      walk: 'poacher_run',
+      idle: 'poacher_idle',
+      death: 'poacher_death',
+      attack: 'poacher_attack',
+      anchorY: 0.9,
+      scale: 0.44,
+      tint: 0xffffff,
+      stride: 0.4,
+      ownShadow: true,
     },
   },
   guard: {
@@ -1284,8 +1343,11 @@ export class Enemy extends Entity {
   /** Total ticks the death animation runs before pool reclaim. Bosses take
    *  ~4 seconds (it.17): a real victory beat, not a mob despawn. */
   deathTicksTotal(): number {
-    return this.isBoss() ? 240 : DEATH_TICKS;
+    return this.isBoss() ? BOSS_DEATH_TICKS : DEATH_TICKS;
   }
+
+  /** Render hook (it.43): called every frame of a boss's death with progress 0..1 (disintegration FX). */
+  static onBossDeathFrame: ((enemy: Enemy, p: number) => void) | null = null;
 
   /** True when this enemy renders from external sprite animations. */
   private usesSprite(): boolean {
@@ -1393,7 +1455,8 @@ export class Enemy extends Entity {
         // PULSES smoothly between ember tones (continuous sine mix, no
         // frame-flips) and never drops below half opacity — the corpse
         // replaces it seamlessly at reclaim.
-        const animP = Math.min(1, p / 0.55);
+        const animP = Math.min(1, p / 0.4);
+        Enemy.onBossDeathFrame?.(this, p);
         const frame = Math.min(fc - 1, Math.floor(animP * fc));
         this.setFrame(sprite.death, dir, frame);
         this.body.rotation = 0;
@@ -1408,7 +1471,9 @@ export class Enemy extends Entity {
         } else {
           this.body.tint = 0xfff1d8; // A last pale glow.
         }
-        this.container.alpha = p > 0.9 ? Math.max(0.55, 1 - (p - 0.9) * 4.5) : 1;
+        // Disintegration: the body thins out over the back half while the embers rise.
+        this.container.alpha = p > 0.5 ? Math.max(0.1, 1 - (p - 0.5) * 1.8) : 1;
+        if (p > 0.5 && Math.floor(this.actionTicks / 3) % 2 === 0) this.body.tint = 0xfff1d8; // Flicker.
         return;
       }
       // Regular mobs: the pack's death animation, then a short fade.

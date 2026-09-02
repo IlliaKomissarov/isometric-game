@@ -37,6 +37,9 @@ const seq = (dir, stem, n) => Array.from({ length: n }, (_, i) => `${dir}/${stem
 const AUDIO_KEEP = new Set([
   '.gitkeep',
   'universfield-mystic-reveal-567294.mp3',
+  // Gore vol 1 (it.43)
+  'gore/S_Bone_crack.wav', 'gore/S_Bone_crack_002.wav', 'gore/S_Bone_crack_003.wav', 'gore/S_Bone_rattle.wav',
+  'gore/S_Bone_snap.wav', 'gore/S_Bone_snap_002.wav', 'gore/S_Guts.wav', 'gore/S_Guts_002.wav', 'gore/S_Guts_003.wav',
   'universfield-dark-mystery-cinematic-485921.mp3',
   'alesiadavina-dark-demonic-atmosphere-gloomy-horror-drone-sfx-541953.mp3',
   'kave_msri-war-horn-sfx-319881.mp3',

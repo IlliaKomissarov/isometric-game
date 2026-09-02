@@ -81,6 +81,27 @@
   floating damage numbers, scale by 1/zoom (clamped) so a deep zoom never
   fills the view with bars and text (`Enemy.hudScale`, `DamageText.setZoom`).
 
+### Studio QA pass (second session, fresh ranger)
+- XP path: 14 kills on floor 1 -> level 2 -> +1 point; empty hotbar slots
+  advertise the point count and K.
+- Drag: inventory, skill tree, character sheet, cheat menu each moved by
+  their header and stayed in bounds; the sheet reopened at its dropped
+  spot; positions stored under `iso-arpg-ui-pos`.
+- E: opens a chest beside the hero; at the portal stone returns to the
+  remembered floor; at the gate descends.
+- Level 30 via cheat -> 30 points: all 16 actives learned through the tree
+  (own path 1 pt, others 2 pts) + Fleet Foot / Keen Eye; points end at 0
+  and the remaining passives report LOCKED - 2 POINTS. Passives applied:
+  speed 1.21, damage x1.12. Every skill cast from the hotbar started its
+  cooldown and drew its strip (rain waves keep adding streaks over time).
+- Boss arena: bar top-anchored at 44 px above an open window, note slot at
+  96 px; hp bar 26x4 at zoom 1.
+- Fixes from the pass: the firewall strip is now masked with an elliptical
+  falloff (the source sheet was a square tile), trap placement flares a
+  ring. Background-tab note for future QA: never `await setTimeout` in a
+  long test script - hidden tabs throttle timers to 1 Hz and the script
+  keeps running after the CDP call times out.
+
 ### Live QA (Chrome, stepped sim)
 Fresh mage -> K: only Fireball READY, all else LOCKED with reasons ->
 learn (1 pt -> 0, auto slot 1, synergy frame) -> drag the tree 161x44 px,

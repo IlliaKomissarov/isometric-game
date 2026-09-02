@@ -653,6 +653,7 @@ export class SkillSystem {
         // until something steps into it (or it expires).
         const dispose = d.zoneVisual('trap', p.pos.x, p.pos.y);
         this.zones.push({ kind: 'trap', x: p.pos.x, y: p.pos.y, armTicks: 40, ticksLeft: 1200, dispose, syn });
+        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.7, flat: true, fps: 24, tint: 0xc8b060, alpha: 0.8 });
         d.burst(p.pos.x, p.pos.y, 0xc8b060, 8);
         d.text(p.pos.x, p.pos.y - 1, 'TRAP SET', 'miss');
         break;

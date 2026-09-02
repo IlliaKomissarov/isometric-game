@@ -1682,8 +1682,12 @@
         letter-spacing: 0.16em;
         color: var(--gold-dim);
       }
+      /* Credits opens OVER the title screen (z 85). */
+      #credits {
+        z-index: 92;
+      }
       #credits .modal-panel {
-        width: 420px;
+        width: 460px;
         text-align: left;
       }
       #credits h2 {

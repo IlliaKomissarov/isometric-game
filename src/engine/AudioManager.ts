@@ -132,6 +132,9 @@ const VARIANTS: Record<string, string[]> = {
   coin: [`${PACK}/Doors Gates and Chests/Lock Unlock.ogg`],
   // It.26 deep-scan round 2: the pack's unused corners, mapped.
   gateOpen: [`${PACK}/Doors Gates and Chests/Gate Open.ogg`],
+  // it.44 UI voice: wood and iron instead of the pack's bubbly pops.
+  doorClose: [`${PACK}/Doors Gates and Chests/Door Close 1.ogg`],
+  doorOpen: [1, 2].map((n) => `${PACK}/Doors Gates and Chests/Door Open ${n}.ogg`),
   firespray: [1, 2].map((n) => `${PACK}/Spells/Firespray ${n}.ogg`),
   bowBlocked: [1, 2, 3].map((n) => `${BOWS}/Bow Blocked ${n}.ogg`),
   unsheath: [1, 2].map((n) => `${SWORDS}/Sword Unsheath ${n}.ogg`),
@@ -747,17 +750,20 @@ export class AudioManager {
         this.playVariant('unsheath', 0.55, 1.0, 0.06, 0.08);
         break;
       // ---- UI (it.36) ----
+      // UI VOICE (it.44): iron and oak — a blade whisper on hover, a lock
+      // on click, a door and a lock on confirm, the blade going home on back.
       case 'uiHover':
-        this.playVariant('uiHover', 0.16, 1.1, 0.12);
+        if (!this.playVariant('sheath', 0.1, 1.7, 0.1)) this.playVariant('uiHover', 0.12, 0.8, 0.12);
         break;
       case 'uiClick':
-        if (!this.playVariant('uiClick', 0.45, 1.0, 0.06)) this.blip('square', 840, 620, 0.04, 0.18);
+        if (!this.playVariant('coin', 0.5, 1.2, 0.05)) this.blip('square', 840, 620, 0.04, 0.18);
         break;
       case 'uiConfirm':
-        if (!this.playVariant('uiConfirm', 0.55, 1.0, 0.03)) this.blip('square', 660, 880, 0.06, 0.2);
+        if (!this.playVariant('doorClose', 0.5, 1.15, 0.04)) this.blip('square', 660, 880, 0.06, 0.2);
+        this.playVariant('coin', 0.3, 1.0, 0.03, 0.06);
         break;
       case 'uiBack':
-        if (!this.playVariant('uiBack', 0.45, 1.0, 0.03)) this.blip('square', 520, 380, 0.05, 0.18);
+        if (!this.playVariant('sheath', 0.4, 0.85, 0.05)) this.blip('square', 520, 380, 0.05, 0.18);
         break;
       case 'pause':
         this.playVariant('toggleOn', 0.5, 0.9, 0.02);
@@ -766,10 +772,10 @@ export class AudioManager {
         this.playVariant('toggleOff', 0.5, 0.95, 0.02);
         break;
       case 'invOpen':
-        if (!this.playVariant('bookOpen', 0.55, 1.0, 0.04)) this.playVariant('parry', 0.14, 1.85);
+        if (!this.playVariant('chestOpen', 0.45, 1.25, 0.05)) this.playVariant('parry', 0.14, 1.85);
         break;
       case 'invClose':
-        if (!this.playVariant('bookClose', 0.55, 1.0, 0.04)) this.playVariant('parry', 0.14, 1.85);
+        if (!this.playVariant('doorClose', 0.4, 1.3, 0.05)) this.playVariant('parry', 0.14, 1.85);
         break;
       case 'mapOpen':
         this.playVariant('mapOpen', 0.5, 1.0, 0.03);

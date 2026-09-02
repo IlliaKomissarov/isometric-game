@@ -100,6 +100,8 @@ export interface EnemyTypeDef {
     ownShadow?: boolean;
     /** Height flavor × the MOB/BOSS standard (0.85 = runt, 1.25 = elite). */
     heightMult?: number;
+    /** Explicit feet anchor (it.44) — for packs whose painted bounds include a baked shadow the auto anchor misreads. */
+    feetAnchor?: number;
   };
   /** Flat damage reduction at level 1 (it.42; grows +½ per level). */
   armor?: number;
@@ -419,7 +421,8 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       death: 'orc_death',
       attack: 'orc_attack',
       hitAnim: 'orc_hit',
-      anchorY: 0.9,
+      anchorY: 0.95,
+      feetAnchor: 0.95, // The pack bakes a long drop shadow; anchor by hand so the slinger walks the ground.
       scale: 0.55,
       tint: 0xffffff,
       stride: 0.45,
@@ -939,6 +942,7 @@ export class Enemy extends Entity {
     const e = spriteLib.entry(anim);
     const sprite = this.def.sprite;
     if (!e || !e.painted || !sprite) return sprite?.anchorY ?? 1;
+    if (sprite.feetAnchor !== undefined) return sprite.feetAnchor;
     const paintedH = e.painted.bottom - e.painted.top + 1;
     const shadow = sprite.ownShadow ? 0 : paintedH * 0.07;
     return Math.max(0.5, Math.min(1, (e.painted.bottom + 1 - shadow) / e.origH));

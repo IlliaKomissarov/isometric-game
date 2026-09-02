@@ -172,6 +172,7 @@ export type AnimName =
   | 'vfx_cut3'
   | 'vfx_cut4'
   | 'vfx_cut5'
+  | 'vfx_pentagram'
   | 'villager_walk'
   | 'merchant_walk'
   | 'campfire'

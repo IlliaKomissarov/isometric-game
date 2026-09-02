@@ -36,6 +36,7 @@ export const VFX_ANIMS = [
   'vfx_cut3',
   'vfx_cut4',
   'vfx_cut5',
+  'vfx_pentagram',
 ] as const;
 export type VfxAnim = (typeof VFX_ANIMS)[number];
 

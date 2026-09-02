@@ -1,5 +1,54 @@
 # Development Log
 
+## 2026-09-02 (iteration 44) - Portal softlock fix, north gate on contact, orc anchor, pack stairs + chests, pentagrams, skill point cap, HUD frames, UI voice
+
+### Town-portal softlock (root cause + fix)
+- CAUSE: a rebuilt arena copied `arenaCleared` from memory into the SPAWN
+  decision (no boss when cleared) but the World literal still started at
+  `arenaCleared: false` - so a portal round trip to a beaten arena had no
+  enemies and a stair that kept saying "the arena is sealed".
+- FIX: the World carries the remembered flag; plus an ARENA SAFETY rule in
+  the tick - when nothing in a sealed arena breathes (no hp, no phase
+  transition) for 45 ticks, the arena clears itself and the stair reveals
+  ("Nothing left breathes here"). No rebuild, portal trip or spawn
+  accounting can strand the hero again.
+
+### The gate moves NORTH and opens on contact
+- Town v4 (60×54): the ruin archway sits at the top centre (footprint
+  29–31 × 3–4, front tile (30,5)), braziers and two guards at its foot, the
+  cobbled main street winding south into the market square. Touching the
+  front tile (reach 1.05) descends at once - no prompt needed.
+- DENSE FILL: seven cottages, six stalls, the tavern, vault, camp, portal
+  yard and a lower plaza; then every open lawn is seeded with tree clusters
+  (each seed is undone if a flood fill shows it cut a route) and bush tufts
+  (26% of open grass). A hidden ritual circle glows in the south-east woods
+  at the end of a forest track.
+
+### Units + models
+- Orc Slinger: the pack bakes a long drop shadow, so the automatic painted
+  anchor floated it; sprite defs gain `feetAnchor` and the orc is pinned
+  at 0.95.
+- Stairs: the isometric pack's stone spiral (80×109) stands on the stair
+  tile as a depth-sorted prop on every floor (the old stairwell is the
+  fallback). Chests: the pack's dark-wood chest (closed 64×54, open 70×76)
+  replaces the procedural box via `assets.registerTexture` at boot.
+- Pentagrams: `pentagram.png` (7-frame glowing sigil sheet) baked as
+  `vfx_pentagram`; every arena floor loops it at the room's heart, 35% of
+  ordinary floors hide one in the farthest room, the town keeps one in the
+  woods (with a warm light source).
+
+### Skill points
+- Two points per level (59 by level 30; every rank costs 44). Cheat HERO
+  tab: "+10 POINTS" and "MAX OUT".
+
+### HUD + sound
+- Minimap in an iron/stone gradient frame with gold hairline and corner
+  studs; dark backing panels (0.68–0.78) behind the hotbar, the command
+  list and the orb bar.
+- UI voice swapped from the pack's bubbly pops to iron and oak: blade
+  whisper on hover, lock click on click, door + lock on confirm, blade
+  going home on back, chest / door on inventory open / close.
+
 ## 2026-09-02 (iteration 43) - Deploy, direction re-audit, bestiary silhouettes, free town portal, boss victory, persistent gore, asset pack integration, organic town
 
 ### Stage 1 - commit, push, GitHub Pages

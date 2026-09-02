@@ -216,6 +216,23 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'supports':
         standing(p, 'supports', 0.95);
         break;
+      case 'pentagram': {
+        // RITUAL CIRCLE (it.44): the glowing sigil strip loops on the ground.
+        if (spriteLib.loaded && spriteLib.hasAnim('vfx_pentagram')) {
+          const frames = spriteLib.anim('vfx_pentagram').frames[0];
+          const spr = new Sprite(frames[0]);
+          spr.anchor.set(0.5, 0.5);
+          spr.blendMode = 'add';
+          spr.alpha = 0.9;
+          const s = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+          spr.position.set(s.x, s.y);
+          spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 60;
+          viewport.objectLayer.addChild(spr);
+          ambience.addLoopingAnim(spr, frames, 8, p.x, p.y);
+          lighting.addSource(p.x + 0.5, p.y + 0.5, 2.6, 255, 90, 30, 0.6);
+        }
+        break;
+      }
       case 'stairs_stone':
         standing(p, 'stairs_stone', 0.85, 'ground');
         break;

@@ -360,6 +360,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Fourth upload audited and preserved; tavern, well, ruin gate, iso props, pines, blood, slashes, villagers, poacher, orc, slot frames, armor icons baked
 - [x] Organic 56×50 town with winding streets, market square, tavern, guards; orc + poacher mobs in the pools
 
+## Iteration 44 - Softlock Fix, North Gate, Models, Pentagrams, Points, HUD (2026-09-02)
+
+- [x] Portal softlock: remembered arena clears carried into the rebuild + self-opening empty arenas
+- [x] Gate at the north edge, descends on contact; town v4 densely filled (7 cottages, 6 stalls, clusters, bushes)
+- [x] Orc Slinger feet anchor; pack spiral stairs + dark-wood chests on every floor
+- [x] Pentagram sigil strip in arenas, hidden dungeon rooms and the town woods; gore decals persist
+- [x] 2 skill points per level (59 at cap); cheat +10 / max
+- [x] Minimap frame, HUD backing panels, iron/oak UI sounds
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

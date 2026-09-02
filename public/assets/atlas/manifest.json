@@ -2356,6 +2356,25 @@
     "left": 20,
     "right": 68
    }
+  },
+  "vfx_pentagram": {
+   "file": "vfx_pentagram.png",
+   "cellW": 192,
+   "cellH": 96,
+   "frameCount": 7,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 192,
+   "origH": 96,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 1,
+    "bottom": 94,
+    "left": 9,
+    "right": 181
+   }
   }
  },
  "singles": {
@@ -2661,14 +2680,14 @@
   },
   "stairs_stone": {
    "file": "single_stairs_stone.png",
-   "w": 77,
-   "h": 62,
+   "w": 128,
+   "h": 104,
    "nearest": false
   },
   "stairs_spiral": {
    "file": "single_stairs_spiral.png",
-   "w": 48,
-   "h": 65,
+   "w": 80,
+   "h": 109,
    "nearest": false
   },
   "gate_open": {
@@ -2795,6 +2814,18 @@
    "file": "single_blood_5.png",
    "w": 90,
    "h": 90,
+   "nearest": false
+  },
+  "chest_closed_iso": {
+   "file": "single_chest_closed_iso.png",
+   "w": 64,
+   "h": 54,
+   "nearest": false
+  },
+  "chest_open_iso": {
+   "file": "single_chest_open_iso.png",
+   "w": 70,
+   "h": 76,
    "nearest": false
   }
  }

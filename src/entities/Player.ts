@@ -356,7 +356,7 @@ export class Player extends Entity {
       this.xp -= this.xpToNext();
       this.level++;
       gained++;
-      this.skillPoints++; // One point per level (it.41).
+      this.skillPoints += 2; // Two points per level (it.44): 59 by level 30 covers every rank.
       this.hpMax += 4;
       this.hp = Math.min(this.hpMax, this.hp + Math.round(this.hpMax * 0.25));
     }
@@ -370,7 +370,7 @@ export class Player extends Entity {
    */
   setLevel(target: number): void {
     const level = Math.max(1, Math.min(30, Math.round(target)));
-    if (level > this.level) this.skillPoints += level - this.level; // Levels bring points.
+    if (level > this.level) this.skillPoints += 2 * (level - this.level); // Levels bring points.
     this.level = level;
     this.xp = 0;
     this.hpMax = this.baseHpMax();

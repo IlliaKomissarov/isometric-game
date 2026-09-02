@@ -1,30 +1,34 @@
 /**
  * @module town/TownMap
- * FLOOR 0 — the handcrafted town (it.39, redesigned it.40, ORGANIC it.43).
- * A 56×50 map whose edge is a noise-carved blob, not a rectangle:
+ * FLOOR 0 — the handcrafted town (it.39 → organic it.43 → NORTH GATE +
+ * dense it.44). A 60×54 map whose edge is a noise-carved blob:
  *
  *   outside the blob:  cliffs (the map's only true walls)
  *   the belt inside:   dense pines and dead trees, brush between them
- *   the interior:      a winding cobbled MAIN STREET from the ruin gate
- *                      up to the MARKET SQUARE (stalls, the shopkeeper,
- *                      the well), a HIGH STREET east–west, dirt lanes to
- *                      five cottages and the TAVERN, the STASH VAULT (NW),
- *                      the CAMPSITE clearing (SW), the portal stone (SE),
- *                      torch posts along every street, two gate guards.
+ *   NORTH (top centre): the DUNGEON GATE — the ruin archway; touching its
+ *                      front tile descends at once
+ *   the interior:      a winding cobbled MAIN STREET from the gate down to
+ *                      the MARKET SQUARE (six stalls, the shopkeeper, the
+ *                      well), a HIGH STREET east–west, a SOUTH STREET to
+ *                      the lower plaza, dirt lanes to seven cottages and
+ *                      the TAVERN, the STASH VAULT (NW), the CAMPSITE
+ *                      clearing (SW), the portal yard (SE), torch posts
+ *                      along every street, two gate guards, a hidden
+ *                      ritual circle in the south-east woods
+ *   every open patch:  tree clusters and bush tufts — no empty lawns
  *
  * Every standing object claims a TILE_BLOCKED footprint BEFORE the scene
- * builds (the Diablo collision rule); flat decals stay walkable. Cottages
- * keep their door column walkable (roof cutaway inside). After carving, a
- * flood fill from the spawn turns every unreachable floor pocket into
- * brush, so the organic edge can never trap anyone; `auditTownLayout()`
- * then verifies every point of interest is reachable.
+ * builds; flat decals stay walkable. Cottages keep their door column
+ * walkable (roof cutaway inside). After carving, a flood fill from the
+ * spawn turns every unreachable floor pocket into brush; then a second
+ * pass drops the dense fill only where it cannot cut a route.
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
 import { mulberry32 } from '@/utils/rng';
 
-export const TOWN_W = 56;
-export const TOWN_H = 50;
+export const TOWN_W = 60;
+export const TOWN_H = 54;
 
 /** Ground paint per tile in the town theme. */
 export const KIND_COBBLE = 0;
@@ -59,6 +63,7 @@ export type TownPropKind =
   | 'hanging_sign'
   | 'grassclump'
   | 'pots'
+  | 'pentagram'
   | 'merchant'
   | 'guard';
 
@@ -77,7 +82,7 @@ export interface TownProp {
 export interface TownLayout {
   map: DungeonMap;
   props: TownProp[];
-  /** Stair tile of the dungeon gate (walking onto it descends to depth I). */
+  /** Front tile of the dungeon gate (touching it descends to depth I). */
   gate: { x: number; y: number };
   stash: { x: number; y: number };
   /** Tiles that count as "at the stall" for the TRADE prompt. */
@@ -103,26 +108,25 @@ export interface TownMap extends DungeonMap {
 export function buildTownLayout(): TownLayout {
   const W = TOWN_W;
   const H = TOWN_H;
-  const rand = mulberry32(0x70711);
+  const rand = mulberry32(0x70712);
   const grid = new Uint8Array(W * H).fill(TILE_FLOOR);
   const tileKind = new Uint8Array(W * H).fill(KIND_GRASS);
   const idx = (x: number, y: number): number => y * W + x;
   const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
 
-  // ---- THE BLOB: polar radius with three sines + a bump toward the gate (south) ----
-  const CX = 28;
-  const CY = 24.5;
+  // ---- THE BLOB: polar radius with three sines + a bump toward the gate (NORTH) ----
+  const CX = 30;
+  const CY = 27;
   const radiusAt = (theta: number): number => {
-    const bump = 4.5 * Math.exp(-((theta - Math.PI / 2) ** 2) / 0.12);
-    return 22.5 + 2.6 * Math.sin(2 * theta + 1.3) + 1.8 * Math.sin(5 * theta + 0.4) + 1.4 * Math.sin(3 * theta + 2.6) + bump;
+    const bump = 4.5 * Math.exp(-((theta + Math.PI / 2) ** 2) / 0.1);
+    return 24.5 + 2.6 * Math.sin(2 * theta + 1.3) + 1.8 * Math.sin(5 * theta + 0.4) + 1.4 * Math.sin(3 * theta + 2.6) + bump;
   };
-  /** Distance from the centre in "blob units" (elliptical). */
   const polar = (x: number, y: number): { r: number; theta: number } => {
     const dx = (x + 0.5 - CX) / 1.12;
     const dy = (y + 0.5 - CY) / 0.94;
     return { r: Math.hypot(dx, dy), theta: Math.atan2(dy, dx) };
   };
-  const belt = new Uint8Array(W * H); // 1 = forest belt tile (blocked unless a street forces it)
+  const belt = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const { r, theta } = polar(x, y);
@@ -132,7 +136,6 @@ export function buildTownLayout(): TownLayout {
     }
   }
 
-  /** A street: thick polyline painted `kind`, forced to open floor (through belt/brush). */
   const street = (pts: Array<[number, number]>, kind: number, half: number): void => {
     for (let i = 0; i + 1 < pts.length; i++) {
       const [x0, y0] = pts[i];
@@ -155,13 +158,13 @@ export function buildTownLayout(): TownLayout {
       }
     }
   };
-  /** A filled ellipse of paint (the square, the camp clearing). */
   const ellipse = (cx: number, cy: number, rx: number, ry: number, kind: number): void => {
     for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++) {
       for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
         if (!inside(x, y)) continue;
         if (((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 <= 1) {
           if (grid[idx(x, y)] === TILE_WALL) continue;
+          grid[idx(x, y)] = TILE_FLOOR;
           tileKind[idx(x, y)] = kind;
           belt[idx(x, y)] = 0;
         }
@@ -170,19 +173,27 @@ export function buildTownLayout(): TownLayout {
   };
 
   // ---- STREETS ----
-  const gate = { x: 28, y: 43 }; // The archway's front-centre tile: walk in, descend.
-  ellipse(30, 15.5, 8.5, 6, KIND_COBBLE); // The market square.
-  street([[28, 45], [28, 41], [26.5, 37], [25.5, 32], [27, 27], [29, 23], [30, 20]], KIND_COBBLE, 1.4); // Main street.
-  street([[9, 25], [14, 27], [20, 26], [26, 27], [33, 28], [40, 26], [47, 23]], KIND_COBBLE, 1.1); // High street.
-  street([[21, 14], [16, 17], [13, 20], [11, 24]], KIND_DIRT, 1.0); // Tavern lane to the west road.
-  street([[38, 19], [42, 18], [45, 15]], KIND_DIRT, 1.0); // To the east cottage.
-  street([[14, 27], [12, 31]], KIND_DIRT, 0.9); // West cottage.
-  street([[40, 26], [43, 31]], KIND_DIRT, 0.9); // East cottage.
-  street([[33, 28], [37, 33], [38, 37]], KIND_DIRT, 0.9); // South-east cottage + portal.
-  street([[20, 26], [17, 30], [17, 33]], KIND_DIRT, 1.0); // To the camp.
-  street([[13, 20], [15, 22]], KIND_DIRT, 0.9); // To the vault.
-  ellipse(17.5, 34.5, 4.5, 3.6, KIND_DIRT); // Camp clearing.
-  ellipse(34.5, 33.5, 2.5, 2, KIND_DIRT); // Portal stone yard.
+  const gate = { x: 30, y: 5 }; // In front of the archway (its footprint is y 3–4).
+  ellipse(30, 22, 9.5, 6.5, KIND_COBBLE); // The market square.
+  street([[30, 5], [30, 10], [31, 14], [30, 18]], KIND_COBBLE, 1.4); // Main street: gate -> square.
+  street([[30, 28], [29, 33], [30, 38], [30, 44]], KIND_COBBLE, 1.3); // South street -> lower plaza.
+  street([[8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.1); // High street.
+  ellipse(30, 44.5, 3.5, 2.2, KIND_COBBLE); // Lower plaza.
+  street([[36, 12], [34, 16]], KIND_DIRT, 1.0); // Tavern lane.
+  street([[45, 27], [47, 20]], KIND_DIRT, 0.9); // NE cottage.
+  street([[8, 27], [10, 20]], KIND_DIRT, 0.9); // NW cottage.
+  street([[15, 29], [12, 34]], KIND_DIRT, 0.9); // W cottage.
+  street([[52, 25], [50, 33]], KIND_DIRT, 0.9); // E cottage.
+  street([[22, 28], [19, 33], [17, 36]], KIND_DIRT, 1.0); // To the camp.
+  street([[38, 28], [42, 34], [43, 37]], KIND_DIRT, 0.9); // To the portal stone.
+  street([[15, 29], [14, 24]], KIND_DIRT, 0.9); // To the vault.
+  street([[30, 38], [36, 42]], KIND_DIRT, 0.9); // SE cottage.
+  street([[30, 38], [24, 42]], KIND_DIRT, 0.9); // SW cottage.
+  street([[20, 13], [24, 16]], KIND_DIRT, 0.9); // N cottage.
+  street([[50, 33], [53, 40]], KIND_DIRT, 0.8); // The forest track to the ritual circle.
+  ellipse(17.5, 37.5, 4.5, 3.6, KIND_DIRT); // Camp clearing.
+  ellipse(43.5, 37.5, 2.5, 2, KIND_DIRT); // Portal stone yard.
+  ellipse(53.5, 41.5, 2.2, 1.8, KIND_DIRT); // The ritual clearing.
 
   // ---- PROPS ----
   const props: TownProp[] = [];
@@ -202,102 +213,112 @@ export function buildTownLayout(): TownLayout {
         if (!inside(tx, ty) || grid[idx(tx, ty)] === TILE_WALL) continue;
         grid[idx(tx, ty)] = TILE_FLOOR;
         belt[idx(tx, ty)] = 0;
-        if (ty >= y + h) tileKind[idx(tx, ty)] = kind === KIND_GRASS ? tileKind[idx(tx, ty)] : kind;
+        if (kind !== KIND_GRASS) tileKind[idx(tx, ty)] = kind;
       }
     }
   };
-  /** A cottage: 3×3 blocked, except the door column (inside + doorstep). */
   const house = (x: number, y: number, variant: string): void => {
     clearFor(x, y, 3, 3);
     block({ kind: 'house', x, y, w: 3, h: 3, variant });
-    grid[idx(x + 1, y + 1)] = TILE_FLOOR; // The room.
-    grid[idx(x + 1, y + 2)] = TILE_FLOOR; // The doorstep.
+    grid[idx(x + 1, y + 1)] = TILE_FLOOR;
+    grid[idx(x + 1, y + 2)] = TILE_FLOOR;
     tileKind[idx(x + 1, y + 2)] = KIND_DIRT;
     tileKind[idx(x + 1, y + 1)] = KIND_DIRT;
     houses.push({ x, y, w: 3, h: 3 });
   };
 
-  // The tavern (NW of the square): a 5×4 footprint, a stone stair and a table outside.
-  clearFor(19, 9, 5, 4, 1);
-  block({ kind: 'tavern', x: 19, y: 9, w: 5, h: 4, variant: 'tavern_a' });
-  decal({ kind: 'stairs_stone', x: 21, y: 13 });
-  block({ kind: 'table_chairs', x: 24, y: 12 });
-  block({ kind: 'barrels_stacked', x: 18, y: 12 });
-  block({ kind: 'supports', x: 17, y: 9, w: 1, h: 1 });
-  block({ kind: 'torch', x: 24, y: 9 });
-
-  // Market square: four stalls, the shopkeeper, the well, crates and barrels, signs, torches.
-  block({ kind: 'stall', x: 25, y: 11, w: 3, h: 2, variant: 'stall_a' });
-  block({ kind: 'merchant', x: 26, y: 10 });
-  block({ kind: 'stall', x: 33, y: 11, w: 3, h: 2, variant: 'stall_b' });
-  block({ kind: 'stall', x: 25, y: 18, w: 3, h: 2, variant: 'stall_c' });
-  block({ kind: 'stall', x: 33, y: 18, w: 3, h: 2, variant: 'stall_d' });
-  block({ kind: 'well', x: 30, y: 15, w: 2, h: 2, variant: 'well_b' });
-  block({ kind: 'crates_wood', x: 29, y: 10 });
-  block({ kind: 'barrel', x: 36, y: 13, variant: 'barrel_a' });
-  block({ kind: 'wood_pile', x: 23, y: 17 });
-  block({ kind: 'barrels_stacked', x: 37, y: 17 });
-  decal({ kind: 'pots', x: 28, y: 13 });
-  decal({ kind: 'pots', x: 32, y: 20 });
-  decal({ kind: 'hanging_sign', x: 28, y: 12 });
-  decal({ kind: 'hanging_sign', x: 33, y: 13 });
-  decal({ kind: 'signpost', x: 31, y: 21 });
-  for (const [x, y] of [[23, 11], [38, 11], [23, 20], [38, 20]] as const) block({ kind: 'torch', x, y });
-  // Columns flank the square's southern mouth.
-  block({ kind: 'column', x: 28, y: 22 });
-  block({ kind: 'column', x: 32, y: 22 });
-
-  // Stash vault (NW).
-  clearFor(14, 21, 3, 2, 1);
-  block({ kind: 'stash', x: 15, y: 22 });
-  block({ kind: 'barrel', x: 14, y: 21, variant: 'barrel_a' });
-  block({ kind: 'barrel', x: 16, y: 21, variant: 'barrel_b' });
-  block({ kind: 'crates', x: 13, y: 22 });
-  block({ kind: 'torch', x: 17, y: 22 });
-
-  // Cottages.
-  house(11, 15, 'house_a');
-  house(43, 13, 'house_b');
-  house(11, 31, 'house_c');
-  house(43, 31, 'house_d');
-  house(37, 37, 'house_a');
-  for (const x of [10, 11, 13, 14]) block({ kind: 'fence', x, y: 18 });
-  for (const x of [42, 43, 45, 46]) block({ kind: 'fence', x, y: 16 }); // Door column (44) stays open.
-  block({ kind: 'torch', x: 15, y: 32 });
-  block({ kind: 'torch', x: 41, y: 33 });
-
-  // Campsite (SW): the fire, the heroes' spots, seats and stores.
-  const campfire = { x: 17, y: 34 };
-  block({ kind: 'campfire', x: campfire.x, y: campfire.y });
-  const campSpots = [
-    { x: 15.5, y: 33.4 },
-    { x: 16.6, y: 36.5 },
-    { x: 19.5, y: 34.6 },
-  ];
-  block({ kind: 'wood_pile', x: 20, y: 32 });
-  block({ kind: 'barrels_stacked', x: 14, y: 36 });
-  decal({ kind: 'pots', x: 19, y: 36 });
-  block({ kind: 'torch', x: 21, y: 36 });
-
-  // Torch posts along the main and high streets.
-  for (const [x, y] of [[26, 40], [30, 40], [24, 34], [28, 34], [25, 29], [29, 29], [12, 24], [18, 24], [24, 25], [31, 26], [38, 24], [45, 22]] as const) {
-    if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'torch', x, y });
-  }
-
-  // The DUNGEON GATE: the ruin archway across the main street, braziers, guards.
-  clearFor(26, 42, 5, 3, 0, KIND_COBBLE);
-  props.push({ kind: 'ruingate', x: 27, y: 43, w: 3, h: 2 });
-  for (let y = 43; y <= 44; y++) for (let x = 27; x <= 29; x++) grid[idx(x, y)] = TILE_BLOCKED;
+  // The DUNGEON GATE (NORTH, top centre): the ruin archway on its 3×2 footprint, braziers, guards.
+  clearFor(27, 3, 7, 5, 0, KIND_COBBLE);
+  props.push({ kind: 'ruingate', x: 29, y: 3, w: 3, h: 2 });
+  for (let y = 3; y <= 4; y++) for (let x = 29; x <= 31; x++) grid[idx(x, y)] = TILE_BLOCKED;
   grid[idx(gate.x, gate.y)] = TILE_FLOOR;
   tileKind[idx(gate.x, gate.y)] = KIND_COBBLE;
-  block({ kind: 'brazier', x: 25, y: 43 });
-  block({ kind: 'brazier', x: 31, y: 43 });
+  for (let y = 0; y <= 2; y++) for (let x = 27; x <= 33; x++) grid[idx(x, y)] = TILE_WALL;
+  block({ kind: 'brazier', x: 27, y: 5 });
+  block({ kind: 'brazier', x: 33, y: 5 });
   const guards = [
-    { x: 26, y: 41 },
-    { x: 30, y: 41 },
+    { x: 28, y: 7 },
+    { x: 32, y: 7 },
   ];
   for (const g of guards) block({ kind: 'guard', x: g.x, y: g.y });
-  for (let y = 45; y < H; y++) for (let x = 26; x <= 30; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL;
+
+  // The tavern (NE of the square): 5×4, a stone stair and a table outside.
+  clearFor(35, 9, 5, 4, 1);
+  block({ kind: 'tavern', x: 35, y: 9, w: 5, h: 4, variant: 'tavern_a' });
+  decal({ kind: 'stairs_stone', x: 37, y: 13 });
+  block({ kind: 'table_chairs', x: 40, y: 12 });
+  block({ kind: 'barrels_stacked', x: 34, y: 12 });
+  block({ kind: 'supports', x: 33, y: 9 });
+  block({ kind: 'torch', x: 40, y: 9 });
+
+  // Market square: six stalls, the shopkeeper, the well, stores, signs, torches.
+  block({ kind: 'stall', x: 23, y: 17, w: 3, h: 2, variant: 'stall_a' });
+  block({ kind: 'merchant', x: 24, y: 16 });
+  block({ kind: 'stall', x: 34, y: 17, w: 3, h: 2, variant: 'stall_b' });
+  block({ kind: 'stall', x: 23, y: 25, w: 3, h: 2, variant: 'stall_c' });
+  block({ kind: 'stall', x: 34, y: 25, w: 3, h: 2, variant: 'stall_d' });
+  block({ kind: 'stall', x: 20, y: 21, w: 3, h: 2, variant: 'stall_b' });
+  block({ kind: 'stall', x: 37, y: 21, w: 3, h: 2, variant: 'stall_c' });
+  block({ kind: 'well', x: 30, y: 21, w: 2, h: 2, variant: 'well_b' });
+  block({ kind: 'crates_wood', x: 27, y: 16 });
+  block({ kind: 'barrel', x: 37, y: 19, variant: 'barrel_a' });
+  block({ kind: 'barrel', x: 22, y: 24, variant: 'barrel_b' });
+  block({ kind: 'wood_pile', x: 36, y: 24 });
+  block({ kind: 'barrels_stacked', x: 26, y: 27 });
+  block({ kind: 'crates', x: 33, y: 27 });
+  decal({ kind: 'pots', x: 26, y: 19 });
+  decal({ kind: 'pots', x: 33, y: 24 });
+  decal({ kind: 'hanging_sign', x: 26, y: 18 });
+  decal({ kind: 'hanging_sign', x: 34, y: 19 });
+  decal({ kind: 'signpost', x: 30, y: 27 });
+  for (const [x, y] of [[21, 16], [39, 16], [21, 28], [39, 28]] as const) block({ kind: 'torch', x, y });
+  block({ kind: 'column', x: 28, y: 29 });
+  block({ kind: 'column', x: 32, y: 29 });
+
+  // Stash vault (NW).
+  clearFor(13, 22, 3, 2, 1);
+  block({ kind: 'stash', x: 14, y: 23 });
+  block({ kind: 'barrel', x: 13, y: 22, variant: 'barrel_a' });
+  block({ kind: 'barrel', x: 15, y: 22, variant: 'barrel_b' });
+  block({ kind: 'crates', x: 12, y: 23 });
+  block({ kind: 'torch', x: 16, y: 23 });
+
+  // Cottages (seven).
+  house(9, 16, 'house_a');
+  house(46, 15, 'house_b');
+  house(9, 32, 'house_c');
+  house(48, 31, 'house_d');
+  house(35, 41, 'house_a');
+  house(22, 41, 'house_b');
+  house(19, 10, 'house_c');
+  for (const x of [8, 9, 11, 12]) block({ kind: 'fence', x, y: 19 });
+  for (const x of [45, 46, 48, 49]) block({ kind: 'fence', x, y: 18 });
+  for (const x of [18, 19, 21, 22]) block({ kind: 'fence', x, y: 13 });
+  block({ kind: 'torch', x: 13, y: 33 });
+  block({ kind: 'torch', x: 46, y: 34 });
+  block({ kind: 'torch', x: 25, y: 44 });
+  block({ kind: 'torch', x: 38, y: 44 });
+
+  // Campsite (SW): the fire, the heroes' spots, seats and stores.
+  const campfire = { x: 17, y: 37 };
+  block({ kind: 'campfire', x: campfire.x, y: campfire.y });
+  const campSpots = [
+    { x: 15.5, y: 36.4 },
+    { x: 16.6, y: 39.5 },
+    { x: 19.5, y: 37.6 },
+  ];
+  block({ kind: 'wood_pile', x: 20, y: 35 });
+  block({ kind: 'barrels_stacked', x: 14, y: 39 });
+  decal({ kind: 'pots', x: 19, y: 39 });
+  block({ kind: 'torch', x: 21, y: 39 });
+
+  // The ritual circle in the south-east woods.
+  decal({ kind: 'pentagram', x: 53, y: 41 });
+
+  // Torch posts along the streets.
+  for (const [x, y] of [[28, 8], [32, 8], [28, 12], [33, 12], [27, 32], [31, 32], [28, 36], [32, 36], [28, 41], [32, 41], [11, 26], [17, 27], [24, 27], [36, 27], [43, 26], [50, 24]] as const) {
+    if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'torch', x, y });
+  }
 
   // ---- FOREST BELT: pines and dead trees on belt tiles, brush between ----
   for (let y = 1; y < H - 1; y++) {
@@ -306,46 +327,77 @@ export function buildTownLayout(): TownLayout {
       if (!belt[i] || grid[i] !== TILE_FLOOR) continue;
       grid[i] = TILE_BLOCKED;
       const roll = rand();
-      if (roll < 0.42) {
-        const v = roll < 0.16 ? 'pine_a' : roll < 0.28 ? 'pine_b' : roll < 0.36 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
+      if (roll < 0.46) {
+        const v = roll < 0.17 ? 'pine_a' : roll < 0.3 ? 'pine_b' : roll < 0.39 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
         props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
       }
     }
   }
-  // Thickets inside: a few pines shaping the quarters (never on paint).
-  for (const [x, y, v] of [[20, 5, 'pine_a'], [40, 6, 'pine_c'], [8, 20, 'pine_b'], [48, 19, 'pine_a'], [8, 37, 'dead_a'], [47, 38, 'pine_b'], [22, 41, 'dead_b'], [35, 41, 'pine_c'], [40, 30, 'pine_a'], [22, 29, 'pine_c']] as const) {
-    if (inside(x, y) && grid[idx(x, y)] === TILE_FLOOR && tileKind[idx(x, y)] === KIND_GRASS) block({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
-  }
-  // Grass clumps on open grass.
-  for (let n = 0; n < 40; n++) {
-    const x = 2 + Math.floor(rand() * (W - 4));
-    const y = 2 + Math.floor(rand() * (H - 4));
-    if (grid[idx(x, y)] === TILE_FLOOR && tileKind[idx(x, y)] === KIND_GRASS && !belt[idx(x, y)]) decal({ kind: 'grassclump', x, y });
-  }
 
-  // ---- SELF-HEAL: any floor the hero cannot reach becomes brush ----
-  const spawn = { x: 28, y: 30 };
+  // ---- SELF-HEAL #1: any floor the hero cannot reach becomes brush ----
+  const spawn = { x: 30, y: 30 };
   grid[idx(spawn.x, spawn.y)] = TILE_FLOOR;
-  const seen = new Uint8Array(W * H);
-  const stack = [idx(spawn.x, spawn.y)];
-  seen[stack[0]] = 1;
-  while (stack.length) {
-    const i = stack.pop()!;
-    const x = i % W;
-    const y = (i - x) / W;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-      const nx = x + dx;
-      const ny = y + dy;
-      if (!inside(nx, ny)) continue;
-      const j = idx(nx, ny);
-      if (seen[j] || grid[j] !== TILE_FLOOR) continue;
-      seen[j] = 1;
-      stack.push(j);
+  const reachable = (): Uint8Array => {
+    const seen = new Uint8Array(W * H);
+    const stack = [idx(spawn.x, spawn.y)];
+    seen[stack[0]] = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      const x = i % W;
+      const y = (i - x) / W;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!inside(nx, ny)) continue;
+        const j = idx(nx, ny);
+        if (seen[j] || grid[j] !== TILE_FLOOR) continue;
+        seen[j] = 1;
+        stack.push(j);
+      }
     }
-  }
+    return seen;
+  };
+  let seen = reachable();
   for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
 
-  const wander: Room = { x: 23, y: 11, w: 15, h: 11 };
+  // ---- DENSE FILL (it.44): tree clusters and bush tufts on every open lawn ----
+  // A tree may only land on plain grass whose four neighbours are open grass
+  // (never beside paint, props, doors or the belt), so no route is ever cut;
+  // a final flood fill re-checks and undoes any that still would.
+  const openGrass = (x: number, y: number): boolean =>
+    inside(x, y) && grid[idx(x, y)] === TILE_FLOOR && tileKind[idx(x, y)] === KIND_GRASS && !belt[idx(x, y)];
+  const candidates: number[] = [];
+  for (let y = 3; y < H - 3; y++) {
+    for (let x = 3; x < W - 3; x++) {
+      if (!openGrass(x, y)) continue;
+      if (!openGrass(x + 1, y) || !openGrass(x - 1, y) || !openGrass(x, y + 1) || !openGrass(x, y - 1)) continue;
+      candidates.push(idx(x, y));
+    }
+  }
+  const before = seen.reduce((a, b) => a + b, 0);
+  for (const i of candidates) {
+    const x = i % W;
+    const y = (i - x) / W;
+    const roll = rand();
+    if (roll < 0.09 && grid[i] === TILE_FLOOR) {
+      // Cluster seed: a tree here and maybe a companion beside it.
+      const v = roll < 0.03 ? 'pine_a' : roll < 0.05 ? 'pine_b' : roll < 0.07 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
+      grid[i] = TILE_BLOCKED;
+      props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
+      const after = reachable();
+      if (after.reduce((a, b) => a + b, 0) < before - 1) {
+        // It sealed something off — take it back.
+        grid[i] = TILE_FLOOR;
+        props.pop();
+      }
+    } else if (roll < 0.26) {
+      decal({ kind: 'grassclump', x, y }); // A bush tuft.
+    }
+  }
+  seen = reachable();
+  for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
+
+  const wander: Room = { x: 21, y: 16, w: 19, h: 13 };
   const map: TownMap = {
     width: W,
     height: H,
@@ -359,22 +411,22 @@ export function buildTownLayout(): TownLayout {
     map,
     props,
     gate,
-    stash: { x: 15, y: 22 },
+    stash: { x: 14, y: 23 },
     merchant: {
-      x: 26,
-      y: 10,
+      x: 24,
+      y: 16,
       tiles: [
-        { x: 25, y: 11 },
-        { x: 26, y: 11 },
-        { x: 27, y: 11 },
-        { x: 25, y: 12 },
-        { x: 26, y: 12 },
-        { x: 27, y: 12 },
+        { x: 23, y: 17 },
+        { x: 24, y: 17 },
+        { x: 25, y: 17 },
+        { x: 23, y: 18 },
+        { x: 24, y: 18 },
+        { x: 25, y: 18 },
       ],
     },
     campfire,
     campSpots,
-    portal: { x: 34, y: 33 },
+    portal: { x: 43, y: 37 },
     wander,
     houses,
     guards,

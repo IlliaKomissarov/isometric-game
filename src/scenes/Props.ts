@@ -162,7 +162,7 @@ export function placeStairs(
   // It.28 arena support: pin the stair to a tile, and/or keep it HIDDEN
   // (unrendered + unregistered) until the arena is cleared — the caller
   // reveals it by flipping `renderable` and fog-registering the sprite.
-  opts?: { at?: { x: number; y: number }; hidden?: boolean },
+  opts?: { at?: { x: number; y: number }; hidden?: boolean; /** Town gate: keep the flat stairwell under the archway (it.44). */ flat?: boolean },
 ): { x: number; y: number; sprite: Sprite } {
   let best = map.rooms[map.rooms.length - 1];
   let bestDist = -1;
@@ -182,12 +182,23 @@ export function placeStairs(
   // The REAL pre-rendered descending stairwell (Infernus Stairs_Inverted,
   // 64×96: diamond opening on top, shaft sides descending below floor
   // level). Procedural pit is the fallback if the pack is absent.
-  const sprite =
-    spriteLib.loaded && spriteLib.hasSingle('stairs_inverted')
+  // STAIR MODEL (it.44): the isometric pack's stone spiral stands on the
+  // tile as a real prop (depth-sorted); the old pit/stairwell is the fallback.
+  const spiral = !opts?.flat && spriteLib.loaded && spriteLib.hasSingle('stairs_spiral');
+  const sprite = spiral
+    ? new Sprite(spriteLib.single('stairs_spiral'))
+    : spriteLib.loaded && spriteLib.hasSingle('stairs_inverted')
       ? new Sprite(spriteLib.single('stairs_inverted'))
       : new Sprite(assets.get('stairs_down'));
-  sprite.position.set(s.x - 32, s.y); // TILE_W/2 left offset, diamond-aligned.
-  viewport.groundLayer.addChild(sprite);
+  if (spiral) {
+    sprite.anchor.set(0.5, 0.9);
+    sprite.position.set(s.x, s.y + 12);
+    sprite.zIndex = depthKey(gx + 0.5, gy + 0.5) - 6;
+    viewport.objectLayer.addChild(sprite);
+  } else {
+    sprite.position.set(s.x - 32, s.y); // TILE_W/2 left offset, diamond-aligned.
+    viewport.groundLayer.addChild(sprite);
+  }
   if (opts?.hidden) {
     // Sealed arena: invisible AND fog-unregistered (fog toggles `visible`,
     // so the hide lives on `renderable` — the two never fight).

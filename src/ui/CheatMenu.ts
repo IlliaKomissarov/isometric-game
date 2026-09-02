@@ -42,7 +42,9 @@ export interface CheatHooks {
   /** LEVEL (it.40): set the hero's level outright (1–30); returns the new sheet. */
   setLevel: (level: number) => void;
   /** Current sheet for the HERO tab readout. */
-  heroInfo: () => { level: number; xp: number; xpToNext: number; hpMax: number; dmgMin: number; dmgMax: number };
+  heroInfo: () => { level: number; xp: number; xpToNext: number; hpMax: number; dmgMin: number; dmgMax: number; skillPoints: number };
+  /** SKILL POINTS (it.44): +10, or enough for every rank. */
+  addSkillPoints: (n: number) => void;
 }
 
 type ArsenalTab = 'weapons' | 'armor' | 'relics' | 'travel' | 'hero';
@@ -159,6 +161,7 @@ export class CheatMenuUI {
     const heroRows =
       `<div class="cheat-hero">` +
       `<div class="cheat-hero-sheet"><b>LEVEL ${info.level}</b><span>${info.xp} / ${info.xpToNext} xp · ${info.hpMax} hp · ${info.dmgMin}–${info.dmgMax} base dmg</span></div>` +
+      `<div class="cheat-level-steps cheat-points"><span>${info.skillPoints} SKILL POINTS</span><button data-points="10">+10 POINTS</button><button data-points="max">MAX OUT</button></div>` +
       `<div class="cheat-level-steps">` +
       [-5, -1, 1, 5].map((d) => `<button class="cheat-level-step" data-level="${info.level + d}">${d > 0 ? '+' : ''}${d}</button>`).join('') +
       `</div><div class="cheat-level-grid">` +
@@ -219,6 +222,10 @@ export class CheatMenuUI {
         else if (act === 'takeall') {
           for (const it of this.hooks.items()) if (tabOf(it) === this.tab) this.hooks.giveItem(it.id);
           btn.textContent = '⚑ TAKEN';
+        } else if (btn.dataset.points) {
+          this.hooks.addSkillPoints(btn.dataset.points === 'max' ? 999 : Number(btn.dataset.points));
+          this.render();
+          this.startPortrait();
         } else if (btn.dataset.level) {
           this.hooks.setLevel(Number(btn.dataset.level));
           this.render();

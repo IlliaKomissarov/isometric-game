@@ -198,6 +198,9 @@ async function boot(): Promise<void> {
     // ONE environment pipeline (it.17 revert): the proven stone set for all
     // depths; the bands are subtle tints baked inside buildStoneEnvironment.
     assets.buildStoneEnvironment(spriteLib.single('ground_stone'));
+    // CHEST MODEL (it.44): the isometric pack's dark-wood chest replaces the procedural box on every floor.
+    if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
+    if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
     ['town_cobble', 'town_grass', 'town_dirt'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
@@ -666,6 +669,7 @@ async function boot(): Promise<void> {
     let townVisits = loaded ? 1 : 0;
     let pendingPortal = false;
     let portalCooldown = 0;
+    let emptyArenaTicks = 0;
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
     let portalArmed = false;
     let pendingInteract: number | null = null;
@@ -896,7 +900,7 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: layout.gate } // The sealed dungeon gate.
+            ? { at: layout.gate, flat: true } // The sealed dungeon gate: the archway is the model.
             : isArena
               ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
               : undefined,
@@ -1095,6 +1099,15 @@ async function boot(): Promise<void> {
         stairs.sprite.renderable = true;
         lighting.registerProp(stairs.x, stairs.y, stairs.sprite);
       }
+      // RITUAL CIRCLES (it.44): every arena floor bears the wardens' sigil at
+      // its heart; ordinary floors hide one in a far room now and then.
+      if (isArena) {
+        const room = dungeon.rooms[0];
+        vfx.play('vfx_pentagram', room.x + room.w / 2, room.y + room.h / 2, { loop: true, fps: 8, scale: 1.6, depthBias: -60, alpha: 0.85 });
+      } else if (!isHub && dungeon.rooms.length > 3 && mulberry32(seed ^ 0x5161)() < 0.35) {
+        const room = dungeon.rooms[dungeon.rooms.length - 1];
+        vfx.play('vfx_pentagram', room.x + room.w / 2, room.y + room.h / 2, { loop: true, fps: 7, scale: 1.1, depthBias: -60, alpha: 0.8 });
+      }
 
       // TOWN DRESSING (it.39): cottages, stall, campfire, torches, well,
       // the stash chest, and the folk who live here.
@@ -1244,7 +1257,7 @@ async function boot(): Promise<void> {
         input,
         stairs,
         isArena,
-        arenaCleared: false,
+        arenaCleared: arenaAlreadyCleared, // SOFTLOCK FIX (it.44): a remembered clear stays cleared.
         arenaThreshold,
         goldPiles,
         targetRing,
@@ -1818,7 +1831,13 @@ async function boot(): Promise<void> {
         audio.sfx('levelUp');
         world.ambience.burst(player.pos.x, player.pos.y, 0xf0d070, 16);
       },
+      addSkillPoints: (n) => {
+        player.skillPoints += n;
+        audio.sfx('levelUp');
+        eventBus.emit('skills:changed', {});
+      },
       heroInfo: () => ({
+        skillPoints: player.skillPoints,
         level: player.level,
         xp: player.xp,
         xpToNext: player.xpToNext(),
@@ -2269,7 +2288,26 @@ async function boot(): Promise<void> {
           if (portalArmed && d < 0.7) returnThroughPortal();
         }
 
-        if (player.action !== 'dead' && stairsDist < 0.8) {
+        // ARENA SAFETY (it.44): a sealed arena with nothing left breathing opens
+        // itself — no rebuild, portal trip or spawn accounting can strand the hero.
+        if (world.isArena && !world.arenaCleared && !transitioning) {
+          let breathing = 0;
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 || e.action === 'transition') breathing++;
+          });
+          emptyArenaTicks = breathing === 0 ? emptyArenaTicks + 1 : 0;
+          if (emptyArenaTicks >= 45) {
+            world.arenaCleared = true;
+            world.stairs.sprite.renderable = true;
+            world.lighting.registerProp(world.stairs.x, world.stairs.y, world.stairs.sprite);
+            world.ambience.burst(world.stairs.x + 0.5, world.stairs.y + 0.5, 0xffd9a0, 20);
+            tutorial.notify('arenaopen', 'Nothing left breathes here. The way down opens.');
+          }
+        }
+
+        // The town gate opens on CONTACT (it.44): touching the archway's front tile descends at once.
+        const gateReach = world.town ? 1.05 : 0.8;
+        if (player.action !== 'dead' && stairsDist < gateReach) {
           if (!world.isArena && floor > 0 && isBossFloor(floor)) {
             pendingArena = true; // Fallback portal (the seal itself).
           } else if (world.isArena && !world.arenaCleared) {

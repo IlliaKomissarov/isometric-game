@@ -26,6 +26,8 @@ export class ChatUI {
   private readonly abort = new AbortController();
   private readonly sent: number[] = [];
   private unread = 0;
+  /** The panel fades back after eight quiet seconds (a new line or a hover wakes it). */
+  private idleTimer = 0;
 
   constructor(private readonly hooks: ChatHooks) {
     this.root = document.createElement('div');
@@ -80,6 +82,13 @@ export class ChatUI {
       { signal, capture: true },
     );
     this.input.addEventListener('blur', () => this.root.classList.remove('typing'), { signal });
+    this.wake();
+  }
+
+  private wake(): void {
+    this.root.classList.remove('idle');
+    clearTimeout(this.idleTimer);
+    this.idleTimer = window.setTimeout(() => this.root.classList.add('idle'), 8000);
   }
 
   get isTyping(): boolean {
@@ -87,6 +96,7 @@ export class ChatUI {
   }
 
   open(): void {
+    this.wake();
     this.setCollapsed(false);
     this.root.classList.add('typing');
     this.input.focus();
@@ -137,6 +147,7 @@ export class ChatUI {
   }
 
   private append(line: HTMLElement): void {
+    this.wake();
     this.log.appendChild(line);
     while (this.log.childElementCount > MAX_LINES) this.log.firstElementChild?.remove();
     this.log.scrollTop = this.log.scrollHeight;
@@ -166,6 +177,7 @@ export class ChatUI {
   }
 
   destroy(): void {
+    clearTimeout(this.idleTimer);
     this.abort.abort();
     this.root.remove();
   }

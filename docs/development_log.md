@@ -62,7 +62,8 @@
 - Pixi nameplates (nickname + hp bar in the seat colour) over every hero;
   a PARTY HUD under the depth label (★ marks the leader); four colour dots
   on the minimap; party-mates' swings, hurt flashes and level-up rings.
-- `#chat` (lower-left, collapsible, unread badge): ENTER opens the line,
+- `#chat` (left column above the orbs and under the party HUD, collapsible,
+  unread badge, fades back after eight quiet seconds): ENTER opens the line,
   ENTER sends, ESC closes; `[Nick]: text`, `[System] …`. While typing, a
   capture-phase filter swallows every game hotkey. Rate-limited.
 - A WAITING FOR THE PARTY veil when the sim holds > 0.7 s (with who is

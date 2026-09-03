@@ -382,6 +382,11 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Dungeon gate embedded in the west cliff; forecourt, braziers, guards; high street from the threshold
 - [x] All town points of interest reachable; touch-to-descend; zero console errors
 
+## Iteration 47 - West Wall Cleanup & Flush Gate (2026-09-03)
+
+- [x] Straight west wall column; gate segment glued into it with a measured anchor; apron cleared
+- [x] Threshold inside the arch opening; touch-to-descend verified; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

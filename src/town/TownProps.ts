@@ -57,12 +57,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const has = (name: string): boolean => spriteLib.loaded && spriteLib.hasSingle(name);
 
   /** A standing prop anchored at the south corner of its footprint. */
-  const standing = (p: TownProp, single: string, anchorY: number, layer: 'object' | 'ground' = 'object'): Sprite | null => {
+  const standing = (p: TownProp, single: string, anchorY: number, layer: 'object' | 'ground' = 'object', anchorX = 0.5): Sprite | null => {
     if (!has(single)) return null;
     const w = p.w ?? 1;
     const h = p.h ?? 1;
     const spr = new Sprite(spriteLib.single(single));
-    spr.anchor.set(0.5, anchorY);
+    spr.anchor.set(anchorX, anchorY);
     const cx = p.x + w / 2;
     const cy = p.y + h / 2;
     // Footprint diamond's south corner sits at (x + w, y + h); a 1×1 prop
@@ -117,20 +117,23 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
    * footprint; cold light and drifting fog roll out of its throat.
    */
   const gateFog = (p: TownProp): void => {
-    const base = worldToScreen(p.x + 1.5, p.y + 1.5, vec2());
+    // The fog and its cold light hang in the opening, just outside the threshold.
+    const ox = layout.gate.x + 1;
+    const oy = layout.gate.y + 0.5;
+    const base = worldToScreen(ox, oy, vec2());
     for (let i = 0; i < 5; i++) {
       const f = new Sprite(assets.get('glow'));
       f.anchor.set(0.5);
       f.tint = 0x6f7fa8;
       f.alpha = 0.16;
       f.scale.set(1.6 + i * 0.25, 0.8 + i * 0.1);
-      f.zIndex = depthKey(p.x + 3, p.y + 2) + 2;
+      f.zIndex = depthKey(p.x + (p.w ?? 1), p.y + 0.5) + 4;
       viewport.objectLayer.addChild(f);
-      lighting.registerProp(p.x + 1, p.y, f);
+      lighting.registerProp(Math.floor(ox), Math.floor(oy), f);
       fog.push({ sprite: f, x: base.x + (i - 2) * 10, y: base.y - 26 - i * 4, phase: i * 1.3, speed: 0.35 + i * 0.07 });
     }
-    lighting.addSource(p.x + 1.5, p.y + 1.5, 3.6, 110, 130, 200, 0.55);
-    glowAt(p.x + 1, p.y + 1, 0x5060a0, 0.35, 1.6, 30);
+    lighting.addSource(ox, oy, 3.6, 110, 130, 200, 0.55);
+    glowAt(ox, oy, 0x5060a0, 0.35, 1.6, 30);
   };
 
   let nextId = 1;
@@ -179,8 +182,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'ruingate': {
-        const spr = standing(p, 'ruin_gate', 0.97);
-        if (spr) spr.zIndex = depthKey(p.x + 1.5, p.y + 1.5) + 2; // The hero walks INTO the throat.
+        // The gate sprite's south corner is at (0.3, 0.995) of its box (measured
+        // from the bake): anchoring there seats the segment exactly on the
+        // footprint's south corner — flush in the wall column (it.47).
+        const spr = standing(p, 'ruin_gate', 0.995, 'object', 0.3);
+        // A thin wall along y at x = p.x + w: everything east of that line draws in front.
+        if (spr) spr.zIndex = depthKey(p.x + (p.w ?? 1), p.y + 0.5) + 2;
         gateFog(p);
         break;
       }

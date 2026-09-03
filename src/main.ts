@@ -902,7 +902,7 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: layout.gate, flat: true } // The sealed dungeon gate: the archway is the model.
+            ? { at: layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
             : isArena
               ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
               : undefined,

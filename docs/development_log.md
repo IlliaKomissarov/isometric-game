@@ -1,5 +1,19 @@
 # Development Log
 
+## 2026-09-03 (iteration 47) - West wall cleanup, gate glued into the wall, threshold inside the arch
+
+- The baked ruin gate is a THIN wall segment four tiles long whose arch faces
+  EAST (measured from the bake: its south corner sits at 0.3 / 0.995 of its
+  box). It had been placed on a 3x2 footprint with a centred anchor, which is
+  the offset the user saw. It is now a 1x4 segment set INTO a straight
+  two-tile west wall column (x 0-1, y 19-34), anchored on its own south corner,
+  sorted as a wall along y (everything east of it draws in front).
+- The apron in front of the wall (x 2-10, y 19-34) is bare cobble: braziers,
+  torches, guards, the flat stair sprite, belt pines and brush are gone from
+  it; the guards watch from the far end of the high street (x 14).
+- The threshold is the tile inside the arch opening (1,26); touching it from
+  the apron descends at once. The belt pass no longer re-blocks it.
+
 ## 2026-09-03 (iteration 46) - Dungeon gate relocated to the WEST cliff
 
 - The ruin archway now sits on the west edge of floor 0, EMBEDDED in the

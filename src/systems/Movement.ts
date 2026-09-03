@@ -27,6 +27,9 @@ import { normalize, vec2 } from '@/utils/Vec2';
 import { tileCenter, worldToScreen } from '@/utils/iso';
 import { hasLineOfSight } from '@/utils/los';
 import { moveWithCollision, type WalkableFn } from './Collision';
+
+/** The chest prompt's radius (it.58) — E opens anything the prompt is showing for. */
+const CHEST_PROMPT_RANGE = 2.2;
 import type { ChestSystem } from './Chests';
 import type { LootSystem } from './Loot';
 import type { Pathfinder } from './Pathfinding';
@@ -128,9 +131,14 @@ export class MovementSystem {
           } else if (chest) {
             this.attackTarget = null;
             this.pickupTarget = null;
-            this.chestTarget = { id: chest.id, x: chest.x, y: chest.y };
-            this.startPathTo(Math.floor(chest.x), Math.floor(chest.y));
-            this.setMode('path');
+            if (chestDist <= CHEST_PROMPT_RANGE) {
+              // INSTANT (it.58): the prompt is showing, so E opens it at once.
+              eventBus.emit('chest:reached', { chestId: chest.id });
+            } else {
+              this.chestTarget = { id: chest.id, x: chest.x, y: chest.y };
+              this.startPathTo(Math.floor(chest.x), Math.floor(chest.y));
+              this.setMode('path');
+            }
           }
           break;
         }
@@ -139,9 +147,13 @@ export class MovementSystem {
           if (chest && !chest.opened) {
             this.attackTarget = null;
             this.pickupTarget = null;
-            this.chestTarget = { id: chest.id, x: chest.x, y: chest.y };
-            this.startPathTo(Math.floor(chest.x), Math.floor(chest.y));
-            this.setMode('path');
+            if (Math.hypot(chest.x - this.player.pos.x, chest.y - this.player.pos.y) <= CHEST_PROMPT_RANGE) {
+              eventBus.emit('chest:reached', { chestId: chest.id });
+            } else {
+              this.chestTarget = { id: chest.id, x: chest.x, y: chest.y };
+              this.startPathTo(Math.floor(chest.x), Math.floor(chest.y));
+              this.setMode('path');
+            }
           }
           break;
         }
@@ -197,7 +209,7 @@ export class MovementSystem {
         if (!chest || chest.opened) {
           this.chestTarget = null;
         } else if (
-          Math.hypot(this.chestTarget.x - this.player.pos.x, this.chestTarget.y - this.player.pos.y) <= 1.25
+          Math.hypot(this.chestTarget.x - this.player.pos.x, this.chestTarget.y - this.player.pos.y) <= CHEST_PROMPT_RANGE
         ) {
           eventBus.emit('chest:reached', { chestId: this.chestTarget.id });
           this.chestTarget = null;

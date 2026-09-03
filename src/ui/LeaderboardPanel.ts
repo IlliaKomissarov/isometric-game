@@ -76,6 +76,17 @@ export class LeaderboardUI {
   }
 
   private render(): void {
+    try {
+      this.renderInner();
+    } catch (err) {
+      // The board never throws at the player (it.58): a broken ledger shows its tallies empty.
+      console.warn('[records] render failed:', err);
+      this.panel.innerHTML = `<div class="tp-head drag-handle"><h3>HALL OF RECORDS</h3><button class="tp-close" data-close>✕</button></div><div class="tp-note">The ledger is unreadable — the tallies start again.</div>`;
+      this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    }
+  }
+
+  private renderInner(): void {
     const s = this.stats;
     const live = this.live();
     const cell = (v: string, cls = ''): string => `<td class="${cls}">${v}</td>`;
@@ -98,7 +109,7 @@ export class LeaderboardUI {
         <div class="lb-sum"><span>WARDENS SLAIN</span><b>${s.dungeon.bossKills}</b></div>
         <div class="lb-sum"><span>THIS DELVER</span><b>${CLASS_NAME[live.cls] ?? live.cls} · ${clockFromTicks(live.playtimeTicks)} · ${live.gold} gold</b></div>`;
     } else {
-      const list = s.arena.clears[this.arenaLen];
+      const list = s.arena.clears?.[this.arenaLen] ?? []; // Never a hole (it.58).
       const rows = list
         .map(
           (r, i) =>
@@ -117,8 +128,8 @@ export class LeaderboardUI {
     this.panel.innerHTML = `
       <div class="tp-head drag-handle"><h3>HALL OF RECORDS</h3><span class="tp-vendor">the ledger of every delver</span><button class="tp-close" data-close>✕</button></div>
       <div class="lb-tabs">
-        <button class="lb-tab${this.tab === 'dungeon' ? ' active' : ''}" data-tab="dungeon">DUNGEON SPEEDRUNS</button>
-        <button class="lb-tab${this.tab === 'arena' ? ' active' : ''}" data-tab="arena">GLADIATOR COLISEUM</button>
+        <button class="lb-tab${this.tab === 'dungeon' ? ' active' : ''}" data-tab="dungeon">DUNGEON RECORDS</button>
+        <button class="lb-tab${this.tab === 'arena' ? ' active' : ''}" data-tab="arena">ARENA COLISEUM RECORDS</button>
       </div>
       <div class="lb-body">${table}</div>
       <div class="lb-summary">${summary}</div>

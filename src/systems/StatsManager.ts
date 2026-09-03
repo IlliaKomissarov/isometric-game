@@ -115,6 +115,8 @@ export class StatsManager {
       this.arena.bossKills = Math.max(this.arena.bossKills, a.bossKills ?? 0);
       for (const len of ARENA_LENGTHS) for (const r of a.clears?.[len] ?? []) this.pushArena(len, r);
     }
+    // Every trial length always has a table (it.58): an old or partial snapshot never leaves a hole.
+    for (const len of ARENA_LENGTHS) if (!Array.isArray(this.arena.clears[len])) this.arena.clears[len] = [];
   }
 
   private pushDungeon(r: RunRecord): void {
@@ -126,6 +128,7 @@ export class StatsManager {
   }
 
   private pushArena(len: ArenaLength, r: ArenaRecord): void {
+    if (!Array.isArray(this.arena.clears[len])) this.arena.clears[len] = [];
     const list = this.arena.clears[len];
     if (list.some((x) => x.date === r.date && x.ticks === r.ticks)) return;
     list.push({ ...r });

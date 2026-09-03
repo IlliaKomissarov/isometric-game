@@ -1,5 +1,38 @@
 # Development Log
 
+## 2026-09-03 (iteration 58) - Arena exits by teleporter only, records tabs hardened, the E radius
+
+### The arenas
+- The boss arenas no longer reveal a stair. Every arena clear (depth V, X,
+  XV and XX) raises the teleporter at the heart of the arena; stepping onto
+  it descends to the next depth, and on depth XX it opens the victory
+  choice. A remembered-cleared arena raises the teleporter on entry. The
+  stair prop is parked off-map at (1,1) and never shown in an arena; stair
+  contact is ignored there so nothing can descend by accident.
+
+### The Hall of Records
+- The two tabs now read DUNGEON RECORDS and ARENA COLISEUM RECORDS and are
+  fully independent ledgers. `StatsManager.merge` fills any missing
+  `clears[len]` arrays on load, `pushArena` guards against a missing wave
+  ledger, and the panel's `render()` wraps the inner renderer in a
+  try/catch fallback so a stale save can never blank the board. The arena
+  tab renders before any trial has been fought (placeholder rows continue
+  the numbering after the real ones).
+
+### The E radius
+- One constant, `PROMPT_RANGE = 2.6`, now drives both the prompt plate and
+  the interaction: `nearestTownPrompt` and the E handler share it, so the
+  key answers the instant the plate appears (previously the plate showed a
+  half tile before E would respond). Chests use `CHEST_PROMPT_RANGE = 2.2`
+  in `Movement`, and OPEN_CHEST / PICKUP_NEAREST emit `chest:reached`
+  immediately when already inside it instead of pathing a step.
+
+### Verified live
+- Coliseum floor: zero stair props; depth V arena clear raised the
+  teleporter at the arena centre and stepping on it reached depth VI.
+- Records board: plate at 2.4 tiles, E on the same tick opened the panel;
+  both tabs rendered with the arena ledger empty. Zero console errors.
+
 ## 2026-09-03 (iteration 57) - The victory teleporter, the town gone grim
 
 ### Depth XX

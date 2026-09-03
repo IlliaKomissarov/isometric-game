@@ -1460,10 +1460,7 @@ async function boot(): Promise<void> {
       } else {
         spawnFloorEnemies(dungeon, enemies, floorNum, stairs, seed, killed);
       }
-      if (arenaAlreadyCleared) {
-        stairs.sprite.renderable = true;
-        lighting.registerProp(stairs.x, stairs.y, stairs.sprite);
-      }
+      // A remembered-cleared arena (it.58): no stair — the teleporter rises on the first tick.
       // RITUAL CIRCLES (it.48): the wardens' sigil marks BOSS floors only —
       // the arena's heart and the seal room on depths V / X / XV / XX.
       if (isArena) {
@@ -2595,21 +2592,19 @@ async function boot(): Promise<void> {
             // waits for the hero to CLIMB IT.
             later(() => {
               if (world !== w) return;
-              w.stairs.sprite.renderable = true;
-              w.lighting.registerProp(w.stairs.x, w.stairs.y, w.stairs.sprite);
-              w.ambience.burst(w.stairs.x + 0.5, w.stairs.y + 0.5, 0xffd9a0, 20);
-              w.ambience.playGlint(w.stairs.x + 0.5, w.stairs.y + 0.5);
-              w.dmgText.show(w.stairs.x + 0.5, w.stairs.y + 0.2, floor >= MAX_DEPTH ? 'THE LAST STAIR OPENS' : 'THE WAY OPENS', 'crit');
-              if (floor >= MAX_DEPTH) {
-                // THE VICTORY TELEPORTER (it.57): rises at the heart of the arena.
-                const room = w.dungeon.rooms[0];
-                const px = room.x + Math.floor(room.w / 2);
-                const py = room.y + Math.floor(room.h / 2);
-                w.victoryPortal = { x: px, y: py };
-                spawnTeleporterAt(px, py);
-                victoryPortalArmed = true;
-                tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
-              }
+              // THE TELEPORTER (it.58): every arena's only way out rises at its heart —
+              // no stair. Depths V / X / XV descend; depth XX asks home-or-crown.
+              const room = w.dungeon.rooms[0];
+              const px = room.x + Math.floor(room.w / 2);
+              const py = room.y + Math.floor(room.h / 2);
+              w.victoryPortal = { x: px, y: py };
+              spawnTeleporterAt(px, py);
+              victoryPortalArmed = true;
+              w.ambience.burst(px + 0.5, py + 0.5, 0xffd9a0, 20);
+              w.ambience.playGlint(px + 0.5, py + 0.5);
+              w.dmgText.show(px + 0.5, py + 0.2, floor >= MAX_DEPTH ? 'THE TELEPORTER RISES · HOME, OR THE CROWN' : 'THE TELEPORTER RISES · STEP ON TO DESCEND', 'crit');
+              if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
+              else tutorial.notify('arenaTeleporter', 'The warden is down. Take the spoils, then step onto the teleporter at the heart of the arena to go deeper.');
               audio.sfx('gateOpen');
               audio.setBossMusic(false);
             }, delay);
@@ -2762,8 +2757,8 @@ async function boot(): Promise<void> {
           }
         });
         if (world.coliseum) updateColiseum();
-        // A remembered-cleared depth XX arena (it.57): the teleporter stands from the first tick.
-        if (world.isArena && world.arenaCleared && floor >= MAX_DEPTH && !world.victoryPortal && !transitioning) {
+        // A remembered-cleared arena (it.58): the teleporter stands from the first tick.
+        if (world.isArena && world.arenaCleared && !world.victoryPortal && !transitioning) {
           const room = world.dungeon.rooms[0];
           world.victoryPortal = { x: room.x + Math.floor(room.w / 2), y: room.y + Math.floor(room.h / 2) };
           spawnTeleporterAt(world.victoryPortal.x, world.victoryPortal.y);
@@ -2775,8 +2770,12 @@ async function boot(): Promise<void> {
           if (d > 1.6) victoryPortalArmed = true;
           else if (d < 0.9 && victoryPortalArmed && !victoryModal.classList.contains('open')) {
             victoryPortalArmed = false;
-            victoryModal.classList.add('open');
-            audio.sfx('portal');
+            if (floor >= MAX_DEPTH) {
+              victoryModal.classList.add('open');
+              audio.sfx('portal');
+            } else {
+              pendingDescend = true; // Depths V / X / XV: the teleporter goes deeper (it.58).
+            }
           }
         }
 
@@ -2872,6 +2871,8 @@ async function boot(): Promise<void> {
             pendingArena = true; // Fallback portal (the seal itself).
           } else if (world.isArena && !world.arenaCleared) {
             tutorial.notify('bossgate', 'The arena is sealed. Nothing leaves while anything inside still breathes.');
+          } else if (world.isArena) {
+            // Arenas leave only through the teleporter (it.58): the hidden stair is inert.
           } else if (floor >= MAX_DEPTH) {
             // Depth XX arena cleared, the Hollow King fallen: conquered.
             if (!victoryShown) {
@@ -3181,6 +3182,8 @@ async function boot(): Promise<void> {
       })
       .filter((f): f is () => void => !!f);
     let sheetClock = 0;
+    /** The one radius (it.58): the prompt shows inside it and E acts inside it. */
+    const PROMPT_RANGE = 2.6;
     const interactableDist = (it: Interactable): number => {
       let best = Infinity;
       for (const tile of it.tiles) best = Math.min(best, Math.hypot(player.pos.x - (tile.x + 0.5), player.pos.y - (tile.y + 0.5)));
@@ -3207,20 +3210,21 @@ async function boot(): Promise<void> {
             closeArenaModal();
             continue;
           }
-          // E at the portal stone or the gate takes it (no need to step in).
+          // E at the portal stone or the gate takes it (no need to step in) —
+          // the radii MATCH THE PROMPT (it.58): if the chip is showing, E acts.
           if (portalReturn && !transitioning) {
             const pt = t.layout.portal;
-            if (Math.hypot(player.pos.x - (pt.x + 0.5), player.pos.y - (pt.y + 0.5)) < 1.8) {
+            if (Math.hypot(player.pos.x - (pt.x + 0.5), player.pos.y - (pt.y + 0.5)) < 3) {
               returnThroughPortal();
               continue;
             }
           }
-          if (!transitioning && Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5)) < 2.2) {
+          if (!transitioning && Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5)) < 3.2) {
             pendingDescend = true;
             continue;
           }
           let best: Interactable | null = null;
-          let bestD = 2.1;
+          let bestD = PROMPT_RANGE;
           for (const it of t.interactables) {
             const d = interactableDist(it);
             if (d < bestD) {
@@ -3254,7 +3258,7 @@ async function boot(): Promise<void> {
       if (pendingInteract !== null) {
         const it = t.interactables.find((i) => i.id === pendingInteract);
         if (!it) pendingInteract = null;
-        else if (interactableDist(it) <= 1.9) {
+        else if (interactableDist(it) <= PROMPT_RANGE) {
           pendingInteract = null;
           openInteractable(it);
         }
@@ -3265,7 +3269,7 @@ async function boot(): Promise<void> {
       const t = world.town;
       if (!t) return null;
       let best: { x: number; y: number; html: string; lift: number } | null = null;
-      let bestD = 2.6;
+      let bestD = PROMPT_RANGE;
       for (const it of t.interactables) {
         const d = interactableDist(it);
         if (d < bestD) {

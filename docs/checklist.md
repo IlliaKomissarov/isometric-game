@@ -456,6 +456,12 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Teleporter at the depth XX arena heart on the King's fall (and on re-entry); town-or-crown choice
 - [x] Town regraded: dark grass and earth, dimmed flagstone, shaded cliffs, twisted oaks, deep edge vignette
 
+## Iteration 58 - Arena Teleporter Exits, Records Tabs, E Radius (2026-09-03)
+
+- [x] Boss arenas exit by teleporter only; stair hidden and inert in arenas; depth XX keeps the victory choice
+- [x] DUNGEON RECORDS / ARENA COLISEUM RECORDS independent, safe on stale saves, arena tab open before any trial
+- [x] One `PROMPT_RANGE` for plate and E; chests answer E inside `CHEST_PROMPT_RANGE` without pathing
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

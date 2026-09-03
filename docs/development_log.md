@@ -1,5 +1,21 @@
 # Development Log
 
+## 2026-09-03 (iteration 52) - End-to-end audit pass
+
+- Static: typecheck + production build clean; no TODO/FIXME markers.
+- Live (one session, zero console errors): menu + fonts; all four classes
+  start with their rigs, kits and resources; armorer + alchemist buy/sell/
+  buyback; stash put/take/gold; gate descent; melee kill; all four rogue
+  skills cast with cooldowns and costs (an empty Blade Flurry refunds by
+  design); 10 kills drop 7 items; pickup; chest opens with 3 drops; equip/
+  unequip iron cap (armor 3 -> 4 -> 3); Q potion 30 -> 94; 60 sfx names and
+  7 music transitions without error; 0.076 ms per sim tick with 592 object
+  nodes; death overlay then respawn at the entrance at full life; skill
+  tree, level select, settings, cheat menu, minimap toggles; depth X and XV
+  wardens (Frost Warden lvl 13 / Vyrissa lvl 18) with bars, kills and
+  stair reveal; portal to town and back to depth III at the exact tile.
+- Polish: the XP figure gets a hard black outline over the gold fill.
+
 ## 2026-09-03 (iteration 51) - Dark-fantasy scrollbars, pack padding, icon fit, hotbar locks, window frame pass
 
 - SCROLLBARS: every scrollable surface (inventory, bestiary, skill tree,

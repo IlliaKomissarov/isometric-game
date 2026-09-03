@@ -76,8 +76,8 @@ import { CharacterSheetUI } from '@/ui/CharacterSheet';
 import { BestiaryUI } from '@/ui/Bestiary';
 import { GoreSystem } from '@/render/Gore';
 import { hasLineOfSight } from '@/utils/los';
-import { PARTY_COLORS, PARTY_COLOR_CSS, type MemberInfo } from '@/net/PeerNet';
-import { Lockstep } from '@/net/Lockstep';
+import { PARTY_COLORS, PARTY_COLOR_CSS, PARTY_MAX, type LinkState, type MemberInfo } from '@/net/PeerNet';
+import { CATCH_UP_STEPS, Lockstep } from '@/net/Lockstep';
 import { ChatUI } from '@/ui/Chat';
 import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
 import type { PlayerSave } from '@/persist/SaveGame';
@@ -106,6 +106,8 @@ interface World {
   input: InputBindings;
   /** CO-OP (it.59): one locomotion system per party seat (null = empty seat). `movement` is the local hero's. */
   movements: Array<MovementSystem | null>;
+  /** CO-OP (it.60): build a locomotion system for a hero seated mid-run on THIS floor. */
+  makeMovement: (hero: Player, slot: number) => MovementSystem;
   stairs: { x: number; y: number; sprite: Sprite };
   /** Sealed boss arena floor (it.28): stairs hidden until every foe falls. */
   isArena: boolean;
@@ -493,6 +495,8 @@ async function boot(): Promise<void> {
    */
   const COOP_SLOT: Record<ClassArchetype, number> = { warrior: 11, mage: 12, ranger: 13, rogue: 14 };
   const coopLobby = new CoopLobbyUI({
+    ensurePreviews: () => spriteLib.ensure(VALID_CLASSES.map((c) => PREVIEW_IDLE[c])),
+    previewFor: (cls) => classPreviewFrames(cls),
     heroFor: (cls) => saves.read(COOP_SLOT[cls])?.player ?? null,
     stashFor: (cls) => saves.read(COOP_SLOT[cls])?.stash ?? { items: [], gold: 0 },
     start: (cfg) => {
@@ -524,6 +528,7 @@ async function boot(): Promise<void> {
       performance.mark('run:ready');
     } catch (err) {
       console.error('[run] failed to start:', err);
+      opts.coop?.net.destroy(); // Never leave a party link dangling behind a failed run.
       showMainMenu();
     } finally {
       fade?.classList.remove('loading');
@@ -611,11 +616,16 @@ async function boot(): Promise<void> {
     const net = coop?.net ?? null;
     const localSlot = coop?.localSlot ?? 0;
     inputQueue.stamp = localSlot;
-    const roster: MemberInfo[] = coop ? coop.members : [{ slot: 0, name: 'You', cls: chosenClass, ready: true, hero: null, online: true }];
-    const seatCount = Math.max(...roster.map((m) => m.slot)) + 1;
+    // The roster the WORLD starts from: a mid-run joiner (it.60) replays the
+    // party's original start and joins by a JOIN frame like everyone else saw.
+    const roster: MemberInfo[] = coop ? (coop.history ? coop.history.members : coop.members) : [{ slot: 0, name: 'You', cls: chosenClass, ready: true, hero: null, online: true }];
+    const seatCount = coop ? PARTY_MAX : 1;
     /** The Party Leader's seat: the only hero whose feet open stairs, gates and portals. */
     let leaderSlot = 0;
-    const lockstep = net ? new Lockstep(net, localSlot, roster.map((m) => m.slot)) : null;
+    const lockstep = net ? new Lockstep(net, localSlot, coop!.members.filter((m) => m.online).map((m) => m.slot)) : null;
+    if (lockstep && coop?.history) lockstep.loadHistory(coop.history);
+    /** The party's opening stash (what a late joiner replays from). */
+    const startStash: StashState = coop ? { items: [...coop.stash.items], gold: coop.stash.gold } : { items: [], gold: 0 };
     const chat = coop ? new ChatUI({ send: (text) => net?.chat(text) }) : null;
     /** A hero revives beside the floor's entrance ten seconds after falling (co-op only). */
     const COOP_REVIVE_TICKS = 600;
@@ -694,14 +704,19 @@ async function boot(): Promise<void> {
       player: Player;
       /** Left the party (LEAVE frame / lost link): despawned, ignored everywhere. */
       gone: boolean;
+      /** The local joiner before its JOIN frame lands (it.60): built, not yet in the world. */
+      pending: boolean;
+      /** Link health from the leader's heartbeat (it.60). */
+      link: LinkState | 'lagging';
       /** Last AIM point from this seat's command stream (co-op). */
       aim: { x: number; y: number } | null;
       /** Overhead nameplate + hp bar (co-op). */
-      plate: { root: Container; bar: Graphics } | null;
+      plate: { root: Container; bar: Graphics; note: Text } | null;
     }
     const party: Array<Seat | null> = [];
     /** The live seat → hero table shared with combat / projectiles (a seat that leaves goes null). */
     const seatPlayers: Array<Player | null> = [];
+    const makeSeat = (s: number, name: string, cls: ClassArchetype, p: Player): Seat => ({ slot: s, name, cls, color: PARTY_COLORS[s] ?? 0xffffff, colorCss: PARTY_COLOR_CSS[s] ?? '#fff', player: p, gone: false, pending: false, link: 'ok', aim: null, plate: null });
     for (let s = 0; s < seatCount; s++) {
       const m = roster.find((r) => r.slot === s);
       if (!m) {
@@ -715,18 +730,35 @@ async function boot(): Promise<void> {
       if (sheet) applyHeroSave(p, sheet);
       else giveStarterKit(p, m.cls);
       if (spriteLib.loaded) p.enableKnightRig(); // The class body replaces the crystal.
-      party.push({ slot: s, name: m.name, cls: m.cls, color: PARTY_COLORS[s] ?? 0xffffff, colorCss: PARTY_COLOR_CSS[s] ?? '#fff', player: p, gone: false, aim: null, plate: null });
+      party.push(makeSeat(s, m.name, m.cls, p));
       seatPlayers.push(p);
     }
-    const me = party[localSlot]!;
+    /**
+     * A MID-RUN JOINER (it.60): the hero exists on this screen from the start
+     * (the HUD needs it) but enters the world — and the entity table, with
+     * the id every peer assigns — only when its JOIN frame executes. It waits
+     * OUTSIDE the seat table: the seat number may still belong to a departed
+     * player whose LEAVE is somewhere in the replay.
+     */
+    let pendingLocal: Seat | null = null;
+    if (coop?.history) {
+      const p = new Player(chosenClass);
+      const sheet = coop.hero ?? loaded?.player ?? null;
+      if (sheet) applyHeroSave(p, sheet);
+      else giveStarterKit(p, chosenClass);
+      if (spriteLib.loaded) p.enableKnightRig();
+      pendingLocal = makeSeat(localSlot, coop.members.find((m) => m.slot === localSlot)?.name ?? 'You', chosenClass, p);
+      pendingLocal.pending = true;
+    }
+    const me = pendingLocal ?? party[localSlot]!;
     const player = me.player;
     const seatOf = (entity: Entity | null | undefined): Seat | null => {
       if (!entity) return null;
-      for (const s of party) if (s && !s.gone && s.player === entity) return s;
+      for (const s of party) if (s && !s.gone && !s.pending && s.player === entity) return s;
       return null;
     };
-    const leaderHero = (): Player => party[leaderSlot]?.player ?? player;
-    const liveSeats = (): Seat[] => party.filter((s): s is Seat => !!s && !s.gone);
+    const leaderHero = (): Player => (party[leaderSlot] && !party[leaderSlot]!.gone && !party[leaderSlot]!.pending ? party[leaderSlot]!.player : player);
+    const liveSeats = (): Seat[] => party.filter((s): s is Seat => !!s && !s.gone && !s.pending);
     /** Spread the party around a tile: the leader on it, the rest on the nearest free tiles. */
     const RING: ReadonlyArray<readonly [number, number]> = [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [0, 2], [-2, 0], [0, -2], [2, 1], [1, 2]];
     const placeParty = (cx: number, cy: number, isWalkable: (gx: number, gy: number) => boolean): void => {
@@ -747,23 +779,29 @@ async function boot(): Promise<void> {
       }
     };
     /** CO-OP NAMEPLATES (it.59): the nickname and an hp bar over every hero, in the seat colour. */
-    if (coop) {
-      for (const seat of liveSeats()) {
-        const root = new Container();
-        root.position.set(0, -96);
-        const label = new Text({
-          text: seat.name,
-          style: { fontFamily: 'Cinzel, Georgia, serif', fontSize: 11, fontWeight: '700', fill: seat.colorCss, stroke: { color: 0x000000, width: 3 }, letterSpacing: 1 },
-        });
-        label.anchor.set(0.5, 1);
-        label.position.set(0, -2);
-        label.resolution = 2;
-        const bar = new Graphics();
-        root.addChild(label, bar);
-        seat.player.container.addChild(root);
-        seat.plate = { root, bar };
-      }
-    }
+    const makePlate = (seat: Seat): void => {
+      if (seat.plate) return;
+      const root = new Container();
+      root.position.set(0, -96);
+      const label = new Text({
+        text: seat.name,
+        style: { fontFamily: 'Cinzel, Georgia, serif', fontSize: 11, fontWeight: '700', fill: seat.colorCss, stroke: { color: 0x000000, width: 3 }, letterSpacing: 1 },
+      });
+      label.anchor.set(0.5, 1);
+      label.position.set(0, -2);
+      label.resolution = 2;
+      const bar = new Graphics();
+      // LINK NOTE (it.60): "RECONNECTING…" under the bar while the seat's link is out.
+      const note = new Text({ text: '', style: { fontFamily: 'Cinzel, Georgia, serif', fontSize: 8, fontWeight: '700', fill: '#e8b060', stroke: { color: 0x000000, width: 3 }, letterSpacing: 1 } });
+      note.anchor.set(0.5, 0);
+      note.position.set(0, 7);
+      note.resolution = 2;
+      note.visible = false;
+      root.addChild(label, bar, note);
+      seat.player.container.addChild(root);
+      seat.plate = { root, bar, note };
+    };
+    if (coop) for (const seat of liveSeats()) makePlate(seat);
     const updatePlates = (): void => {
       for (const seat of liveSeats()) {
         const pl = seat.plate;
@@ -774,6 +812,10 @@ async function boot(): Promise<void> {
         pl.bar.rect(-23, 1, 46 * frac, 3).fill({ color: seat.player.action === 'dead' ? 0x553333 : seat.color });
         pl.root.alpha = seat.player.action === 'dead' ? 0.55 : 1;
         pl.root.scale.set(Enemy.hudScale);
+        const noteText = seat.link === 'reconnecting' ? 'RECONNECTING…' : seat.link === 'lagging' ? 'LAGGING…' : '';
+        if (pl.note.text !== noteText) pl.note.text = noteText;
+        pl.note.visible = noteText !== '';
+        if (noteText) pl.note.alpha = 0.6 + 0.4 * Math.sin(performance.now() / 250);
       }
     };
     /** Aim (it.33, per seat since it.59): the mouse in solo; the seat's AIM stream in co-op. */
@@ -1172,6 +1214,7 @@ async function boot(): Promise<void> {
       return inv;
     };
     const inventories: Array<InventorySystem | null> = party.map((s) => (s ? makeInventory(s.player, s.slot) : null));
+    if (pendingLocal) inventories[localSlot] = makeInventory(pendingLocal.player, localSlot); // The HUD binds before the JOIN lands.
     const stateSync = new StateSyncSystem(inputQueue);
     const inventoryUI = new InventoryUI(player, inputQueue, 0, buildPaperdollFrames);
     const tutorial = new TutorialUI();
@@ -1443,14 +1486,14 @@ async function boot(): Promise<void> {
       const pathfinder = new Pathfinder(dungeon.width, dungeon.height, scene.isWalkable);
       // Attack/approach range follows the wielded weapon (reach or fire range).
       // ONE LOCOMOTION SYSTEM PER SEAT (it.59): each answers only its own commands.
-      const movements: Array<MovementSystem | null> = party.map((seat) => {
-        if (!seat || seat.gone) return null;
-        const hero = seat.player;
+      const makeMovement = (hero: Player, slot: number): MovementSystem => {
         const mv = new MovementSystem(hero, pathfinder, scene.isWalkable, loot, chests, () => Math.max(ATTACK_RANGE, hero.weaponProfile.range), viewport);
-        mv.playerId = seat.slot;
+        mv.playerId = slot;
         return mv;
-      });
-      const movement = movements[localSlot]!;
+      };
+      const movements: Array<MovementSystem | null> = party.map((seat) => (!seat || seat.gone || seat.pending ? null : makeMovement(seat.player, seat.slot)));
+      // The local joiner (it.60) drives nothing until its JOIN lands; a throwaway keeps `movement` non-null.
+      const movement = movements[localSlot] ?? makeMovement(player, localSlot);
       // Enemy queries are wired through a late-bound pool reference
       // (combat must exist before the pool, whose AI deps call into combat).
       let enemiesRef: EnemyPool | null = null;
@@ -1791,6 +1834,7 @@ async function boot(): Promise<void> {
         loot,
         movement,
         movements,
+        makeMovement,
         combat,
         projectiles,
         enemies,
@@ -2114,6 +2158,7 @@ async function boot(): Promise<void> {
       },
     });
     const skillSystems: Array<SkillSystem | null> = party.map((s) => (s ? makeSkills(s.player, s.slot) : null));
+    if (pendingLocal) skillSystems[localSlot] = makeSkills(pendingLocal.player, localSlot); // The HUD binds before the JOIN lands.
     const skills = skillSystems[localSlot]!;
     subs.push(() => {
       for (const sk of skillSystems) sk?.destroy();
@@ -2874,11 +2919,67 @@ async function boot(): Promise<void> {
       seatPlayers[slot] = null;
       world.movements[slot] = null;
       skillSystems[slot]?.clearZones();
+      skillSystems[slot] = null;
       inventories[slot] = null;
       state.unregister(seat.player.id);
       seat.player.container.removeFromParent();
       seat.player.destroy();
       refreshPartyHud(); // The leader's [System] line already told everyone.
+    };
+    /**
+     * A hero joins mid-run (it.60): the JOIN frame seats them on every peer on
+     * the same tick — a new body for the others, the waiting one for the joiner.
+     */
+    const addSeat = (slot: number, name: string, cls: ClassArchetype, hero: PlayerSave | null): void => {
+      let seat = party[slot];
+      if (slot === localSlot && pendingLocal) {
+        // Our own JOIN: the waiting hero takes the seat (a stale occupant makes way).
+        if (seat && !seat.gone) removeSeat(slot);
+        seat = pendingLocal;
+        pendingLocal = null;
+        party[slot] = seat;
+      } else if (seat && !seat.gone && !seat.pending) return; // Already seated.
+      if (!seat || seat.gone) {
+        const p = new Player(cls);
+        if (hero) applyHeroSave(p, hero);
+        else giveStarterKit(p, cls);
+        void spriteLib.ensure(animsForHero(cls)).then(() => {
+          if (!alive || party[slot]?.player !== p) return;
+          p.enableKnightRig(); // Render only — the sim never waits on art.
+        });
+        seat = makeSeat(slot, name, cls, p);
+        party[slot] = seat;
+      }
+      seat.gone = false;
+      seat.pending = false;
+      seat.link = 'ok';
+      state.register(seat.player);
+      seatPlayers[slot] = seat.player;
+      world.viewport.objectLayer.addChild(seat.player.container);
+      let placed = false;
+      for (const [ox, oy] of RING) {
+        const gx = world.dungeon.spawn.x + ox;
+        const gy = world.dungeon.spawn.y + oy;
+        if (!world.scene.isWalkable(gx, gy)) continue;
+        seat.player.warpTo(gx + 0.5, gy + 0.5);
+        placed = true;
+        break;
+      }
+      if (!placed) seat.player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
+      seat.player.action = 'idle';
+      world.movements[slot] = world.makeMovement(seat.player, slot);
+      skillSystems[slot] ??= makeSkills(seat.player, slot); // The local joiner's already serve its HUD.
+      inventories[slot] ??= makeInventory(seat.player, slot);
+      if (coop) makePlate(seat);
+      world.ambience.burst(seat.player.pos.x, seat.player.pos.y, 0x8fb8ff, 22);
+      if (seat.player === player) {
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        updateOrb();
+        eventBus.emit('skills:changed', {});
+        eventBus.emit('inventory:changed', {});
+      }
+      refreshPartyHud();
     };
     /** Tick-clocked beats (it.59): the arena teleporter and the boss's loot burst. */
     let arenaTeleporterIn = 0;
@@ -2915,7 +3016,7 @@ async function boot(): Promise<void> {
     const partyHud = document.createElement('div');
     partyHud.id = 'party-hud';
     if (coop) document.body.appendChild(partyHud);
-    const partyRows = new Map<number, { hp: HTMLElement; row: HTMLElement }>();
+    const partyRows = new Map<number, { hp: HTMLElement; row: HTMLElement; ping: HTMLElement }>();
     const refreshPartyHud = (): void => {
       if (!coop) return;
       partyHud.innerHTML = '';
@@ -2928,13 +3029,15 @@ async function boot(): Promise<void> {
         name.textContent = seat.name + (seat.slot === leaderSlot ? ' ★' : '');
         const cls = document.createElement('span');
         cls.textContent = seat.cls;
+        const ping = document.createElement('u');
+        ping.className = 'ph-ping';
         const bar = document.createElement('div');
         bar.className = 'ph-bar';
         const hp = document.createElement('i');
         bar.appendChild(hp);
-        row.append(name, cls, bar);
+        row.append(name, cls, ping, bar);
         partyHud.appendChild(row);
-        partyRows.set(seat.slot, { hp, row });
+        partyRows.set(seat.slot, { hp, row, ping });
       }
     };
     refreshPartyHud();
@@ -2952,15 +3055,36 @@ async function boot(): Promise<void> {
         if (!r) continue;
         r.hp.style.width = `${Math.max(0, Math.min(100, (seat.player.hp / Math.max(1, seat.player.hpMax)) * 100)).toFixed(1)}%`;
         r.row.classList.toggle('dead', seat.player.action === 'dead');
+        r.row.classList.toggle('reconnecting', seat.link === 'reconnecting');
+        r.row.classList.toggle('lagging', seat.link === 'lagging');
+        // LATENCY (it.60): the leader's heartbeat round trip, green / amber / red.
+        if (net) {
+          const ms = seat.slot === localSlot && !net.isHost ? net.ping : seat.slot === 0 ? 0 : (net.members.find((m) => m.slot === seat.slot)?.ping ?? 0);
+          const text = seat.link === 'reconnecting' ? 'RECONNECTING…' : seat.slot === 0 && net.isHost ? 'HOST' : `${ms} ms`;
+          if (r.ping.textContent !== text) r.ping.textContent = text;
+          r.ping.className = 'ph-ping ' + (seat.link === 'reconnecting' ? 'poor' : ms < 80 ? 'good' : ms < 200 ? 'fair' : 'poor');
+        }
       }
-      if (lockstep) {
+      if (lockstep && net) {
+        const catching = lockstep.catchingUp;
+        const hostOut = !net.isHost && net.hostLink === 'reconnecting';
         const ms = lockstep.stalledMs;
-        const show = ms > 700;
+        const show = catching || hostOut || ms > 700;
         coopWait.classList.toggle('show', show);
-        if (show) {
-          const missing = lockstep.isLeader ? lockstep.missingSlots(state.tick + 1).map((s) => party[s]?.name ?? `seat ${s + 1}`) : [];
-          const span = coopWait.querySelector('span');
-          if (span) span.textContent = lockstep.inBarrier ? 'the floor is being raised on every screen…' : missing.length ? `waiting on ${missing.join(', ')}` : 'waiting for the leader…';
+        const title = coopWait.querySelector('b');
+        const span = coopWait.querySelector('span');
+        if (show && title && span) {
+          if (catching) {
+            title.textContent = 'CATCHING UP WITH THE PARTY';
+            span.textContent = `${Math.round(lockstep.replayProgress * 100)}% of the delve so far`;
+          } else if (hostOut) {
+            title.textContent = 'RECONNECTING';
+            span.textContent = 'reaching the Party Leader again…';
+          } else {
+            title.textContent = 'WAITING FOR THE PARTY';
+            const missing = lockstep.isLeader ? lockstep.missingSlots(state.tick + 1).map((s) => party[s]?.name ?? `seat ${s + 1}`) : [];
+            span.textContent = lockstep.inBarrier ? 'the floor is being raised on every screen…' : missing.length ? `waiting on ${missing.join(', ')}` : 'waiting for the leader…';
+          }
         }
       }
       if (coop && player.action === 'dead' && deathNote) {
@@ -3038,6 +3162,8 @@ async function boot(): Promise<void> {
             if (seat && !seat.gone) seat.aim = { x: cmd.x, y: cmd.y };
           } else if (cmd.type === 'LEAVE') {
             removeSeat(cmd.playerId);
+          } else if (cmd.type === 'JOIN') {
+            addSeat(cmd.playerId, cmd.name, cmd.cls, cmd.hero);
           } else if (cmd.type === 'WARP') {
             if (coop && cmd.playerId !== leaderSlot) {
               if (cmd.playerId === localSlot) leaderOnlyNote();
@@ -3726,15 +3852,42 @@ async function boot(): Promise<void> {
       canPause: () => !transitioning && !victoryShown,
     });
 
+    // A closing tab keeps its progress (it.60): the co-op hero is what the next join restores.
+    window.addEventListener('pagehide', () => saveNow(), { signal: ac.signal });
+
     // ---- THE WIRE (it.59) --------------------------------------------------
+    /** THE LEADER IS GONE (it.60): a clean modal, a save, then home alone. */
+    const lostModal = document.createElement('div');
+    lostModal.id = 'coop-lost';
+    lostModal.innerHTML = '<div class="am-box"><h3>THE PARTY LEADER HAS DISCONNECTED</h3><p class="am-say"></p><p class="cl-sub">Returning to town…</p></div>';
+    if (coop) document.body.appendChild(lostModal);
     if (lockstep && net && chat) {
       loop.gate = (t) => lockstep.canStep(t);
+      loop.extraSteps = () => (lockstep.backlog(loop.tick) > 12 ? CATCH_UP_STEPS : 0); // Sprint through a backlog (it.60).
       loop.keepAliveHidden = true; // An alt-tabbed peer must never freeze the party.
       lockstep.onResume = () => {
         transitioning = false; // The same tick on every peer.
         floorFade?.classList.remove('show', 'loading');
         inputQueue.clear();
       };
+      lockstep.onLag = (slot, lagging) => {
+        const seat = party[slot];
+        if (seat && seat.link !== 'reconnecting') seat.link = lagging ? 'lagging' : 'ok';
+      };
+      if (net.isHost) {
+        // What a late joiner replays (it.60): the seed, the opening roster and stash, every frame since.
+        const base = net.historyProvider;
+        net.historyProvider = () => ({ ...(base ? base() : { upto: -1, frames: [] }), seed: baseSeed, members: roster.map((m) => ({ ...m })), stash: { items: [...startStash.items], gold: startStash.gold } });
+        net.onJoin = (m) => lockstep.addMember(m.slot, { type: 'JOIN', playerId: m.slot, name: m.name, cls: m.cls, hero: m.hero });
+      }
+      subs.push(
+        net.onLink((slot, state) => {
+          const seat = party[slot];
+          if (seat) seat.link = state;
+          if (!net.isHost && slot === 0 && state === 'reconnecting') saveNow(); // Progress is safe whatever happens next.
+          refreshPartyHud();
+        }),
+      );
       subs.push(
         net.onMessage((msg) => {
           if (msg.t === 'chat') {
@@ -3745,10 +3898,16 @@ async function boot(): Promise<void> {
           }
         }),
       );
-      // The leader vanished: the run goes on ALONE — no crash, no frozen screen.
+      // The leader vanished (it.60): the modal, a save, then the run goes on
+      // ALONE and walks home — no crash, no frozen screen.
       net.onHostLost((reason) => {
         if (!alive) return;
-        chat.system(`${reason} Continuing alone — you can host a new party from the title.`);
+        const say = lostModal.querySelector('.am-say');
+        if (say) say.textContent = reason;
+        lostModal.classList.add('open');
+        audio.sfx('uiBack');
+        saveNow();
+        chat.system(`${reason} Returning to town alone — you can host a new party from the title.`);
         lockstep.goSolo();
         leaderSlot = localSlot;
         for (const seat of liveSeats()) if (seat.slot !== localSlot) removeSeat(seat.slot);
@@ -3757,8 +3916,13 @@ async function boot(): Promise<void> {
         floorFade?.classList.remove('show', 'loading');
         coopWait.classList.remove('show');
         refreshPartyHud();
+        later(() => {
+          lostModal.classList.remove('open');
+          if (!world.town && !transitioning) goHome();
+        }, 2600);
       });
-      chat.system(net.isHost ? `Party ${net.code} in the crypt. You are the Party Leader.` : `Party ${net.code} in the crypt. ${party[leaderSlot]?.name ?? 'The leader'} leads.`);
+      chat.system(net.isHost ? `Party ${net.code} in the crypt. You are the Party Leader.` : `Party ${net.code} in the crypt. ${party[leaderSlot]?.name ?? 'The leader'} leads.${net.path === 'relay' ? ' (through the relay)' : ''}`);
+      if (coop?.history) chat.system('Catching up with the delve so far — you step in the moment the party’s present is reached.');
       chat.system('ENTER to chat · the leader opens stairs, gates and portals · the fallen rise after 10 s.');
     }
     minimap.party = coop ? () => liveSeats().filter((s) => s.player !== player).map((s) => ({ x: s.player.pos.x, y: s.player.pos.y, color: s.colorCss, dead: s.player.action === 'dead' })) : null;
@@ -3790,7 +3954,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome }),
       });
     }
 
@@ -3811,6 +3975,7 @@ async function boot(): Promise<void> {
         chat?.destroy();
         partyHud.remove();
         coopWait.remove();
+        lostModal.remove();
         minimap.party = null;
         loop.stop();
         shopUI.destroy();

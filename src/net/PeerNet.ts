@@ -1,6 +1,6 @@
 /**
  * @module net/PeerNet
- * 4-PLAYER CO-OP TRANSPORT (it.59): serverless WebRTC through PeerJS.
+ * 4-PLAYER CO-OP TRANSPORT (it.59, hardened it.60): serverless WebRTC via PeerJS.
  *
  * WHY PEERJS: the game ships on GitHub Pages with zero paid infrastructure.
  * PeerJS brokers the WebRTC handshake through its free public signalling
@@ -8,33 +8,51 @@
  * design) and then the party talks DIRECTLY, browser to browser, over a
  * reliable ordered DataChannel. Nothing game-related ever touches a server.
  *
- * TOPOLOGY: a star. The PARTY LEADER (host) opens a peer whose id is derived
- * from the room code; every joiner connects to that id. The host relays
- * lobby state, chat and the lockstep frames (see `Lockstep`). A joiner only
- * ever talks to the host, so a member dropping never disturbs the others.
+ * NAT TRAVERSAL (it.60): ICE gathers over Google + Cloudflare STUN (both
+ * verified live) and, when the player has entered one, a TURN relay (UDP,
+ * TCP and TLS forms of the URL) — the only thing that carries a party across
+ * symmetric NAT / CGNAT (mobile hotspots). Relay credentials are the
+ * player's own (any free tier: Metered, ExpressTURN, Cloudflare Calls, a
+ * coturn), stored in localStorage, never in code. A join that has not
+ * opened its channel within 8 s is retried RELAY-ONLY.
  *
- * SECURITY & PRIVACY: room codes come from `crypto.getRandomValues`, nothing
- * is hardcoded, peers are addressed by the code alone, every inbound message
- * is shape-checked before use, and chat text is treated as data (the UI
- * renders it through `textContent`, never HTML).
+ * FAULT TOLERANCE (it.60): a 2 s ping-pong heartbeat measures latency both
+ * ways; a link silent for 10 s is marked RECONNECTING (the seat is kept,
+ * the party plays on); silence past 25 s drops it. A joiner whose channel
+ * dies re-dials the leader on its own and asks for the frames it missed
+ * (`resync`); a player who comes back through the lobby with the room code
+ * is welcomed mid-run and handed the full command history to replay.
+ *
+ * TOPOLOGY: a star. The PARTY LEADER (host) opens a peer whose id is derived
+ * from the room code; every joiner connects to that id. Every inbound
+ * message is shape-checked; chat and nicknames are treated as data.
  */
 
-import { Peer, type DataConnection } from 'peerjs';
+import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import type { InputCommand } from '@/core/InputQueue';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { PlayerSave, StashState } from '@/persist/SaveGame';
 
 export const PARTY_MAX = 4;
 /** Bump when the wire format changes — mismatched builds refuse each other politely. */
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 /** Slot colours: gold (leader), sky, rose, moss. */
 export const PARTY_COLORS: readonly number[] = [0xffd070, 0x7fc8ff, 0xff6f8a, 0x8ee08a];
 export const PARTY_COLOR_CSS: readonly string[] = ['#ffd070', '#7fc8ff', '#ff6f8a', '#8ee08a'];
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // No I / O: nothing to misread.
 const PEER_PREFIX = 'crypt-hollow-king-';
-const HELLO_TIMEOUT_MS = 15000;
+/** A direct channel that has not opened by now is retried relay-only. */
+const DIRECT_TIMEOUT_MS = 8000;
+const RELAY_TIMEOUT_MS = 15000;
 const HEARTBEAT_MS = 2000;
-const HEARTBEAT_TIMEOUT_MS = 9000;
+/** Silence before a link reads RECONNECTING (the seat is kept). */
+export const GRACE_MS = 10000;
+/** Silence before a link is given up on. */
+export const DROP_MS = 25000;
+/** History is shipped in pieces this size (DataChannel messages stay small). */
+const CHUNK = 48000;
+
+export type LinkState = 'ok' | 'reconnecting';
 
 export interface MemberInfo {
   slot: number;
@@ -44,26 +62,134 @@ export interface MemberInfo {
   /** The hero sheet this member brings (null = a fresh level-1 hero). */
   hero: PlayerSave | null;
   online: boolean;
+  /** Round trip to the leader in ms (the leader's own is 0). */
+  ping?: number;
+  link?: LinkState;
+  /** Host bookkeeping: when the seat's link fell silent. */
+  lastSilent?: number;
+}
+
+/** What a mid-run joiner replays: the party's start + every executed frame. */
+export interface HistoryPayload {
+  seed: number;
+  members: MemberInfo[];
+  stash: StashState;
+  /** Last executed tick the frames cover. */
+  upto: number;
+  /** Non-empty frames only: [tick, commands]. */
+  frames: Array<[number, InputCommand[]]>;
+}
+
+export interface ResyncPayload {
+  from: number;
+  upto: number;
+  frames: Array<[number, InputCommand[]]>;
+  /** Barrier ticks the leader resumed inside the window. */
+  resumed: number[];
 }
 
 export type NetMsg =
-  | { t: 'hello'; proto: number; name: string; cls: ClassArchetype; hero: PlayerSave | null }
-  | { t: 'welcome'; slot: number; code: string }
+  | { t: 'hello'; proto: number; name: string; cls: ClassArchetype; hero: PlayerSave | null; rejoin?: { slot: number; lastTick: number } }
+  | { t: 'welcome'; slot: number; code: string; phase: 'lobby' | 'run' }
   | { t: 'refuse'; reason: string }
   | { t: 'lobby'; members: MemberInfo[]; phase: 'lobby' | 'run' }
   | { t: 'set'; cls?: ClassArchetype; ready?: boolean; hero?: PlayerSave | null }
   | { t: 'chat'; slot: number; text: string }
   | { t: 'sys'; text: string }
   | { t: 'start'; seed: number; members: MemberInfo[]; stash: StashState }
+  | { t: 'hist'; i: number; n: number; s: string }
+  | { t: 'resync'; p: ResyncPayload }
   | { t: 'in'; k: number; c: InputCommand[] }
   | { t: 'fr'; k: number; c: Array<[number, InputCommand[]]> }
   | { t: 'bar'; k: number }
   | { t: 'res'; k: number }
   | { t: 'gone'; slot: number }
+  | { t: 'link'; slot: number; state: LinkState }
+  | { t: 'pings'; p: Record<number, number> }
   | { t: 'end'; reason: string }
-  | { t: 'hb' };
+  | { t: 'hb'; at: number }
+  | { t: 'hba'; at: number };
 
 export type NetHandler = (msg: NetMsg, fromSlot: number) => void;
+
+// --- ICE configuration ------------------------------------------------------
+
+export interface RelaySettings {
+  /** One or more TURN urls, comma / newline separated (`turn:host:3478`, `turns:host:443`). */
+  urls: string;
+  username: string;
+  credential: string;
+}
+
+const RELAY_KEY = 'iso-arpg-turn';
+
+export function loadRelaySettings(): RelaySettings | null {
+  try {
+    const raw = localStorage.getItem(RELAY_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as RelaySettings;
+    return typeof v.urls === 'string' && v.urls.trim() ? { urls: v.urls, username: String(v.username ?? ''), credential: String(v.credential ?? '') } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveRelaySettings(s: RelaySettings | null): void {
+  try {
+    if (!s || !s.urls.trim()) localStorage.removeItem(RELAY_KEY);
+    else localStorage.setItem(RELAY_KEY, JSON.stringify(s));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * STUN from two independent providers (verified reachable), plus the
+ * player's TURN. A bare `turn:host:port` is expanded to its UDP, TCP and
+ * TLS forms so a relay is reachable through the strictest firewall.
+ */
+export function buildIceServers(relay: RelaySettings | null = loadRelaySettings()): RTCIceServer[] {
+  const servers: RTCIceServer[] = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+  ];
+  if (relay) {
+    const urls = new Set<string>();
+    for (const raw of relay.urls.split(/[\s,]+/)) {
+      const u = raw.trim();
+      if (!/^turns?:/i.test(u)) continue;
+      urls.add(u);
+      if (/^turn:/i.test(u) && !u.includes('?')) {
+        urls.add(`${u}?transport=tcp`);
+        const host = u.slice(5).replace(/:\d+$/, '');
+        urls.add(`turns:${host}:443`);
+      }
+    }
+    if (urls.size) servers.push({ urls: [...urls], username: relay.username, credential: relay.credential });
+  }
+  return servers;
+}
+
+/** Gather candidates for a few seconds and report what the network offers (lobby TEST button). */
+export async function probeIce(relay: RelaySettings | null, ms = 6000): Promise<{ srflx: boolean; relay: boolean; count: number }> {
+  const pc = new RTCPeerConnection({ iceServers: buildIceServers(relay) });
+  let srflx = false;
+  let relayed = false;
+  let count = 0;
+  pc.onicecandidate = (e) => {
+    if (!e.candidate) return;
+    count++;
+    if (e.candidate.type === 'srflx') srflx = true;
+    if (e.candidate.type === 'relay') relayed = true;
+  };
+  pc.createDataChannel('probe');
+  await pc.setLocalDescription(await pc.createOffer());
+  await new Promise((r) => setTimeout(r, ms));
+  pc.close();
+  return { srflx, relay: relayed, count };
+}
+
+// --- Helpers ------------------------------------------------------------------
 
 /** A cryptographically random room code, `KNG-482` style. */
 export function makeRoomCode(): string {
@@ -101,11 +227,21 @@ function isMsg(v: unknown): v is NetMsg {
   return typeof v === 'object' && v !== null && typeof (v as { t?: unknown }).t === 'string';
 }
 
+class TimeoutError extends Error {}
+class SeatLostError extends Error {}
+
 interface Link {
   slot: number;
   conn: DataConnection;
   lastSeen: number;
 }
+
+export interface JoinOptions {
+  /** Skip the direct attempt: TURN only (also the automatic fallback). */
+  relayOnly?: boolean;
+}
+
+// --- The transport --------------------------------------------------------------
 
 export class PeerNet {
   readonly isHost: boolean;
@@ -114,17 +250,37 @@ export class PeerNet {
   /** Host: the roster it owns. Client: the last roster the host sent. */
   members: MemberInfo[] = [];
   phase: 'lobby' | 'run' = 'lobby';
+  /** How this peer reached the party ('relay' = through TURN). */
+  path: 'direct' | 'relay' = 'direct';
+  /** The player's own round trip to the leader (ms). */
+  ping = 0;
+  /** Client: the leader's link as seen from here. */
+  hostLink: LinkState = 'ok';
+
+  /** Host: what a mid-run joiner replays (wired by the run). */
+  historyProvider: (() => HistoryPayload) | null = null;
+  /** Host: the frames a returning seat missed (wired by the run). */
+  resyncProvider: ((from: number) => ResyncPayload) | null = null;
+  /** Client: the last tick this sim executed (for `resync`). */
+  lastTickProvider: (() => number) | null = null;
+  /** Host: a new seat joined mid-run — inject the JOIN (wired by the run). */
+  onJoin: ((m: MemberInfo) => void) | null = null;
 
   private peer: Peer | null = null;
-  /** Host: one link per joiner. Client: exactly one link (to the host). */
   private readonly links: Link[] = [];
   private readonly handlers = new Set<NetHandler>();
   private readonly rosterHandlers = new Set<() => void>();
+  private readonly linkHandlers = new Set<(slot: number, state: LinkState) => void>();
   private lostHandler: ((reason: string) => void) | null = null;
+  private readonly historyHandlers = new Set<(h: HistoryPayload) => void>();
   private heartbeat = 0;
   private destroyed = false;
   /** Client: when the host last said anything (frames, chat, heartbeats). */
   private hostSeen = 0;
+  private reconnecting = false;
+  private relayOnly = false;
+  private hello: { name: string; cls: ClassArchetype; hero: PlayerSave | null } = { name: 'Delver', cls: 'warrior', hero: null };
+  private readonly histParts = new Map<number, string>();
 
   private constructor(isHost: boolean, code: string) {
     this.isHost = isHost;
@@ -137,80 +293,80 @@ export class PeerNet {
   static async host(name: string, cls: ClassArchetype, hero: PlayerSave | null): Promise<PeerNet> {
     const code = makeRoomCode();
     const net = new PeerNet(true, code);
-    net.members = [{ slot: 0, name, cls, ready: false, hero, online: true }];
-    await net.openPeer(peerIdFor(code));
+    net.members = [{ slot: 0, name, cls, ready: false, hero, online: true, ping: 0, link: 'ok' }];
+    await net.openPeer(peerIdFor(code), false);
     net.peer!.on('connection', (conn) => net.acceptJoiner(conn));
     net.startHeartbeat();
     return net;
   }
 
-  /** Join a party by code. Resolves with the slot the host assigned. */
-  static async join(code: string, name: string, cls: ClassArchetype, hero: PlayerSave | null): Promise<PeerNet> {
+  /**
+   * Join a party by code: a direct attempt first; if the channel has not
+   * opened in 8 s the peer is rebuilt RELAY-ONLY and tried again.
+   */
+  static async join(code: string, name: string, cls: ClassArchetype, hero: PlayerSave | null, opts: JoinOptions = {}): Promise<PeerNet> {
     const net = new PeerNet(false, code);
-    await net.openPeer(undefined);
-    const conn = net.peer!.connect(peerIdFor(code), { reliable: true, serialization: 'json' });
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const timer = window.setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        reject(new Error('No party answered that code. Check it and try again.'));
-      }, HELLO_TIMEOUT_MS);
-      conn.on('open', () => {
-        conn.send({ t: 'hello', proto: PROTOCOL, name, cls, hero } satisfies NetMsg);
-      });
-      conn.on('data', (raw: unknown) => {
-        if (!isMsg(raw)) return;
-        if (!settled) {
-          if (raw.t === 'welcome') {
-            settled = true;
-            clearTimeout(timer);
-            net.localSlot = raw.slot;
-            resolve();
-          } else if (raw.t === 'refuse') {
-            settled = true;
-            clearTimeout(timer);
-            reject(new Error(raw.reason));
+    net.hello = { name, cls, hero };
+    const attempt = async (relay: boolean, timeoutMs: number): Promise<void> => {
+      net.relayOnly = relay;
+      await net.openPeer(undefined, relay);
+      await net.dial(timeoutMs, undefined);
+      net.path = relay ? 'relay' : 'direct';
+    };
+    try {
+      await attempt(!!opts.relayOnly, opts.relayOnly ? RELAY_TIMEOUT_MS : DIRECT_TIMEOUT_MS);
+    } catch (err) {
+      if (!opts.relayOnly && err instanceof Error && /closed the door/.test(err.message)) {
+        // A channel that died before the welcome: one more knock, same path.
+        net.closePeer();
+        try {
+          await attempt(false, DIRECT_TIMEOUT_MS);
+          net.hostSeen = performance.now();
+          net.startHeartbeat();
+          return net;
+        } catch (err2) {
+          if (!(err2 instanceof TimeoutError)) {
+            net.destroy();
+            throw err2;
           }
-          return;
         }
-        net.receive(raw, 0);
-      });
-      conn.on('close', () => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new Error('The party closed the door before answering.'));
-          return;
-        }
-        net.hostLost('The connection to the Party Leader was lost.');
-      });
-      conn.on('error', (err) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new Error(String((err as Error).message ?? err)));
-        }
-      });
-      net.peer!.on('error', (err) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        const type = (err as { type?: string }).type;
-        reject(new Error(type === 'peer-unavailable' ? 'No party is open under that code.' : `Connection failed (${type ?? 'error'}).`));
-      });
-    });
-    net.links.push({ slot: 0, conn, lastSeen: performance.now() });
+      } else if (opts.relayOnly || !(err instanceof TimeoutError)) {
+        net.destroy();
+        throw err;
+      }
+      // Direct path never opened (symmetric NAT / CGNAT): go through the relay.
+      net.closePeer();
+      try {
+        await attempt(true, RELAY_TIMEOUT_MS);
+      } catch (err2) {
+        net.destroy();
+        throw err2 instanceof TimeoutError
+          ? new Error(
+              loadRelaySettings()
+                ? 'No path to the party, even through the relay. Check the TURN credentials.'
+                : 'No direct path to the party (mobile hotspot / carrier NAT?). Enter a TURN relay under NETWORK RELAY and try again.',
+            )
+          : err2;
+      }
+    }
     net.hostSeen = performance.now();
     net.startHeartbeat();
     return net;
   }
 
-  private openPeer(id: string | undefined): Promise<void> {
+  private peerOptions(relayOnly: boolean): PeerOptions {
+    return {
+      debug: 0,
+      config: { iceServers: buildIceServers(), iceTransportPolicy: relayOnly ? 'relay' : 'all' },
+    };
+  }
+
+  private openPeer(id: string | undefined, relayOnly: boolean): Promise<void> {
     return new Promise((resolve, reject) => {
       // The public PeerJS broker — no key, no account; only the handshake
       // passes through it, the game itself stays peer-to-peer.
-      const peer = id ? new Peer(id, { debug: 0 }) : new Peer({ debug: 0 });
+      const opts = this.peerOptions(relayOnly);
+      const peer = id ? new Peer(id, opts) : new Peer(opts);
       this.peer = peer;
       let settled = false;
       peer.on('open', () => {
@@ -233,19 +389,15 @@ export class PeerNet {
                     : `Connection error (${type}).`,
             ),
           );
-          return;
         }
-        // Later errors: a joiner's id vanished, or the socket dropped.
-        if (type === 'network' || type === 'socket-error' || type === 'socket-closed') {
-          if (!this.isHost) this.hostLost('The connection to the Party Leader was lost.');
-        }
+        // Later errors are per-connection; the links decide what they mean.
       });
       peer.on('disconnected', () => {
-        // The broker link only matters for NEW joiners; live DataChannels
-        // keep flowing. Try to get it back so late joiners can still knock.
-        if (!this.destroyed && this.peer && !this.peer.destroyed) {
+        // The broker link only matters for NEW joiners and re-dials; live
+        // DataChannels keep flowing. Get it back when we can.
+        if (!this.destroyed && this.peer === peer && !peer.destroyed) {
           try {
-            this.peer.reconnect();
+            peer.reconnect();
           } catch {
             /* the broker may refuse; live links are unaffected */
           }
@@ -254,27 +406,148 @@ export class PeerNet {
     });
   }
 
-  /** Tear everything down: links, the peer, timers, handlers. */
-  destroy(): void {
-    if (this.destroyed) return;
-    this.destroyed = true;
-    clearInterval(this.heartbeat);
-    for (const l of this.links) {
+  private closePeer(): void {
+    const doomed = this.links.splice(0);
+    for (const l of doomed) {
       try {
         l.conn.close();
       } catch {
-        /* already closed */
+        /* closing */
       }
     }
-    this.links.length = 0;
     try {
       this.peer?.destroy();
     } catch {
       /* ignore */
     }
     this.peer = null;
+  }
+
+  /** Client: open a channel to the leader and complete the hello / welcome. */
+  private dial(timeoutMs: number, rejoin: { slot: number; lastTick: number } | undefined): Promise<void> {
+    const peer = this.peer;
+    if (!peer) return Promise.reject(new Error('No peer.'));
+    return new Promise<void>((resolve, reject) => {
+      const conn = peer.connect(peerIdFor(this.code), { reliable: true, serialization: 'json' });
+      let settled = false;
+      const timer = window.setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try {
+          conn.close();
+        } catch {
+          /* ignore */
+        }
+        reject(new TimeoutError('No party answered that code in time.'));
+      }, timeoutMs);
+      const fail = (err: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      };
+      conn.on('open', () => {
+        conn.send({ t: 'hello', proto: PROTOCOL, name: this.hello.name, cls: this.hello.cls, hero: this.hello.hero, rejoin } satisfies NetMsg);
+      });
+      conn.on('data', (raw: unknown) => {
+        if (!isMsg(raw)) return;
+        if (!settled) {
+          if (raw.t === 'welcome') {
+            settled = true;
+            clearTimeout(timer);
+            if (rejoin && raw.slot !== rejoin.slot) {
+              // The grace window closed on the leader's side: the old seat is gone.
+              try {
+                conn.close();
+              } catch {
+                /* ignore */
+              }
+              reject(new SeatLostError('Your seat was given up while you were away. Rejoin from the lobby with the room code.'));
+              return;
+            }
+            this.localSlot = raw.slot;
+            this.phase = raw.phase === 'run' ? 'run' : 'lobby';
+            this.links.length = 0;
+            this.links.push({ slot: 0, conn, lastSeen: performance.now() });
+            this.hostSeen = performance.now();
+            resolve();
+          } else if (raw.t === 'refuse') {
+            fail(new Error(raw.reason));
+          }
+          return;
+        }
+        this.receive(raw, 0);
+      });
+      conn.on('close', () => {
+        if (!settled) return fail(new Error('The party closed the door before answering.'));
+        if (this.links[0]?.conn === conn) this.channelDied();
+      });
+      conn.on('error', (err) => {
+        if (!settled) return fail(new Error(String((err as Error).message ?? err)));
+        if (this.links[0]?.conn === conn) this.channelDied();
+      });
+      peer.on('error', (err) => {
+        const type = (err as { type?: string }).type;
+        if (!settled) fail(new Error(type === 'peer-unavailable' ? 'No party is open under that code.' : `Connection failed (${type ?? 'error'}).`));
+      });
+    });
+  }
+
+  /** Client: the channel to the leader closed — re-dial inside the grace window. */
+  private channelDied(): void {
+    if (this.destroyed || this.reconnecting) return;
+    if (this.phase !== 'run') {
+      this.hostLost('The connection to the Party Leader was lost.');
+      return;
+    }
+    this.reconnecting = true;
+    this.setHostLink('reconnecting');
+    const deadline = performance.now() + DROP_MS;
+    const tryAgain = async (): Promise<void> => {
+      while (!this.destroyed && performance.now() < deadline) {
+        try {
+          if (!this.peer || this.peer.destroyed) await this.openPeer(undefined, this.relayOnly);
+          else if (this.peer.disconnected) this.peer.reconnect();
+          await this.dial(6000, { slot: this.localSlot, lastTick: this.lastTickProvider?.() ?? -1 });
+          this.reconnecting = false;
+          this.setHostLink('ok');
+          return;
+        } catch (err) {
+          if (err instanceof SeatLostError) {
+            this.reconnecting = false;
+            this.hostLost(err.message);
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+      this.reconnecting = false;
+      this.hostLost('The Party Leader could not be reached again.');
+    };
+    void tryAgain();
+  }
+
+  /** QA hook: drop the channel to the leader as a network cut would. */
+  simulateChannelLoss(): void {
+    const l = this.links[0];
+    if (!l) return;
+    try {
+      l.conn.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** Tear everything down: links, the peer, timers, handlers. */
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    clearInterval(this.heartbeat);
+    this.closePeer();
     this.handlers.clear();
     this.rosterHandlers.clear();
+    this.linkHandlers.clear();
+    this.historyHandlers.clear();
     this.lostHandler = null;
   }
 
@@ -286,13 +559,20 @@ export class PeerNet {
 
   private acceptJoiner(conn: DataConnection): void {
     let slot = -1;
-    const stamp = (): void => {
-      const l = this.links.find((x) => x.conn === conn);
-      if (l) l.lastSeen = performance.now();
-    };
     conn.on('data', (raw: unknown) => {
       if (this.destroyed || !isMsg(raw)) return;
-      stamp();
+      const l = this.links.find((x) => x.conn === conn);
+      if (l) l.lastSeen = performance.now();
+      if (slot >= 0) {
+        // Silence over: the seat that read RECONNECTING is talking again.
+        const mm = this.members.find((x) => x.slot === slot);
+        if (mm && mm.link === 'reconnecting') {
+          mm.link = 'ok';
+          this.setLink(slot, 'ok');
+          this.system(`${mm.name} is back.`);
+          this.broadcastLobby();
+        }
+      }
       if (slot < 0) {
         if (raw.t !== 'hello') return;
         const refuse = (reason: string): void => {
@@ -300,45 +580,116 @@ export class PeerNet {
           window.setTimeout(() => conn.close(), 250);
         };
         if (raw.proto !== PROTOCOL) return refuse('Your game build does not match the leader’s. Reload and try again.');
-        if (this.phase === 'run') return refuse('The party is already in the crypt. Ask the leader to return to the lobby.');
         if (!VALID_CLASSES.includes(raw.cls)) return refuse('Unknown class.');
+        const name = sanitizeName(String(raw.name ?? ''));
+        // A seat coming back inside its grace window keeps everything.
+        const back = raw.rejoin ? this.members.find((m) => m.slot === raw.rejoin!.slot && m.online && m.link === 'reconnecting') : undefined;
+        if (back) {
+          slot = back.slot;
+          this.dropLink(slot);
+          this.links.push({ slot, conn, lastSeen: performance.now() });
+          back.link = 'ok';
+          back.name = name;
+          conn.send({ t: 'welcome', slot, code: this.code, phase: this.phase } satisfies NetMsg);
+          const last = raw.rejoin!.lastTick;
+          if (this.phase === 'run') {
+            if (last >= 0 && this.resyncProvider) conn.send({ t: 'resync', p: this.resyncProvider(last) } satisfies NetMsg);
+            else this.sendHistory(conn);
+          }
+          this.setLink(slot, 'ok');
+          this.system(`${back.name} is back.`);
+          this.broadcastLobby();
+          return;
+        }
         const free = this.freeSlot();
         if (free === null) return refuse('The party is full (four delvers).');
         slot = free;
         this.members = this.members.filter((m) => m.slot !== slot);
-        this.members.push({ slot, name: sanitizeName(String(raw.name ?? '')), cls: raw.cls, ready: false, hero: raw.hero ?? null, online: true });
+        const member: MemberInfo = { slot, name, cls: raw.cls, ready: this.phase === 'run', hero: raw.hero ?? null, online: true, ping: 0, link: 'ok' };
+        this.members.push(member);
         this.members.sort((a, b) => a.slot - b.slot);
         this.links.push({ slot, conn, lastSeen: performance.now() });
-        conn.send({ t: 'welcome', slot, code: this.code } satisfies NetMsg);
+        conn.send({ t: 'welcome', slot, code: this.code, phase: this.phase } satisfies NetMsg);
         this.broadcastLobby();
-        this.system(`${this.members.find((m) => m.slot === slot)!.name} joined the party.`);
+        if (this.phase === 'run') {
+          // Mid-run: the whole story so far, then a JOIN in the next frame.
+          this.sendHistory(conn);
+          this.onJoin?.(member);
+          this.system(`${member.name} joins the delve.`);
+        } else {
+          this.system(`${member.name} joined the party.`);
+        }
         return;
       }
       this.receive(raw, slot);
     });
-    const drop = (): void => {
+    const died = (): void => {
       if (slot < 0) return;
-      const i = this.links.findIndex((x) => x.conn === conn);
-      if (i >= 0) this.links.splice(i, 1);
-      const m = this.members.find((x) => x.slot === slot);
-      if (m && m.online) {
-        m.online = false;
-        m.ready = false;
+      const s = slot;
+      slot = -1;
+      const l = this.links.find((x) => x.conn === conn);
+      if (!l || l.slot !== s) return; // A newer link already replaced this one.
+      this.dropLink(s);
+      const m = this.members.find((x) => x.slot === s);
+      if (!m) return;
+      if (this.phase === 'lobby') {
+        this.members = this.members.filter((x) => x.slot !== s);
         this.system(`${m.name} left the party.`);
-        if (this.phase === 'lobby') this.members = this.members.filter((x) => x.slot !== slot);
-        this.broadcast({ t: 'gone', slot });
-        this.dispatch({ t: 'gone', slot }, slot); // The host's own lockstep drops the seat too.
+        this.broadcastLobby();
+        return;
+      }
+      // In the crypt the seat is KEPT: they get the grace window to come back.
+      if (m.link !== 'reconnecting') {
+        m.link = 'reconnecting';
+        m.lastSilent = performance.now();
+        this.setLink(s, 'reconnecting');
+        this.system(`${m.name} is reconnecting…`);
         this.broadcastLobby();
       }
-      slot = -1;
     };
-    conn.on('close', drop);
-    conn.on('error', drop);
+    conn.on('close', died);
+    conn.on('error', died);
+  }
+
+  private dropLink(slot: number): void {
+    // Remove first, close after: `close()` fires 'close' synchronously, and a
+    // re-entrant drop splicing a shifted index once took a NEIGHBOUR's link.
+    const doomed = this.links.filter((l) => l.slot === slot);
+    for (let i = this.links.length - 1; i >= 0; i--) if (this.links[i].slot === slot) this.links.splice(i, 1);
+    for (const l of doomed) {
+      try {
+        l.conn.close();
+      } catch {
+        /* closing */
+      }
+    }
+  }
+
+  /** Host: give up on a seat (grace window over). */
+  private dropMember(slot: number): void {
+    const m = this.members.find((x) => x.slot === slot);
+    if (!m) return;
+    this.dropLink(slot);
+    m.online = false;
+    m.ready = false;
+    m.link = 'ok';
+    this.system(`${m.name} left the party.`);
+    this.broadcast({ t: 'gone', slot });
+    this.dispatch({ t: 'gone', slot }, slot); // The host's own lockstep drops the seat too.
+    if (this.phase === 'lobby') this.members = this.members.filter((x) => x.slot !== slot);
+    this.broadcastLobby();
   }
 
   private freeSlot(): number | null {
     for (let s = 1; s < PARTY_MAX; s++) if (!this.members.some((m) => m.slot === s && m.online)) return s;
     return null;
+  }
+
+  private sendHistory(conn: DataConnection): void {
+    if (!this.historyProvider) return;
+    const text = JSON.stringify(this.historyProvider());
+    const n = Math.max(1, Math.ceil(text.length / CHUNK));
+    for (let i = 0; i < n; i++) conn.send({ t: 'hist', i, n, s: text.slice(i * CHUNK, (i + 1) * CHUNK) } satisfies NetMsg);
   }
 
   /** Host: push the roster to everyone (and to local listeners). */
@@ -358,9 +709,18 @@ export class PeerNet {
     this.broadcastLobby();
   }
 
-  /** Host: kick a member out of the sim after they dropped (lockstep injects the LEAVE). */
   onlineSlots(): number[] {
     return this.members.filter((m) => m.online).map((m) => m.slot);
+  }
+
+  private setLink(slot: number, state: LinkState): void {
+    this.broadcast({ t: 'link', slot, state });
+    for (const fn of this.linkHandlers) fn(slot, state);
+  }
+
+  private setHostLink(state: LinkState): void {
+    this.hostLink = state;
+    for (const fn of this.linkHandlers) fn(0, state);
   }
 
   // --- Messaging ------------------------------------------------------------
@@ -412,7 +772,19 @@ export class PeerNet {
     return () => this.rosterHandlers.delete(fn);
   }
 
-  /** Client: the host vanished (close, error, heartbeat silence). Fires once. */
+  /** A seat's link changed (host: any seat; client: slot 0 = the leader). */
+  onLink(fn: (slot: number, state: LinkState) => void): () => void {
+    this.linkHandlers.add(fn);
+    return () => this.linkHandlers.delete(fn);
+  }
+
+  /** Client: the leader handed over the history of a run in progress. */
+  onHistory(fn: (h: HistoryPayload) => void): () => void {
+    this.historyHandlers.add(fn);
+    return () => this.historyHandlers.delete(fn);
+  }
+
+  /** Client: the host is gone for good (grace window over, or it said so). Fires once. */
   onHostLost(fn: (reason: string) => void): void {
     this.lostHandler = fn;
   }
@@ -434,10 +806,29 @@ export class PeerNet {
 
   private receive(msg: NetMsg, fromSlot: number): void {
     if (this.destroyed) return;
-    if (!this.isHost) this.hostSeen = performance.now();
-    if (msg.t === 'hb') return;
+    const now = performance.now();
+    if (!this.isHost) {
+      this.hostSeen = now;
+      if (this.hostLink !== 'ok' && !this.reconnecting) this.setHostLink('ok');
+    }
+    switch (msg.t) {
+      case 'hb':
+        // Ping-pong: answer with the sender's stamp.
+        if (this.isHost) this.sendTo(fromSlot, { t: 'hba', at: msg.at });
+        else this.send({ t: 'hba', at: msg.at });
+        return;
+      case 'hba': {
+        const rtt = Math.max(0, Math.round(now - msg.at));
+        if (this.isHost) {
+          const m = this.members.find((x) => x.slot === fromSlot);
+          if (m) m.ping = rtt;
+        } else this.ping = rtt;
+        return;
+      }
+      default:
+        break;
+    }
     if (this.isHost) {
-      // Relay duties.
       switch (msg.t) {
         case 'chat': {
           const relayed: NetMsg = { t: 'chat', slot: fromSlot, text: sanitizeChat(String(msg.text ?? '')) };
@@ -453,13 +844,45 @@ export class PeerNet {
           break;
       }
     } else {
-      if (msg.t === 'lobby') {
-        this.members = Array.isArray(msg.members) ? msg.members : [];
-        this.phase = msg.phase === 'run' ? 'run' : 'lobby';
-        for (const fn of this.rosterHandlers) fn();
-      } else if (msg.t === 'end') {
-        this.hostLost(msg.reason);
-        return;
+      switch (msg.t) {
+        case 'lobby':
+          this.members = Array.isArray(msg.members) ? msg.members : [];
+          this.phase = msg.phase === 'run' ? 'run' : 'lobby';
+          for (const fn of this.rosterHandlers) fn();
+          break;
+        case 'pings':
+          for (const m of this.members) if (msg.p[m.slot] !== undefined) m.ping = msg.p[m.slot];
+          for (const fn of this.rosterHandlers) fn();
+          return;
+        case 'link': {
+          const m = this.members.find((x) => x.slot === msg.slot);
+          if (m) m.link = msg.state;
+          for (const fn of this.linkHandlers) fn(msg.slot, msg.state);
+          return;
+        }
+        case 'hist': {
+          this.histParts.set(msg.i, msg.s);
+          if (this.histParts.size === msg.n) {
+            let text = '';
+            for (let i = 0; i < msg.n; i++) text += this.histParts.get(i) ?? '';
+            this.histParts.clear();
+            try {
+              const h = JSON.parse(text) as HistoryPayload;
+              for (const fn of this.historyHandlers) fn(h);
+            } catch (err) {
+              console.error('[net] history unreadable:', err);
+            }
+          }
+          return;
+        }
+        case 'start':
+          this.phase = 'run'; // From here a dropped channel is re-dialled, not mourned.
+          break;
+        case 'end':
+          this.hostLost(msg.reason);
+          return;
+        default:
+          break;
       }
     }
     this.dispatch(msg, fromSlot);
@@ -483,25 +906,51 @@ export class PeerNet {
     fn?.(reason);
   }
 
+  private lastPulse = 0;
+
+  /**
+   * The heartbeat body, callable from the game loop (it.60): a hidden tab's
+   * setInterval is throttled to once a minute, the loop's Worker clock is not.
+   */
+  pulse(): void {
+    if (this.destroyed) return;
+    const now = performance.now();
+    if (now - this.lastPulse < HEARTBEAT_MS) return;
+    this.lastPulse = now;
+    this.beat(now);
+  }
+
   private startHeartbeat(): void {
-    this.heartbeat = window.setInterval(() => {
-      if (this.destroyed) return;
-      const now = performance.now();
+    this.heartbeat = window.setInterval(() => this.pulse(), HEARTBEAT_MS);
+  }
+
+  private beat(now: number): void {
+    {
       if (this.isHost) {
-        this.broadcast({ t: 'hb' });
-        for (const l of [...this.links]) {
-          if (now - l.lastSeen > HEARTBEAT_TIMEOUT_MS) {
-            try {
-              l.conn.close(); // Triggers the drop handler.
-            } catch {
-              /* ignore */
-            }
+        for (const l of this.links) this.sendTo(l.slot, { t: 'hb', at: now });
+        const pings: Record<number, number> = { 0: 0 };
+        for (const m of this.members) pings[m.slot] = m.ping ?? 0;
+        if (this.phase === 'run') this.broadcast({ t: 'pings', p: pings });
+        else this.broadcastLobby();
+        for (const m of [...this.members]) {
+          if (m.slot === 0 || !m.online) continue;
+          const l = this.links.find((x) => x.slot === m.slot);
+          const silent = now - (l ? l.lastSeen : (m.lastSilent ?? now));
+          if (l && silent > GRACE_MS && m.link !== 'reconnecting' && this.phase === 'run') {
+            m.link = 'reconnecting';
+            m.lastSilent = l.lastSeen;
+            this.setLink(m.slot, 'reconnecting');
+            this.system(`${m.name} is reconnecting…`);
+            this.broadcastLobby();
           }
+          if (silent > DROP_MS) this.dropMember(m.slot);
         }
       } else {
-        this.send({ t: 'hb' });
-        if (this.hostSeen > 0 && now - this.hostSeen > HEARTBEAT_TIMEOUT_MS) this.hostLost('The Party Leader stopped answering.');
+        this.send({ t: 'hb', at: now });
+        const silent = now - this.hostSeen;
+        if (silent > GRACE_MS && this.hostLink === 'ok') this.setHostLink('reconnecting');
+        if (silent > DROP_MS && !this.reconnecting) this.hostLost('The Party Leader stopped answering.');
       }
-    }, HEARTBEAT_MS);
+    }
   }
 }

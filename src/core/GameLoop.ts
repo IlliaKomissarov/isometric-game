@@ -40,6 +40,12 @@ export class GameLoop {
    * return. Rendering is skipped while hidden.
    */
   keepAliveHidden = false;
+  /**
+   * CATCH-UP (it.60): extra fixed steps allowed this frame beyond the wall
+   * clock — a peer that fell behind (reconnect, replay) sprints through its
+   * backlog of known frames instead of staying behind forever.
+   */
+  extraSteps: (() => number) | null = null;
   private worker: Worker | null = null;
   private frame: ((now: number) => void) | null = null;
 
@@ -70,6 +76,13 @@ export class GameLoop {
         this.callbacks.update(FIXED_DT, this._tick);
         this._tick++;
         this.accumulator -= FIXED_DT;
+      }
+      if (this.extraSteps) {
+        let extra = this.extraSteps();
+        while (extra-- > 0 && (!this.gate || this.gate(this._tick))) {
+          this.callbacks.update(FIXED_DT, this._tick);
+          this._tick++;
+        }
       }
       if (!document.hidden) this.callbacks.render(this.accumulator / FIXED_DT);
       if (!document.hidden || !this.worker) this.rafId = requestAnimationFrame(frame);

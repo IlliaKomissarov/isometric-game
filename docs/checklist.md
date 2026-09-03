@@ -473,6 +473,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Hidden-tab worker clock; cheat menu and hit-stop off in co-op; `npm run build` with PeerJS bundled
 - [x] Two-tab live QA: identical determinism hashes at ticks 14000 and 21000, gate warp, drop / host-loss / late-join refusal
 
+## Iteration 60 - Cross-Network Relay, Grace & Rejoin, Lobby Rebuild, Hover SFX (2026-09-03)
+
+- [x] Google + Cloudflare STUN (verified); player-supplied TURN (UDP/TCP/TLS), stored locally, never in code; 8 s relay-only fallback; TEST NETWORK
+- [x] 2 s ping-pong heartbeat with latency on cards and HUD; 10 s RECONNECTING grace (seat kept), 25 s drop; leader plays on without a late seat
+- [x] Auto re-dial + RESYNC after a channel cut; lobby rejoin mid-run with full history replay + JOIN frame; save on pagehide
+- [x] Leader lost: gothic modal → save → solo → town; hidden-tab timers moved onto the loop; re-entrant link drop fixed
+- [x] Lobby rebuilt: code badge + copy feedback, four player cards (animated portraits, badges, ready, ping, crown), cross-fading selector
+- [x] Hover SFX replaced by a dry stone tick; `npm run build` clean; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

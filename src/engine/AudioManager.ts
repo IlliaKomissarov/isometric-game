@@ -768,7 +768,10 @@ export class AudioManager {
       // UI VOICE (it.44): iron and oak — a blade whisper on hover, a lock
       // on click, a door and a lock on confirm, the blade going home on back.
       case 'uiHover':
-        if (!this.playVariant('sheath', 0.1, 1.7, 0.1)) this.playVariant('uiHover', 0.12, 0.8, 0.12);
+        // DRY STONE TICK (it.60): a crisp, quiet click — the old pitched
+        // sheath / pop samples read as a bubbling gurgle on every hover.
+        this.noise(0.016, 3200, 1500, 0.07, 8);
+        this.blip('triangle', 1500, 620, 0.028, 0.045);
         break;
       case 'uiClick':
         if (!this.playVariant('coin', 0.5, 1.2, 0.05)) this.blip('square', 840, 620, 0.04, 0.18);

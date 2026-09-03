@@ -1,5 +1,101 @@
 # Development Log
 
+## 2026-09-03 (iteration 60) - Cross-network relay config, grace period & rejoin, lobby rebuilt, hover SFX
+
+### NAT traversal — what is true in 2026
+- ICE now gathers over Google AND Cloudflare STUN (both verified live from
+  this machine: server-reflexive candidates in under a second). Mozilla's
+  public STUN is dead (no candidate) and was left out.
+- Every credential-less public TURN was probed from the browser: the old
+  Open Relay (`openrelay.metered.ca`, `global.relay.metered.ca`) answers on
+  TCP 443 but allocates nothing — Metered's own page now says the Open
+  Relay needs a signed-up API key; `turn.anyfirewall.com` resolves to a
+  private address; the freestun/freeturn projects gave no relay either.
+  There is no free relay that can be shipped without a secret.
+- So the relay is the PLAYER'S: the lobby's NETWORK RELAY section takes
+  any TURN account's url / username / credential (a free tier — Metered,
+  ExpressTURN, Cloudflare Calls — or a coturn), stores it in localStorage
+  only, expands a bare `turn:host:port` to its UDP, TCP and TLS-443 forms,
+  and TEST NETWORK reports what the network can reach (STUN only / relay
+  reachable / nothing). Nothing is hardcoded; the repo holds no key.
+- A join tries the direct path for 8 s; if the channel has not opened, the
+  peer is rebuilt RELAY-ONLY (`iceTransportPolicy: 'relay'`) and tried
+  again, with a message naming the relay when that fails too. A "join
+  through the relay only" switch exists for testing. Without TURN
+  credentials, symmetric NAT / CGNAT pairs (phone hotspots) will still not
+  meet — stated plainly in the lobby help.
+
+### Heartbeat, grace period, reconnection
+- Ping-pong every 2 s both ways (`hb` / `hba`): the leader measures every
+  seat's round trip, each joiner its own; latency is broadcast and shown
+  on the lobby cards and the party HUD (green < 80 ms, amber < 200, red).
+- A link silent for 10 s reads RECONNECTING (nameplate note, party HUD row,
+  lobby card, chat line) — the seat and hero are KEPT. Silence past 25 s
+  drops the seat (LEAVE frame). The lockstep never freezes the party on one
+  seat: a seat late by 1.5 s is played on without (its lane empty) and is
+  back in the set the moment its inputs land within two seconds of the
+  leader's present.
+- A joiner whose channel dies re-dials the leader on its own for 25 s,
+  presents its seat and last executed tick, and receives a RESYNC — the
+  frames it missed plus any barrier the leader resumed — then sprints
+  through the backlog at up to 30 ticks a frame. Verified: the channel cut
+  and re-dialled in about six seconds, both peers back at the same
+  position; a 19 s send blackout showed RECONNECTING on the leader's screen
+  while the leader kept playing, then "Bravo is back."
+- A player who comes back through the lobby with the room code is welcomed
+  mid-run: the leader ships the party's start (seed, opening roster, stash)
+  and every executed frame (plus the frames completed but not yet executed)
+  in 48 KB chunks; the joiner replays it all with a CATCHING UP veil (floor
+  changes included — barriers resolve locally because the frames are
+  final), then a JOIN frame seats their hero on every peer on the same tick,
+  at the floor's entrance, with the sheet from their co-op save (class,
+  level, XP, gear). The tab saves on `pagehide`, so a closed tab keeps its
+  progress. Verified: closed the joiner's tab on depth I, rejoined from a
+  fresh tab, same entity id and position on both peers, inputs accepted.
+
+### Losing the leader
+- A vanished leader shows THE PARTY LEADER HAS DISCONNECTED (gothic modal,
+  "Returning to town…"), saves the local hero, tears the transport down,
+  goes solo as its own leader and walks the run home. Verified with the
+  leader's transport killed mid-floor: reconnecting indicators for the
+  window, then the modal, then town, no console errors.
+
+### Two bugs that only a hidden tab shows
+- Chrome throttles a long-hidden tab's `setInterval` to once a minute, so
+  the leader's lag rule and both heartbeats never ran during automation.
+  Both now tick from the lockstep gate, which the Worker clock keeps alive
+  in a hidden tab.
+- `DataConnection.close()` fires 'close' synchronously; dropping a seat's
+  link from inside that event spliced a shifted index and removed a
+  NEIGHBOUR's link (the freshly joined player went silent and, after 25 s,
+  mourned the leader). Links are now removed from the table before any
+  connection is closed.
+
+### The lobby, rebuilt
+- Dark slate frame with bronze corner filigree, a ROOM CODE badge with COPY
+  CODE → "CODE COPIED!", four player cards (an animated class portrait
+  from the hero's own idle frames, nickname, class badge and level, a READY
+  check, the latency dot, the leader's crown, RECONNECTING / OFFLINE
+  states), a character selector whose preview cross-fades on a switch, the
+  NETWORK RELAY section, chat, READY / START DELVE / LEAVE. The relay
+  fields refuse browser autofill (the first pass showed a saved e-mail and
+  password dropped into them).
+
+### Hover SFX
+- The pitched sheath / pop samples that bubbled on every button are gone;
+  `uiHover` is now a dry stone tick (a 16 ms band-passed noise burst and a
+  28 ms triangle blip). Every `mouseenter` in the menus, lobby and panels
+  goes through this one case.
+
+### Verified live
+- ICE probe with the default servers: STUN answered, no relay (expected
+  without credentials); the relay-only policy honoured (no candidates).
+- Lobby: create, join, ready, portraits, pings (0–9 ms locally), copy.
+- Channel cut → auto re-dial + resync; 19 s blackout → RECONNECTING then
+  back, leader never stalled; tab closed → lobby rejoin with history
+  replay and JOIN; leader killed → modal → town solo. `npm run build`
+  clean; zero console errors in every tab.
+
 ## 2026-09-03 (iteration 59) - 4-player online co-op: lockstep over PeerJS, party lobby, shared stash, chat
 
 ### The choice: deterministic lockstep over WebRTC (PeerJS)

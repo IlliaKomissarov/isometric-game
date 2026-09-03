@@ -54,7 +54,9 @@ export type InputCommand =
   /** CO-OP (it.59): a floor change decided by the PARTY LEADER (solo: always honoured). */
   | { type: 'WARP'; playerId: number; to: 'coliseum' | 'town' | 'floor' | 'crown' | 'portalBack'; n?: number }
   /** CO-OP (it.59): the leader's frame says this hero left the party. */
-  | { type: 'LEAVE'; playerId: number };
+  | { type: 'LEAVE'; playerId: number }
+  /** CO-OP (it.60): a hero joins mid-run — every peer seats them on this tick. */
+  | { type: 'JOIN'; playerId: number; name: string; cls: import('@/network/Serialization').ClassArchetype; hero: import('@/persist/SaveGame').PlayerSave | null };
 
 export class InputQueue {
   private queue: InputCommand[] = [];

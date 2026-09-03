@@ -3128,6 +3128,24 @@
       .lb-sum span { font-family: 'Cinzel', serif; font-size: 8.5px; letter-spacing: 0.18em; color: #7d7466; }
       .lb-sum b { font-family: var(--font-display); font-size: 12.5px; color: #ffd070; }
       .lb-sum b.lb-rankname { color: #ff8c3a; }
+
+      /* ===================================================================
+         IT.57 — TOWN EDGE SHADOW, THE VICTORY TELEPORTER'S CHOICE
+         =================================================================== */
+      body.in-town #vignette { background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 38%, rgba(4, 3, 6, 0.45) 72%, rgba(2, 1, 3, 0.86) 100%); }
+      #victory-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); z-index: 45; }
+      #victory-modal.open { display: flex; }
+      #victory-modal .am-box { width: 540px; padding: 22px 26px 18px; background: var(--panel-bg); border: 2px solid var(--frame-iron); box-shadow: inset 0 0 0 1px var(--frame-gold), inset 0 0 28px rgba(0, 0, 0, 0.7), 0 14px 44px rgba(0, 0, 0, 0.85); text-align: center; }
+      #victory-modal h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 17px; letter-spacing: 0.3em; color: var(--frame-gold-hi); }
+      #victory-modal .am-say { margin: 0 0 16px; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 15px; line-height: 1.45; color: var(--ink); }
+      #victory-modal .am-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+      #victory-modal .am-choices button { display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; background: linear-gradient(180deg, #221b2c, #0f0c14); border: 1px solid var(--frame-iron); cursor: pointer; color: var(--ink); }
+      #victory-modal .am-choices button b { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.14em; color: #ffd070; }
+      #victory-modal .am-choices button span { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 12px; color: var(--ink-dim); }
+      #victory-modal .am-choices button:hover { border-color: var(--frame-gold); box-shadow: 0 0 12px rgba(200, 165, 88, 0.35); }
+      #victory-modal .am-cancel { padding: 6px 18px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
+      #victory-modal .am-cancel:hover { color: var(--ink); border-color: var(--frame-gold); }
+      body:not(.in-run) #victory-modal { display: none; }
     </style>
   </head>
   <body>

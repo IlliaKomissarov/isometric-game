@@ -138,6 +138,8 @@ interface World {
   /** Roster spawn indexes killed on this floor (FloorMemory). */
   killed: Set<number>;
   coliseum: ColiseumState | null;
+  /** THE VICTORY TELEPORTER (it.57): rises at the heart of the depth XX arena once the King is dust. */
+  victoryPortal: { x: number; y: number } | null;
 }
 
 type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum';
@@ -819,11 +821,8 @@ async function boot(): Promise<void> {
      * knows the exit tile.
      */
     let teleporterFx: { pad: Sprite; rune: Sprite; rune2: Sprite; beam: Sprite; clock: number } | null = null;
-    const openExitTeleporter = (): void => {
-      const c = world.coliseum;
-      if (!c || c.exit) return;
-      c.exit = { x: c.center.x, y: c.center.y };
-      const s = worldToScreen(c.exit.x + 0.5, c.exit.y + 0.5, vec2());
+    const spawnTeleporterAt = (tx: number, ty: number): void => {
+      const s = worldToScreen(tx + 0.5, ty + 0.5, vec2());
       const mk = (single: string, scaleX: number, scaleY: number, tint: number, additive: boolean, layer: 'ground' | 'ambience'): Sprite => {
         const spr = new Sprite(spriteLib.hasSingle(single) ? spriteLib.single(single) : assets.get('glow'));
         spr.anchor.set(0.5);
@@ -842,11 +841,71 @@ async function boot(): Promise<void> {
       beam.anchor.set(0.5, 0.92);
       beam.alpha = 0.55;
       teleporterFx = { pad, rune, rune2, beam, clock: 0 };
-      world.vfx.play('vfx_vortex', c.exit.x + 0.5, c.exit.y + 0.5, { loop: true, fps: 18, scale: 1.1, flat: true, tint: 0x8fb8ff, alpha: 0.75 });
-      world.lighting.addSource(c.exit.x + 0.5, c.exit.y + 0.5, 3.2, 90, 140, 255, 0.7);
-      world.ambience.burst(c.exit.x + 0.5, c.exit.y + 0.5, 0x8fb8ff, 30);
+      world.vfx.play('vfx_vortex', tx + 0.5, ty + 0.5, { loop: true, fps: 18, scale: 1.1, flat: true, tint: 0x8fb8ff, alpha: 0.75 });
+      world.lighting.addSource(tx + 0.5, ty + 0.5, 3.2, 90, 140, 255, 0.7);
+      world.ambience.burst(tx + 0.5, ty + 0.5, 0x8fb8ff, 30);
       audio.sfx('portal');
     };
+    const openExitTeleporter = (): void => {
+      const c = world.coliseum;
+      if (!c || c.exit) return;
+      c.exit = { x: c.center.x, y: c.center.y };
+      spawnTeleporterAt(c.exit.x, c.exit.y);
+    };
+    /** THE VICTORY CHOICE (it.57): on the depth XX teleporter — home, or the crown. */
+    const victoryModal = document.createElement('div');
+    victoryModal.id = 'victory-modal';
+    victoryModal.innerHTML = `
+      <div class="am-box">
+        <h3>THE HOLLOW KING IS DUST</h3>
+        <p class="am-say">The teleporter hums beneath your feet. The crypt is broken and the dark has no master left. Step through to the town with your spoils, or take the crown and let the ending be told.</p>
+        <div class="am-choices am-two">
+          <button data-victory="town"><b>RETURN TO TOWN</b><span>keep delving</span></button>
+          <button data-victory="crown"><b>CLAIM THE CROWN</b><span>the ending</span></button>
+        </div>
+        <button class="am-cancel" data-cancel>Not yet</button>
+      </div>`;
+    document.body.appendChild(victoryModal);
+    let victoryPortalArmed = true;
+    const closeVictoryModal = (): void => {
+      if (!victoryModal.classList.contains('open')) return;
+      victoryModal.classList.remove('open');
+      victoryPortalArmed = false; // Step off and back on to ask again.
+      audio.sfx('invClose');
+    };
+    victoryModal.querySelector('[data-cancel]')?.addEventListener('click', closeVictoryModal);
+    victoryModal.querySelectorAll<HTMLButtonElement>('[data-victory]').forEach((b) => {
+      b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+      b.addEventListener('click', () => {
+        audio.sfx('uiConfirm');
+        victoryModal.classList.remove('open');
+        if (b.dataset.victory === 'crown') {
+          if (!victoryShown) {
+            victoryShown = true;
+            runEndgame();
+          }
+        } else {
+          victoryShown = false;
+          withFade(async () => {
+            await preloadFloor(0, 'hub');
+            if (!world.town) captureFloor();
+            if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+            enterTown(false);
+          });
+        }
+      });
+    });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.code === 'Escape' && victoryModal.classList.contains('open')) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          closeVictoryModal();
+        }
+      },
+      { signal: ac.signal, capture: true },
+    );
 
     /** One wave: more bodies and more champions every time (sim). */
     const spawnWave = (c: ColiseumState): void => {
@@ -1029,6 +1088,7 @@ async function boot(): Promise<void> {
     };
     const updateDepth = (): void => {
       if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
+      document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
       if (floor > 0) stats.noteDepth(floor);
     };
     updateOrb();
@@ -1586,6 +1646,7 @@ async function boot(): Promise<void> {
         town: townState,
         killed,
         coliseum: coliseumState,
+        victoryPortal: null,
       };
     };
 
@@ -2539,7 +2600,16 @@ async function boot(): Promise<void> {
               w.ambience.burst(w.stairs.x + 0.5, w.stairs.y + 0.5, 0xffd9a0, 20);
               w.ambience.playGlint(w.stairs.x + 0.5, w.stairs.y + 0.5);
               w.dmgText.show(w.stairs.x + 0.5, w.stairs.y + 0.2, floor >= MAX_DEPTH ? 'THE LAST STAIR OPENS' : 'THE WAY OPENS', 'crit');
-              if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then climb the stair at the arena\u2019s far end to end the delve.');
+              if (floor >= MAX_DEPTH) {
+                // THE VICTORY TELEPORTER (it.57): rises at the heart of the arena.
+                const room = w.dungeon.rooms[0];
+                const px = room.x + Math.floor(room.w / 2);
+                const py = room.y + Math.floor(room.h / 2);
+                w.victoryPortal = { x: px, y: py };
+                spawnTeleporterAt(px, py);
+                victoryPortalArmed = true;
+                tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
+              }
               audio.sfx('gateOpen');
               audio.setBossMusic(false);
             }, delay);
@@ -2692,6 +2762,23 @@ async function boot(): Promise<void> {
           }
         });
         if (world.coliseum) updateColiseum();
+        // A remembered-cleared depth XX arena (it.57): the teleporter stands from the first tick.
+        if (world.isArena && world.arenaCleared && floor >= MAX_DEPTH && !world.victoryPortal && !transitioning) {
+          const room = world.dungeon.rooms[0];
+          world.victoryPortal = { x: room.x + Math.floor(room.w / 2), y: room.y + Math.floor(room.h / 2) };
+          spawnTeleporterAt(world.victoryPortal.x, world.victoryPortal.y);
+          victoryPortalArmed = true;
+        }
+        if (world.victoryPortal && !transitioning && !victoryShown) {
+          const vp = world.victoryPortal;
+          const d = Math.hypot(player.pos.x - (vp.x + 0.5), player.pos.y - (vp.y + 0.5));
+          if (d > 1.6) victoryPortalArmed = true;
+          else if (d < 0.9 && victoryPortalArmed && !victoryModal.classList.contains('open')) {
+            victoryPortalArmed = false;
+            victoryModal.classList.add('open');
+            audio.sfx('portal');
+          }
+        }
 
         // Player death animation runs to completion, then the death overlay
         // takes over (it.36) — the loop freezes until a choice is made.

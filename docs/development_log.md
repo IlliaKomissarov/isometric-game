@@ -1,5 +1,31 @@
 # Development Log
 
+## 2026-09-03 (iteration 57) - The victory teleporter, the town gone grim
+
+### Depth XX
+- When the Hollow King's last form falls, the teleporter (the it.56 stone
+  pad, rune rings, vortex and beam) rises at the heart of the arena beside
+  the last stair. Stepping onto it opens THE VICTORY CHOICE: RETURN TO TOWN
+  (the run goes on, spoils kept) or CLAIM THE CROWN (the epilogue). "Not
+  yet" closes it; step off and back on to ask again. A depth XX arena
+  remembered as cleared raises the teleporter on entry. The stair still
+  ends the delve as before.
+
+### The town, grim
+- Grass and dirt diamonds regraded: 45 % / 35 % desaturated, darkened to
+  two thirds, a cold cast; the flagstone dimmed a fifth more. The cliff
+  cubes ringing the town went from mossy green to deep damp shade. Twisted
+  oaks (`tree_a/b`, tinted into shadow) join the pines and dead wood in the
+  belt (42 of them). In town the screen vignette deepens to near-black at
+  the edges (`body.in-town`). The campfire's pulsing glow and the torch
+  ember hotspots already carry the warm side of the palette.
+
+### QA (browser, zero console errors)
+- Town: 42 oaks in the belt, `in-town` vignette active. Depth XX: arena
+  cleared -> teleporter at (15,11) beside the stair; stepping on opens the
+  choice; RETURN TO TOWN lands in town; re-entering the cleared arena raises
+  the teleporter on the first tick; CLAIM THE CROWN shows the epilogue.
+
 ## 2026-09-03 (iteration 56) - Terrain variants, the teleporter, an honest arena floor
 
 ### Terrain

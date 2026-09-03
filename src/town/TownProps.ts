@@ -280,6 +280,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'pine':
       case 'deadtree': {
         const spr = standing(p, p.variant ?? 'pine_a', 0.97);
+        if (spr && p.variant?.startsWith('tree_')) spr.tint = 0x8e9c86; // The oaks stand in deeper shade (it.57).
         // A tree on a cliff tile (it.50) stands in front of that tile's cube.
         if (spr && layout.map.grid[p.y * layout.map.width + p.x] === 0) spr.zIndex += 40;
         if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });

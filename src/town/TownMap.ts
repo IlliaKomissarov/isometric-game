@@ -382,7 +382,8 @@ export function buildTownLayout(): TownLayout {
       const roll = rand();
       if (roll < 0.72) {
         // DENSER (it.50): three tiles in four carry a tree, the rest a bush.
-        const v = roll < 0.27 ? 'pine_a' : roll < 0.47 ? 'pine_b' : roll < 0.6 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
+        // Dark pines, twisted oaks and dead wood (it.57).
+        const v = roll < 0.22 ? 'pine_a' : roll < 0.38 ? 'pine_b' : roll < 0.5 ? 'pine_c' : roll < 0.58 ? 'tree_a' : roll < 0.64 ? 'tree_b' : rand() < 0.5 ? 'dead_a' : 'dead_b';
         props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
       } else {
         decal({ kind: 'grassclump', x, y });

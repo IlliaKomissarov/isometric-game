@@ -451,6 +451,11 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Teleporter pad + rune rings + vortex at the arena centre on the last wave or on T; step on to go home
 - [x] Display cases off the sand; every walk fixture blocks its tile
 
+## Iteration 57 - Victory Teleporter, Grim Town Palette (2026-09-03)
+
+- [x] Teleporter at the depth XX arena heart on the King's fall (and on re-entry); town-or-crown choice
+- [x] Town regraded: dark grass and earth, dimmed flagstone, shaded cliffs, twisted oaks, deep edge vignette
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

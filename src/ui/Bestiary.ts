@@ -38,6 +38,7 @@ const LORE: Partial<Record<EnemyKind, string>> = {
   bossHollowLich: 'What remains when even the armour is spent: the hunger itself, robed in the dark. The last seal.',
   orc: 'Orc slingers slipped in through the drowned levels. Small, quick, and never alone; they throw first and rush the stunned.',
   poacher: 'Crypt poachers came for the burial gold and stayed for the dark. Good with a bow, better at running.',
+  spider: 'The Crypt Widow nests in the burial niches and hunts by touch. Quick, quiet, and never alone for long.',
 };
 
 const CATEGORY = (kind: EnemyKind): string => (kind.startsWith('boss') ? 'WARDEN' : 'CREATURE');

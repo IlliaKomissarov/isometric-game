@@ -227,7 +227,7 @@ async function boot(): Promise<void> {
     if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
     if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
-    ['town_cobble', 'town_grass', 'town_dirt'].forEach((name, i) => {
+    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
     });
   } catch (err) {
@@ -864,6 +864,7 @@ async function boot(): Promise<void> {
         if (alive === 0) {
           audio.sfx('gateOpen');
           stats.noteArenaWave(c.wave); // The ledger (it.54).
+          stats.save();
           if (c.wave >= c.waves) {
             c.phase = 'done';
             stats.recordArenaClear(player.archetype, c.waves, activeTicks - c.startActive); // The trial's time (it.54).
@@ -2083,6 +2084,7 @@ async function boot(): Promise<void> {
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
         portalReturn = null;
+        stats.save(); // The ledger lands the moment the sand is left (it.55).
         enterTown(false);
       });
 
@@ -2379,6 +2381,7 @@ async function boot(): Promise<void> {
         if (world.coliseum && (entity.affix || entity.def.kind.startsWith('boss'))) {
           // THE CROWD ROARS (it.54): a champion or a boss falls on the sand.
           audio.sfx('crowd');
+          world.vfx.play('vfx_bloodburst', entity.pos.x, entity.pos.y, { scale: 1.3, lift: 16, fps: 30, additive: false });
           world.ambience.burst(entity.pos.x, entity.pos.y, 0xffd070, 34);
           world.ambience.playGlint(entity.pos.x, entity.pos.y);
           world.dmgText.show(entity.pos.x, entity.pos.y - 1.6, 'THE CROWD ROARS', 'crit');
@@ -3299,7 +3302,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
-    const all = new Set<string>(['folk_walk', 'torch', ...VFX_ANIMS]);
+    const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);
     for (const f of [1, 3, 5, 9, 14, 20]) for (const k of kindPoolFor(f)) for (const a of animsForKind(k)) all.add(a);
     for (const a of animsForKind('fallen')) all.add(a);
     for (const k of BOSS_LADDER) for (const a of animsForKind(k)) all.add(a); // Boss waves (it.54).
@@ -3393,11 +3396,11 @@ function kindPoolFor(floor: number): EnemyKind[] {
   return floor === 1
     ? ['fallen', 'fallen', 'skeleton', 'skeleton', 'zombie']
     : floor <= 3
-      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc']
+      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc', 'spider']
       : floor <= 5
-        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher']
+        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher', 'spider']
         : floor <= 9
-          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher']
+          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher', 'spider', 'spider']
           : floor <= 14
             ? ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'shambler']
             : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'hydra'];

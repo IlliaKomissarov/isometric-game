@@ -7,6 +7,11 @@ Everything the game loads at runtime lives here, and ONLY what it loads:
 | `atlas/` | Pre-baked sprite atlases (`<anim>.png`, columns = frames, rows = the 8 canonical directions) + singles (`single_<name>.png`) + `manifest.json` (cell/orig/trim/scale + painted bounds per animation) | `src/render/SpriteLibrary.ts` — lazily, per floor |
 | `atlas/vfx_*.png` | Single-direction spell effect strips (it.41: fireball comet, explosion, burst, firewall loop, ring, vortex, splash, whirl, slash, aura, orb, strike) | `render/Vfx.ts` via `SkillDeps.vfx`; projectile heads in `systems/Projectiles.ts` |
 | `ui/skills/*.png`, `ui/items/*.png` | DOM-only art (it.40): 64 px skill glyphs (one per active skill) and painted item icons, referenced by `<img>` via `uiAssetUrl()` | `ui/itemIcons.ts`, the skill bar in `main.ts` |
+| `atlas/crowd_m0..7.png` | Characters/Male townsfolk cheer loops (it.55, coliseum stands) | `scenes/Coliseum.ts` |
+| `atlas/spider_*.png` | BW Spider pack: walk/idle/attack/death, 8 dirs clockwise (it.55 Crypt Widow) | `Enemy.ts` |
+| `atlas/single_town_{grass,dirt,sand}.png` | grass/ tileset diamonds (it.55 town + arena floors) | `SceneManager` town kinds |
+| `atlas/single_rock_a..f, watchtower, weapon_rack, candle_stand, iron_cage` | rocks.png, watchtower, library + dungeon pack (it.55) | `TownProps`, `Coliseum.ts` |
+| `atlas/vfx_bloodburst.png` | NEw pack blood set 1 (it.55 champion deaths on the sand) | `Vfx.ts` |
 | `ui/fonts/Darinia.ttf` | Darinia display face (it.45 `--font-display`: headers, titles, tooltips, buttons) | `index.html` @font-face |
 | `ui/hud/*.png` | health_globe (gargoyle orb) + enemy_health_bars_2.0 frames/fills (it.45 HUD) | `index.html` CSS |
 | `audio/gore/*.wav` | Gore vol 1: bone cracks / snaps / rattle, guts (it.43 `goreKill` / `goreHit`) | `AudioManager` gore banks |

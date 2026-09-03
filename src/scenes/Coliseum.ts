@@ -15,8 +15,8 @@ import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
-import { spriteLib } from '@/render/SpriteLibrary';
-import { KIND_COBBLE, KIND_DIRT } from '@/town/TownMap';
+import { spriteLib, type AnimName } from '@/render/SpriteLibrary';
+import { KIND_COBBLE, KIND_SAND } from '@/town/TownMap';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { mulberry32 } from '@/utils/rng';
 import { vec2 } from '@/utils/Vec2';
@@ -39,7 +39,7 @@ export function generateColiseumMap(seed: number): ColiseumMap {
   const W = COLISEUM_W;
   const H = COLISEUM_H;
   const grid = new Uint8Array(W * H).fill(TILE_WALL);
-  const tileKind = new Uint8Array(W * H).fill(KIND_DIRT);
+  const tileKind = new Uint8Array(W * H).fill(KIND_SAND);
   const cx = W / 2;
   const cy = H / 2;
   for (let y = 1; y < H - 1; y++) {
@@ -49,7 +49,7 @@ export function generateColiseumMap(seed: number): ColiseumMap {
       const r = Math.hypot(nx, ny);
       if (r <= 1) {
         grid[y * W + x] = TILE_FLOOR;
-        tileKind[y * W + x] = r > 0.84 ? KIND_COBBLE : KIND_DIRT;
+        tileKind[y * W + x] = r > 0.84 ? KIND_COBBLE : KIND_SAND;
       }
     }
   }
@@ -87,7 +87,7 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
   const scratch = vec2();
   const made: Array<Sprite | Graphics> = [];
   const torches: Array<{ sprite: Sprite; clock: number }> = [];
-  const crowd: Array<{ sprite: Sprite; dir: number; baseY: number; phase: number; rate: number }> = [];
+  const crowd: Array<{ sprite: Sprite; anim: AnimName; fc: number; baseY: number; phase: number; rate: number; cheer: boolean; timer: number }> = [];
   const W = map.width;
   const cx = W / 2;
   const cy = map.height / 2;
@@ -122,7 +122,8 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
     const w = onRing(theta, 0.9);
     if (i % 4 !== 0) {
       if (i % 2 === 0) {
-        stand('candelabra', w.x, w.y, 0.95, 0.9);
+        // Candle stands and candelabra alternate around the walk (it.55).
+        stand(i % 4 === 2 && spriteLib.hasSingle('candle_stand') ? 'candle_stand' : 'candelabra', w.x, w.y, 0.95, 0.9);
         lighting.addSource(w.x + 0.5, w.y + 0.5, 4.5, 255, 170, 80, 0.7);
         hotspots.push({ x: w.x + 0.5, y: w.y + 0.5 });
       } else if (spriteLib.hasAnim('torch')) {
@@ -177,10 +178,25 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
     lighting.registerProp(gx, gy, g as unknown as Sprite);
     made.push(g);
   }
-  /** An iron cage on the wall: the closed gate prop, half-scale. */
+  /** An iron cage on the wall (it.55: the barred stone gate from the dungeon pack). */
   function cage(gx: number, gy: number): void {
-    const spr = stand('gate_closed', gx, gy, 0.96, 0.55, 0xb8b8c8, 6);
+    const spr = stand(spriteLib.hasSingle('iron_cage') ? 'iron_cage' : 'gate_closed', gx, gy, 0.96, 0.6, 0xc8c8d0, 4);
     if (spr) spr.zIndex += 3;
+  }
+
+  // ---- WEAPON RACKS (it.55): the sword cases between the gates, on the walk ----
+  for (let i = 0; i < 4; i++) {
+    const theta = Math.PI / 4 + (i * Math.PI) / 2;
+    const w = onRing(theta, 0.86);
+    if (isFloor(w.x, w.y)) stand('weapon_rack', w.x, w.y, 0.92, 0.8);
+  }
+  // ---- ROCKS (it.55): boulders at the foot of the wall ----
+  const ROCKS = ['rock_a', 'rock_b', 'rock_c', 'rock_d', 'rock_e', 'rock_f'];
+  for (let i = 0; i < 22; i++) {
+    const theta = (i / 22) * Math.PI * 2 + 0.11;
+    const gx = Math.round(cx + Math.cos(theta) * (RX + 0.9) - 0.5);
+    const gy = Math.round(cy + Math.sin(theta) * (RY + 0.8) - 0.5);
+    if (isWall(gx, gy)) stand(ROCKS[Math.floor(rand() * ROCKS.length)], gx, gy, 0.92, 0.55 + rand() * 0.35, 0xb8b0a8, 0);
   }
 
   // ---- The gates: spiked barricades flanking each pad on the walk ----
@@ -222,40 +238,36 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
     }
   }
 
-  // ---- THE STANDS: a cheering crowd on the wall ring, two rows, facing the sand ----
-  const FOLK = 'folk_walk';
-  if (spriteLib.hasAnim(FOLK)) {
-    const painted = spriteLib.paintedHeight(FOLK) || 50;
-    const base = 46 / painted;
-    const fc = spriteLib.anim(FOLK).frameCount;
-    const TONES = [0xd8cfc0, 0xc8b8a8, 0xb8c0b0, 0xd0c4a8, 0xbfb0a0, 0xd8b8b0];
-    for (let ring = 0; ring < 2; ring++) {
-      const count = 40 + ring * 10;
+  // ---- THE STANDS (it.55): four rows of townsfolk, eight models, each on its own
+  // cheer loop (idle · bend · rise · idle) or standing still — SEATED in place,
+  // never walking; the east side mirrored so every face turns to the sand ----
+  const CROWD = ([0, 1, 2, 3, 4, 5, 6, 7].map((i) => `crowd_m${i}`) as AnimName[]).filter((a) => spriteLib.hasAnim(a));
+  if (CROWD.length) {
+    const painted = spriteLib.paintedHeight(CROWD[0]) || 60;
+    const base = 44 / painted;
+    const TONES = [0xffffff, 0xf0e8e0, 0xe8d8c8, 0xd8e0d8, 0xf4e4d0, 0xe0d0d0];
+    for (let ring = 0; ring < 4; ring++) {
+      const count = 88 + ring * 6;
       for (let i = 0; i < count; i++) {
-        const theta = (i / count) * Math.PI * 2 + ring * 0.07 + (rand() - 0.5) * 0.05;
-        const gx = Math.round(cx + Math.cos(theta) * (RX + 1.2 + ring * 1.15) - 0.5);
-        const gy = Math.round(cy + Math.sin(theta) * (RY + 1.0 + ring * 1.0) - 0.5);
+        const theta = (i / count) * Math.PI * 2 + ring * 0.045 + (rand() - 0.5) * 0.02;
+        const gx = Math.round(cx + Math.cos(theta) * (RX + 1.1 + ring * 0.78) - 0.5);
+        const gy = Math.round(cy + Math.sin(theta) * (RY + 0.9 + ring * 0.62) - 0.5);
         if (!isWall(gx, gy)) continue;
-        // Face the sand: the row whose direction points back at the centre.
-        const dx = cx - gx;
-        const dy = cy - gy;
-        const screenX = dx - dy;
-        const screenY = (dx + dy) / 2;
-        let deg = (Math.atan2(-screenY, screenX) * 180) / Math.PI;
-        if (deg < 0) deg += 360;
-        const dir = Math.round(deg / 45) % 8;
-        const spr = new Sprite(spriteLib.frame(FOLK, dir, Math.floor(rand() * fc)));
+        const animName = CROWD[Math.floor(rand() * CROWD.length)];
+        const fc = spriteLib.anim(animName).frameCount;
+        const spr = new Sprite(spriteLib.frame(animName, 0, 0));
         spr.anchor.set(0.5, 1);
-        spr.scale.set(base * (0.9 + rand() * 0.2));
+        const sc = base * (0.88 + rand() * 0.24);
+        spr.scale.set(gx + 0.5 > cx ? -sc : sc, sc); // Face the arena.
         spr.tint = TONES[Math.floor(rand() * TONES.length)];
-        const s = worldToScreen(gx + 0.5 + (rand() - 0.5) * 0.4, gy + 0.5 + (rand() - 0.5) * 0.4, scratch);
-        const baseY = s.y + 2 - ring * 10; // The back row stands a step higher.
+        const s = worldToScreen(gx + 0.5 + (rand() - 0.5) * 0.9, gy + 0.5 + (rand() - 0.5) * 0.6, scratch);
+        const baseY = s.y + 2 - ring * 9; // Every row a step higher than the one before.
         spr.position.set(s.x, baseY);
         spr.zIndex = depthKey(gx + 0.5, gy + 0.5) + 41 + ring;
         viewport.objectLayer.addChild(spr);
         lighting.registerProp(gx, gy, spr);
         made.push(spr);
-        crowd.push({ sprite: spr, dir, baseY, phase: rand() * Math.PI * 2, rate: 4 + rand() * 3 });
+        crowd.push({ sprite: spr, anim: animName, fc, baseY, phase: rand() * Math.PI * 2, rate: 6 + rand() * 5, cheer: rand() < 0.6, timer: 1 + rand() * 4 });
       }
     }
   }
@@ -275,7 +287,6 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
   }
 
   const fcTorch = spriteLib.hasAnim('torch') ? spriteLib.anim('torch').frameCount : 1;
-  const fcFolk = spriteLib.hasAnim(FOLK) ? spriteLib.anim(FOLK).frameCount : 1;
   let clock = 0;
   let sandTimer = 0;
   const update = (dt: number): void => {
@@ -284,12 +295,23 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
       t.clock += dt;
       t.sprite.texture = spriteLib.frame('torch', 0, Math.floor(t.clock * 10) % fcTorch);
     }
-    // THE CROWD (it.54): every spectator cycles their frames and bounces on
-    // their own beat — arms up, down, a hop — a stand that never sits still.
+    // THE CROWD (it.55): a spectator either runs its cheer loop (a seamless
+    // idle-bend-rise-idle cycle on its own tempo) or stands and breathes; each
+    // flips state every few seconds so the stand ripples instead of marching.
     for (const c of crowd) {
-      const frame = Math.floor(clock * c.rate * 0.9 + c.phase) % fcFolk;
-      c.sprite.texture = spriteLib.frame(FOLK, c.dir, frame);
-      c.sprite.position.y = c.baseY - Math.abs(Math.sin(clock * c.rate + c.phase)) * 3.2;
+      c.timer -= dt;
+      if (c.timer <= 0) {
+        c.cheer = rand() < 0.6;
+        c.timer = 2 + rand() * 5;
+      }
+      if (c.cheer) {
+        const frame = Math.floor(clock * c.rate + c.phase) % c.fc;
+        c.sprite.texture = spriteLib.frame(c.anim, 0, frame);
+        c.sprite.position.y = c.baseY - Math.abs(Math.sin(clock * c.rate * 0.45 + c.phase)) * 2.5;
+      } else {
+        c.sprite.texture = spriteLib.frame(c.anim, 0, 0);
+        c.sprite.position.y = c.baseY - (0.5 + 0.5 * Math.sin(clock * 1.6 + c.phase)) * 1.2;
+      }
     }
     // SAND (it.54): a dry drift across the floor.
     sandTimer += dt;

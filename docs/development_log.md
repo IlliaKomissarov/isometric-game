@@ -1,5 +1,55 @@
 # Development Log
 
+## 2026-09-03 (iteration 55) - Arena tallies persisted, seated 4x crowd on cheer loops, the fifth upload baked
+
+### Records
+- Arena kills persist in batches (every ten kills, every boss, every wave
+  clear, and the moment the sand is left) so a browser closed mid-trial
+  keeps its tally. The Hall of Records opened with placeholder rows before
+  any trial in QA (10 "the ledger waits" rows, no null path).
+
+### The fifth upload (audited, nine new root files + the folders not yet
+### baked; the raw folder stays, ignored)
+- BAKED: `Characters/Male_0..7` -> `crowd_m0..7` (a 14-frame cheer loop
+  each: idle, bend, rise, idle); the `spider` pack -> `spider_walk/idle/
+  attack/death` (8 dirs, 25/1/8/8 frames, rows clockwise from east);
+  `grass/grass_tiles`, `dirt_tiles`, `sand_tiles` -> 64x32 diamonds
+  replacing `town_grass` / `town_dirt` and adding `town_sand` (kind 3);
+  `rocks.png` -> `rock_a..f`; `watchtower_wooden_full_size` ->
+  `watchtower`; library `displayCaseSword` -> `weapon_rack`,
+  `candleStandDouble` -> `candle_stand`; dungeon `stoneWallGateBars` ->
+  `iron_cage`; `NEw pack blood/1` -> `vfx_bloodburst` (30 frames).
+- INDEXED, not used: the 128x128 iso texture squares, `grassland` and
+  `rock_cliffs` sheets, `cursed_grave` strip, `iso_dungeon_walls`,
+  `hjm-assorted_rocks`, the library set beyond the case and stand,
+  `bloody-wall`, VFX 1-5 frames (four already bake as slashes).
+
+### The crowd (4x, seated)
+- 388 spectators in four rows on the wall ring (was 90), eight models,
+  east side mirrored to face the sand. Each is SEATED at a fixed spot —
+  zero horizontal drift over 90 frames in QA — and either runs its own
+  seamless cheer loop at its own tempo or stands breathing, flipping state
+  every 2–7 s so the stand ripples. The walking-in-place look is gone.
+
+### Town and arena
+- Town: new grass and dirt underfoot; boulders in the lawns (2.5 % of open
+  grass, undone if they seal a route); the wooden watchtower beside the
+  coliseum road (a cutaway occluder). The dense-fill reachability baseline
+  was stale (only the first cluster ever survived) — re-based after every
+  kept prop, so tree clusters and rocks both land now.
+- Coliseum: sand tiles; iron cages from the dungeon pack; candle stands
+  alternating with candelabra; four sword-case weapon racks on the walk;
+  22 boulders at the wall's foot.
+- The Crypt Widow (spider) joins the pools from depth II (two slots on
+  VI–IX) and every wave; a bestiary page; champions' deaths on the sand
+  burst the new blood strip.
+
+### QA (browser, zero console errors)
+- Town audit clean, 11 rocks, 386 pines, watchtower placed; board opens
+  pre-arena with 10 placeholders. Coliseum: 388 crowd sprites, none moved
+  horizontally in 90 frames, sand kind 3 at the centre; spider spawns on
+  `spider_idle` at rig scale 0.75; 7 arena kills stored mid-match.
+
 ## 2026-09-03 (iteration 54) - Split ledgers, the active clock, the Hall of Records, a living coliseum, boss waves
 
 ### Records and the clock

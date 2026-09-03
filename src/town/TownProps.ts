@@ -269,6 +269,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'well':
         standing(p, p.variant ?? 'well_b', 0.9);
         break;
+      case 'rock':
+        standing(p, p.variant ?? 'rock_a', 0.9);
+        break;
+      case 'watchtower': {
+        const spr = standing(p, 'watchtower', 0.97);
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        break;
+      }
       case 'pine':
       case 'deadtree': {
         const spr = standing(p, p.variant ?? 'pine_a', 0.97);

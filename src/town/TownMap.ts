@@ -34,6 +34,8 @@ export const TOWN_H = 54;
 export const KIND_COBBLE = 0;
 export const KIND_GRASS = 1;
 export const KIND_DIRT = 2;
+/** Coliseum sand (it.55). */
+export const KIND_SAND = 3;
 
 export type TownPropKind =
   | 'house'
@@ -62,6 +64,8 @@ export type TownPropKind =
   | 'signpost'
   | 'hanging_sign'
   | 'grassclump'
+  | 'rock'
+  | 'watchtower'
   | 'pots'
   | 'pentagram'
   | 'merchant'
@@ -300,6 +304,9 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'arenagate', x: 54, y: 23 });
   block({ kind: 'arenamaster', x: 53, y: 26 });
   block({ kind: 'brazier', x: 56, y: 26 });
+  // THE WATCHTOWER (it.55): the town's east lookout beside the coliseum road.
+  clearFor(48, 20, 2, 2, 1);
+  block({ kind: 'watchtower', x: 48, y: 20, w: 2, h: 2 });
   block({ kind: 'stall', x: 34, y: 17, w: 3, h: 2, variant: 'stall_b' });
   block({ kind: 'stall', x: 23, y: 25, w: 3, h: 2, variant: 'stall_c' });
   block({ kind: 'stall', x: 34, y: 25, w: 3, h: 2, variant: 'stall_d' });
@@ -448,7 +455,7 @@ export function buildTownLayout(): TownLayout {
       candidates.push(idx(x, y));
     }
   }
-  const before = seen.reduce((a, b) => a + b, 0);
+  let before = seen.reduce((a, b) => a + b, 0); // Re-based after every kept prop (it.55 fix: it was stale, so only one cluster ever survived).
   for (const i of candidates) {
     const x = i % W;
     const y = (i - x) / W;
@@ -458,12 +465,22 @@ export function buildTownLayout(): TownLayout {
       const v = roll < 0.03 ? 'pine_a' : roll < 0.05 ? 'pine_b' : roll < 0.07 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
       grid[i] = TILE_BLOCKED;
       props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
-      const after = reachable();
-      if (after.reduce((a, b) => a + b, 0) < before - 1) {
+      const afterCount = reachable().reduce((a, b) => a + b, 0);
+      if (afterCount < before - 1) {
         // It sealed something off — take it back.
         grid[i] = TILE_FLOOR;
         props.pop();
-      }
+      } else before = afterCount;
+    } else if (roll < 0.115 && grid[i] === TILE_FLOOR) {
+      // ROCKS (it.55): a boulder in the lawn, taken back if it seals a route.
+      const v = ['rock_a', 'rock_b', 'rock_c', 'rock_d', 'rock_e', 'rock_f'][Math.floor(rand() * 6)];
+      grid[i] = TILE_BLOCKED;
+      props.push({ kind: 'rock', x, y, variant: v });
+      const afterCount = reachable().reduce((a, b) => a + b, 0);
+      if (afterCount < before - 1) {
+        grid[i] = TILE_FLOOR;
+        props.pop();
+      } else before = afterCount;
     } else if (roll < 0.26) {
       decal({ kind: 'grassclump', x, y }); // A bush tuft.
     }

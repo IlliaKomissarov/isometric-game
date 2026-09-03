@@ -54,7 +54,8 @@ export type EnemyKind =
   | 'bossHollowKnight'
   | 'bossHollowLich'
   | 'orc'
-  | 'poacher';
+  | 'poacher'
+  | 'spider';
 
 export interface EnemyTypeDef {
   kind: EnemyKind;
@@ -488,6 +489,33 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       tint: 0xffffff,
       stride: 0.52,
       ownShadow: true,
+    },
+  },
+  spider: {
+    kind: 'spider',
+    name: 'Crypt Widow',
+    hp: 38,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.76,
+    speedMult: 0.86, // Skitters — the fastest thing on eight legs.
+    windupTicks: 20,
+    recoverTicks: 22,
+    reach: 1.3,
+    hitRecoveryTicks: 8,
+    markerTexture: 'marker_fallen',
+    // IT.55: the black-widow pack (8 dirs, clockwise from east; shadows shipped apart).
+    sprite: {
+      walk: 'spider_walk',
+      idle: 'spider_idle',
+      death: 'spider_death',
+      attack: 'spider_attack',
+      anchorY: 0.82,
+      scale: 1,
+      tint: 0xffffff,
+      stride: 0.26,
+      ownShadow: true,
+      heightMult: 0.72, // Low and wide.
     },
   },
   wolf: {

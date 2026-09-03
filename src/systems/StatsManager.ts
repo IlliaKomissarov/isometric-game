@@ -140,10 +140,17 @@ export class StatsManager {
     }
   }
 
+  private unsaved = 0;
+
   noteKill(inArena: boolean, boss: boolean): void {
     const ledger = inArena ? this.arena : this.dungeon;
     ledger.kills++;
     if (boss) ledger.bossKills++;
+    // Persist in batches (it.55): a browser closed mid-wave keeps its tally.
+    if (++this.unsaved >= 10 || boss) {
+      this.unsaved = 0;
+      this.save();
+    }
   }
 
   /** A floor delved: its active clear time joins the speedrun table. */

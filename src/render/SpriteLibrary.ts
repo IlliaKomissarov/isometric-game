@@ -173,6 +173,19 @@ export type AnimName =
   | 'vfx_cut4'
   | 'vfx_cut5'
   | 'vfx_pentagram'
+  | 'vfx_bloodburst'
+  | 'spider_walk'
+  | 'spider_idle'
+  | 'spider_attack'
+  | 'spider_death'
+  | 'crowd_m0'
+  | 'crowd_m1'
+  | 'crowd_m2'
+  | 'crowd_m3'
+  | 'crowd_m4'
+  | 'crowd_m5'
+  | 'crowd_m6'
+  | 'crowd_m7'
   | 'villager_walk'
   | 'merchant_walk'
   | 'campfire'
@@ -296,6 +309,7 @@ const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> =
   ['grave_', ROTATE_SW], // IT.48 re-audit: rows run counter-clockwise from SW, like the peasant sheets.
   ['folk_', FROM_SOUTH],
   ['poacher_', FROM_SOUTH],
+  ['spider_', CLOCKWISE], // IT.55 audit: the widow's rows run clockwise from east.
   ['villager_', ROTATE_SW],
   ['merchant_', ROTATE_SW],
 ];

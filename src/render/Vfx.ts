@@ -18,6 +18,7 @@ import { vec2 } from '@/utils/Vec2';
 
 /** The baked effect strips (see docs: it.41 asset audit). */
 export const VFX_ANIMS = [
+  'vfx_bloodburst',
   'vfx_fireball',
   'vfx_explosion',
   'vfx_burst',

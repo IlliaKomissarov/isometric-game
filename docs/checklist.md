@@ -437,6 +437,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Cheering crowd, blood, broken steel, barricades, cages, banners, flicker and sand drift
 - [x] Rising spawns; wardens on every fifth wave with horn, beam, shake; the crowd roars on champion kills
 
+## Iteration 55 - Arena Tallies, Seated 4x Crowd, Fifth Upload (2026-09-03)
+
+- [x] Arena kills persisted in batches; Hall of Records open before any trial
+- [x] 388 seated spectators on eight cheer loops, zero drift, staggered tempos
+- [x] Grass / dirt / sand diamonds, rocks, watchtower, weapon racks, candle stands, iron cages baked and placed
+- [x] Crypt Widow (spider pack) in the pools with a bestiary page; blood-burst strip
+- [x] Dense-fill baseline fix: clusters and rocks survive the route check
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -414,6 +414,13 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Resource globe beside the health globe; collapsible COMMANDS handle; stat icons; glowing XP bar
 - [x] Overhead level-up banner; doubled hint timers; panel-wide text shadows
 
+## Iteration 51 - Scrollbars, Pack Padding, Icon Fit, Hotbar Locks (2026-09-03)
+
+- [x] Universal dark-fantasy scrollbars on every panel; no stock artifacts
+- [x] Inventory left padding + inset rarity rims; icons fitted to 85 % of their slot
+- [x] Locked hotbar placeholders with padlock and muted tooltip
+- [x] Uniform window frames, close buttons and title sizes
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

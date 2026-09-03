@@ -1689,9 +1689,9 @@ async function boot(): Promise<void> {
             `<div class="skill-tip"><b>${def.name}${skills.isSynergy(def) ? ' · SYNERGY' : ''}</b>` +
             `<span>${def.cost > 0 ? `${def.cost} ${player.resourceName.toLowerCase()} · ` : ''}${Math.round((def.cd * (skills.isSynergy(def) ? 0.8 : 1)) / 60)}s cooldown</span>` +
             `<p>${def.hint}</p></div>`
-          : `<div class="skill-glyph skill-empty">+</div><div class="skill-flash"></div><div class="skill-key">${i + 1}</div>` +
+          : `<div class="skill-glyph skill-empty"><span class="skill-lock" aria-hidden="true">\u{1F512}</span></div><div class="skill-flash"></div><div class="skill-key">${i + 1}</div>` +
             `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
-            `<div class="skill-tip"><b>Empty slot</b><span>${player.skillPoints} skill point${player.skillPoints === 1 ? '' : 's'}</span><p>Press K to open the Skill Tree and learn a skill.</p></div>`;
+            `<div class="skill-tip skill-tip-locked"><b>Locked</b><span>${player.skillPoints > 0 ? `${player.skillPoints} skill point${player.skillPoints === 1 ? '' : 's'} to spend` : 'Requires a skill point'}</span><p>${player.skillPoints > 0 ? 'Press K to open the Skill Tree and learn a skill.' : 'Gain a level, then press K to learn a skill.'}</p></div>`;
         skillBar.appendChild(slot);
         skillSlotEls.push({
           root: slot,

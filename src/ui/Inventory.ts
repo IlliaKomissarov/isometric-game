@@ -16,7 +16,7 @@ import type { Player } from '@/entities/Player';
 import { ITEMS, RARITY_COLOR, itemValue, statLine, type ItemDef } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
 
-import { itemIconHtml } from './itemIcons';
+import { fitItemIcons, itemIconHtml } from './itemIcons';
 import { uiAssetUrl } from '@/render/SpriteLibrary';
 
 /** Paperdoll layout (it.42): a body-shaped cross — head on top, hands beside the torso, ring and cloak below. */
@@ -167,6 +167,7 @@ export class InventoryUI {
       <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div>
     `;
 
+    fitItemIcons(this.panel); // Every icon scaled into its slot (it.51).
     // Stats live OUTSIDE the inventory — always visible beside the orb.
     const dmg = this.player.weaponDamage;
     // STAT ICONS (it.50): crossed swords for damage, a shield for armor.

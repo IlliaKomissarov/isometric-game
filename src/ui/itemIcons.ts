@@ -328,6 +328,30 @@ export function itemIconHtml(def: ItemDef, base = '', px = 'px'): string {
   return `<img class="${cls(px)}" src="${itemIconDataUrl(def)}" alt="${def.name}" draggable="false">`;
 }
 
+/**
+ * SLOT FITTING (it.51): every icon inside a cell is scaled to
+ * `min(slotW / w, slotH / h) * 0.85` of its natural size, so a long blade
+ * or a wide cuirass never overflows its box. Images still loading are
+ * fitted when they arrive.
+ */
+export function fitItemIcons(root: HTMLElement, margin = 0.85): void {
+  root.querySelectorAll<HTMLImageElement>('.inv-cell img').forEach((img) => {
+    const cell = img.closest<HTMLElement>('.inv-cell');
+    if (!cell) return;
+    const fit = (): void => {
+      const w = img.naturalWidth || 64;
+      const h = img.naturalHeight || 64;
+      const sw = cell.clientWidth || 44;
+      const sh = cell.clientHeight || 44;
+      const scale = Math.min(sw / w, sh / h) * margin;
+      img.style.width = `${Math.round(w * scale)}px`;
+      img.style.height = `${Math.round(h * scale)}px`;
+    };
+    if (img.complete && img.naturalWidth > 0) fit();
+    else img.addEventListener('load', fit, { once: true });
+  });
+}
+
 /** Data-URL for an item's icon (cached) — DOM inventory cells. */
 export function itemIconDataUrl(def: ItemDef): string {
   const cached = cache.get(def.id);

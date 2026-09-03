@@ -1,5 +1,35 @@
 # Development Log
 
+## 2026-09-03 (iteration 51) - Dark-fantasy scrollbars, pack padding, icon fit, hotbar locks, window frame pass
+
+- SCROLLBARS: every scrollable surface (inventory, bestiary, skill tree,
+  shop, stash, records, character sheet, cheat menu, level select,
+  settings, endgame) draws the same 11 px stone track with a bronze thumb
+  (gold on hover, bright when dragged); `scrollbar-width: thin` +
+  `scrollbar-color` for Firefox; the page itself never scrolls; no corner
+  or button artifacts.
+- PACK PADDING: the inventory is 352 px wide with 22 px side padding, the
+  scroll field carries its own 6 px left inset and the grid is left-aligned,
+  so column 0 sits fully inside the frame. Rarity rims and the hover glow
+  are INSET shadows now — nothing crosses a cell boundary — and the hover
+  lift is gone.
+- ICON FIT: `fitItemIcons()` sizes every icon in a cell to
+  `min(slotW / w, slotH / h) x 0.85` of its natural size (re-fitted when a
+  late image loads); a CSS cap of 85 % backs it. Applies to the pack, the
+  paperdoll slots and the belt.
+- HOTBAR LOCKS: an unlearned hotkey slot renders at 0.4 opacity with a
+  grey padlock watermark and a muted "Locked - Requires a skill point"
+  tooltip (or "N skill points to spend - press K" when points are banked).
+- WINDOW PASS: one frame for every window (2 px iron border, gold inset
+  line, deep inner shade, drop shadow), one 26 px close button, one 15 px
+  title size across the inventory, shops, tree, sheet and bestiary.
+
+### QA (browser, zero console errors)
+- 24 items in the pack: column 0 fully inside the scroll field, every
+  icon within 85 % of its cell, the field scrolls with the bronze thumb;
+  four hotbar slots show padlocks with the locked tooltip on hover; the
+  armorer's list scrolls with the same bar.
+
 ## 2026-09-03 (iteration 50) - 48-slot pack, pixel boss fill, town label manager, forest ring, side-by-side globes, collapsible commands
 
 ### Inventory

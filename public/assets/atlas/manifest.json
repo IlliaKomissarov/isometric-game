@@ -3140,6 +3140,114 @@
    "w": 128,
    "h": 114,
    "nearest": false
+  },
+  "town_grass_0": {
+   "file": "single_town_grass_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_dirt_0": {
+   "file": "single_town_dirt_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_sand_0": {
+   "file": "single_town_sand_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_grass_1": {
+   "file": "single_town_grass_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_dirt_1": {
+   "file": "single_town_dirt_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_sand_1": {
+   "file": "single_town_sand_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_grass_2": {
+   "file": "single_town_grass_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_dirt_2": {
+   "file": "single_town_dirt_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_sand_2": {
+   "file": "single_town_sand_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_grass_3": {
+   "file": "single_town_grass_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_dirt_3": {
+   "file": "single_town_dirt_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_sand_3": {
+   "file": "single_town_sand_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_cobble_0": {
+   "file": "single_town_cobble_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_cobble_1": {
+   "file": "single_town_cobble_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_cobble_2": {
+   "file": "single_town_cobble_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_cobble_3": {
+   "file": "single_town_cobble_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "teleport_pad": {
+   "file": "single_teleport_pad.png",
+   "w": 176,
+   "h": 176,
+   "nearest": false
+  },
+  "teleport_rune": {
+   "file": "single_teleport_rune.png",
+   "w": 176,
+   "h": 176,
+   "nearest": false
   }
  }
 }

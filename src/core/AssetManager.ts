@@ -72,6 +72,10 @@ export class AssetManager {
     this.textures.set(key, tex);
   }
 
+  has(key: string): boolean {
+    return this.textures.has(key);
+  }
+
   /** Fetch a texture by key. Throws on unknown keys — fail loudly, never render blanks. */
   get(key: string): Texture {
     const tex = this.textures.get(key);

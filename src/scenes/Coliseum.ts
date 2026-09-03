@@ -20,7 +20,7 @@ import { KIND_COBBLE, KIND_SAND } from '@/town/TownMap';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { mulberry32 } from '@/utils/rng';
 import { vec2 } from '@/utils/Vec2';
-import { TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
+import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
 
 export const COLISEUM_W = 46;
 export const COLISEUM_H = 40;
@@ -99,8 +99,13 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
     y: Math.round(cy + Math.sin(theta) * RY * k - 0.5),
   });
 
+  /** A floor fixture claims its tile (it.56): nothing walks through a torch or a barricade. */
+  const claim = (gx: number, gy: number): void => {
+    if (isFloor(gx, gy)) map.grid[gy * W + gx] = TILE_BLOCKED;
+  };
   const stand = (single: string, gx: number, gy: number, anchorY: number, scale = 1, tint = 0xffffff, lift = 0, layer: 'object' | 'ground' = 'object'): Sprite | null => {
     if (!spriteLib.hasSingle(single)) return null;
+    if (layer === 'object') claim(gx, gy);
     const spr = new Sprite(spriteLib.single(single));
     spr.anchor.set(0.5, anchorY);
     spr.scale.set(scale);
@@ -129,6 +134,7 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
       } else if (spriteLib.hasAnim('torch')) {
         const spr = new Sprite(spriteLib.frame('torch', 0, 0));
         spr.anchor.set(0.5, 0.95);
+        claim(w.x, w.y);
         const s = worldToScreen(w.x + 0.5, w.y + 0.5, scratch);
         spr.position.set(s.x, s.y + 4);
         spr.zIndex = depthKey(w.x + 0.5, w.y + 0.5);
@@ -184,11 +190,13 @@ export function dressColiseum(map: ColiseumMap, viewport: Viewport, lighting: Li
     if (spr) spr.zIndex += 3;
   }
 
-  // ---- WEAPON RACKS (it.55): the sword cases between the gates, on the walk ----
+  // ---- WEAPON RACKS (it.56): the sword cases stand on the WALL beside the cages,
+  // never on the sand — nothing tomb-shaped in the walkable ring.
   for (let i = 0; i < 4; i++) {
-    const theta = Math.PI / 4 + (i * Math.PI) / 2;
-    const w = onRing(theta, 0.86);
-    if (isFloor(w.x, w.y)) stand('weapon_rack', w.x, w.y, 0.92, 0.8);
+    const theta = Math.PI / 4 + (i * Math.PI) / 2 + 0.2;
+    const gx = Math.round(cx + Math.cos(theta) * (RX + 1.5) - 0.5);
+    const gy = Math.round(cy + Math.sin(theta) * (RY + 1.25) - 0.5);
+    if (isWall(gx, gy)) stand('weapon_rack', gx, gy, 0.92, 0.7, 0xffffff, 8);
   }
   // ---- ROCKS (it.55): boulders at the foot of the wall ----
   const ROCKS = ['rock_a', 'rock_b', 'rock_c', 'rock_d', 'rock_e', 'rock_f'];

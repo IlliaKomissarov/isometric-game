@@ -1,5 +1,45 @@
 # Development Log
 
+## 2026-09-03 (iteration 56) - Terrain variants, the teleporter, an honest arena floor
+
+### Terrain
+- Every town ground kind now has FOUR diamonds picked per tile by
+  coordinate (`floor_town_<kind>_<v>`, `SceneManager` falls back to the
+  single): grass and dirt from the `grass/` sheets' variant rows, sand for
+  the coliseum, and cobble projected onto the ground plane from the
+  `Textures/Stone` squares (rotated, squashed, cropped, graded dim). No
+  field reads as a flat block; the arena walk and the town square share the
+  flagstone. The 'Tile' mosaic squares were tried first and rejected.
+
+### The teleporter
+- `teleport/` is a 3D teleporter's texture set, not a strip: the diffuse is
+  the carved stone pad seen from above and `rune2` the glowing blue rune
+  ring. Both bake as singles; the pad is squashed 2:1 onto the sand at the
+  arena's centre with the ring turning above it (a second, smaller ring
+  counter-turning), the vortex strip in its throat and a column of light.
+  It rises when the last wave falls and, now, whenever T is pressed in the
+  coliseum (a second T while it stands leaves at once); stepping onto the
+  pad goes home. The prize chest sits beside it.
+
+### The arena floor
+- The sword display cases (read as sarcophagi on the sand) moved onto the
+  wall beside the cages. Every fixture on the walk — torches, candelabra,
+  candle stands, barricades — now claims its tile as BLOCKED at dressing
+  time, so nothing phases through them (24 fixtures, 0 on walkable tiles in
+  QA).
+
+### Indexed, not used
+- `additional mobs/` (16 LPC-style 2048x2048 sheets: goblin, ogre, slime,
+  elemental, werewolf, magician, skeleton, zombie, eight male variants) —
+  four-direction sheets; the engine's rigs are eight-direction, so they
+  wait for a 4-to-8 mapping pass.
+
+### QA (browser, zero console errors)
+- Town ground draws 12 distinct diamonds (four each of grass, dirt,
+  cobble); coliseum sand four variants; 24 fixtures all on blocked tiles,
+  4 racks on the wall; T raises the teleporter at (23,20) with pad, two
+  rune rings and the beam; stepping onto it returns to town.
+
 ## 2026-09-03 (iteration 55) - Arena tallies persisted, seated 4x crowd on cheer loops, the fifth upload baked
 
 ### Records

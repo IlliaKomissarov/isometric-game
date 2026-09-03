@@ -445,6 +445,12 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Crypt Widow (spider pack) in the pools with a bestiary page; blood-burst strip
 - [x] Dense-fill baseline fix: clusters and rocks survive the route check
 
+## Iteration 56 - Terrain Variants, Teleporter, Arena Floor Cleanup (2026-09-03)
+
+- [x] Four diamonds per ground kind (grass / dirt / sand / projected stone cobble), coordinate-picked
+- [x] Teleporter pad + rune rings + vortex at the arena centre on the last wave or on T; step on to go home
+- [x] Display cases off the sand; every walk fixture blocks its tile
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

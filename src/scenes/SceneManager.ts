@@ -93,9 +93,15 @@ export class SceneManager {
     const variant = (gx * 7 + gy * 13) % assets.floorVariants;
     // TOWN (it.39): the map's tileKind layer paints cobble / grass / dirt.
     const kinds = (this.map as { tileKind?: Uint8Array }).tileKind;
+    // TERRAIN VARIANTS (it.56): four diamonds per ground kind, picked by tile
+    // coords, so no two neighbours repeat and no field reads as a flat block.
+    const kind = kinds ? kinds[gy * this.map.width + gx] : 0;
+    const townVariant = `floor_town_${kind}_${(gx * 5 + gy * 11) % 4}`;
     const key =
       this.theme === 'town' && kinds
-        ? `floor_town_${kinds[gy * this.map.width + gx]}`
+        ? assets.has(townVariant)
+          ? townVariant
+          : `floor_town_${kind}`
         : `floor_${variant}${this.themeSuffix}`;
     const sprite = new Sprite(assets.get(key));
     const s = worldToScreen(gx, gy, this.scratch);

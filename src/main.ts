@@ -229,6 +229,8 @@ async function boot(): Promise<void> {
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
     ['town_cobble', 'town_grass', 'town_dirt', 'town_sand'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
+      // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
+      for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
     });
   } catch (err) {
     console.warn('[boot] Sprite atlases unavailable — using procedural art.', err);
@@ -810,6 +812,42 @@ async function boot(): Promise<void> {
       hitStop(3);
     };
 
+    /**
+     * THE TELEPORTER (it.56): the carved stone pad squashed onto the sand at
+     * the arena's centre, the blue rune ring turning above it, a vortex in
+     * its throat and a column of light. Render-side sprites; the sim only
+     * knows the exit tile.
+     */
+    let teleporterFx: { pad: Sprite; rune: Sprite; rune2: Sprite; beam: Sprite; clock: number } | null = null;
+    const openExitTeleporter = (): void => {
+      const c = world.coliseum;
+      if (!c || c.exit) return;
+      c.exit = { x: c.center.x, y: c.center.y };
+      const s = worldToScreen(c.exit.x + 0.5, c.exit.y + 0.5, vec2());
+      const mk = (single: string, scaleX: number, scaleY: number, tint: number, additive: boolean, layer: 'ground' | 'ambience'): Sprite => {
+        const spr = new Sprite(spriteLib.hasSingle(single) ? spriteLib.single(single) : assets.get('glow'));
+        spr.anchor.set(0.5);
+        spr.scale.set(scaleX, scaleY);
+        spr.tint = tint;
+        if (additive) spr.blendMode = 'add';
+        spr.position.set(s.x, s.y);
+        (layer === 'ground' ? world.viewport.groundLayer : world.viewport.ambienceLayer).addChild(spr);
+        return spr;
+      };
+      const pad = mk('teleport_pad', 1.0, 0.5, 0xffffff, false, 'ground');
+      const rune = mk('teleport_rune', 0.92, 0.46, 0xffffff, true, 'ambience');
+      const rune2 = mk('teleport_rune', 0.62, 0.31, 0x9fd0ff, true, 'ambience');
+      rune2.alpha = 0.7;
+      const beam = mk('glow', 1.6, 6.5, 0x6fa0ff, true, 'ambience');
+      beam.anchor.set(0.5, 0.92);
+      beam.alpha = 0.55;
+      teleporterFx = { pad, rune, rune2, beam, clock: 0 };
+      world.vfx.play('vfx_vortex', c.exit.x + 0.5, c.exit.y + 0.5, { loop: true, fps: 18, scale: 1.1, flat: true, tint: 0x8fb8ff, alpha: 0.75 });
+      world.lighting.addSource(c.exit.x + 0.5, c.exit.y + 0.5, 3.2, 90, 140, 255, 0.7);
+      world.ambience.burst(c.exit.x + 0.5, c.exit.y + 0.5, 0x8fb8ff, 30);
+      audio.sfx('portal');
+    };
+
     /** One wave: more bodies and more champions every time (sim). */
     const spawnWave = (c: ColiseumState): void => {
       const n = Math.min(24, 4 + c.wave * 2);
@@ -869,37 +907,21 @@ async function boot(): Promise<void> {
             c.phase = 'done';
             stats.recordArenaClear(player.archetype, c.waves, activeTicks - c.startActive); // The trial's time (it.54).
             showWaveBanner('TRIAL COMPLETE!');
-            // The prize and the way home.
-            world.chests.spawnAt(c.center.x, c.center.y, true);
-            c.exit = { x: c.center.x + 4, y: c.center.y };
-            const s = worldToScreen(c.exit.x + 0.5, c.exit.y + 0.5, vec2());
-            const glow = new Sprite(assets.get('glow'));
-            glow.anchor.set(0.5);
-            glow.blendMode = 'add';
-            glow.tint = 0x6fa0ff;
-            glow.scale.set(1.7, 2.4);
-            glow.position.set(s.x, s.y - 22);
-            world.viewport.ambienceLayer.addChild(glow);
-            world.ambience.addGlow(glow, c.exit.x, c.exit.y, 0.8, 1.7);
-            const ring = new Sprite(assets.get('targetRing'));
-            ring.anchor.set(0.5);
-            ring.tint = 0x8fb8ff;
-            ring.alpha = 0.8;
-            ring.position.set(s.x, s.y);
-            world.viewport.groundLayer.addChild(ring);
-            world.lighting.addSource(c.exit.x + 0.5, c.exit.y + 0.5, 2.6, 90, 140, 255, 0.6);
+            // The prize beside the way home (the teleporter rises at the centre).
+            world.chests.spawnAt(c.center.x - 3, c.center.y + 1, true);
+            openExitTeleporter();
             audio.setBossMusic(false);
             audio.sfx('victory');
-            tutorial.notify('coliseumDone', 'The crowd roars. Open the coliseum chest, then step into the blue rift to go home.');
+            tutorial.notify('coliseumDone', 'The crowd roars. Open the coliseum chest, then step onto the teleporter at the centre to go home.');
           } else {
             c.phase = 'intermission';
             c.timer = 15 * 60;
             showWaveBanner('WAVE CLEARED!');
           }
         }
-      } else if (c.phase === 'done' && c.exit && !transitioning) {
-        if (Math.hypot(player.pos.x - (c.exit.x + 0.5), player.pos.y - (c.exit.y + 0.5)) < 0.7) leaveColiseum();
       }
+      // The teleporter (it.56): opened by the last wave or by T; stepping onto its pad goes home.
+      if (c.exit && !transitioning && Math.hypot(player.pos.x - (c.exit.x + 0.5), player.pos.y - (c.exit.y + 0.5)) < 0.9) leaveColiseum();
     };
     let emptyArenaTicks = 0;
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
@@ -1573,6 +1595,7 @@ async function boot(): Promise<void> {
       w.town?.campHeroes.destroy();
       w.town?.destroyDressing();
       w.coliseum?.destroy();
+      teleporterFx = null;
       w.input.destroy();
       w.projectiles.clear();
       w.vfx.clear();
@@ -2634,7 +2657,14 @@ async function boot(): Promise<void> {
           if (cmd.type !== 'TOWN_PORTAL') continue;
           // FREE TOWN PORTAL (it.43): T opens the way home on a 12 s cooldown.
           if (world.town) world.dmgText.show(player.pos.x, player.pos.y - 1, 'YOU ARE HOME', 'miss');
-          else if (world.coliseum) leaveColiseum(); // T abandons the trial (it.53).
+          else if (world.coliseum) {
+            // T (it.56): the teleporter rises at the centre; a second T while it stands leaves at once.
+            if (world.coliseum.exit) leaveColiseum();
+            else {
+              openExitTeleporter();
+              world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE WAY HOME OPENS AT THE CENTRE', 'miss');
+            }
+          }
           else if (transitioning || pendingPortal) break;
           else if (portalCooldown > 0) world.dmgText.show(player.pos.x, player.pos.y - 1, `PORTAL IN ${Math.ceil(portalCooldown / 60)}s`, 'miss');
           else {
@@ -2825,6 +2855,18 @@ async function boot(): Promise<void> {
         if (world.coliseum) {
           const c = world.coliseum;
           c.update(frameDt);
+          if (teleporterFx) {
+            const f = teleporterFx;
+            if (f.pad.destroyed) teleporterFx = null;
+            else {
+              f.clock += frameDt;
+              f.rune.rotation = f.clock * 0.6;
+              f.rune2.rotation = -f.clock * 1.1;
+              f.rune.alpha = 0.75 + 0.25 * Math.sin(f.clock * 3);
+              f.beam.alpha = 0.4 + 0.2 * Math.sin(f.clock * 2.3);
+              f.beam.scale.x = 1.6 + 0.15 * Math.sin(f.clock * 4);
+            }
+          }
           waveHud.textContent =
             c.phase === 'intermission'
               ? `WAVE ${c.wave + 1} / ${c.waves} · NEXT WAVE IN ${Math.ceil(c.timer / 60)}s`

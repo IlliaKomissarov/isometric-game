@@ -287,13 +287,13 @@ const FROM_SOUTH = (d: number): number => (d + 2) % 8;
 const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> = [
   ['ranger_', MIRROR_LR],
   ['zombie_', CLOCKWISE],
-  ['guard_', MIRROR_LR],
+  ['guard_', ROTATE_180], // IT.48 re-audit: rows run [W, SW, S, SE, E, NE, N, NW] — a half turn (they walked backwards under the mirror map).
   ['wolf_', MIRROR_LR],
   ['lizard_', MIRROR_LR],
   ['hydra_', REFLECT_NWSE],
   ['naga_', REFLECT_NWSE],
   ['shambler_', REFLECT_NWSE],
-  ['grave_', ROTATE_180],
+  ['grave_', ROTATE_SW], // IT.48 re-audit: rows run counter-clockwise from SW, like the peasant sheets.
   ['folk_', FROM_SOUTH],
   ['poacher_', FROM_SOUTH],
   ['villager_', ROTATE_SW],

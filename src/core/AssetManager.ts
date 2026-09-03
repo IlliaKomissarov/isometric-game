@@ -449,10 +449,12 @@ export class AssetManager {
    * shadow stays planted on the floor (baked-in shadows made units "float").
    */
   private buildShadow(): Graphics {
+    // SOFT SHADOW (it.48): twelve feathered rings — a dense core, no hard rim.
     const g = new Graphics();
-    g.ellipse(16, 7, 16, 7).fill({ color: 0x000000, alpha: 0.18 });
-    g.ellipse(16, 7, 11, 4.8).fill({ color: 0x000000, alpha: 0.28 });
-    g.ellipse(16, 7, 6, 2.6).fill({ color: 0x000000, alpha: 0.3 });
+    for (let i = 12; i >= 1; i--) {
+      const t = i / 12;
+      g.ellipse(16, 7, 16 * t, 7 * t).fill({ color: 0x000000, alpha: 0.032 + (1 - t) * 0.03 });
+    }
     return g;
   }
 

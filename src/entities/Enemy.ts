@@ -1598,8 +1598,10 @@ export class Enemy extends Entity {
   private syncShadow(): void {
     if (!this.shadow.visible) return;
     const l = this.shadowLight;
-    this.shadow.scale.set(1 + Math.abs(l.x) * l.k * 0.6, 1 + Math.abs(l.y) * l.k * 0.35);
-    this.shadow.position.set(l.x * 7 * l.k, 1 + l.y * 3 * l.k);
+    // DYNAMIC SHADOW (it.48): stretched and thrown away from the nearest light.
+    this.shadow.scale.set(1 + Math.abs(l.x) * l.k * 0.9, 1 + Math.abs(l.y) * l.k * 0.5);
+    this.shadow.position.set(l.x * 12 * l.k, 1 + l.y * 5 * l.k);
+    this.shadow.alpha = 0.7 + 0.3 * l.k;
   }
 
   /** SEGMENTED health bar (it.23): quarter-notches make remaining health

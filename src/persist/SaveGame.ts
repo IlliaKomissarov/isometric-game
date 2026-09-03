@@ -12,7 +12,7 @@
 
 import type { ClassArchetype, EquipmentSlot } from '@/network/Serialization';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 export const SAVE_SLOTS = 3;
 const KEY = (slot: number): string => `iso-arpg-save-${slot}`;
 
@@ -52,6 +52,8 @@ export interface PlayerSave {
   passives: string[];
   /** Bestiary (it.42): creatures seen / slain by kind. */
   bestiary?: Record<string, { seen: number; killed: number }>;
+  /** Records board (it.48, save v3): every coin scooped this run. */
+  goldCollected?: number;
 }
 
 export interface SaveGame {
@@ -60,8 +62,15 @@ export interface SaveGame {
   seed: number;
   createdAt: number;
   updatedAt: number;
-  /** Floor the hero stands on when saved (0 = town). Loads resume in town. */
+  /** Floor the hero stands on when saved (0 = town). */
   floor: number;
+  /**
+   * DEEP SAVE (it.48, v3): the exact spot and whether it was the boss arena —
+   * a load resumes RIGHT THERE (the floor rebuilds from its seed + memory),
+   * not in town. Absent on older saves (they resume in town).
+   */
+  pos?: { x: number; y: number };
+  arena?: boolean;
   deepestFloor: number;
   playtimeTicks: number;
   player: PlayerSave;
@@ -88,7 +97,7 @@ function readRaw(slot: number): SaveGame | null {
     const raw = localStorage.getItem(KEY(slot));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SaveGame>;
-    const ver = (parsed as { version?: number }).version;
+    let ver = (parsed as { version?: number }).version;
     if (!parsed.player || !parsed.stash) return null;
     if (ver === 1) {
       // v1 → v2: a hero saved before the skill tree gets one point per level.
@@ -97,9 +106,16 @@ function readRaw(slot: number): SaveGame | null {
       pl.unlocked = [];
       pl.loadout = [null, null, null, null];
       pl.passives = [];
-      parsed.version = SAVE_VERSION;
+      ver = 2;
     }
-    if (parsed.version !== SAVE_VERSION) return null;
+    if (ver === 2) {
+      // v2 → v3: no remembered position — the hero resumes in town.
+      delete (parsed as { pos?: unknown }).pos;
+      parsed.arena = false;
+      ver = 3;
+    }
+    if (ver !== SAVE_VERSION) return null;
+    parsed.version = SAVE_VERSION;
     return parsed as SaveGame;
   } catch {
     return null;

@@ -41,7 +41,9 @@ export type InputCommand =
   | { type: 'USE_QUICK'; playerId: number; kind: 'health' | 'mana' }
   | { type: 'TOWN_PORTAL'; playerId: number }
   /** Town economy (it.39). */
-  | { type: 'BUY'; playerId: number; index: number }
+  | { type: 'BUY'; playerId: number; index: number; vendor?: 'armorer' | 'alchemist' }
+  /** Respec (it.48): refund every learned skill and passive — town only. */
+  | { type: 'RESET_SKILLS'; playerId: number }
   | { type: 'SELL'; playerId: number; backpackIndex: number }
   | { type: 'BUYBACK'; playerId: number; index: number }
   | { type: 'STASH_PUT'; playerId: number; backpackIndex: number }

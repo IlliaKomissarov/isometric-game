@@ -43,6 +43,8 @@ export class SkillTreeUI {
   constructor(
     private readonly player: Player,
     private readonly queue: InputQueue,
+    /** Respec is a town rite (it.48). */
+    private readonly inTown: () => boolean = () => true,
   ) {
     this.panel = document.createElement('div');
     this.panel.id = 'skill-tree';
@@ -124,7 +126,7 @@ export class SkillTreeUI {
             return `
               <div class="st-node st-${state}${mine ? ' st-own' : ''}${this.picking === def.id ? ' picking' : ''}" data-skill="${def.id}" data-state="${state}">
                 <div class="st-tier">T${def.tier} · L${tierLevel(def.tier)}</div>
-                ${icon}
+                ${icon}${state === 'locked' ? '<span class="st-lock" aria-hidden="true">🔒</span>' : ''}
                 <div class="st-text"><b>${def.name}</b><span>${def.hint}</span><em>${meta}</em></div>
                 ${picker}
               </div>`;
@@ -140,7 +142,7 @@ export class SkillTreeUI {
             return `
               <div class="st-node st-passive st-${state}${mine ? ' st-own' : ''}" data-passive="${def.id}" data-state="${state}">
                 <div class="st-tier">PASSIVE · L${PASSIVE_LEVEL}</div>
-                <span class="st-icon st-glyph">${def.glyph}</span>
+                <span class="st-icon st-glyph">${def.glyph}</span>${state === 'locked' ? '<span class="st-lock" aria-hidden="true">🔒</span>' : ''}
                 <div class="st-text"><b>${def.name}</b><span>${def.hint}</span><em>${meta}</em></div>
               </div>`;
           })
@@ -171,6 +173,7 @@ export class SkillTreeUI {
         <h3>SKILL TREE</h3>
         <span class="st-points">${p.skillPoints} SKILL POINT${p.skillPoints === 1 ? '' : 'S'}</span>
         <span class="st-level">LEVEL ${p.level}</span>
+        <button class="st-respec" data-respec${this.inTown() ? '' : ' disabled'} title="${this.inTown() ? 'Refund every learned skill and passive' : 'Only in town or at the camp'}">RESET SKILLS${this.inTown() ? '' : ' · TOWN ONLY'}</button>
         <button class="tp-close" data-close>✕</button>
       </div>
       <div class="st-synergy">Your class path casts at <b>+${Math.round((SYNERGY.power - 1) * 100)}% power</b>, <b>${Math.round((1 - SYNERGY.cooldown) * 100)}% shorter cooldowns</b>, and every hit inflicts <b>${SYNERGY_STATUS[own]}</b>. Other paths cost two points a rank.</div>
@@ -178,6 +181,14 @@ export class SkillTreeUI {
       <div class="st-bar">${bar}<span class="st-bar-note">${this.picking ? 'Choose a hotkey for the selected skill' : 'Learned skills go on the hotbar: pick 1 · 2 · 3 · 4 on the node, or click a learned skill then a slot'}</span></div>`;
 
     this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    this.panel.querySelector('[data-respec]')?.addEventListener('click', () => {
+      if (!this.inTown()) {
+        audio.sfx('uiBack');
+        return;
+      }
+      audio.sfx('uiConfirm');
+      this.queue.enqueue({ type: 'RESET_SKILLS', playerId: 0 });
+    });
     this.panel.querySelectorAll<HTMLElement>('.st-node[data-skill]').forEach((node) => {
       node.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.st-slot')) return;

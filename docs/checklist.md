@@ -387,6 +387,16 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Straight west wall column; gate segment glued into it with a measured anchor; apron cleared
 - [x] Threshold inside the arch opening; touch-to-descend verified; zero console errors
 
+## Iteration 48 - Combat Feel, Boss Bar, Buffs, Respec, Vendors, Records, Deep Save (2026-09-03)
+
+- [x] Gate one tile out; waystone only on the first depth-I visit; fast-travel hint on return
+- [x] Boss bar shows at once with name · level · numeric HP and lingers past death; readable gauges
+- [x] Sentinel + grave guard direction maps corrected; hit-stop, directional kick, layered SFX, hurt flash, soft directional shadows
+- [x] Smart clicks path to the nearest reachable tile
+- [x] Locked-node padlocks, buff rings (HUD + overhead), level-up pillar, town-only respec
+- [x] Armorer + alchemist vendors, dungeon records board
+- [x] Boss-floor-only pentagrams, secondary starter arm, save v3 resumes at the exact spot
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

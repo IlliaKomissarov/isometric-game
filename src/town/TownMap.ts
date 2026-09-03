@@ -65,6 +65,8 @@ export type TownPropKind =
   | 'pots'
   | 'pentagram'
   | 'merchant'
+  | 'alchemist'
+  | 'board'
   | 'guard';
 
 export interface TownProp {
@@ -85,8 +87,12 @@ export interface TownLayout {
   /** Front tile of the dungeon gate (touching it descends to depth I). */
   gate: { x: number; y: number };
   stash: { x: number; y: number };
-  /** Tiles that count as "at the stall" for the TRADE prompt. */
+  /** Tiles that count as "at the stall" for the TRADE prompt (the ARMORER, it.48). */
   merchant: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
+  /** The ALCHEMIST's stall (it.48): draughts and scrolls. */
+  alchemist: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
+  /** The DUNGEON RECORDS board (it.48). */
+  board: { x: number; y: number };
   campfire: { x: number; y: number };
   /** Where the three unselected heroes rest (tile centres, facing the fire). */
   campSpots: Array<{ x: number; y: number }>;
@@ -174,11 +180,11 @@ export function buildTownLayout(): TownLayout {
   };
 
   // ---- STREETS ----
-  const gate = { x: 1, y: 26 }; // WEST (it.47): the threshold INSIDE the archway, which is a 1×4 wall segment (x 1, y 25–28) in the west wall.
+  const gate = { x: 2, y: 26 }; // WEST (it.48): the threshold INSIDE the archway, a 1×4 segment standing ONE TILE OUT from the west wall (x 2, y 25–28).
   ellipse(30, 22, 9.5, 6.5, KIND_COBBLE); // The market square.
   street([[13, 13], [17, 15], [21, 18], [24, 20]], KIND_COBBLE, 1.2); // The north-west quarter's lane -> square.
   street([[30, 28], [29, 33], [30, 38], [30, 44]], KIND_COBBLE, 1.3); // South street -> lower plaza.
-  street([[3, 26], [8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.3); // High street: WEST gate -> square -> east.
+  street([[4, 26], [8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.3); // High street: WEST gate -> square -> east.
   ellipse(30, 44.5, 3.5, 2.2, KIND_COBBLE); // Lower plaza.
   street([[36, 12], [34, 16]], KIND_DIRT, 1.0); // Tavern lane.
   street([[45, 27], [47, 20]], KIND_DIRT, 0.9); // NE cottage.
@@ -237,10 +243,12 @@ export function buildTownLayout(): TownLayout {
   // bare cobble (x 2–10, y 19–34) — no props, trees, lights or collision.
   clearFor(2, 19, 9, 16, 0, KIND_COBBLE);
   for (let y = 19; y <= 34; y++) for (let x = 0; x <= 1; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL; // The straight west wall.
-  props.push({ kind: 'ruingate', x: 1, y: 25, w: 1, h: 4 });
-  for (let y = 25; y <= 28; y++) grid[idx(1, y)] = TILE_BLOCKED; // The gate segment stands where the wall cubes were.
+  // ONE TILE OUT (it.48): the segment stands on x 2 with the wall column behind it.
+  props.push({ kind: 'ruingate', x: 2, y: 25, w: 1, h: 4 });
+  for (let y = 25; y <= 28; y++) grid[idx(2, y)] = TILE_BLOCKED; // The segment's piers.
   grid[idx(gate.x, gate.y)] = TILE_FLOOR; // The opening — the threshold.
   tileKind[idx(gate.x, gate.y)] = KIND_COBBLE;
+  grid[idx(1, gate.y)] = TILE_BLOCKED; // No wall cube behind the opening (it would draw over the gate).
   belt[idx(gate.x, gate.y)] = 0; // Never a belt tile: the forest pass must not re-block the threshold.
   // The guards keep watch from the far end of the apron, off the wall.
   const guards = [
@@ -276,6 +284,8 @@ export function buildTownLayout(): TownLayout {
   // Market square: six stalls, the shopkeeper, the well, stores, signs, torches.
   block({ kind: 'stall', x: 23, y: 17, w: 3, h: 2, variant: 'stall_a' });
   block({ kind: 'merchant', x: 24, y: 16 });
+  block({ kind: 'alchemist', x: 24, y: 24 }); // The ALCHEMIST behind the south stall (it.48).
+  block({ kind: 'board', x: 32, y: 31 }); // The DUNGEON RECORDS board off the south street (it.48).
   block({ kind: 'stall', x: 34, y: 17, w: 3, h: 2, variant: 'stall_b' });
   block({ kind: 'stall', x: 23, y: 25, w: 3, h: 2, variant: 'stall_c' });
   block({ kind: 'stall', x: 34, y: 25, w: 3, h: 2, variant: 'stall_d' });
@@ -442,6 +452,19 @@ export function buildTownLayout(): TownLayout {
         { x: 25, y: 18 },
       ],
     },
+    alchemist: {
+      x: 24,
+      y: 24,
+      tiles: [
+        { x: 23, y: 25 },
+        { x: 24, y: 25 },
+        { x: 25, y: 25 },
+        { x: 23, y: 26 },
+        { x: 24, y: 26 },
+        { x: 25, y: 26 },
+      ],
+    },
+    board: { x: 32, y: 31 },
     campfire,
     campSpots,
     portal: { x: 43, y: 37 },
@@ -487,6 +510,8 @@ export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: n
   if (!touches(layout.gate.x, layout.gate.y)) missing.push('gate');
   if (!touches(layout.stash.x, layout.stash.y)) missing.push('stash');
   if (!layout.merchant.tiles.some((t) => touches(t.x, t.y))) missing.push('merchant');
+  if (!layout.alchemist.tiles.some((t) => touches(t.x, t.y))) missing.push('alchemist');
+  if (!touches(layout.board.x, layout.board.y)) missing.push('board');
   if (!touches(layout.portal.x, layout.portal.y)) missing.push('portal');
   if (!touches(layout.campfire.x, layout.campfire.y)) missing.push('campfire');
   for (const [i, h] of layout.houses.entries()) if (!seen[(h.y + 2) * width + h.x + 1]) missing.push(`house ${i} door`);

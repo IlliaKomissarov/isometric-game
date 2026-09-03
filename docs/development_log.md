@@ -1,5 +1,79 @@
 # Development Log
 
+## 2026-09-03 (iteration 48) - Combat feel, boss bar, buff timers, respec, dual vendors, records board, deep save
+
+### Map, portal, HUD
+- The gate segment stands ONE tile out from the west wall (x 2, threshold
+  (2,26)); the tile behind the opening carries no wall cube.
+- Depth I only grows its tutorial waystone on the FIRST visit: a rebuilt
+  depth I (back from town) no longer shows a second portal-looking stone.
+  Arriving in town after any descent queues the hint "press L to open
+  DEPTHS and fast-travel". Hint banners read for 8.25 s (+50%).
+- Boss bar: shown the moment the warden stands in its arena (it used to
+  wait for a fog sighting, and an arena rebuild reset that), name · level
+  in the title, numeric "827 / 1176" inside the 24 px silver track, and it
+  lingers three seconds past the killing blow instead of vanishing.
+- Stamina and XP gauges carry text overlays ("87 / 100", "XP 12 / 180").
+  Damage numbers float at 0.75 opacity with a smoother ease-out.
+
+### Combat feel
+- CRYPT SENTINEL and GRAVE GUARD walked backwards: a per-row render of both
+  sheets shows the halberdier stores [W, SW, S, SE, E, NE, N, NW] (a half
+  turn: `(d + 4) mod 8`) and the shield-bearer runs counter-clockwise from
+  SW (`(d + 3) mod 8`, the peasant order). Both maps corrected.
+- HIT-STOP: crits freeze the sim two ticks, kills two (bosses three), a
+  12+ blow one. Directional camera kick along the blow's screen vector
+  (`Camera.addKickDir`). Impact burst VFX on 8+ blows. Layered audio: the
+  weapon's slash under every landed hit, the species pain grunt, the wet
+  splatter layer from 8 damage.
+- Player hurt: red edge flash on `#vignette.hurt` (0.3 s) plus a recoil kick.
+- Shadows: the texture is twelve feathered rings (no hard rim); hero and
+  mob shadows stretch and are thrown 12 px away from the nearest torch,
+  brazier or campfire via `Lighting.lightDirAt`.
+
+### Smart clicks
+- A click on rock / a wall / a sealed pocket paths to the reachable tile
+  nearest the click (radius up to 6, ties toward the hero, ten A* tries).
+
+### Skills
+- Locked nodes show a padlock and a near-black silhouette icon.
+- Active buffs (War Cry / Arcane Intellect, Stone Skin, Haste, Vanish,
+  Poison Blade, Frostbite as a debuff) render as icon tiles with a conic
+  countdown ring and seconds on the HUD above the hotbar AND over the
+  hero's head (`Player.activeBuffs`, `buffMax` set at cast).
+- Level-up: a golden light pillar climbs off the hero plus an aura strip and
+  a second chime.
+- RESET SKILLS in the tree header refunds every learned rank and passive
+  (`RESET_SKILLS` command, `SkillSystem.resetSkills`); disabled in the
+  dungeon (button greyed "TOWN ONLY", the sim refuses with a floating note).
+
+### Town
+- Two shopkeepers: the ARMORER (north stall: arms, armor, magic/rare gear)
+  and the ALCHEMIST (south stall, violet robes: potions, elixir, portal
+  scroll). `TownSystem.stockAlch`, `BUY.vendor`, `ShopUI.open(vendor)`.
+- DUNGEON RECORDS board (signpost off the south street, E): total kills,
+  wardens slain, gold collected (`Player.goldCollected`), deepest depth,
+  time in the dark.
+
+### Save v3
+- `SaveGame.pos` + `arena` record the exact spot; CONTINUE / LOAD resume on
+  that floor at that tile (arena mode when saved inside one). Older saves
+  migrate (v1 → v2 → v3) and resume in town. `goldCollected` persisted.
+- Starter kit adds a secondary arm: a short bow for the melee trades, a
+  rusty sword for the ranger.
+- Pentagrams mark BOSS floors only: the arena heart and the seal room of
+  depths V / X / XV / XX (the 35% far-room sigils are gone).
+
+### QA (browser, zero console errors)
+- Town audit clean; both vendors trade; the board opens; 23 padlocks in
+  the tree; respec 9 → 7 → 9 points in town, refused on depth I.
+- Smart click on a wall tile paths to the tile beside it; hurt flash
+  toggles; a kill freezes two ticks; pillar renders on level-up; buff rings
+  show for War Cry + Vanish.
+- Save on depth III at (8.5, 10.5) → reload → resumes on DEPTH III at the
+  same tile with the loadout intact.
+- Depth V arena: bar shows at once, "1176 / 1176" → "827 / 1176" → "0 / 1176".
+
 ## 2026-09-03 (iteration 47) - West wall cleanup, gate glued into the wall, threshold inside the arch
 
 - The baked ruin gate is a THIN wall segment four tiles long whose arch faces

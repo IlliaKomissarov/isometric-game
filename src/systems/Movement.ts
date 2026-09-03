@@ -335,8 +335,9 @@ export class MovementSystem {
   private startPathTo(gx: number, gy: number): void {
     const sx = Math.floor(this.player.pos.x);
     const sy = Math.floor(this.player.pos.y);
-    const path = this.pathfinder.findPath(sx, sy, gx, gy);
-    if (!path || path.length === 0) return; // Unreachable or already there — ignore click.
+    let path = this.pathfinder.findPath(sx, sy, gx, gy);
+    if (!path) path = this.pathToNearest(sx, sy, gx, gy); // SMART CLICKS (it.48).
+    if (!path || path.length === 0) return; // Already there — ignore click.
 
     this.path = path;
     this.pathIndex = 0;
@@ -351,6 +352,36 @@ export class MovementSystem {
     this.destinationMarker.visible = true;
 
     eventBus.emit('player:pathStarted', { path });
+  }
+
+  /**
+   * SMART CLICKS (it.48): a click on rock, a wall or a sealed pocket walks to
+   * the reachable tile NEAREST the click (ties broken toward the hero), so a
+   * click beside a doorway or into a corridor mouth still moves the hero.
+   */
+  private pathToNearest(sx: number, sy: number, gx: number, gy: number): Array<{ x: number; y: number }> | null {
+    const cands: Array<{ x: number; y: number; d: number }> = [];
+    for (let r = 1; r <= 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = gx + dx;
+          const y = gy + dy;
+          if (!this.isWalkable(x, y)) continue;
+          cands.push({ x, y, d: Math.hypot(dx, dy) + 0.15 * Math.hypot(x - sx, y - sy) });
+        }
+      }
+      if (cands.length >= 6) break;
+    }
+    cands.sort((a, b) => a.d - b.d);
+    let tries = 0;
+    for (const c of cands) {
+      if (tries++ >= 10) break;
+      if (c.x === sx && c.y === sy) continue;
+      const path = this.pathfinder.findPath(sx, sy, c.x, c.y);
+      if (path && path.length > 0) return path;
+    }
+    return null;
   }
 
   private clearPath(): void {

@@ -22,6 +22,8 @@ export class ShopUI {
   private visible = false;
   private readonly offs: Array<() => void> = [];
   private readonly abort = new AbortController();
+  /** Which shopkeeper the panel shows (it.48). */
+  private vendor: 'armorer' | 'alchemist' = 'armorer';
 
   constructor(
     private readonly player: Player,
@@ -64,11 +66,12 @@ export class ShopUI {
     return this.visible;
   }
 
-  open(): void {
-    if (this.visible) return;
+  open(vendor: 'armorer' | 'alchemist' = 'armorer'): void {
+    if (this.visible && this.vendor === vendor) return;
+    this.vendor = vendor;
+    if (!this.visible) audio.sfx('invOpen');
     this.visible = true;
     this.panel.classList.add('open');
-    audio.sfx('invOpen');
     this.render();
   }
 
@@ -82,7 +85,9 @@ export class ShopUI {
 
   private render(): void {
     const p = this.player;
-    const sale = this.town.stock
+    const vendor = this.vendor;
+    const table = vendor === 'alchemist' ? this.town.stockAlch : this.town.stock;
+    const sale = table
       .map((id, i) => {
         const def = ITEMS[id];
         const price = this.town.buyPrice(def);
@@ -107,7 +112,7 @@ export class ShopUI {
       })
       .join('');
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>THE MERCHANT</h3><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close>✕</button></div>
+      <div class="tp-head drag-handle"><h3>${vendor === 'alchemist' ? 'THE ALCHEMIST' : 'THE ARMORER'}</h3><span class="tp-vendor">${vendor === 'alchemist' ? 'draughts · scrolls' : 'arms · armor'}</span><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close>✕</button></div>
       <div class="tp-cols">
         <div class="tp-col"><h4>FOR SALE</h4><div class="tp-list">${sale || '<span class="tp-empty">Sold out</span>'}${buyback ? `<h4 class="tp-sub">BUYBACK · what you sold</h4>${buyback}` : ''}</div></div>
         <div class="tp-col"><h4>YOUR PACK · sell</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing to sell</span>'}</div></div>
@@ -115,7 +120,7 @@ export class ShopUI {
       <div class="tp-note">Click an item to buy or sell · sold goods wait on the counter until the next visit · ESC closes</div>`;
     this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
     this.panel.querySelectorAll<HTMLButtonElement>('[data-buy]').forEach((b) => {
-      b.addEventListener('click', () => this.queue.enqueue({ type: 'BUY', playerId: 0, index: Number(b.dataset.buy) }));
+      b.addEventListener('click', () => this.queue.enqueue({ type: 'BUY', playerId: 0, index: Number(b.dataset.buy), vendor }));
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
     });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-buyback]').forEach((b) => {

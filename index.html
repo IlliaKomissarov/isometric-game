@@ -2768,6 +2768,48 @@
       #progress-hud { left: 214px; bottom: 9px; display: flex; align-items: center; gap: 8px; }
       #level-label { margin-right: 0; }
       #xp-bar { width: 64px; margin-top: 0; }
+
+      /* ===================================================================
+         IT.48 — READABLE GAUGES, BOSS HP, BUFF RINGS, LOCKS, HURT FLASH, RECORDS
+         =================================================================== */
+      #boss-bar-track { height: 24px; }
+      #boss-bar-hp { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); font-family: var(--font-display); font-size: 11.5px; letter-spacing: 0.14em; color: #fff0e6; text-shadow: 0 1px 2px #000, 0 0 6px #000; pointer-events: none; line-height: 1; }
+      #boss-bar-name { font-size: 14px; }
+      #resource-bar { position: relative; }
+      #resource-text { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; font-family: 'Cinzel', serif; font-size: 8.5px; letter-spacing: 0.12em; color: #f4ecd8; text-shadow: 0 1px 2px #000, 0 0 4px #000; pointer-events: none; z-index: 2; line-height: 1; }
+      #resource-label { color: #d6cbb0; font-size: 9.5px; text-shadow: 0 1px 2px #000; }
+      #xp-bar { position: relative; width: 84px; height: 10px; border-color: #5a4d3a; background: #120e16; }
+      #xp-text { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); text-align: center; font-family: 'Cinzel', serif; font-size: 7.5px; letter-spacing: 0.06em; color: #f4ecd8; text-shadow: 0 1px 2px #000, 0 0 3px #000; white-space: nowrap; pointer-events: none; line-height: 1; }
+      #level-label { font-size: 11px; }
+      #progress-hud { gap: 6px; }
+      #vignette { transition: background 0.1s ease; }
+      #vignette.hurt { background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 34%, rgba(160, 12, 12, 0.6) 100%); }
+      #hud-buffs { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); display: flex; gap: 8px; pointer-events: none; z-index: 6; }
+      #player-buffs { position: fixed; transform: translate(-50%, -100%); display: none; gap: 4px; pointer-events: none; z-index: 6; }
+      #player-buffs.show { display: flex; }
+      body:not(.in-run) #hud-buffs, body:not(.in-run) #player-buffs { display: none; }
+      .buff { position: relative; width: 34px; height: 34px; border: 1px solid var(--frame-gold); background: #0b0910; box-shadow: 0 0 8px #000; }
+      #player-buffs .buff { width: 24px; height: 24px; }
+      .buff img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+      .buff > span { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 17px; color: #ffd070; }
+      .buff.debuff { border-color: #6fa0d8; }
+      .buff.debuff > span { color: #9fd0ff; }
+      .buff-ring { position: absolute; inset: 0; background: conic-gradient(rgba(0, 0, 0, 0) var(--p, 360deg), rgba(4, 3, 6, 0.74) 0); pointer-events: none; }
+      .buff-time { position: absolute; left: 0; right: 0; bottom: -14px; text-align: center; font-family: 'Cinzel', serif; font-size: 9px; color: #f4ecd8; text-shadow: 0 1px 2px #000; }
+      .st-lock { position: absolute; left: 36px; top: 52px; font-size: 13px; filter: grayscale(1) brightness(1.4); text-shadow: 0 0 4px #000; pointer-events: none; line-height: 1; }
+      .st-node.st-locked { opacity: 0.8; }
+      .st-locked .st-icon { filter: grayscale(1) brightness(0.3) contrast(1.3); }
+      .st-locked .st-glyph { color: #4a4452; }
+      .st-respec { margin-left: auto; margin-right: 6px; padding: 5px 10px; font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.12em; color: var(--ink); background: linear-gradient(180deg, #221b2c, #0f0c14); border: 1px solid var(--frame-iron); cursor: pointer; }
+      .st-respec:hover:not(:disabled) { border-color: var(--frame-gold); color: #ffd070; }
+      .st-respec:disabled { opacity: 0.45; cursor: not-allowed; }
+      .tp-vendor { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 13px; color: #a89c86; margin-left: 10px; }
+      #stats-board { width: 440px; }
+      .sb-rows { display: flex; flex-direction: column; gap: 6px; padding: 14px 18px; }
+      .sb-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: rgba(8, 6, 10, 0.6); border: 1px solid var(--frame-iron); }
+      .sb-glyph { width: 22px; text-align: center; color: var(--gold); font-size: 15px; }
+      .sb-key { flex: 1; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: #cfc4a8; }
+      .sb-val { font-family: var(--font-display); font-size: 16px; color: #ffd070; }
     </style>
   </head>
   <body>
@@ -2785,7 +2827,7 @@
 
     <div id="progress-hud">
       <div id="level-label">LVL 1</div>
-      <div id="xp-bar"><div id="xp-fill"></div></div>
+      <div id="xp-bar"><div id="xp-fill"></div><span id="xp-text"></span></div>
       <div id="gold-wrap"><span id="gold-gem">◆</span>GOLD:&nbsp;<span id="gold-label">0</span></div>
     </div>
 
@@ -2811,7 +2853,7 @@
     <div id="interact-hint"><kbd>E</kbd> OPEN</div>
     <div id="boss-bar">
       <div id="boss-bar-name">THE TOMB WARDEN</div>
-      <div id="boss-bar-track"><div id="boss-bar-fill"></div><div id="boss-bar-notches"></div></div>
+      <div id="boss-bar-track"><div id="boss-bar-fill"></div><div id="boss-bar-notches"></div><div id="boss-bar-hp"></div></div>
     </div>
     <div id="boss-note">THE WARDEN FALLS</div>
     <div id="depth-label">DEPTH I</div>
@@ -2839,7 +2881,7 @@
     <div id="skill-bar"></div>
     <div id="resource-wrap">
       <div id="resource-label">STAMINA</div>
-      <div id="resource-bar"><div id="resource-fill"></div></div>
+      <div id="resource-bar"><div id="resource-fill"></div><span id="resource-text"></span></div>
     </div>
 
     <!-- Class selection (it.32): shown before the descent begins. -->

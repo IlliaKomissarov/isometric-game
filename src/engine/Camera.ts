@@ -82,6 +82,12 @@ export class Camera {
     world.scale.set(this.zoom);
   }
 
+  /** DIRECTIONAL KICK (it.48): the view recoils along the blow's screen direction. */
+  addKickDir(sx: number, sy: number, strength: number): void {
+    this.kickX += sx * strength;
+    this.kickY += sy * strength * 0.6;
+  }
+
   /** Punch the camera (render feedback for heavy hits/crits). */
   addKick(strength: number): void {
     const angle = Math.random() * Math.PI * 2;

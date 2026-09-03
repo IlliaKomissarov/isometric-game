@@ -32,6 +32,7 @@ import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
 import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
+import { StatsBoardUI } from '@/ui/StatsBoard';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
@@ -377,7 +378,8 @@ async function boot(): Promise<void> {
   const savePanel = new SavePanelUI({
     load: (slot) => {
       const s = saves.read(slot);
-      if (s) void beginRun(s.player.archetype, 0, { slot, save: s });
+      // DEEP SAVE (it.48): a v3 save with a remembered spot resumes RIGHT THERE.
+      if (s) void beginRun(s.player.archetype, s.pos && s.floor > 0 ? s.floor : 0, { slot, save: s });
       else mainMenu.show();
     },
     overwrite: (slot) => {
@@ -402,7 +404,7 @@ async function boot(): Promise<void> {
     // CONTINUE resumes the most recent slot in town (it.39).
     continueGame: () => {
       const s = saves.latest();
-      if (s) void beginRun(s.player.archetype, 0, { slot: s.slot, save: s });
+      if (s) void beginRun(s.player.archetype, s.pos && s.floor > 0 ? s.floor : 0, { slot: s.slot, save: s });
     },
     loadGame: () => savePanel.open('load'),
     settings: () => settings.open(),
@@ -575,6 +577,7 @@ async function boot(): Promise<void> {
       for (const id of loaded.player.unlocked) player.unlockedSkills.add(id);
       for (const id of loaded.player.passives) player.passives.add(id);
       for (const [k, v] of Object.entries(loaded.player.bestiary ?? {})) player.bestiary.set(k, { seen: v.seen, killed: v.killed });
+      player.goldCollected = loaded.player.goldCollected ?? 0;
       loaded.player.loadout.forEach((id, i) => {
         player.loadout[i] = id && player.unlockedSkills.has(id) ? id : null;
       });
@@ -593,6 +596,8 @@ async function boot(): Promise<void> {
         player.addItem(id);
         player.equipFromBackpack(player.backpack.length - 1);
       }
+      // SECONDARY ARM (it.48): a bow for the melee trades, a blade for the ranger.
+      player.addItem(chosenClass === 'ranger' ? 'rusty_sword' : 'short_bow');
       // Every delver leaves town with two draughts and a way back (it.39).
       player.addItem('health_potion');
       player.addItem('health_potion');
@@ -669,6 +674,26 @@ async function boot(): Promise<void> {
     let townVisits = loaded ? 1 : 0;
     let pendingPortal = false;
     let portalCooldown = 0;
+    /** HIT-STOP (it.48): sim ticks frozen when heavy steel lands — the frame the blow READS. */
+    let hitStopTicks = 0;
+    const hitStop = (ticks: number): void => {
+      if (world.town) return;
+      hitStopTicks = Math.min(3, Math.max(hitStopTicks, ticks));
+    };
+    const vignetteEl = document.getElementById('vignette');
+    let hurtFlashTimer = 0;
+    let bossGoneTimer = 0;
+    /** LEVEL-UP PILLARS (it.48): golden light columns climbing off the hero. */
+    const pillars: Array<{ sprite: Sprite; life: number }> = [];
+    /** ACTIVE BUFF RINGS (it.48): on the HUD and over the hero's head. */
+    const hudBuffs = document.createElement('div');
+    hudBuffs.id = 'hud-buffs';
+    document.body.appendChild(hudBuffs);
+    const headBuffs = document.createElement('div');
+    headBuffs.id = 'player-buffs';
+    document.body.appendChild(headBuffs);
+    let buffKey = '';
+    const buffScratch = vec2();
     let emptyArenaTicks = 0;
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
     let portalArmed = false;
@@ -724,10 +749,46 @@ async function boot(): Promise<void> {
     const levelLabel = document.getElementById('level-label');
     const xpFill = document.getElementById('xp-fill');
     const goldLabel = document.getElementById('gold-label');
+    const xpText = document.getElementById('xp-text');
     const updateProgressHud = (): void => {
       if (levelLabel) levelLabel.textContent = `LVL ${player.level}`;
       if (xpFill) xpFill.style.width = `${Math.round((player.xp / player.xpToNext()) * 100)}%`;
+      if (xpText) xpText.textContent = `XP ${player.xp} / ${player.xpToNext()}`; // Readable gauge (it.48).
       if (goldLabel) goldLabel.textContent = `${player.gold}`;
+    };
+
+    /** ACTIVE BUFF RINGS (it.48): rebuilt when the set changes, ticked every frame. */
+    const buffIconHtml = (b: { icon: string | null; glyph: string }): string =>
+      b.icon ? `<img src="${uiAssetUrl(`skills/${b.icon}.png`)}" alt="" draggable="false">` : `<span>${b.glyph}</span>`;
+    const updateBuffHud = (): void => {
+      const buffs = player.activeBuffs();
+      const key = buffs.map((b) => b.id).join(',');
+      if (key !== buffKey) {
+        buffKey = key;
+        hudBuffs.innerHTML = buffs
+          .map((b) => `<div class="buff${b.debuff ? ' debuff' : ''}" data-buff="${b.id}" title="${b.name}">${buffIconHtml(b)}<i class="buff-ring"></i><b class="buff-time"></b></div>`)
+          .join('');
+        headBuffs.innerHTML = buffs.map((b) => `<div class="buff${b.debuff ? ' debuff' : ''}" data-buff="${b.id}">${buffIconHtml(b)}<i class="buff-ring"></i></div>`).join('');
+      }
+      if (!buffs.length || player.action === 'dead') {
+        headBuffs.classList.remove('show');
+        return;
+      }
+      for (const b of buffs) {
+        const frac = Math.max(0, Math.min(1, b.ticks / b.max));
+        const secs = Math.ceil(b.ticks / 60);
+        for (const root of [hudBuffs, headBuffs]) {
+          const el = root.querySelector<HTMLElement>(`[data-buff="${b.id}"]`);
+          if (!el) continue;
+          el.style.setProperty('--p', `${Math.round(frac * 360)}deg`);
+          const t = el.querySelector('.buff-time');
+          if (t) t.textContent = `${secs}s`;
+        }
+      }
+      const hp = world.camera.worldToCanvas(player.pos.x, player.pos.y, buffScratch);
+      headBuffs.style.left = `${Math.round(hp.x)}px`;
+      headBuffs.style.top = `${Math.round(hp.y - 92 * world.camera.currentZoom)}px`;
+      headBuffs.classList.add('show');
     };
 
     const updateOrb = (): void => {
@@ -872,6 +933,7 @@ async function boot(): Promise<void> {
       const arenaRoom = dungeon.rooms[0];
       const isPortalFloor = !isArena && !isHub && isBossFloor(floorNum);
       let arenaThreshold: World['arenaThreshold'] = null;
+      let bossSigil: { x: number; y: number } | null = null;
       let stairs: { x: number; y: number; sprite: Sprite };
       if (isPortalFloor) {
         let best = dungeon.rooms[dungeon.rooms.length - 1];
@@ -895,6 +957,7 @@ async function boot(): Promise<void> {
         viewport.ambienceLayer.addChild(seal);
         ambience.addGlow(seal, gx, gy, 0.55, 3.4);
         lighting.addSource(gx, gy, 3.2, 210, 60, 60, 0.55);
+        bossSigil = { x: gx + 0.5, y: gy + 0.5 }; // BOSS SIGIL (it.48): drawn once the VFX layer exists.
         stairs = { x: gx, y: gy, sprite: seal };
       } else {
         stairs = placeStairs(
@@ -1101,14 +1164,13 @@ async function boot(): Promise<void> {
         stairs.sprite.renderable = true;
         lighting.registerProp(stairs.x, stairs.y, stairs.sprite);
       }
-      // RITUAL CIRCLES (it.44): every arena floor bears the wardens' sigil at
-      // its heart; ordinary floors hide one in a far room now and then.
+      // RITUAL CIRCLES (it.48): the wardens' sigil marks BOSS floors only —
+      // the arena's heart and the seal room on depths V / X / XV / XX.
       if (isArena) {
         const room = dungeon.rooms[0];
         vfx.play('vfx_pentagram', room.x + room.w / 2, room.y + room.h / 2, { loop: true, fps: 8, scale: 1.6, depthBias: -60, alpha: 0.85 });
-      } else if (!isHub && dungeon.rooms.length > 3 && mulberry32(seed ^ 0x5161)() < 0.35) {
-        const room = dungeon.rooms[dungeon.rooms.length - 1];
-        vfx.play('vfx_pentagram', room.x + room.w / 2, room.y + room.h / 2, { loop: true, fps: 7, scale: 1.1, depthBias: -60, alpha: 0.8 });
+      } else if (bossSigil) {
+        vfx.play('vfx_pentagram', bossSigil.x, bossSigil.y, { loop: true, fps: 7, scale: 1.35, depthBias: -60, alpha: 0.85 });
       }
 
       // TOWN DRESSING (it.39): cottages, stall, campfire, torches, well,
@@ -1116,7 +1178,7 @@ async function boot(): Promise<void> {
       let townState: World['town'] = null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
-        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 7, layout.merchant, layout.guards);
+        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 7, layout.merchant, layout.guards, layout.alchemist);
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
         const audit = auditTownLayout(layout);
@@ -1151,8 +1213,11 @@ async function boot(): Promise<void> {
       playerHalo.alpha = 0.32;
       viewport.ambienceLayer.addChild(playerHalo);
 
-      // Floor-1 tutorial anchors: waystone + proximity hints.
-      if (floorNum === 1) {
+      // Floor-1 tutorial anchors: waystone + proximity hints — FIRST visit only
+      // (it.48): a rebuilt depth I (back from town) no longer grows a second
+      // portal-looking stone beside the arrival spot.
+      tutorial.setZones([]); // A rebuilt floor carries no stale zones (it.48).
+      if (floorNum === 1 && !memory) {
         const waystone = placeWaystone(dungeon, viewport, lighting, ambience);
         tutorial.setZones([
           {
@@ -1292,7 +1357,7 @@ async function boot(): Promise<void> {
     };
 
     await preloadFloor(floor, floor === 0 ? 'hub' : 'normal');
-    let world = buildWorld(floor, floor === 0 ? 'hub' : 'normal');
+    let world = buildWorld(floor, floor === 0 ? 'hub' : loaded?.arena && isBossFloor(floor) ? 'arena' : 'normal');
 
     /** Remember the current dungeon floor exactly as the hero leaves it (it.39). */
     const captureFloor = (): void => {
@@ -1321,12 +1386,15 @@ async function boot(): Promise<void> {
         if (itemId) equipped.push({ slot: s, itemId });
       }
       const save: SaveGame = {
-        version: 2,
+        version: 3,
         slot,
         seed: baseSeed,
         createdAt,
         updatedAt: Date.now(),
         floor,
+        // DEEP SAVE (it.48): the exact spot — a load resumes here, not in town.
+        pos: world.town ? undefined : { x: player.pos.x, y: player.pos.y },
+        arena: world.isArena,
         deepestFloor,
         playtimeTicks: playtimeBase + state.tick,
         player: {
@@ -1344,6 +1412,7 @@ async function boot(): Promise<void> {
           loadout: [...player.loadout],
           passives: [...player.passives],
           bestiary: Object.fromEntries([...player.bestiary].map(([k, v]) => [k, { ...v }])),
+          goldCollected: player.goldCollected,
         },
         stash: { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
@@ -1425,6 +1494,8 @@ async function boot(): Promise<void> {
       }
       townVisits++;
       town.restock(baseSeed, deepestFloor, townVisits);
+      // FAST TRAVEL HINT (it.48): back from the depths, the DEPTHS menu is the quick way down.
+      if (deepestFloor > 0) tutorial.notify('fastTravel', 'Back in town — press L to open DEPTHS and fast-travel to any floor you have reached.');
       minimap.markDirty();
       saveNow();
     };
@@ -1493,6 +1564,7 @@ async function boot(): Promise<void> {
       burst: (x, y, c, n) => world.ambience.burst(x, y, c, n),
       glint: (x, y) => world.ambience.playGlint(x, y),
       shake: (a) => world.camera.addShake(a),
+      inTown: () => !!world.town, // Respec is a town rite (it.48).
       text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
       sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
       vfx: (anim, x, y, opts) => world.vfx.play(anim, x, y, opts),
@@ -1629,8 +1701,10 @@ async function boot(): Promise<void> {
     subs.push(eventBus.on('skills:changed', () => buildSkillBar()));
 
     const resourceFill = document.getElementById('resource-fill');
+    const resourceText = document.getElementById('resource-text');
     const updateSkillHud = (): void => {
       if (resourceFill) resourceFill.style.width = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
+      if (resourceText) resourceText.textContent = `${Math.round(player.resource)} / ${player.resourceMax}`; // Readable gauge (it.48).
       const tpNote = tpButton.querySelector('i');
       if (tpNote) tpNote.textContent = world.town ? 'in town' : portalCooldown > 0 ? `${Math.ceil(portalCooldown / 60)}s` : 'ready';
       tpButton.classList.toggle('cooling', portalCooldown > 0 || !!world.town);
@@ -1766,7 +1840,17 @@ async function boot(): Promise<void> {
       overlay?.classList.add('show');
     };
     const levelSelect = new LevelSelectUI(jumpToFloor);
-    levelSelect.unlock(floor);
+    levelSelect.unlock(Math.max(floor, deepestFloor));
+    // DEEP SAVE (it.48): the hero stands exactly where the save was written.
+    if (loaded?.pos && floor > 0 && !world.town) {
+      const p = loaded.pos;
+      const gx = Math.floor(p.x);
+      const gy = Math.floor(p.y);
+      if (world.scene.isWalkable(gx, gy)) player.warpTo(p.x, p.y);
+      world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+      minimap.markDirty();
+      updateOrb();
+    }
 
     // --- Cheat menu (F1 / `) ------------------------------------------------
     const portraitFrames: HTMLCanvasElement[] = classPreviewFrames(player.archetype);
@@ -1861,7 +1945,7 @@ async function boot(): Promise<void> {
       if (amount >= 5) {
         world.gore.drip(entity.pos.x, entity.pos.y, amount >= 12 ? 2 : 1);
         world.vfx.play('vfx_bloodhit', entity.pos.x, entity.pos.y, { scale: 0.9, lift: 22, fps: 30, additive: false, overlay: true });
-        if (amount >= 12) audio.sfx('goreHit');
+        if (amount >= 8) audio.sfx('goreHit'); // The wet layer (it.48): blood on stone.
       }
       const kind = entity === player ? 'player' : entityId === lastCritTarget ? 'crit' : 'enemy';
       world.dmgText.show(entity.pos.x, entity.pos.y, `${amount}`, kind);
@@ -1876,9 +1960,18 @@ async function boot(): Promise<void> {
       if (entity === player && player.slowTicks >= 178) audio.sfx('freeze');
       // Heavy blows tremble the view (subtle, quadratic — see Camera.addShake).
       if (amount >= 10) world.camera.addShake(entity === player ? 0.3 : 0.18);
+      // DIRECTIONAL RECOIL (it.48): the view kicks along the blow's screen direction.
+      const kdx = (dirX ?? 0) - (dirY ?? 0);
+      const kdy = ((dirX ?? 0) + (dirY ?? 0)) * 0.5;
+      const klen = Math.hypot(kdx, kdy);
       if (entity instanceof Enemy) {
         entity.onDamaged();
-        world.camera.addKick(2.5); // Felt on every landed blow.
+        // LAYERED IMPACT (it.48): the weapon's own slash rides under the hit + pain.
+        if (!player.weaponProfile.ranged) audio.sfx('swing');
+        if (klen > 0) world.camera.addKickDir(kdx / klen, kdy / klen, amount >= 12 ? 4 : 2.5);
+        else world.camera.addKick(2.5); // Felt on every landed blow.
+        if (amount >= 8) world.vfx.play('vfx_burst', entity.pos.x, entity.pos.y, { scale: 0.55, lift: 20, fps: 30 });
+        if (amount >= 12) hitStop(1);
         // Impact sparks (it.36): steel meets flesh — a hot fleck burst.
         world.ambience.sparks(entity.pos.x, entity.pos.y, dirX ?? 0, dirY ?? 0, Math.min(10, 4 + (amount >> 1)));
         // Impact flash + victim-side arc (it.37): the blow READS at the body.
@@ -1887,7 +1980,11 @@ async function boot(): Promise<void> {
         if (!ranged) world.ambience.slashArc(entity.pos.x, entity.pos.y, dirX ?? 1, dirY ?? 0, 0xffe6c0, 0.8);
       } else if (entity === player) {
         player.onDamaged();
-        world.camera.addKick(5);
+        // HURT (it.48): a red flash at the edges and a recoil away from the blow.
+        if (klen > 0) world.camera.addKickDir(kdx / klen, kdy / klen, 6);
+        else world.camera.addKick(5);
+        hurtFlashTimer = 0.3;
+        vignetteEl?.classList.add('hurt');
         updateOrb();
         tutorial.notify('hurt', 'You bleed. Their heavy blows are telegraphed — step away as they rear back.');
       }
@@ -1921,6 +2018,7 @@ async function boot(): Promise<void> {
         if (result === 'crit') audio.sfx('crit');
         const target = state.getEntity(targetId);
         if (result === 'crit') {
+          hitStop(2); // Heavy steel (it.48): two frozen frames.
           world.camera.addKick(4.5);
           world.camera.addShake(0.3);
           if (target) world.ambience.burst(target.pos.x, target.pos.y, 0xffd9a0, 8);
@@ -2017,6 +2115,21 @@ async function boot(): Promise<void> {
           world.dmgText.show(player.pos.x - 0.4, player.pos.y - 0.4, 'LEVEL UP!', 'crit');
           world.dmgText.show(player.pos.x + 0.4, player.pos.y - 0.9, `+${levelsGained} SKILL POINT${levelsGained > 1 ? 'S' : ''}`, 'miss');
           world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
+          // GOLDEN PILLAR (it.48): a column of light climbs off the hero; a second chime rings.
+          audio.sfx('rarePickup');
+          world.vfx.play('vfx_aura', player.pos.x, player.pos.y, { scale: 1.5, lift: 30, fps: 16, tint: 0xffd070, overlay: true });
+          {
+            const s = worldToScreen(player.pos.x, player.pos.y, vec2());
+            const pillar = new Sprite(assets.get('glow'));
+            pillar.anchor.set(0.5, 0.9);
+            pillar.blendMode = 'add';
+            pillar.tint = 0xffd070;
+            pillar.scale.set(1.4, 5.5);
+            pillar.alpha = 0.95;
+            pillar.position.set(s.x, s.y + 6);
+            world.viewport.ambienceLayer.addChild(pillar);
+            pillars.push({ sprite: pillar, life: 0 });
+          }
           tutorial.notify('skillpoint', 'A skill point is yours — press K to open the Skill Tree.');
           updateOrb(); // Max HP grew (and partially refilled).
           eventBus.emit('skills:changed', {});
@@ -2062,6 +2175,7 @@ async function boot(): Promise<void> {
         world.ambience.burst(entity.pos.x, entity.pos.y, 0x7c150c, entity === world.boss ? 18 : 10);
         // PERSISTENT GORE (it.43): the floor keeps the kill.
         world.gore.kill(entity.pos.x, entity.pos.y, entity.facing.x, entity.facing.y, entity === world.boss);
+        hitStop(entity === world.boss ? 3 : 2);
         world.vfx.play('vfx_splat', entity.pos.x, entity.pos.y, { scale: entity === world.boss ? 2.2 : 1.3, flat: true, fps: 24, additive: false, depthBias: -30, alpha: 0.9 });
         audio.sfx('goreKill');
         entity.beginDeath();
@@ -2179,6 +2293,11 @@ async function boot(): Promise<void> {
 
     function tickUpdate(dt: number, tick: number): void {
       {
+        if (hitStopTicks > 0) {
+          // HIT-STOP (it.48): the world holds its breath for a frame or two.
+          hitStopTicks--;
+          return;
+        }
         if (pendingDescend) {
           pendingDescend = false;
           descend();
@@ -2259,6 +2378,7 @@ async function boot(): Promise<void> {
             pile.sprite.destroy();
             pile.glow.destroy();
             player.gold += pile.amount;
+            player.goldCollected += pile.amount;
             audio.sfx('gold');
             world.ambience.sparks(pile.x, pile.y, 0, 0, 6, 0xffd870);
             world.dmgText.show(pile.x, pile.y, `+${pile.amount} gold`, 'crit');
@@ -2359,6 +2479,28 @@ async function boot(): Promise<void> {
         }
         world.chests.updateRender(timeSec);
         world.dmgText.update(frameDt);
+        // IT.48: level-up pillars fade, the hurt flash clears, the buff rings turn.
+        for (let i = pillars.length - 1; i >= 0; i--) {
+          const p = pillars[i];
+          if (p.sprite.destroyed) {
+            // The floor swapped under it (its layer took the sprite along).
+            pillars.splice(i, 1);
+            continue;
+          }
+          p.life += frameDt;
+          const t = p.life / 1.5;
+          p.sprite.alpha = 0.95 * (1 - t) * (1 - t);
+          p.sprite.scale.set(1.4 + t * 0.8, 5.5 + t * 4);
+          if (t >= 1) {
+            p.sprite.destroy();
+            pillars.splice(i, 1);
+          }
+        }
+        if (hurtFlashTimer > 0) {
+          hurtFlashTimer -= frameDt;
+          if (hurtFlashTimer <= 0) vignetteEl?.classList.remove('hurt');
+        }
+        updateBuffHud();
 
         // The hero's warm halo rides his interpolated position, breathing gently.
         const halo = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
@@ -2477,20 +2619,22 @@ async function boot(): Promise<void> {
           world.targetRing.visible = false;
         }
 
-        // Boss health bar: revealed the first time the Warden is sighted.
+        // BOSS HEALTH BAR (it.48): shown the moment the warden stands in its
+        // arena (or is sighted anywhere), name · level · numeric HP, and it
+        // lingers three seconds past the killing blow instead of vanishing.
+        const bossHpEl = document.getElementById('boss-bar-hp');
         if (world.boss && (world.boss.hp > 0 || world.boss.action === 'transition')) {
           const boss = world.boss;
           const phased = !!boss.def.nextPhase || boss.phase > 1;
-          if (!world.bossSeen && entityVisible(boss.pos.x, boss.pos.y)) {
+          if (!world.bossSeen && (world.isArena || entityVisible(boss.pos.x, boss.pos.y))) {
             world.bossSeen = true;
             audio.sfx('bossHorn'); // The war horn: a keeper has seen you.
-            const nameEl = document.getElementById('boss-bar-name');
-            if (nameEl) {
-              nameEl.textContent =
-                `${boss.def.name.toUpperCase()} · LVL ${boss.level}` + (phased ? ` · PHASE ${boss.phase}/3` : '');
-            }
           }
           if (world.bossSeen && bossBar && bossBarFill) {
+            const nameEl = document.getElementById('boss-bar-name');
+            const label = `${boss.def.name.toUpperCase()} · LVL ${boss.level}` + (phased ? ` · PHASE ${boss.phase}/3` : '');
+            if (nameEl && nameEl.textContent !== label) nameEl.textContent = label;
+            bossGoneTimer = 0;
             bossBar.classList.add('show');
             const notches = document.getElementById('boss-bar-notches');
             if (notches) notches.style.display = phased ? 'none' : '';
@@ -2510,9 +2654,14 @@ async function boot(): Promise<void> {
               pct = (boss.hp / boss.hpMax) * 100;
             }
             bossBarFill.style.width = `${Math.round(pct)}%`;
+            if (bossHpEl) bossHpEl.textContent = boss.action === 'transition' ? 'RISING' : `${Math.max(0, Math.ceil(boss.hp))} / ${boss.hpMax}`;
           }
-        } else {
-          bossBar?.classList.remove('show');
+        } else if (bossBar?.classList.contains('show')) {
+          // The warden fell: the bar reads empty through the death beat, then fades.
+          if (bossBarFill) bossBarFill.style.width = '0%';
+          if (bossHpEl) bossHpEl.textContent = world.boss ? `0 / ${world.boss.hpMax}` : '';
+          bossGoneTimer += frameDt;
+          if (bossGoneTimer > 3 || !world.boss) bossBar.classList.remove('show');
         }
 
         updateSkillHud(); // Cooldown sweeps + resource bar (it.32).
@@ -2527,14 +2676,25 @@ async function boot(): Promise<void> {
     // --- Town panels + interaction (it.39) ------------------------------------
     const shopUI = new ShopUI(player, town, inputQueue);
     const stashUI = new StashUI(player, town, inputQueue);
-    const skillTreeUI = new SkillTreeUI(player, inputQueue);
+    const skillTreeUI = new SkillTreeUI(player, inputQueue, () => !!world.town);
     const charSheetUI = new CharacterSheetUI(player);
     const bestiaryUI = new BestiaryUI(player);
+    // DUNGEON RECORDS (it.48): the board's tallies come straight from the run.
+    const statsUI = new StatsBoardUI(() => {
+      let kills = 0;
+      let bosses = 0;
+      for (const [kind, v] of player.bestiary) {
+        kills += v.killed;
+        if (kind.startsWith('boss')) bosses += v.killed;
+      }
+      return { kills, bosses, gold: player.goldCollected, deepest: deepestFloor, playtimeTicks: playtimeBase + state.tick };
+    });
     // DRAGGABLE WINDOWS (it.41): every panel by its header, remembered per panel.
     const undrag = [
       ['inv-panel', 'inventory'],
       ['shop-panel', 'shop'],
       ['stash-panel', 'stash'],
+      ['stats-board', 'stats'],
       ['skill-tree', 'skilltree'],
       ['char-sheet', 'charsheet'],
       ['bestiary', 'bestiary'],
@@ -2552,7 +2712,9 @@ async function boot(): Promise<void> {
       return best;
     };
     const openInteractable = (it: Interactable): void => {
-      if (it.kind === 'merchant') shopUI.open();
+      if (it.kind === 'merchant') shopUI.open('armorer');
+      else if (it.kind === 'alchemist') shopUI.open('alchemist');
+      else if (it.kind === 'board') statsUI.open();
       else stashUI.open();
     };
     /** E in town / a click on the stall or stash: walk up, then open. */
@@ -2562,9 +2724,10 @@ async function boot(): Promise<void> {
       for (const cmd of commands) {
         if (cmd.type === 'PICKUP_NEAREST') {
           // SYMMETRICAL E (it.41): an open trade / stash window closes on the same key.
-          if (shopUI.isOpen || stashUI.isOpen) {
+          if (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen) {
             shopUI.close();
             stashUI.close();
+            statsUI.close();
             continue;
           }
           // E at the portal stone or the gate takes it (no need to step in).
@@ -2630,7 +2793,7 @@ async function boot(): Promise<void> {
         const d = interactableDist(it);
         if (d < bestD) {
           bestD = d;
-          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' ? 96 : 54 };
+          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : 54 };
         }
       }
       const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
@@ -2724,6 +2887,10 @@ async function boot(): Promise<void> {
         loop.stop();
         shopUI.destroy();
         stashUI.destroy();
+        statsUI.destroy();
+        hudBuffs.remove();
+        headBuffs.remove();
+        vignetteEl?.classList.remove('hurt');
         tpButton.remove();
         skillTreeUI.destroy();
         charSheetUI.destroy();

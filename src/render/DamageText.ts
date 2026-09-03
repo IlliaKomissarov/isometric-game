@@ -77,12 +77,12 @@ export class DamageTextSystem {
     const s = worldToScreen(x, y, this.scratch);
     ft.node.position.set(s.x + (Math.random() - 0.5) * 14, s.y - 46);
     ft.node.scale.set(this.zoomScale);
-    ft.node.alpha = 1;
+    ft.node.alpha = 0.75; // Subtle (it.48): the numbers sit over the fight, not on top of it.
     ft.node.visible = true;
     ft.active = true;
     ft.life = 0;
-    ft.maxLife = kind === 'crit' ? 1.1 : 0.85;
-    ft.vy = kind === 'crit' ? 42 : 34;
+    ft.maxLife = kind === 'crit' ? 1.25 : 1.0;
+    ft.vy = kind === 'crit' ? 40 : 32;
   }
 
   /** Per-render-frame float + fade. */
@@ -91,9 +91,9 @@ export class DamageTextSystem {
       if (!ft.active) continue;
       ft.life += dt;
       ft.node.position.y -= ft.vy * dt;
-      ft.vy *= 1 - 1.6 * dt; // Ease off as it rises.
+      ft.vy *= 1 - 2.0 * dt; // Smooth ease-out as it rises (it.48).
       const t = ft.life / ft.maxLife;
-      ft.node.alpha = t > 0.55 ? 1 - (t - 0.55) / 0.45 : 1;
+      ft.node.alpha = 0.75 * (t > 0.5 ? 1 - (t - 0.5) / 0.5 : 1);
       if (t >= 1) {
         ft.active = false;
         ft.node.visible = false;

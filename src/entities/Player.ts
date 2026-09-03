@@ -204,6 +204,7 @@ export class Player extends Entity {
 
   applySlow(ticks: number): void {
     this.slowTicks = Math.max(this.slowTicks, ticks);
+    this.buffMax.slow = Math.max(this.buffMax.slow, this.slowTicks);
   }
 
   // Hero sprite mode (external art per class, it.32) — render-only state.
@@ -243,6 +244,25 @@ export class Player extends Entity {
   stealthTicks = 0;
   /** Poison Blade: melee hits coat targets while ticks remain. */
   poisonBladeTicks = 0;
+  /** Buff durations at cast (it.48): the HUD rings count down against these. */
+  readonly buffMax = { dmg: 0, dr: 0, haste: 0, stealth: 0, poison: 0, slow: 0 };
+  /** Every coin ever scooped this run (it.48 records board). */
+  goldCollected = 0;
+
+  /** The live timed effects (it.48 HUD): id, label, glyph/icon, ticks left and the cast length. */
+  activeBuffs(): Array<{ id: string; name: string; icon: string | null; glyph: string; ticks: number; max: number; debuff: boolean }> {
+    const out: Array<{ id: string; name: string; icon: string | null; glyph: string; ticks: number; max: number; debuff: boolean }> = [];
+    const push = (id: string, name: string, icon: string | null, glyph: string, ticks: number, max: number, debuff = false): void => {
+      if (ticks > 0) out.push({ id, name, icon, glyph, ticks, max: Math.max(max, ticks), debuff });
+    };
+    push('dmg', this.archetype === 'mage' ? 'Arcane Intellect' : 'War Cry', this.archetype === 'mage' ? 'intellect' : 'warcry', '♜', this.dmgBuffTicks, this.buffMax.dmg);
+    push('dr', 'Stone Skin', 'stoneskin', '⛨', this.drTicks, this.buffMax.dr);
+    push('haste', 'Haste', 'shadowstep', '➟', this.hasteTicks, this.buffMax.haste);
+    push('stealth', 'Vanished', 'vanish', '◍', this.stealthTicks, this.buffMax.stealth);
+    push('poison', 'Poison Blade', 'poison', '☠', this.poisonBladeTicks, this.buffMax.poison);
+    push('slow', 'Frostbitten', null, '❄', this.slowTicks, this.buffMax.slow, true);
+    return out;
+  }
 
   // ---- Progression (it.41): skill points, learned skills, the hotbar ----
   /** Unspent skill points (1 at birth, +1 per level). */
@@ -753,10 +773,11 @@ export class Player extends Entity {
     const l = this.shadowLight;
     const stretch = 1 + l.k * 0.55;
     this.shadow.scale.set(this.shadow.scale.x < 0 ? -1 : 1, 1); // Reset before re-shaping.
-    this.shadow.scale.x = 1 + Math.abs(l.x) * l.k * 0.6;
-    this.shadow.scale.y = 1 + Math.abs(l.y) * l.k * 0.35;
-    this.shadow.position.set(l.x * 7 * l.k, 1 + l.y * 3 * l.k);
-    this.shadow.alpha = 0.55 + 0.45 * Math.min(1, stretch - 0.6);
+    // DYNAMIC SHADOW (it.48): stretched and thrown away from the nearest torch or flame.
+    this.shadow.scale.x = 1 + Math.abs(l.x) * l.k * 0.9;
+    this.shadow.scale.y = 1 + Math.abs(l.y) * l.k * 0.5;
+    this.shadow.position.set(l.x * 12 * l.k, 1 + l.y * 5 * l.k);
+    this.shadow.alpha = 0.6 + 0.4 * Math.min(1, stretch - 0.6);
   }
 
   /** Slash arc VFX (frame-based decay; positioned ahead of the body). */

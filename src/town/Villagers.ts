@@ -51,6 +51,8 @@ export class Villagers {
   private readonly scratch = vec2();
   private readonly scale: number;
   private merchant: { body: Sprite; clock: number; scale: number } | null = null;
+  /** The ALCHEMIST (it.48): the merchant body in violet robes behind the south stall. */
+  private alchemist: { body: Sprite; clock: number; scale: number } | null = null;
 
   constructor(
     layer: Container,
@@ -59,6 +61,7 @@ export class Villagers {
     count: number,
     merchantAt: { x: number; y: number } | null,
     guardsAt: ReadonlyArray<{ x: number; y: number }> = [],
+    alchemistAt: { x: number; y: number } | null = null,
   ) {
     const painted = spriteLib.paintedHeight(WALK) || 50;
     this.scale = FOLK_HEIGHT / painted;
@@ -91,6 +94,19 @@ export class Villagers {
       body.zIndex = depthKey(merchantAt.x + 0.5, merchantAt.y + 0.5);
       layer.addChild(body);
       this.merchant = { body, clock: 0, scale: mscale };
+    }
+    if (alchemistAt && spriteLib.hasAnim('merchant_walk')) {
+      const mp = spriteLib.paintedHeight('merchant_walk') || 57;
+      const mscale = 62 / mp;
+      const body = new Sprite(spriteLib.frame('merchant_walk', 5, 0));
+      body.anchor.set(0.5, 0.86);
+      body.scale.set(mscale);
+      body.tint = 0xb8a0ff; // Violet robes: the alchemist.
+      const s = worldToScreen(alchemistAt.x + 0.5, alchemistAt.y + 0.5, this.scratch);
+      body.position.set(s.x, s.y + 2);
+      body.zIndex = depthKey(alchemistAt.x + 0.5, alchemistAt.y + 0.5);
+      layer.addChild(body);
+      this.alchemist = { body, clock: 0.9, scale: mscale };
     }
     if (spriteLib.hasAnim(GUARD_IDLE)) {
       const gp = spriteLib.paintedHeight(GUARD_IDLE) || 60;
@@ -163,6 +179,10 @@ export class Villagers {
       this.merchant.clock += dt;
       this.merchant.body.scale.y = this.merchant.scale * (1 + Math.sin(this.merchant.clock * 1.4) * 0.02);
     }
+    if (this.alchemist) {
+      this.alchemist.clock += dt;
+      this.alchemist.body.scale.y = this.alchemist.scale * (1 + Math.sin(this.alchemist.clock * 1.3) * 0.02);
+    }
     if (this.guards.length && spriteLib.hasAnim(GUARD_IDLE)) {
       const gfc = spriteLib.anim(GUARD_IDLE).frameCount;
       for (const g of this.guards) {
@@ -178,6 +198,8 @@ export class Villagers {
     this.folk.length = 0;
     this.merchant?.body.destroy();
     this.merchant = null;
+    this.alchemist?.body.destroy();
+    this.alchemist = null;
     for (const g of this.guards) g.body.destroy();
     this.guards.length = 0;
   }

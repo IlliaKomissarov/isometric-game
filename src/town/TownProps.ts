@@ -30,7 +30,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board';
   x: number;
   y: number;
   label: string;
@@ -147,8 +147,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'stall': {
         const spr = standing(p, p.variant ?? 'stall_a', 0.94);
         if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
-        if (p.variant === 'stall_a') {
-          interactables.push({ id: nextId++, kind: 'merchant', x: layout.merchant.x + 0.5, y: layout.merchant.y + 0.5, label: 'E · TRADE', tiles: layout.merchant.tiles });
+        // Vendors by POSITION (it.48): the armorer's and the alchemist's stalls.
+        if (layout.merchant.tiles.some((t) => t.x === p.x && t.y === p.y)) {
+          interactables.push({ id: nextId++, kind: 'merchant', x: layout.merchant.x + 0.5, y: layout.merchant.y + 0.5, label: 'E · ARMORER', tiles: layout.merchant.tiles });
+        } else if (layout.alchemist.tiles.some((t) => t.x === p.x && t.y === p.y)) {
+          interactables.push({ id: nextId++, kind: 'alchemist', x: layout.alchemist.x + 0.5, y: layout.alchemist.y + 0.5, label: 'E · ALCHEMIST', tiles: layout.alchemist.tiles });
         }
         break;
       }
@@ -275,7 +278,15 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         standing(p, 'pots', 0.85);
         break;
       case 'merchant':
-        break; // The shopkeeper is drawn by Villagers.
+      case 'alchemist':
+        break; // The shopkeepers are drawn by Villagers.
+      case 'board': {
+        // DUNGEON RECORDS (it.48): a signpost board with the run's tallies.
+        standing(p, 'signpost', 0.95);
+        interactables.push({ id: nextId++, kind: 'board', x: p.x + 0.5, y: p.y + 0.5, label: 'E · DUNGEON RECORDS', tiles: [{ x: p.x, y: p.y }] });
+        glowAt(p.x, p.y, 0xd8a85c, 0.22, 0.8, 8);
+        break;
+      }
     }
   }
   ambience.setHotspots(hotspots);

@@ -53,6 +53,8 @@ export interface SkillDeps {
   burst: (x: number, y: number, color: number, n: number) => void;
   glint: (x: number, y: number) => void;
   shake: (amount: number) => void;
+  /** Respec is a town rite (it.48). */
+  inTown: () => boolean;
   text: (x: number, y: number, msg: string, style: 'crit' | 'miss') => void;
   sfx: (name: string) => void;
   /** Animated effect strips (it.41). */
@@ -205,7 +207,33 @@ export class SkillSystem {
       else if (cmd.type === 'UNLOCK_SKILL') this.unlockSkill(cmd.id);
       else if (cmd.type === 'UNLOCK_PASSIVE') this.unlockPassive(cmd.id);
       else if (cmd.type === 'EQUIP_SKILL') this.equip(cmd.slot, cmd.id);
+      else if (cmd.type === 'RESET_SKILLS') this.resetSkills();
     }
+  }
+
+  /** RESPEC (it.48): town only — every learned rank refunded, the hotbar cleared. */
+  private resetSkills(): void {
+    const p = this.deps.player;
+    if (!this.deps.inTown()) {
+      this.deps.text(p.pos.x, p.pos.y - 1.2, 'RESPEC ONLY IN TOWN', 'miss');
+      return;
+    }
+    let refund = 0;
+    for (const id of p.unlockedSkills) if (SKILL_BY_ID[id]) refund += skillCost(p, SKILL_BY_ID[id]);
+    for (const id of p.passives) if (PASSIVE_BY_ID[id]) refund += skillCost(p, PASSIVE_BY_ID[id]);
+    if (refund === 0) return;
+    p.unlockedSkills.clear();
+    p.passives.clear();
+    for (let i = 0; i < p.loadout.length; i++) p.loadout[i] = null;
+    for (let i = 0; i < this.cooldowns.length; i++) this.cooldowns[i] = 0;
+    p.skillPoints += refund;
+    p.hpMax = p.baseHpMax();
+    p.hp = Math.min(p.hp, p.hpMax);
+    this.deps.sfx('skillBuff');
+    this.deps.text(p.pos.x, p.pos.y - 1.2, `SKILLS RESET · ${refund} POINT${refund === 1 ? '' : 'S'} REFUNDED`, 'crit');
+    this.deps.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.1, flat: true, fps: 20, tint: 0x9fb4e8 });
+    eventBus.emit('skills:changed', {});
+    eventBus.emit('inventory:changed', {});
   }
 
   // ---- PROGRESSION (it.41) ----------------------------------------------
@@ -505,6 +533,7 @@ export class SkillSystem {
         d.sfx('skillShout');
         d.shake(0.2);
         p.dmgBuffTicks = 600;
+        p.buffMax.dmg = 600;
         p.dmgBuffMult = syn.status ? 1.45 : 1.35;
         d.text(p.pos.x, p.pos.y - 1.2, 'WAR CRY!', 'crit');
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.5, flat: true, fps: 22, tint: 0xffb060 });
@@ -514,6 +543,7 @@ export class SkillSystem {
       case 'stoneskin': {
         d.sfx('skillBuff');
         p.drTicks = 420;
+        p.buffMax.dr = 420;
         p.drFrac = syn.status ? 0.65 : 0.55;
         d.text(p.pos.x, p.pos.y - 1.2, 'STONE SKIN', 'miss');
         d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.0, lift: 22, fps: 16, tint: 0xb0a898, overlay: true });
@@ -603,6 +633,7 @@ export class SkillSystem {
       case 'intellect': {
         d.sfx('skillBuff');
         p.dmgBuffTicks = 900;
+        p.buffMax.dmg = 900;
         p.dmgBuffMult = syn.status ? 1.55 : 1.45;
         d.glint(p.pos.x, p.pos.y);
         d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.1, lift: 24, fps: 18, tint: 0xb8a8f0, overlay: true });
@@ -642,6 +673,7 @@ export class SkillSystem {
         d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
         this.dash(3.2);
         p.hasteTicks = 240;
+        p.buffMax.haste = 240;
         p.hasteMult = syn.status ? 1.45 : 1.35;
         d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 0.8, flat: true, fps: 30, tint: 0x8a86c0, alpha: 0.8 });
         d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
@@ -687,6 +719,7 @@ export class SkillSystem {
       case 'poison': {
         d.sfx('skillPoison');
         p.poisonBladeTicks = 900;
+        p.buffMax.poison = 900;
         d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 0.9, lift: 22, fps: 18, tint: 0x86c85a, overlay: true });
         d.burst(p.pos.x, p.pos.y, 0x86c85a, 10);
         d.text(p.pos.x, p.pos.y - 1.2, 'BLADES ENVENOMED', 'crit');
@@ -695,6 +728,7 @@ export class SkillSystem {
       case 'vanish': {
         d.sfx('skillVanish');
         p.stealthTicks = syn.status ? 360 : 300;
+        p.buffMax.stealth = p.stealthTicks;
         d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 1.1, flat: true, fps: 26, tint: 0x5a5478 });
         d.vfx('vfx_splash', p.pos.x, p.pos.y, { scale: 1.2, lift: 18, fps: 18, tint: 0x6a6480, alpha: 0.8 });
         d.burst(p.pos.x, p.pos.y, 0x6a6480, 16);

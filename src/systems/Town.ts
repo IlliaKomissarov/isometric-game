@@ -22,8 +22,10 @@ export const SELL_RATIO = 0.25;
 export const BUYBACK_CAPACITY = 8;
 
 export class TownSystem {
-  /** Item ids on the merchant's table (a purchase removes it; restocks per visit). */
+  /** Item ids on the ARMORER's table (a purchase removes it; restocks per visit). */
   stock: string[] = [];
+  /** Item ids on the ALCHEMIST's table (it.48): draughts and scrolls. */
+  stockAlch: string[] = [];
   /**
    * BUYBACK (it.40): what the hero sold this visit, newest first. Bought
    * back for exactly what the merchant paid; capped, and cleared when the
@@ -50,12 +52,17 @@ export class TownSystem {
     const gear = ['rusty_sword', 'short_bow', 'plank_shield', 'iron_cap', 'leather_jerkin', 'worn_boots', 'flanged_mace', 'war_axe'];
     const magic = Object.values(ITEMS).filter((d) => d.rarity === 'magic' && d.slot !== 'consumable').map((d) => d.id);
     const rare = Object.values(ITEMS).filter((d) => d.rarity === 'rare' && d.slot !== 'consumable').map((d) => d.id);
-    const stock = [...staples];
-    for (let i = 0; i < 3; i++) stock.push(gear[Math.floor(rand() * gear.length)]);
+    // TWO VENDORS (it.48): the ARMORER sells arms and armor, the ALCHEMIST
+    // sells every draught and scroll.
+    const stock: string[] = [];
+    for (let i = 0; i < 4; i++) stock.push(gear[Math.floor(rand() * gear.length)]);
     const magicCount = deepestFloor >= 3 ? 2 : 1;
     for (let i = 0; i < magicCount; i++) stock.push(magic[Math.floor(rand() * magic.length)]);
     if (deepestFloor >= 8 && rand() < 0.5) stock.push(rare[Math.floor(rand() * rare.length)]);
-    this.stock = [...new Set(stock.filter((id) => id in ITEMS))].flatMap((id) => (staples.includes(id) ? stock.filter((s) => s === id) : [id]));
+    this.stock = [...new Set(stock.filter((id) => id in ITEMS))];
+    const alch = [...staples, 'scroll_town_portal'];
+    if (deepestFloor >= 5) alch.push('elixir', 'mana_potion');
+    this.stockAlch = alch.filter((id) => id in ITEMS);
     this.buyback = [];
     eventBus.emit('town:changed', {});
   }
@@ -74,7 +81,8 @@ export class TownSystem {
     for (const cmd of commands) {
       switch (cmd.type) {
         case 'BUY': {
-          const id = this.stock[cmd.index];
+          const table = cmd.vendor === 'alchemist' ? this.stockAlch : this.stock;
+          const id = table[cmd.index];
           const def = id ? ITEMS[id] : undefined;
           if (!def) break;
           const price = this.buyPrice(def);
@@ -83,7 +91,7 @@ export class TownSystem {
             break;
           }
           p.gold -= price;
-          this.stock.splice(cmd.index, 1);
+          table.splice(cmd.index, 1);
           p.addItem(def.id);
           eventBus.emit('town:traded', { kind: 'buy', itemId: def.id, gold: price });
           break;

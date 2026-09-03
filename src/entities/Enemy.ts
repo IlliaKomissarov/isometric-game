@@ -20,7 +20,7 @@
 
 import { Graphics, Sprite, Text } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
-import { PLAYER_SPEED } from '@/core/config';
+import { COMBAT_SPEED, PLAYER_SPEED } from '@/core/config';
 import { eventBus } from '@/core/EventBus';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import { multiplyColors } from '@/utils/color';
@@ -778,6 +778,17 @@ export interface EnemyAIDeps {
 
 export type EnemyAIState = 'idle' | 'chase' | 'flee';
 
+/**
+ * ELITE AFFIXES (it.53): one in seven bodies rises as a champion — bigger,
+ * half again as tough, and wrapped in an aura with a mechanic of its own.
+ */
+export type EnemyAffix = 'frost' | 'thorns' | 'vampiric';
+export const AFFIXES: ReadonlyArray<EnemyAffix> = ['frost', 'thorns', 'vampiric'];
+export const AFFIX_PREFIX: Record<EnemyAffix, string> = { frost: 'Frost-touched', thorns: 'Thorned', vampiric: 'Vampiric' };
+export const AFFIX_COLOR: Record<EnemyAffix, number> = { frost: 0x7fd8ff, thorns: 0xffb040, vampiric: 0xff4d5a };
+/** Frost-touched aura reach in tiles. */
+export const FROST_AURA_RADIUS = 3;
+
 const AGGRO_RADIUS = 6.5;
 const REPATH_TICKS = 30;
 /** 4-neighbors first, then diagonals — for the wall-unstick snap. */
@@ -825,6 +836,10 @@ export class Enemy extends Entity {
   /** Creature level (it.23): floor N mobs are level N (rares N+1); bosses
    *  follow the fixed milestone matrix. Drives hp/damage/XP. */
   level = 1;
+  /** Elite affix (it.53) — null for the common dead. */
+  affix: EnemyAffix | null = null;
+  private readonly titleText: Text;
+  private readonly aura: Graphics;
   private flashTicks = 0;
 
   private path: Array<{ x: number; y: number }> = [];
@@ -871,6 +886,21 @@ export class Enemy extends Entity {
     this.levelText.visible = false;
     this.container.addChild(this.levelText);
 
+    // ELITE NAMEPLATE + AURA (it.53): the title above the bar, the ring at the feet.
+    this.titleText = new Text({
+      text: '',
+      style: { fontFamily: 'Cinzel, Georgia, serif', fontWeight: '700', fontSize: 9, letterSpacing: 1, fill: 0xffd070, stroke: { color: 0x0a0806, width: 3 } },
+      resolution: 2,
+    });
+    this.titleText.anchor.set(0.5, 1);
+    this.titleText.position.set(0, -60);
+    this.titleText.visible = false;
+    this.container.addChild(this.titleText);
+    this.aura = new Graphics();
+    this.aura.position.set(0, 2);
+    this.aura.visible = false;
+    this.container.addChildAt(this.aura, 0);
+
     // Constructed straight into the pool: start despawned and hidden.
     this.container.visible = false;
   }
@@ -906,6 +936,9 @@ export class Enemy extends Entity {
     this.phase = 1;
     this.spawnIndex = -1;
     this.noted = false;
+    this.affix = null;
+    this.titleText.visible = false;
+    this.aura.visible = false;
     this.lastGoalTile.x = -1;
     this.lastGoalTile.y = -1;
     this.flashTicks = 0;
@@ -989,6 +1022,51 @@ export class Enemy extends Entity {
     }
   }
 
+  /**
+   * Raise this body as an ELITE (it.53): +15 % size, ×1.5 life, a titled
+   * nameplate and a floor aura. Call right after `spawn`.
+   */
+  setAffix(affix: EnemyAffix | null): void {
+    this.affix = affix;
+    if (!affix) {
+      this.titleText.visible = false;
+      this.aura.visible = false;
+      return;
+    }
+    this.hpMax = Math.round(this.hpMax * 1.5);
+    this.hp = this.hpMax;
+    this.rigScale *= 1.15;
+    this.body.scale.set(this.rigScale);
+    const color = AFFIX_COLOR[affix];
+    this.titleText.text = `${AFFIX_PREFIX[affix]} ${this.def.name}`;
+    this.titleText.style.fill = color;
+    this.titleText.visible = true;
+    this.aura.clear();
+    this.aura.ellipse(0, 0, 26, 13).fill({ color, alpha: 0.16 });
+    this.aura.ellipse(0, 0, 26, 13).stroke({ width: 2, color, alpha: 0.85 });
+    this.aura.ellipse(0, 0, 18, 9).stroke({ width: 1, color, alpha: 0.5 });
+    if (affix === 'thorns') {
+      // Spikes on the rim.
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        this.aura.moveTo(Math.cos(a) * 26, Math.sin(a) * 13).lineTo(Math.cos(a) * 33, Math.sin(a) * 16.5).stroke({ width: 2, color, alpha: 0.9 });
+      }
+    } else if (affix === 'vampiric') {
+      // Blood drops around the rim.
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + 0.3;
+        this.aura.circle(Math.cos(a) * 24, Math.sin(a) * 12, 2.2).fill({ color, alpha: 0.9 });
+      }
+    } else {
+      // Frost shards.
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        this.aura.moveTo(Math.cos(a) * 20, Math.sin(a) * 10).lineTo(Math.cos(a) * 30, Math.sin(a) * 15).stroke({ width: 1.5, color, alpha: 0.8 });
+      }
+    }
+    this.aura.visible = true;
+  }
+
   /** Damage feedback hook — wired to `entity:damaged` in main (render-side). */
   onDamaged(): void {
     this.flashTicks = FLASH_TICKS;
@@ -1037,7 +1115,8 @@ export class Enemy extends Entity {
 
   /** XP this creature yields — a strict function of its base hp and level. */
   xpValue(): number {
-    return Math.round((this.def.hp / 6 + 3) * (1 + 0.08 * (this.level - 1)));
+    const base = Math.round((this.def.hp / 6 + 3) * (1 + 0.08 * (this.level - 1)));
+    return this.affix ? Math.round(base * 1.5) : base; // Champions pay half again (it.53).
   }
 
   /** Called when hp reaches 0 (`entity:died`): start the death animation. */
@@ -1046,6 +1125,8 @@ export class Enemy extends Entity {
     this.actionTicks = 0;
     this.healthBar.visible = false;
     this.levelText.visible = false;
+    this.titleText.visible = false;
+    this.aura.visible = false;
   }
 
   /**
@@ -1077,11 +1158,11 @@ export class Enemy extends Entity {
 
   /** Effective attack timings (it.30: each phase form brings its own). */
   private get windup(): number {
-    return this.def.windupTicks;
+    return Math.max(4, Math.round(this.def.windupTicks / COMBAT_SPEED)); // 25 % faster (it.53).
   }
 
   private get recover(): number {
-    return this.def.recoverTicks;
+    return Math.max(4, Math.round(this.def.recoverTicks / COMBAT_SPEED));
   }
 
   override update(dt: number): void {
@@ -1378,6 +1459,15 @@ export class Enemy extends Entity {
       this.healthBar.scale.set(Enemy.hudScale);
       this.levelText.scale.set(Enemy.hudScale);
       this.healthBar.alpha = 0.85;
+    }
+    if (this.affix && this.hp > 0) {
+      // The aura breathes; the title holds screen size (it.53).
+      const t = performance.now() / 1000;
+      this.aura.alpha = 0.6 + 0.25 * Math.sin(t * 4 + this.bobPhase);
+      const pulse = 1 + 0.06 * Math.sin(t * 3 + this.bobPhase);
+      this.aura.scale.set(pulse, pulse);
+      this.titleText.scale.set(Enemy.hudScale);
+      this.titleText.visible = this.container.visible;
     }
 
     if (this.usesSprite()) {

@@ -384,6 +384,16 @@ export class MovementSystem {
     return null;
   }
 
+  /** SKILL INTERRUPT (it.53): a cast drops the walk order at once. */
+  interrupt(): void {
+    this.attackTarget = null;
+    this.pickupTarget = null;
+    this.chestTarget = null;
+    this.clearPath();
+    this.directDir.x = 0;
+    this.directDir.y = 0;
+  }
+
   private clearPath(): void {
     this.path = [];
     this.pathIndex = 0;

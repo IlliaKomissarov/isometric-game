@@ -60,7 +60,7 @@ interface Projectile extends ProjectileSpawn {
   clock: number;
 }
 
-const SPEED: Record<ProjectileKind, number> = { arrow: 9, bolt: 7.5, fireball: 8 };
+const SPEED: Record<ProjectileKind, number> = { arrow: 11.25, bolt: 9.4, fireball: 10 }; // +25 % (it.53).
 /** Animated heads per kind (atlas strip, playback fps, on-screen scale). */
 const HEAD: Partial<Record<ProjectileKind, { anim: 'vfx_fireball' | 'vfx_orb'; fps: number; scale: number }>> = {
   fireball: { anim: 'vfx_fireball', fps: 24, scale: 0.7 },

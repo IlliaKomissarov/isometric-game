@@ -55,6 +55,8 @@ export interface SkillDeps {
   shake: (amount: number) => void;
   /** Respec is a town rite (it.48). */
   inTown: () => boolean;
+  /** A cast interrupts the walk order at once (it.53). */
+  interruptMove: () => void;
   text: (x: number, y: number, msg: string, style: 'crit' | 'miss') => void;
   sfx: (name: string) => void;
   /** Animated effect strips (it.41). */
@@ -303,6 +305,7 @@ export class SkillSystem {
       return;
     }
     const synergy = this.isSynergy(def);
+    this.deps.interruptMove(); // RESPONSIVE (it.53): the cast lands the instant the key does.
     this.cooldowns[slot] = Math.round(def.cd * (synergy ? SYNERGY.cooldown : 1));
     this.syn = synergy ? { scale: SYNERGY.power, status: def.cls } : NO_SYNERGY;
     this.execute(def);

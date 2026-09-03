@@ -33,6 +33,8 @@ import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities
 import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
 import { StatsBoardUI } from '@/ui/StatsBoard';
+import { dressColiseum, generateColiseumMap, type ColiseumMap } from '@/scenes/Coliseum';
+import { AFFIXES, FROST_AURA_RADIUS } from '@/entities/Enemy';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
@@ -134,9 +136,26 @@ interface World {
   } | null;
   /** Roster spawn indexes killed on this floor (FloorMemory). */
   killed: Set<number>;
+  coliseum: ColiseumState | null;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum';
+
+/** THE TRIAL COLISEUM (it.53): wave state, sim-owned. */
+interface ColiseumState {
+  waves: number;
+  wave: number;
+  phase: 'intermission' | 'fight' | 'done';
+  /** Ticks left in the current intermission. */
+  timer: number;
+  alive: number;
+  pads: Array<{ x: number; y: number }>;
+  center: { x: number; y: number };
+  /** The way home, once the last wave falls. */
+  exit: { x: number; y: number } | null;
+  update: (dt: number) => void;
+  destroy: () => void;
+}
 
 /** What `startRun` hands back: the only handle the menus need. */
 interface RunHandle {
@@ -696,6 +715,138 @@ async function boot(): Promise<void> {
     document.body.appendChild(headBuffs);
     let buffKey = '';
     const buffScratch = vec2();
+    /** THE TRIAL COLISEUM HUD (it.53): the wave line, the cleared banner, the master's dialog. */
+    const waveHud = document.createElement('div');
+    waveHud.id = 'wave-hud';
+    document.body.appendChild(waveHud);
+    const waveBanner = document.createElement('div');
+    waveBanner.id = 'wave-banner';
+    document.body.appendChild(waveBanner);
+    const showWaveBanner = (text: string): void => {
+      waveBanner.textContent = text;
+      waveBanner.classList.remove('show');
+      void waveBanner.offsetWidth;
+      waveBanner.classList.add('show');
+      later(() => waveBanner.classList.remove('show'), 2600);
+    };
+    const arenaModal = document.createElement('div');
+    arenaModal.id = 'arena-modal';
+    arenaModal.innerHTML = `
+      <div class="am-box">
+        <h3>THE ARENA MASTER</h3>
+        <p class="am-say">“Beyond this arch the sand drinks whatever bleeds. Waves come from the four gates, and between them you get fifteen breaths to loot and drink. Enter the Trial Coliseum — how long will you last?”</p>
+        <div class="am-choices">
+          <button data-waves="5"><b>5 WAVES</b><span>a skirmish</span></button>
+          <button data-waves="10"><b>10 WAVES</b><span>a trial</span></button>
+          <button data-waves="15"><b>15 WAVES</b><span>an ordeal</span></button>
+          <button data-waves="20"><b>20 WAVES</b><span>the crown</span></button>
+        </div>
+        <button class="am-cancel" data-cancel>Not today</button>
+      </div>`;
+    document.body.appendChild(arenaModal);
+    const openArenaModal = (): void => {
+      arenaModal.classList.add('open');
+      audio.sfx('invOpen');
+    };
+    const closeArenaModal = (): void => {
+      if (!arenaModal.classList.contains('open')) return;
+      arenaModal.classList.remove('open');
+      audio.sfx('invClose');
+    };
+    arenaModal.querySelector('[data-cancel]')?.addEventListener('click', closeArenaModal);
+    arenaModal.querySelectorAll<HTMLButtonElement>('[data-waves]').forEach((b) => {
+      b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+      b.addEventListener('click', () => {
+        audio.sfx('uiConfirm');
+        arenaModal.classList.remove('open');
+        enterColiseum(Number(b.dataset.waves));
+      });
+    });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.code === 'Escape' && arenaModal.classList.contains('open')) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          closeArenaModal();
+        }
+      },
+      { signal: ac.signal, capture: true },
+    );
+    /** One wave: more bodies and more champions every time (sim). */
+    const spawnWave = (c: ColiseumState): void => {
+      const n = Math.min(24, 4 + c.wave * 2);
+      const pool = kindPoolFor(Math.min(20, Math.max(1, c.wave * 2 - 1)));
+      const rand = mulberry32((baseSeed ^ (c.wave * 0x51a7)) >>> 0);
+      const eliteChance = Math.min(0.6, 0.15 + (c.wave - 1) * 0.04);
+      for (let i = 0; i < n; i++) {
+        const pad = c.pads[i % c.pads.length];
+        const jx = (rand() - 0.5) * 2.4;
+        const jy = (rand() - 0.5) * 2.4;
+        const kind = pool[Math.floor(rand() * pool.length)];
+        const e = world.enemies.spawn(kind, pad.x + 0.5 + jx, pad.y + 0.5 + jy, c.wave + 1);
+        const roll = rand();
+        if (roll < eliteChance) e.setAffix(AFFIXES[Math.floor((roll / eliteChance) * 3) % 3]);
+        e.aiState = 'chase';
+        world.ambience.burst(e.pos.x, e.pos.y, 0xd0303a, 8);
+      }
+      c.alive = n;
+      audio.sfx('bossHorn');
+      showWaveBanner(`WAVE ${c.wave}`);
+    };
+    const updateColiseum = (): void => {
+      const c = world.coliseum;
+      if (!c) return;
+      if (c.phase === 'intermission') {
+        c.timer--;
+        if (c.timer <= 0) {
+          c.wave++;
+          spawnWave(c);
+          c.phase = 'fight';
+        }
+      } else if (c.phase === 'fight') {
+        let alive = 0;
+        world.enemies.forEachActive((e) => {
+          if (e.hp > 0 || e.action === 'transition') alive++;
+        });
+        c.alive = alive;
+        if (alive === 0) {
+          audio.sfx('gateOpen');
+          if (c.wave >= c.waves) {
+            c.phase = 'done';
+            showWaveBanner('TRIAL COMPLETE!');
+            // The prize and the way home.
+            world.chests.spawnAt(c.center.x, c.center.y, true);
+            c.exit = { x: c.center.x + 4, y: c.center.y };
+            const s = worldToScreen(c.exit.x + 0.5, c.exit.y + 0.5, vec2());
+            const glow = new Sprite(assets.get('glow'));
+            glow.anchor.set(0.5);
+            glow.blendMode = 'add';
+            glow.tint = 0x6fa0ff;
+            glow.scale.set(1.7, 2.4);
+            glow.position.set(s.x, s.y - 22);
+            world.viewport.ambienceLayer.addChild(glow);
+            world.ambience.addGlow(glow, c.exit.x, c.exit.y, 0.8, 1.7);
+            const ring = new Sprite(assets.get('targetRing'));
+            ring.anchor.set(0.5);
+            ring.tint = 0x8fb8ff;
+            ring.alpha = 0.8;
+            ring.position.set(s.x, s.y);
+            world.viewport.groundLayer.addChild(ring);
+            world.lighting.addSource(c.exit.x + 0.5, c.exit.y + 0.5, 2.6, 90, 140, 255, 0.6);
+            audio.setBossMusic(false);
+            audio.sfx('victory');
+            tutorial.notify('coliseumDone', 'The crowd roars. Open the coliseum chest, then step into the blue rift to go home.');
+          } else {
+            c.phase = 'intermission';
+            c.timer = 15 * 60;
+            showWaveBanner('WAVE CLEARED!');
+          }
+        }
+      } else if (c.phase === 'done' && c.exit && !transitioning) {
+        if (Math.hypot(player.pos.x - (c.exit.x + 0.5), player.pos.y - (c.exit.y + 0.5)) < 0.7) leaveColiseum();
+      }
+    };
     let emptyArenaTicks = 0;
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
     let portalArmed = false;
@@ -801,7 +952,7 @@ async function boot(): Promise<void> {
       orb?.classList.toggle('low', frac < 0.3 && frac > 0);
     };
     const updateDepth = (): void => {
-      if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
+      if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
     };
     updateOrb();
     updateDepth();
@@ -844,21 +995,22 @@ async function boot(): Promise<void> {
     const buildWorld = (floorNum: number, mode: FloorMode = 'normal'): World => {
       const isArena = mode === 'arena';
       const isHub = mode === 'hub';
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isColiseum = mode === 'coliseum';
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       const layout = isHub ? buildTownLayout() : null;
-      const memory: FloorMemory | undefined = isHub ? undefined : floors[memKey(floorNum, isArena)];
+      const memory: FloorMemory | undefined = isHub || isColiseum ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
       // BOSS ARENAS (it.28): boss floors funnel into a dedicated sealed hall —
       // one vast open room, ringed by candelabra fire, no internal clutter.
-      const dungeon = layout ? layout.map : isArena ? generateArenaMap(30, 22, seed) : generateDungeon(MAP_W, MAP_H, seed);
+      const dungeon = layout ? layout.map : isColiseum ? generateColiseumMap(seed) : isArena ? generateArenaMap(30, 22, seed) : generateDungeon(MAP_W, MAP_H, seed);
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub) {
-        hearths = []; // The town lights itself (campfire, torches).
+      if (isHub || isColiseum) {
+        hearths = []; // The town and the coliseum light themselves.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
@@ -890,12 +1042,13 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : undefined);
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : undefined);
+      if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
       const theme = !spriteLib.loaded
         ? 'stone'
-        : isHub
+        : isHub || isColiseum
           ? 'town'
         : floorNum <= 2
           ? 'stone'
@@ -907,6 +1060,8 @@ async function boot(): Promise<void> {
       scene.build(dungeon, viewport, lighting, theme);
       if (isHub) {
         audio.setMusic('town'); // The title theme keeps the town (Tristram rule).
+      } else if (isColiseum) {
+        audio.setMusic('boss', 5); // The trial fights to the warden's drums (it.53).
       } else {
         audio.setBgmDeep(floorNum >= 10); // The deep bands breathe a darker drone.
         // Boss arena music (it.28): the floor's intense track fades in the
@@ -916,7 +1071,7 @@ async function boot(): Promise<void> {
 
       const ambience = new Ambience(viewport);
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
-      const goldPiles = isHub ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      const goldPiles = isHub || isColiseum ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -971,13 +1126,15 @@ async function boot(): Promise<void> {
             ? { at: layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
             : isArena
               ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
-              : undefined,
+              : isColiseum
+                ? { hidden: true, at: { x: 1, y: 1 } } // No stair in the trial (it.53).
+                : undefined,
         );
       }
 
       const loot = new LootSystem(viewport, seed);
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub) chests.place(dungeon, [stairs]); // The arena floor stays clean.
+      if (!isArena && !isHub && !isColiseum) chests.place(dungeon, [stairs]); // The arena floors stay clean.
       if (memory) chests.applyMemory(memory.openedChests);
       const pathfinder = new Pathfinder(dungeon.width, dungeon.height, scene.isWalkable);
       // Attack/approach range follows the wielded weapon (reach or fire range).
@@ -1140,7 +1297,7 @@ async function boot(): Promise<void> {
       let boss: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || arenaAlreadyCleared) {
+      if (isHub || isColiseum || arenaAlreadyCleared) {
         // No enemies in town; a cleared arena stays empty with its stair open.
       } else if (isArena) {
         const room = dungeon.rooms[0];
@@ -1158,7 +1315,9 @@ async function boot(): Promise<void> {
           { dx: -4.2, dy: 0 },
         ];
         for (const off of guardRing) {
-          enemies.spawn(pool[Math.floor(rand() * pool.length)], cx + off.dx, cy + off.dy, floorNum);
+          const guardBody = enemies.spawn(pool[Math.floor(rand() * pool.length)], cx + off.dx, cy + off.dy, floorNum);
+          const affixRoll = rand();
+          if (affixRoll < 0.15) guardBody.setAffix(AFFIXES[Math.floor((affixRoll / 0.15) * 3) % 3]); // Elite honor guard (it.53).
         }
       } else {
         spawnFloorEnemies(dungeon, enemies, floorNum, stairs, seed, killed);
@@ -1178,10 +1337,17 @@ async function boot(): Promise<void> {
 
       // TOWN DRESSING (it.39): cottages, stall, campfire, torches, well,
       // the stash chest, and the folk who live here.
+      // THE TRIAL COLISEUM (it.53): dressing + wave state.
+      let coliseumState: ColiseumState | null = null;
+      if (isColiseum) {
+        const cmap = dungeon as ColiseumMap;
+        const dressing = dressColiseum(cmap, viewport, lighting, ambience);
+        coliseumState = { waves: 5, wave: 0, phase: 'intermission', timer: 5 * 60, alive: 0, pads: cmap.pads, center: cmap.center, exit: null, update: dressing.update, destroy: dressing.destroy };
+      }
       let townState: World['town'] = null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
-        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 7, layout.merchant, layout.guards, layout.alchemist);
+        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 7, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist);
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
         const audit = auditTownLayout(layout);
@@ -1341,6 +1507,7 @@ async function boot(): Promise<void> {
         unsubscribe,
         town: townState,
         killed,
+        coliseum: coliseumState,
       };
     };
 
@@ -1349,6 +1516,7 @@ async function boot(): Promise<void> {
       w.town?.villagers.destroy();
       w.town?.campHeroes.destroy();
       w.town?.destroyDressing();
+      w.coliseum?.destroy();
       w.input.destroy();
       w.projectiles.clear();
       w.vfx.clear();
@@ -1365,7 +1533,7 @@ async function boot(): Promise<void> {
 
     /** Remember the current dungeon floor exactly as the hero leaves it (it.39). */
     const captureFloor = (): void => {
-      if (world.town) return;
+      if (world.town || world.coliseum) return; // The trial is never remembered.
       const key = memKey(floor, world.isArena);
       const takenGold: number[] = [];
       world.goldPiles.forEach((p, i) => {
@@ -1569,6 +1737,7 @@ async function boot(): Promise<void> {
       glint: (x, y) => world.ambience.playGlint(x, y),
       shake: (a) => world.camera.addShake(a),
       inTown: () => !!world.town, // Respec is a town rite (it.48).
+      interruptMove: () => world.movement.interrupt(), // Casts cut the walk (it.53).
       text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
       sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
       vfx: (anim, x, y, opts) => world.vfx.play(anim, x, y, opts),
@@ -1821,6 +1990,39 @@ async function boot(): Promise<void> {
         world.dmgText.show(player.pos.x + 1.2, player.pos.y - 0.6, 'THE ARENA SEALS SHUT', 'crit');
       });
 
+    /** THE TRIAL COLISEUM (it.53): fade out of town into the sand. */
+    const enterColiseum = (waves: number): void =>
+      withFade(async () => {
+        await preloadFloor(-1, 'coliseum');
+        if (!world.town) captureFloor();
+        if (!swapWorld(() => buildWorld(-1, 'coliseum'))) return;
+        floor = -1;
+        updateDepth();
+        floorStartTick = state.tick;
+        player.action = 'idle';
+        const c = world.coliseum;
+        if (c) {
+          c.waves = waves;
+          c.wave = 0;
+          c.phase = 'intermission';
+          c.timer = 5 * 60;
+        }
+        player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
+        world.lighting.updateVisibility(world.dungeon.spawn.x, world.dungeon.spawn.y);
+        minimap.markDirty();
+        updateOrb();
+        world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE TRIAL BEGINS', 'crit');
+        tutorial.notify('coliseum', 'The Trial Coliseum: waves pour from the four gates. Between waves you have fifteen seconds to loot and drink. T abandons the trial.');
+      });
+    /** Home from the sand — no return rift, the trial is over. */
+    const leaveColiseum = (): void =>
+      withFade(async () => {
+        await preloadFloor(0, 'hub');
+        if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+        portalReturn = null;
+        enterTown(false);
+      });
+
     /** Level-select jump: fade-covered travel to any unlocked depth. */
     const jumpToFloor = (target: number): void => {
       if (target === floor) return;
@@ -2003,6 +2205,12 @@ async function boot(): Promise<void> {
         updateOrb();
         tutorial.notify('hurt', 'You bleed. Their heavy blows are telegraphed — step away as they rear back.');
       }
+    });
+
+    on('entity:healed', ({ entityId, amount }) => {
+      // VAMPIRIC (it.53): the champion's drink reads as a crimson number.
+      const e = state.getEntity(entityId);
+      if (e) world.dmgText.show(e.pos.x + 0.3, e.pos.y - 0.6, `+${amount}`, 'player');
     });
 
     on('combat:swing', ({ sourceId, targetId, result }) => {
@@ -2196,7 +2404,8 @@ async function boot(): Promise<void> {
           bossNote?.classList.add('show');
           later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
-          world.loot.tryDropAt(entity.pos.x, entity.pos.y);
+          if (entity.affix) world.loot.dropForced(entity.pos.x, entity.pos.y); // Champions always pay (it.53).
+          else world.loot.tryDropAt(entity.pos.x, entity.pos.y);
         }
         // Death gore: a heavy radial blowout on top of the directional spray.
         world.ambience.bloodSpray(entity.pos.x, entity.pos.y, undefined, undefined, entity === world.boss ? 34 : 22);
@@ -2344,6 +2553,7 @@ async function boot(): Promise<void> {
           if (cmd.type !== 'TOWN_PORTAL') continue;
           // FREE TOWN PORTAL (it.43): T opens the way home on a 12 s cooldown.
           if (world.town) world.dmgText.show(player.pos.x, player.pos.y - 1, 'YOU ARE HOME', 'miss');
+          else if (world.coliseum) leaveColiseum(); // T abandons the trial (it.53).
           else if (transitioning || pendingPortal) break;
           else if (portalCooldown > 0) world.dmgText.show(player.pos.x, player.pos.y - 1, `PORTAL IN ${Math.ceil(portalCooldown / 60)}s`, 'miss');
           else {
@@ -2364,6 +2574,13 @@ async function boot(): Promise<void> {
         world.projectiles.update(dt);
         state.forEach((entity) => entity.update(dt));
         world.enemies.separate();
+        // FROST-TOUCHED AURAS (it.53): a chilled hero inside three tiles of a frost champion.
+        world.enemies.forEachActive((e) => {
+          if (e.affix === 'frost' && e.hp > 0 && Math.hypot(e.pos.x - player.pos.x, e.pos.y - player.pos.y) < FROST_AURA_RADIUS) {
+            player.chillTicks = Math.max(player.chillTicks, 12);
+          }
+        });
+        if (world.coliseum) updateColiseum();
 
         // Player death animation runs to completion, then the death overlay
         // takes over (it.36) — the loop freezes until a choice is made.
@@ -2371,7 +2588,7 @@ async function boot(): Promise<void> {
           player.actionTicks++;
           if (player.actionTicks >= PLAYER_DEATH_TICKS && !runMenus.isDeathShown) {
             runMenus.showDeath(
-              `Depth ${ROMAN[floor - 1] ?? floor} · level ${player.level} · ${formatTime(state.tick)} in the dark`,
+              `${floor < 0 ? 'The Coliseum' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${player.level} · ${formatTime(state.tick)} in the dark`,
             );
           }
         }
@@ -2524,6 +2741,20 @@ async function boot(): Promise<void> {
           if (hurtFlashTimer <= 0) vignetteEl?.classList.remove('hurt');
         }
         updateBuffHud();
+        if (world.coliseum) {
+          const c = world.coliseum;
+          c.update(frameDt);
+          waveHud.textContent =
+            c.phase === 'intermission'
+              ? `WAVE ${c.wave + 1} / ${c.waves} · NEXT WAVE IN ${Math.ceil(c.timer / 60)}s`
+              : c.phase === 'fight'
+                ? `WAVE ${c.wave} / ${c.waves} · ${c.alive} FOE${c.alive === 1 ? '' : 'S'} REMAIN`
+                : 'TRIAL COMPLETE · claim the chest, then take the rift home';
+          waveHud.classList.toggle('calm', c.phase !== 'fight');
+          waveHud.classList.add('show');
+        } else {
+          waveHud.classList.remove('show');
+        }
         // OVERHEAD LEVEL-UP BANNER (it.50): rides above the hero while it shows.
         {
           const banner = document.getElementById('levelup-banner');
@@ -2756,6 +2987,7 @@ async function boot(): Promise<void> {
       if (it.kind === 'merchant') shopUI.open('armorer');
       else if (it.kind === 'alchemist') shopUI.open('alchemist');
       else if (it.kind === 'board') statsUI.open();
+      else if (it.kind === 'arena') openArenaModal();
       else stashUI.open();
     };
     /** E in town / a click on the stall or stash: walk up, then open. */
@@ -2765,10 +2997,11 @@ async function boot(): Promise<void> {
       for (const cmd of commands) {
         if (cmd.type === 'PICKUP_NEAREST') {
           // SYMMETRICAL E (it.41): an open trade / stash window closes on the same key.
-          if (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen) {
+          if (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen || arenaModal.classList.contains('open')) {
             shopUI.close();
             stashUI.close();
             statsUI.close();
+            closeArenaModal();
             continue;
           }
           // E at the portal stone or the gate takes it (no need to step in).
@@ -2834,7 +3067,7 @@ async function boot(): Promise<void> {
         const d = interactableDist(it);
         if (d < bestD) {
           bestD = d;
-          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : 54 };
+          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : 54 };
         }
       }
       const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
@@ -2992,6 +3225,13 @@ export function isBossFloor(floor: number): boolean {
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  if (mode === 'coliseum') {
+    // Every wave pool plus the stands (it.53).
+    const all = new Set<string>(['folk_walk', 'torch', ...VFX_ANIMS]);
+    for (const f of [1, 3, 5, 9, 14, 20]) for (const k of kindPoolFor(f)) for (const a of animsForKind(k)) all.add(a);
+    for (const a of animsForKind('fallen')) all.add(a);
+    return [...all];
+  }
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));
   kinds.add('fallen'); // Hollow King summons; cheap (shares the knight sheets).
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);
@@ -3126,9 +3366,11 @@ function spawnFloorEnemies(
       // The RNG stream is consumed identically whether or not this one
       // spawns, so a remembered floor rolls the same roster.
       const index = spawnIndex++;
+      const affixRoll = rand(); // Consumed either way — a remembered floor rolls the same champions.
       if (skip.has(index)) continue;
       const enemy = enemies.spawn(kind, gx + 0.5, gy + 0.5, level);
       enemy.spawnIndex = index;
+      if (affixRoll < 0.15) enemy.setAffix(AFFIXES[Math.floor((affixRoll / 0.15) * 3) % 3]); // ELITES (it.53).
     }
   }
 }

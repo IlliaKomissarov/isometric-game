@@ -1,5 +1,54 @@
 # Development Log
 
+## 2026-09-03 (iteration 53) - Elite affixes, the Trial Coliseum, combat acceleration
+
+### Elites
+- One body in seven (15 %) rises as a champion: `Enemy.setAffix` gives
+  +15 % scale, x1.5 life, a titled nameplate ("Vampiric Rotting Ghoul",
+  colored by affix, held at screen size) and a floor aura drawn under the
+  feet (cyan shards / amber spikes / crimson drops, breathing).
+- FROST-TOUCHED: inside three tiles the hero is chilled — move x0.75 and
+  swing timings x1.33 (`Player.chillTicks`, refreshed per tick, shown as a
+  debuff ring). THORNS: 15 % of a hero's blow reflects (armor still
+  applies; never on the killing blow, never re-reflected). VAMPIRIC: a
+  fifth of every wound flows back into the champion, shown as a crimson
+  "+N". Elites pay x1.5 XP and always drop. The floor spawner rolls the
+  affix before the memory skip so remembered floors keep their champions;
+  arena honor guards and coliseum waves roll too.
+
+### The Trial Coliseum
+- Town: a cobbled apron at the east end of the high street with the arch
+  between two pillars, a brazier and the Arena Master (E opens his dialog:
+  5 / 10 / 15 / 20 waves, or "Not today"; Esc closes).
+- `scenes/Coliseum.ts`: a 46x40 ellipse of sand with a cobbled walk, stone
+  wall, sixteen fixtures (torches, candelabra, pillars) and ~80 townsfolk in
+  two rows of stands facing the sand; four gate pads N/E/S/W with a red
+  glow. Floor index -1 (`THE COLISEUM`), theme `town`, no chests, no stair,
+  `Lighting.omniscient` — every tile visible, full light everywhere.
+- Waves (sim): 5 s to the first wave, then `4 + 2n` bodies (cap 24) from
+  the pads, level n+1, pool by depth 2n-1, elite chance 15 % + 4 %/wave (cap
+  60 %), all set to chase. Clear -> "WAVE CLEARED!" banner and a 15 s
+  intermission counted on the wave HUD ("WAVE 3 / 5 - NEXT WAVE IN 12s").
+  Last wave -> "TRIAL COMPLETE!", a grand chest at the centre (three
+  rare-or-better trophies + two rolls, gold halo) and a blue rift four tiles
+  east that walks you home. T abandons the trial. The trial is never
+  captured to floor memory; a save inside it resumes in town.
+
+### Combat acceleration
+- `COMBAT_SPEED = 1.25`: hero windup and recovery /1.25 (recovery a
+  further x0.85 for chaining); enemy windup/recover /1.25; projectiles
+  x1.25 (arrow 11.25 / bolt 9.4 / fireball 10). Every cast now calls
+  `Movement.interrupt()` so a skill fires the instant the key lands.
+
+### QA (browser, zero console errors)
+- Town audit clean; dialog opens; 5 waves chosen -> floor -1, omniscient,
+  far tiles visible, 340 object nodes; wave 1: 6 foes, 3 elites titled and
+  ringed. Frost: chill 12, speed ratio 0.75, clears when the champion
+  leaves. Vampiric: +3 on a 15-damage bite (expected 3). Thorns verified on
+  a non-lethal blow. Five waves cleared with 15 s intermissions; grand chest
+  opened for 5 drops; rift -> town, HUD hidden. Cast on a 6-step path clears
+  it at once.
+
 ## 2026-09-03 (iteration 52) - End-to-end audit pass
 
 - Static: typecheck + production build clean; no TODO/FIXME markers.

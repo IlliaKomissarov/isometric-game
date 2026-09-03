@@ -67,6 +67,8 @@ export type TownPropKind =
   | 'merchant'
   | 'alchemist'
   | 'board'
+  | 'arenagate'
+  | 'arenamaster'
   | 'guard';
 
 export interface TownProp {
@@ -93,6 +95,9 @@ export interface TownLayout {
   alchemist: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
   /** The DUNGEON RECORDS board (it.48). */
   board: { x: number; y: number };
+  /** THE TRIAL COLISEUM (it.53): the arch on the east road and its master. */
+  arenaGate: { x: number; y: number };
+  arenaMaster: { x: number; y: number };
   campfire: { x: number; y: number };
   /** Where the three unselected heroes rest (tile centres, facing the fire). */
   campSpots: Array<{ x: number; y: number }>;
@@ -287,6 +292,14 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'merchant', x: 24, y: 16 });
   block({ kind: 'alchemist', x: 24, y: 24 }); // The ALCHEMIST behind the south stall (it.48).
   block({ kind: 'board', x: 32, y: 31 }); // The DUNGEON RECORDS board off the south street (it.48).
+  // THE TRIAL COLISEUM (it.53): a cobbled apron at the end of the high street,
+  // the arch between two pillars, the Arena Master before it.
+  clearFor(51, 22, 6, 6, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 53, y: 23 });
+  block({ kind: 'pillar', x: 55, y: 23 });
+  block({ kind: 'arenagate', x: 54, y: 23 });
+  block({ kind: 'arenamaster', x: 53, y: 26 });
+  block({ kind: 'brazier', x: 56, y: 26 });
   block({ kind: 'stall', x: 34, y: 17, w: 3, h: 2, variant: 'stall_b' });
   block({ kind: 'stall', x: 23, y: 25, w: 3, h: 2, variant: 'stall_c' });
   block({ kind: 'stall', x: 34, y: 25, w: 3, h: 2, variant: 'stall_d' });
@@ -498,6 +511,8 @@ export function buildTownLayout(): TownLayout {
       ],
     },
     board: { x: 32, y: 31 },
+    arenaGate: { x: 54, y: 23 },
+    arenaMaster: { x: 53, y: 26 },
     campfire,
     campSpots,
     portal: { x: 43, y: 37 },
@@ -545,6 +560,7 @@ export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: n
   if (!layout.merchant.tiles.some((t) => touches(t.x, t.y))) missing.push('merchant');
   if (!layout.alchemist.tiles.some((t) => touches(t.x, t.y))) missing.push('alchemist');
   if (!touches(layout.board.x, layout.board.y)) missing.push('board');
+  if (!touches(layout.arenaGate.x, layout.arenaGate.y)) missing.push('arena gate');
   if (!touches(layout.portal.x, layout.portal.y)) missing.push('portal');
   if (!touches(layout.campfire.x, layout.campfire.y)) missing.push('campfire');
   for (const [i, h] of layout.houses.entries()) if (!seen[(h.y + 2) * width + h.x + 1]) missing.push(`house ${i} door`);

@@ -30,7 +30,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena';
   x: number;
   y: number;
   label: string;
@@ -348,7 +348,18 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       case 'merchant':
       case 'alchemist':
-        break; // The shopkeepers are drawn by Villagers.
+      case 'arenamaster':
+        break; // The shopkeepers and the Arena Master are drawn by Villagers.
+      case 'arenagate': {
+        // THE TRIAL COLISEUM (it.53): the arch on the east road.
+        const spr = standing(p, 'archway', 0.96);
+        if (spr) spr.scale.set(1.6);
+        interactables.push({ id: nextId++, kind: 'arena', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE TRIAL COLISEUM', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y + 2 }] });
+        glowAt(p.x, p.y + 1, 0xd0303a, 0.4, 1.6, 12);
+        lighting.addSource(p.x + 0.5, p.y + 1.5, 3.4, 220, 90, 70, 0.55);
+        plate(p.x, p.y, 'THE COLISEUM', 118);
+        break;
+      }
       case 'board': {
         // DUNGEON RECORDS (it.48): a signpost board with the run's tallies.
         standing(p, 'signpost', 0.95);

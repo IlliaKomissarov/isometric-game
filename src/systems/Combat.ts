@@ -41,6 +41,8 @@ export interface DamageEvent {
   knockDist?: number;
   /** Maces: stagger the victim regardless of the damage threshold. */
   forceStagger?: boolean;
+  /** Thorns (it.53): a reflected wound never reflects again. */
+  reflected?: boolean;
 }
 
 // Player warrior baseline (per-class tables arrive with the abilities task).
@@ -165,8 +167,10 @@ export class CombatSystem {
     p.actionTicks = 0;
     this.swingTarget = target;
     this.swingSource = source;
-    this.swingWindup = profile.windupTicks;
-    this.swingRecover = profile.recoverTicks;
+    // FROST-TOUCHED (it.53): a chilled hero swings a third slower.
+    const chill = p.chillTicks > 0 ? 1.33 : 1;
+    this.swingWindup = Math.round(profile.windupTicks * chill);
+    this.swingRecover = Math.round(profile.recoverTicks * chill);
     if (!target && this.aimDir) {
       // No victim picked: the swing/draw still goes where the mouse points.
       const a = this.aimDir();
@@ -442,7 +446,8 @@ export class CombatSystem {
       rolled = Math.round(rolled * (1 - this.player.damageReduction));
     }
     // Armor is flat reduction; a landed hit always deals at least 1.
-    const amount = Math.max(1, rolled - target.armor);
+    // Thorns (it.53) bites past armor — it is the hero's own steel coming back.
+    const amount = Math.max(1, rolled - (event.reflected ? 0 : target.armor));
     target.hp = Math.max(0, target.hp - amount);
     eventBus.emit('entity:damaged', {
       entityId: event.targetId,
@@ -450,6 +455,19 @@ export class CombatSystem {
       dirX: event.knockX,
       dirY: event.knockY,
     });
+
+    // ELITE AFFIXES (it.53).
+    const source = state.getEntity(event.sourceId) as (Entity & { affix?: string | null }) | null;
+    if (source && source !== this.player && source.affix === 'vampiric' && source.hp > 0) {
+      // Vampiric: a fifth of every wound flows back into the champion.
+      source.hp = Math.min(source.hpMax, source.hp + Math.ceil(amount * 0.2));
+      eventBus.emit('entity:healed', { entityId: source.id, amount: Math.ceil(amount * 0.2) });
+    }
+    const thorny = (target as Entity & { affix?: string | null }).affix === 'thorns';
+    if (thorny && event.sourceId === this.player.id && !event.reflected && target.hp > 0) {
+      // Thorns: 15 % of the blow comes back at the striker.
+      this.dealDamage({ sourceId: target.id, targetId: this.player.id, amount: Math.max(1, Math.ceil(amount * 0.15)), reflected: true });
+    }
 
     if (target.hp === 0) {
       eventBus.emit('entity:died', { entityId: event.targetId });

@@ -20,6 +20,8 @@ export interface GameEvents {
   /** An entity took damage (drives hit flash, health bars, orb UI, blood).
    *  dirX/dirY: unit direction the blow traveled (splatter spray axis). */
   'entity:damaged': { entityId: number; amount: number; dirX?: number; dirY?: number };
+  /** Vampiric champions drink (it.53). */
+  'entity:healed': { entityId: number; amount: number };
   /** An entity died and was released back to its pool. */
   'entity:died': { entityId: number };
   /** An idle enemy noticed the player (growl audio / alert feedback). */

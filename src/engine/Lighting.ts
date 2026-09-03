@@ -73,6 +73,9 @@ export class Lighting {
   /** Decorative props on a tile (braziers, statues) — tinted like walls. */
   private propSprites = new Map<number, Sprite[]>();
   private visibleSet = new Set<number>();
+  /** THE COLISEUM (it.53): no fog at all — every tile stays in sight. */
+  omniscient = false;
+  private allTiles: Set<number> | null = null;
   private isOpaque!: (gx: number, gy: number) => boolean;
 
   /** Baked point sources (for shadow direction queries, it.36). */
@@ -252,10 +255,17 @@ export class Lighting {
 
   /** Recompute the LOS visible set. Call on player:tileChanged only. */
   updateVisibility(originX: number, originY: number): void {
-    const newVisible = new Set<number>();
+    let newVisible = new Set<number>();
     const r = this.sight;
     const r2 = r * r;
 
+    if (this.omniscient) {
+      if (!this.allTiles || this.allTiles.size !== this.width * this.height) {
+        this.allTiles = new Set<number>();
+        for (let i = 0; i < this.width * this.height; i++) this.allTiles.add(i);
+      }
+      newVisible = this.allTiles;
+    } else
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy > r2) continue;

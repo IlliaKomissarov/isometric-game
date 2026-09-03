@@ -18,6 +18,7 @@ import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import { multiplyColors } from '@/utils/color';
 import { idleFrame, type LightDir } from '@/render/animUtil';
+import { COMBAT_SPEED } from '@/core/config';
 import { Entity } from './Entity';
 
 /** Ticks the knight's death animation plays before respawn (main drives it). */
@@ -201,6 +202,8 @@ export class Player extends Entity {
 
   /** Frost debuff: ticks of slowed movement (Frost Warden's blows). */
   slowTicks = 0;
+  /** FROST-TOUCHED aura (it.53): −25 % move and attack speed while inside it. */
+  chillTicks = 0;
 
   applySlow(ticks: number): void {
     this.slowTicks = Math.max(this.slowTicks, ticks);
@@ -245,7 +248,7 @@ export class Player extends Entity {
   /** Poison Blade: melee hits coat targets while ticks remain. */
   poisonBladeTicks = 0;
   /** Buff durations at cast (it.48): the HUD rings count down against these. */
-  readonly buffMax = { dmg: 0, dr: 0, haste: 0, stealth: 0, poison: 0, slow: 0 };
+  readonly buffMax = { dmg: 0, dr: 0, haste: 0, stealth: 0, poison: 0, slow: 0, chill: 30 };
   /** Every coin ever scooped this run (it.48 records board). */
   goldCollected = 0;
 
@@ -261,6 +264,7 @@ export class Player extends Entity {
     push('stealth', 'Vanished', 'vanish', '◍', this.stealthTicks, this.buffMax.stealth);
     push('poison', 'Poison Blade', 'poison', '☠', this.poisonBladeTicks, this.buffMax.poison);
     push('slow', 'Frostbitten', null, '❄', this.slowTicks, this.buffMax.slow, true);
+    push('chill', 'Frost-touched', null, '✧', this.chillTicks, this.buffMax.chill, true);
     return out;
   }
 
@@ -571,6 +575,7 @@ export class Player extends Entity {
     }
     this.breathPhase += dt * 2.1;
     if (this.slowTicks > 0) this.slowTicks--;
+    if (this.chillTicks > 0) this.chillTicks--;
     if (this.flashTicks > 0 && --this.flashTicks === 0) this.body.tint = 0xffffff;
 
     // Skill economy (it.32): resource trickles back; timed buffs burn down.
@@ -796,6 +801,7 @@ export class Player extends Entity {
   get speedMult(): number {
     let base = ARCHETYPES[this.archetype].speedMult * (1 + this.passiveBonus('speed'));
     if (this.hasteTicks > 0) base *= this.hasteMult;
+    if (this.chillTicks > 0) base *= 0.75; // Frost-touched aura (it.53).
     return this.slowTicks > 0 ? base * 0.55 : base;
   }
 
@@ -821,8 +827,9 @@ export class Player extends Entity {
       kind,
       ranged: kind === 'bow' || kind === 'wand',
       range: def?.range ?? family.range,
-      windupTicks: Math.max(6, Math.round(timing.windup * cls.attackSpeedMult)),
-      recoverTicks: Math.max(6, Math.round(timing.recover * cls.attackSpeedMult)),
+      // COMBAT ACCELERATION (it.53): 25 % faster swings, recovery trimmed a further 15 % for chaining.
+      windupTicks: Math.max(5, Math.round((timing.windup * cls.attackSpeedMult) / COMBAT_SPEED)),
+      recoverTicks: Math.max(4, Math.round((timing.recover * cls.attackSpeedMult * 0.85) / COMBAT_SPEED)),
       minDamage: (def?.minDamage ?? cls.baseDamage.min) + this.levelDamageMin,
       maxDamage: (def?.maxDamage ?? cls.baseDamage.max) + this.levelDamageMax,
       critChance: family.critChance + cls.critBonus,

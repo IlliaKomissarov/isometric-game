@@ -26,6 +26,8 @@ export const MAP_H = 44;
 
 /** Player movement speed in tiles/second (grid space). Responsive but weighty. */
 export const PLAYER_SPEED = 4.3;
+/** COMBAT ACCELERATION (it.53): every swing, strike and shot runs this much faster. */
+export const COMBAT_SPEED = 1.25;
 
 /** Entity collision radius in tile units (used for wall sliding). */
 export const COLLIDER_RADIUS = 0.28;

@@ -421,6 +421,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Locked hotbar placeholders with padlock and muted tooltip
 - [x] Uniform window frames, close buttons and title sizes
 
+## Iteration 53 - Elite Affixes, Trial Coliseum, Combat Acceleration (2026-09-03)
+
+- [x] 15 % champions: +15 % scale, x1.5 life, titled nameplates, breathing floor auras
+- [x] Frost-touched chill, Thorns reflection, Vampiric drain — all measured live
+- [x] Arena Master arch in town; 46x40 fog-free coliseum with stands and four gate pads
+- [x] 5/10/15/20-wave trials with 15 s intermissions, banners, grand chest and the rift home
+- [x] Swings, strikes and shots 25 % faster; casts interrupt walking
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

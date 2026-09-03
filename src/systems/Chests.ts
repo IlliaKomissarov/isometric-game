@@ -28,6 +28,8 @@ export interface Chest {
   x: number;
   y: number;
   opened: boolean;
+  /** THE COLISEUM CHEST (it.53): rare + legendary spoils. */
+  grand?: boolean;
 }
 
 interface ChestView extends Chest {
@@ -67,36 +69,48 @@ export class ChestSystem {
       // Never drop a chest onto a carved pillar tile (unreachable loot).
       if (dungeon.grid[gy * dungeon.width + gx] !== 1) continue;
 
-      const id = this.nextId++;
-      const sprite = new Sprite(assets.get('chest_closed'));
-      sprite.anchor.set(0.5, 1.0);
-      const s = worldToScreen(gx + 0.5, gy + 0.5, this.scratch);
-      sprite.position.set(s.x, s.y + 4);
-      sprite.zIndex = depthKey(gx + 0.5, gy + 0.5);
-      this.viewport.objectLayer.addChild(sprite);
-      this.lighting.registerProp(gx, gy, sprite);
-
-      let indicator: Sprite | null = null;
-      if (spriteLib.loaded) {
-        indicator = new Sprite(spriteLib.single('loot_indicator'));
-        indicator.anchor.set(0.5, 1.0);
-        indicator.scale.set(0.35);
-        indicator.visible = false;
-        this.viewport.ambienceLayer.addChild(indicator);
-      }
-
-      // Interactable highlight: a warm halo under the chest until looted.
-      const halo = new Sprite(assets.get('glow'));
-      halo.anchor.set(0.5);
-      halo.blendMode = 'add';
-      halo.tint = 0xd8a85c;
-      halo.position.set(s.x, s.y - 6);
-      halo.scale.set(0.7);
-      halo.visible = false;
-      this.viewport.ambienceLayer.addChild(halo);
-
-      this.chests.set(id, { id, x: gx + 0.5, y: gy + 0.5, opened: false, sprite, indicator, halo });
+      this.create(gx, gy);
     }
+  }
+
+  /** One chest on a tile; grand chests are larger and gold-lit (it.53). */
+  private create(gx: number, gy: number, grand = false): number {
+    const id = this.nextId++;
+    const sprite = new Sprite(assets.get('chest_closed'));
+    sprite.anchor.set(0.5, 1.0);
+    if (grand) sprite.scale.set(1.35);
+    const s = worldToScreen(gx + 0.5, gy + 0.5, this.scratch);
+    sprite.position.set(s.x, s.y + 4);
+    sprite.zIndex = depthKey(gx + 0.5, gy + 0.5);
+    this.viewport.objectLayer.addChild(sprite);
+    this.lighting.registerProp(gx, gy, sprite);
+
+    let indicator: Sprite | null = null;
+    if (spriteLib.loaded) {
+      indicator = new Sprite(spriteLib.single('loot_indicator'));
+      indicator.anchor.set(0.5, 1.0);
+      indicator.scale.set(grand ? 0.5 : 0.35);
+      indicator.visible = false;
+      this.viewport.ambienceLayer.addChild(indicator);
+    }
+
+    // Interactable highlight: a warm halo under the chest until looted.
+    const halo = new Sprite(assets.get('glow'));
+    halo.anchor.set(0.5);
+    halo.blendMode = 'add';
+    halo.tint = grand ? 0xffd070 : 0xd8a85c;
+    halo.position.set(s.x, s.y - 6);
+    halo.scale.set(grand ? 1.2 : 0.7);
+    halo.visible = false;
+    this.viewport.ambienceLayer.addChild(halo);
+
+    this.chests.set(id, { id, x: gx + 0.5, y: gy + 0.5, opened: false, grand, sprite, indicator, halo });
+    return id;
+  }
+
+  /** Drop a chest at runtime (the Coliseum's prize, it.53). Returns its id. */
+  spawnAt(gx: number, gy: number, grand = false): number {
+    return this.create(gx, gy, grand);
   }
 
   getChest(id: number): Chest | null {
@@ -169,11 +183,21 @@ export class ChestSystem {
     if (chest.indicator) chest.indicator.visible = false;
     chest.halo.visible = false;
 
-    const count = DROPS_PER_CHEST_MIN + Math.floor(this.rand() * (DROPS_PER_CHEST_MAX - DROPS_PER_CHEST_MIN + 1));
-    for (let i = 0; i < count; i++) {
-      const angle = this.rand() * Math.PI * 2;
-      const r = 0.5 + this.rand() * 0.5;
-      this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+    if (chest.grand) {
+      // THE COLISEUM CHEST (it.53): three rare-or-better trophies and two more rolls.
+      for (let i = 0; i < 5; i++) {
+        const angle = (i / 5) * Math.PI * 2 + this.rand() * 0.5;
+        const r = 0.7 + this.rand() * 0.5;
+        if (i < 3) this.loot.dropRareAt(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+        else this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+      }
+    } else {
+      const count = DROPS_PER_CHEST_MIN + Math.floor(this.rand() * (DROPS_PER_CHEST_MAX - DROPS_PER_CHEST_MIN + 1));
+      for (let i = 0; i < count; i++) {
+        const angle = this.rand() * Math.PI * 2;
+        const r = 0.5 + this.rand() * 0.5;
+        this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+      }
     }
     eventBus.emit('chest:opened', { chestId: id, x: chest.x, y: chest.y });
   }

@@ -96,12 +96,12 @@ export class CharacterSheetUI {
           ${row('Speed', pct(p.speedMult))}
         </div>
         <div class="cs-block"><h4>OFFENSE</h4>
-          ${row('Damage', `${Math.round(prof.minDamage * mult)}–${Math.round(prof.maxDamage * mult)}`, mult !== 1 ? `×${mult.toFixed(2)}` : '')}
+          ${row('<i class="cs-ico">⚔</i>Damage', `${Math.round(prof.minDamage * mult)}–${Math.round(prof.maxDamage * mult)}`, mult !== 1 ? `×${mult.toFixed(2)}` : '')}
           ${row('Weapon', prof.kind)}
           ${row('Level bonus', `+${p.levelDamageMin}–${p.levelDamageMax}`)}
         </div>
         <div class="cs-block"><h4>DEFENSE</h4>
-          ${row('Armor', `${p.armor}`)}
+          ${row('<i class="cs-ico">⛨</i>Armor', `${p.armor}`)}
           ${row('Dodge', pct(p.dodgeChance))}
           ${row('Absorb', pct(p.damageReduction))}
         </div>

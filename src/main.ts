@@ -123,6 +123,8 @@ interface World {
     villagers: Villagers;
     occluders: Occluder[];
     interactables: Interactable[];
+    /** Label manager hook (it.50): the E-prompt's spot, so its plate stands down. */
+    setPromptAt: (x: number | null, y?: number) => void;
     stashSprite: Sprite | null;
     /** The three unpicked heroes resting at the fire (it.40). */
     campHeroes: CampHeroes;
@@ -753,7 +755,8 @@ async function boot(): Promise<void> {
     const updateProgressHud = (): void => {
       if (levelLabel) levelLabel.textContent = `LVL ${player.level}`;
       if (xpFill) xpFill.style.width = `${Math.round((player.xp / player.xpToNext()) * 100)}%`;
-      if (xpText) xpText.textContent = `XP ${player.xp} / ${player.xpToNext()}`; // Readable gauge (it.48).
+      if (xpText) xpText.textContent = `XP: ${player.xp} / ${player.xpToNext()}`; // Readable gauge (it.48).
+      if (xpFill?.parentElement) xpFill.parentElement.title = `XP: ${player.xp} / ${player.xpToNext()}`;
       if (goldLabel) goldLabel.textContent = `${player.gold}`;
     };
 
@@ -1190,6 +1193,7 @@ async function boot(): Promise<void> {
           villagers,
           occluders: dressing.occluders,
           interactables: dressing.interactables,
+          setPromptAt: dressing.setPromptAt,
           stashSprite: dressing.stashSprite,
           campHeroes,
           update: dressing.update,
@@ -1800,7 +1804,7 @@ async function boot(): Promise<void> {
         later(() => {
           descendNote?.classList.remove('show');
           descendSub?.classList.remove('show');
-        }, 2600);
+        }, 5200); // Doubled (it.50).
       });
 
     /**
@@ -2123,8 +2127,7 @@ async function boot(): Promise<void> {
           world.ambience.burst(player.pos.x, player.pos.y, 0xffd98a, 26);
           world.ambience.playGlint(player.pos.x, player.pos.y);
           world.camera.addShake(0.25);
-          world.dmgText.show(player.pos.x - 0.4, player.pos.y - 0.4, 'LEVEL UP!', 'crit');
-          world.dmgText.show(player.pos.x + 0.4, player.pos.y - 0.9, `+${levelsGained} SKILL POINT${levelsGained > 1 ? 'S' : ''}`, 'miss');
+          // The overhead banner carries the words now (it.50) — no floating duplicate.
           world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
           // GOLDEN PILLAR (it.48): a column of light climbs off the hero; a second chime rings.
           audio.sfx('rarePickup');
@@ -2139,7 +2142,7 @@ async function boot(): Promise<void> {
             if (banner) {
               banner.innerHTML = `LEVEL UP!<small>LEVEL ${player.level} · +${levelsGained} SKILL POINT${levelsGained > 1 ? 'S' : ''}</small>`;
               banner.classList.add('show');
-              later(() => banner.classList.remove('show'), 2400);
+              later(() => banner.classList.remove('show'), 4500); // Readable (it.50).
             }
           }
           world.vfx.play('vfx_aura', player.pos.x, player.pos.y, { scale: 1.5, lift: 30, fps: 16, tint: 0xffd070, overlay: true });
@@ -2191,7 +2194,7 @@ async function boot(): Promise<void> {
             w.camera.addShake(0.4);
           }, 3300);
           bossNote?.classList.add('show');
-          later(() => bossNote?.classList.remove('show'), 4200);
+          later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
           world.loot.tryDropAt(entity.pos.x, entity.pos.y);
         }
@@ -2243,7 +2246,7 @@ async function boot(): Promise<void> {
         player.actionTicks = 0;
         inputQueue.enqueue({ type: 'STOP', playerId: 0 });
         deathNote?.classList.add('show');
-        later(() => deathNote?.classList.remove('show'), 2600);
+        later(() => deathNote?.classList.remove('show'), 5200); // Doubled (it.50).
       }
     });
 
@@ -2521,6 +2524,15 @@ async function boot(): Promise<void> {
           if (hurtFlashTimer <= 0) vignetteEl?.classList.remove('hurt');
         }
         updateBuffHud();
+        // OVERHEAD LEVEL-UP BANNER (it.50): rides above the hero while it shows.
+        {
+          const banner = document.getElementById('levelup-banner');
+          if (banner?.classList.contains('show')) {
+            const bp = world.camera.worldToCanvas(player.pos.x, player.pos.y, buffScratch);
+            banner.style.left = `${Math.round(bp.x)}px`;
+            banner.style.top = `${Math.round(bp.y - 150 * world.camera.currentZoom)}px`;
+          }
+        }
 
         // The hero's warm halo rides his interpolated position, breathing gently.
         const halo = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
@@ -2532,6 +2544,7 @@ async function boot(): Promise<void> {
         // or, in town, over the stall / stash / gate / portal (it.39).
         const nearChest = world.town ? null : world.chests.findNearestUnopened(player.pos.x, player.pos.y, 2.2);
         const townPrompt = world.town ? nearestTownPrompt() : null;
+        world.town?.setPromptAt(townPrompt ? townPrompt.x : null, townPrompt?.y);
         if (interactHint && townPrompt) {
           const p = world.camera.worldToCanvas(townPrompt.x, townPrompt.y, pickRingScratch);
           interactHint.style.left = `${Math.round(p.x)}px`;
@@ -2675,12 +2688,18 @@ async function boot(): Promise<void> {
             }
             // The fill lives inside the frame's window (11.7% → 88.3% of the track), so
             // its width is hp/max × that window (it.49) — proportional and smooth.
-            bossBarFill.style.width = `${(Math.max(0, Math.min(100, pct)) * 0.766).toFixed(1)}%`;
+            // PIXEL FILL (it.50): recomputed every frame from hp/max × the frame's
+            // window (76.6% of the measured track width) — never a clamped percentage.
+            {
+              const track = bossBarFill.parentElement;
+              const windowPx = (track ? track.clientWidth : 420) * 0.766;
+              bossBarFill.style.width = `${Math.max(0, (Math.max(0, Math.min(100, pct)) / 100) * windowPx).toFixed(1)}px`;
+            }
             if (bossHpEl) bossHpEl.textContent = boss.action === 'transition' ? 'RISING' : `${Math.max(0, Math.ceil(boss.hp))} / ${boss.hpMax}`;
           }
         } else if (bossBar?.classList.contains('show')) {
           // The warden fell: the bar reads empty through the death beat, then fades.
-          if (bossBarFill) bossBarFill.style.width = '0%';
+          if (bossBarFill) bossBarFill.style.width = '0px';
           if (bossHpEl) bossHpEl.textContent = world.boss ? `0 / ${world.boss.hpMax}` : '';
           bossGoneTimer += frameDt;
           if (bossGoneTimer > 3 || !world.boss) bossBar.classList.remove('show');

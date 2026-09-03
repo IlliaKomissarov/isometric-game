@@ -41,6 +41,10 @@ function hex(color: number): string {
 /** Cell content: the real pack icon, or a crisp generated pixel icon. */
 const iconHtml = (def: ItemDef): string => itemIconHtml(def, '', 'inv-pxicon');
 
+/** The pack field (it.50): six across, eight down. */
+const PACK_COLS = 6;
+const PACK_SLOTS = 48;
+
 export class InventoryUI {
   private readonly panel: HTMLElement;
   private readonly tooltip: HTMLElement;
@@ -138,17 +142,19 @@ export class InventoryUI {
       if (existing) existing.count++;
       else stacks.set(itemId, { def, count: 1, firstIndex: index });
     });
-    const backpackCells =
-      stacks.size === 0
-        ? `<span class="inv-empty">Nothing carried</span>`
-        : [...stacks.values()]
-            .map(
-              ({ def, count, firstIndex }) =>
-                `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
-                   ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}
-                 </button>`,
-            )
-            .join('');
+    // THE PACK GRID (it.50): a fixed 6×8 field of slots (more rows when the
+    // haul outgrows it), every empty slot drawn, the whole field scrolling.
+    const filled = [...stacks.values()]
+      .map(
+        ({ def, count, firstIndex }) =>
+          `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}" title="${def.name}">
+             ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}
+           </button>`,
+      )
+      .join('');
+    const slotCount = Math.max(PACK_SLOTS, Math.ceil(stacks.size / PACK_COLS) * PACK_COLS);
+    const empties = Array.from({ length: Math.max(0, slotCount - stacks.size) }, () => '<div class="inv-cell inv-cell-empty inv-pack-empty"></div>').join('');
+    const backpackCells = filled + empties;
 
     this.panel.innerHTML = `
       <h3 class="drag-handle">INVENTORY</h3>
@@ -156,14 +162,15 @@ export class InventoryUI {
       <div class="inv-equip-grid">${equipmentCells}</div>
       <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts</span></div>
       <div class="inv-divider"></div>
-      <h4>BACKPACK &nbsp;<span class="inv-count">${this.player.backpack.length}</span>
+      <h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}</span>
         <span class="inv-gold">◆ Gold: ${this.player.gold}</span></h4>
       <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div>
     `;
 
     // Stats live OUTSIDE the inventory — always visible beside the orb.
     const dmg = this.player.weaponDamage;
-    this.statsBar.innerHTML = `<span>DMG</span> ${dmg.min}–${dmg.max} &nbsp;<span>ARM</span> ${this.player.armor}`;
+    // STAT ICONS (it.50): crossed swords for damage, a shield for armor.
+    this.statsBar.innerHTML = `<i class="stat-ico" title="Damage">⚔</i><span>DMG</span> ${dmg.min}–${dmg.max} &nbsp;<i class="stat-ico" title="Armor">⛨</i><span>ARM</span> ${this.player.armor}`;
 
     // Live ANIMATED paperdoll: idle frames cycled while the panel is up
     // (it.15 — the menu character breathes instead of standing frozen).

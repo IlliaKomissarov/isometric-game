@@ -2925,6 +2925,70 @@
       .st-text b, .st-text em, .tp-row .tp-name, .tp-row .tp-gold, .bs-row-name, .bs-row-meta, .bs-stat span, .bs-stat b, .cs-row, #char-stats, #depth-label, #run-timer, #controls .row span, #controls .row kbd, .skill-tip b, .skill-tip span, #item-tip, #inv-tooltip, .inv-slot-label, .sb-key, .inv-belt-note, .inv-count, .inv-gold {
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.6);
       }
+      /* ===================================================================
+         IT.50 — PACK GRID, GLOBES SIDE BY SIDE, COLLAPSIBLE COMMANDS, XP GLOW
+         =================================================================== */
+      /* The pack: six across, every slot drawn, the field scrolls. */
+      #inv-panel { width: 302px; }
+      #inv-panel .inv-pack-grid { display: grid; grid-template-columns: repeat(6, 44px); gap: 5px; justify-content: center; }
+      #inv-panel .inv-pack-grid .inv-cell { width: 44px; height: 44px; border: 1px solid #4a4150; border-radius: 2px; box-shadow: inset 0 0 0 1px #000, inset 0 0 8px rgba(0, 0, 0, 0.8); }
+      #inv-panel .inv-pack-grid .inv-cell img { width: 36px; height: 36px; }
+      #inv-panel .inv-pack-grid .inv-pack-empty { background: linear-gradient(180deg, #120e18, #0a080e); border-color: #2f2838; }
+      #inv-panel .inv-pack-grid .inv-cell.inv-item { border-color: var(--frame-gold); }
+      #inv-panel .inv-pack-grid .rarity-common { --rar: #c8a558; border-color: #8a7a58; }
+      #inv-panel .inv-pack-grid .rarity-magic { --rar: #6f8fdf; border-color: #6f8fdf; box-shadow: inset 0 0 0 1px #000, 0 0 9px rgba(111, 143, 223, 0.5); }
+      #inv-panel .inv-pack-grid .rarity-rare { --rar: #e8b84c; border-color: #e8b84c; box-shadow: inset 0 0 0 1px #000, 0 0 11px rgba(232, 184, 76, 0.55); }
+      #inv-panel .inv-pack-grid .rarity-legendary { --rar: #ff8c3a; border-color: #ff8c3a; box-shadow: inset 0 0 0 1px #000, 0 0 13px rgba(255, 140, 58, 0.6); }
+      #inv-panel { max-height: calc(100vh - 66px); }
+      #inv-panel .inv-scroll { max-height: max(140px, calc(100vh - 545px)); overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
+      #inv-panel .inv-scroll::-webkit-scrollbar { width: 9px; }
+      #inv-panel .inv-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #6a5a3a, #3b3244); border: 1px solid #000; }
+      /* The resource globe sits beside the health globe, at four-fifths size. */
+      #orb2-wrap { right: auto; left: 192px; bottom: 4px; transform: scale(0.8); transform-origin: left bottom; }
+      #char-stats { left: 356px; bottom: 44px; }
+      #resource-wrap { display: none; }
+      #progress-hud { left: 356px; }
+      #hud-bar { left: 0; }
+      #tp-button { right: auto; left: calc(50% + 172px); }
+      .stat-ico, .cs-ico { font-style: normal; color: #ffd070; margin-right: 4px; text-shadow: 0 0 6px rgba(255, 190, 80, 0.55), 0 1px 2px #000; }
+      .cs-row .cs-ico { font-size: 13px; }
+      /* The XP bar: a glowing gold fill with a moving sheen and a tooltip. */
+      #xp-bar { width: 120px; height: 12px; border: 1px solid #6a5a3a; background: #0d0a10; box-shadow: inset 0 0 6px #000, 0 0 8px rgba(200, 165, 88, 0.25); }
+      #xp-fill { background: linear-gradient(90deg, #a8843a 0%, #ffd070 55%, #fff1b0 80%, #ffd070 100%); background-size: 200% 100%; box-shadow: 0 0 10px rgba(255, 208, 112, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.35); animation: xp-sheen 3s linear infinite; }
+      @keyframes xp-sheen { from { background-position: 0 0; } to { background-position: 200% 0; } }
+      #xp-text { font-size: 8px; }
+      /* The command sheet: pinned to the bottom edge, collapsible by its handle. */
+      #controls { top: auto; bottom: 0; right: 12px; transition: transform 0.35s ease; }
+      #controls.collapsed { transform: translateY(calc(100% - 30px)); }
+      #controls-toggle {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin: 0 0 4px;
+        padding: 5px 8px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 700;
+        font-size: 10px;
+        letter-spacing: 0.3em;
+        color: var(--gold-dim);
+        background: linear-gradient(180deg, rgba(38, 30, 46, 0.8), rgba(14, 11, 18, 0.9));
+        border: 1px solid var(--frame-iron);
+        cursor: pointer;
+        pointer-events: auto;
+        text-shadow: 0 1px 3px #000;
+      }
+      #controls-toggle:hover { border-color: var(--frame-gold); color: #ffd070; }
+      #controls-toggle b { font-size: 9px; }
+      /* The level-up banner rides over the hero. */
+      #levelup-banner { top: 0; left: 50%; font-size: 30px; letter-spacing: 0.22em; }
+      #levelup-banner small { font-size: 10.5px; letter-spacing: 0.3em; }
+      /* Typography: every panel inherits a crisp, high-contrast shadow. */
+      #main-menu, #skill-tree, .town-panel, #char-sheet, #bestiary, #inv-panel, #cheat-menu, #level-select, #endgame, #hint-banner, #descend-note, #descend-sub, #boss-note, #controls, #progress-hud, #char-stats, #depth-label, #run-timer, #boss-bar, #death-note {
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.55);
+      }
+
     </style>
   </head>
   <body>
@@ -2955,7 +3019,24 @@
     </div>
 
     <div id="controls">
-      <h3>COMMANDS</h3>
+      <button id="controls-toggle" type="button" title="Collapse / expand the command sheet"><span>COMMANDS</span><b>▼</b></button>
+      <script>
+        // COLLAPSIBLE COMMAND SHEET (it.50): the handle folds the sheet to the bottom edge; remembered.
+        (function () {
+          var panel = document.getElementById('controls');
+          var btn = document.getElementById('controls-toggle');
+          var KEY = 'iso-arpg-controls-collapsed';
+          function apply(collapsed) {
+            panel.classList.toggle('collapsed', collapsed);
+            btn.querySelector('b').textContent = collapsed ? '▲' : '▼';
+            try { localStorage.setItem(KEY, collapsed ? '1' : '0'); } catch (e) {}
+          }
+          var stored = null;
+          try { stored = localStorage.getItem(KEY); } catch (e) {}
+          apply(stored === '1');
+          btn.addEventListener('click', function () { apply(!panel.classList.contains('collapsed')); });
+        })();
+      </script>
       <div class="row active" id="row-move"><span>Move · Target</span><kbd>LMB</kbd></div>
       <div class="row" id="row-direct"><span>Direct Control</span><kbd>W A S D / ARROWS</kbd></div>
       <div class="row"><span>Strike</span><kbd>SPACE / F</kbd></div>

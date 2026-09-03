@@ -360,9 +360,37 @@ export function buildTownLayout(): TownLayout {
       if (!belt[i] || grid[i] !== TILE_FLOOR) continue;
       grid[i] = TILE_BLOCKED;
       const roll = rand();
-      if (roll < 0.46) {
-        const v = roll < 0.17 ? 'pine_a' : roll < 0.3 ? 'pine_b' : roll < 0.39 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
+      if (roll < 0.72) {
+        // DENSER (it.50): three tiles in four carry a tree, the rest a bush.
+        const v = roll < 0.27 ? 'pine_a' : roll < 0.47 ? 'pine_b' : roll < 0.6 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
         props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
+      } else {
+        decal({ kind: 'grassclump', x, y });
+      }
+    }
+  }
+  // ---- THE OUTER RING (it.50): the cliff tiles just beyond the blob carry
+  // their own forest — two tiles deep — so no raw cube edge ever shows. The
+  // straight west wall stays bare (the gate's clean face).
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = idx(x, y);
+      if (grid[i] !== TILE_WALL) continue;
+      if (x <= 4 && y >= 19 && y <= 34) continue; // The gate wall.
+      let nearOpen = false;
+      for (let oy = -2; oy <= 2 && !nearOpen; oy++)
+        for (let ox = -2; ox <= 2 && !nearOpen; ox++) {
+          const nx = x + ox;
+          const ny = y + oy;
+          if (inside(nx, ny) && grid[idx(nx, ny)] !== TILE_WALL) nearOpen = true;
+        }
+      if (!nearOpen) continue;
+      const roll = rand();
+      if (roll < 0.62) {
+        const v = roll < 0.24 ? 'pine_a' : roll < 0.42 ? 'pine_b' : roll < 0.52 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
+        props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
+      } else if (roll < 0.9) {
+        props.push({ kind: 'grassclump', x, y });
       }
     }
   }

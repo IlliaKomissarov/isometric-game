@@ -41,6 +41,8 @@ export interface Interactable {
 export interface TownDressing {
   occluders: Occluder[];
   interactables: Interactable[];
+  /** Label manager (it.50): where the E-prompt shows, so its plate stands down. */
+  setPromptAt: (x: number | null, y?: number) => void;
   stashSprite: Sprite | null;
   /** Render-frame update: gate fog drift, brazier flicker. */
   update: (dt: number) => void;
@@ -141,7 +143,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
    * landmark — stash, stalls, the records board, the camp, the gate — so
    * the town reads at a glance. Drawn last in the object layer, bobbing.
    */
-  const plates: Array<{ node: Container; baseY: number; phase: number }> = [];
+  const plates: Array<{ node: Container; baseY: number; phase: number; wx: number; wy: number; w: number; h: number; alpha: number }> = [];
   const plate = (x: number, y: number, label: string, lift: number): void => {
     const node = new Container();
     const text = new Text({
@@ -168,7 +170,32 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     node.position.set(s.x, s.y - lift);
     node.zIndex = 1e6 + plates.length; // Above every roof and body.
     viewport.objectLayer.addChild(node);
-    plates.push({ node, baseY: s.y - lift, phase: plates.length * 1.7 });
+    plates.push({ node, baseY: s.y - lift, phase: plates.length * 1.7, wx: x + 0.5, wy: y + 0.5, w, h, alpha: 1 });
+  };
+  /**
+   * LABEL MANAGER (it.50): no two plates may overlap on screen — sorted by
+   * screen Y, any plate whose box meets a lower one is lifted clear — and a
+   * plate fades out while the E-prompt for the same landmark is showing, so
+   * a title never doubles up with its own prompt.
+   */
+  const settlePlates = (): void => {
+    const sorted = [...plates].sort((a, b) => b.baseY - a.baseY); // Lowest on screen first.
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = 0; j < i; j++) {
+        const a = sorted[i];
+        const b = sorted[j];
+        const dx = Math.abs(a.node.position.x - b.node.position.x);
+        if (dx >= (a.w + b.w) / 2 + 6) continue;
+        const dy = b.baseY - a.baseY; // b is lower (larger y) or equal.
+        const need = (a.h + b.h) / 2 + 6;
+        if (dy > -need && dy < need) a.baseY = b.baseY - need; // Lift the upper one clear.
+      }
+    }
+    for (const pl of plates) pl.node.position.y = pl.baseY;
+  };
+  let promptAt: { x: number; y: number } | null = null;
+  const setPromptAt = (x: number | null, y = 0): void => {
+    promptAt = x === null ? null : { x, y };
   };
 
   let nextId = 1;
@@ -245,6 +272,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'pine':
       case 'deadtree': {
         const spr = standing(p, p.variant ?? 'pine_a', 0.97);
+        // A tree on a cliff tile (it.50) stands in front of that tile's cube.
+        if (spr && layout.map.grid[p.y * layout.map.width + p.x] === 0) spr.zIndex += 40;
         if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
         break;
       }
@@ -332,10 +361,18 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   }
   ambience.setHotspots(hotspots);
 
+  settlePlates();
   let clock = 0;
   const update = (dt: number): void => {
     clock += dt;
-    for (const pl of plates) pl.node.position.y = pl.baseY + Math.sin(clock * 1.3 + pl.phase) * 2.5;
+    const k = 1 - Math.exp(-10 * dt);
+    for (const pl of plates) {
+      pl.node.position.y = pl.baseY + Math.sin(clock * 1.3 + pl.phase) * 2.5;
+      const hide = !!promptAt && Math.hypot(promptAt.x - pl.wx, promptAt.y - pl.wy) < 2.4;
+      pl.alpha += ((hide ? 0 : 1) - pl.alpha) * k;
+      pl.node.alpha = pl.alpha;
+      pl.node.visible = pl.alpha > 0.02;
+    }
     for (const f of fog) {
       const t = clock * f.speed + f.phase;
       f.sprite.position.set(f.x + Math.sin(t) * 14, f.y + Math.cos(t * 0.7) * 5 - (t % 3) * 4);
@@ -348,5 +385,5 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, update, destroy };
+  return { occluders, interactables, stashSprite, update, destroy, setPromptAt };
 }

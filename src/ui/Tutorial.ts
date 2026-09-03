@@ -14,7 +14,7 @@ export interface HintZone {
   text: string;
 }
 
-const SHOW_SECONDS = 8.25; // +50% (it.48): room to actually read the line.
+const SHOW_SECONDS = 11; // Doubled from the original 5.5 s (it.50): room to actually read the line.
 const GAP_SECONDS = 0.8;
 
 export class TutorialUI {

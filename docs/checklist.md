@@ -406,6 +406,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Bestiary keeps scroll + arrow keys; level-up flash + banner; portal scroll off drop tables, HUD scroll icon
 - [x] Final boss: loot first, victory on the exit stair
 
+## Iteration 50 - Pack Grid, Boss Fill, Label Manager, Forest Ring, HUD Restructure (2026-09-03)
+
+- [x] 48-slot scrolling pack with crisp rarity rims
+- [x] Boss fill recomputed in pixels every frame
+- [x] Town plates deduplicated and hidden behind their prompt; double forest ring on the cliffs
+- [x] Resource globe beside the health globe; collapsible COMMANDS handle; stat icons; glowing XP bar
+- [x] Overhead level-up banner; doubled hint timers; panel-wide text shadows
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

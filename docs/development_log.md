@@ -1,5 +1,53 @@
 # Development Log
 
+## 2026-09-03 (iteration 50) - 48-slot pack, pixel boss fill, town label manager, forest ring, side-by-side globes, collapsible commands
+
+### Inventory
+- The pack is a fixed 6x8 field (48 slots, more rows when the haul
+  outgrows it); every empty slot is drawn, the field scrolls (height
+  follows the viewport), the count reads "26 / 48". Crisp 1 px slot
+  borders with an inner black line; rarity rims glow (common gold, magic
+  blue, rare amber, legendary orange). The panel grew to 302 px.
+
+### Boss bar
+- The red fill is a PIXEL width recomputed every render frame:
+  `hp / max x (track width x 0.766)` (the frame's window). 322 / 162 / 33 px
+  at 100 / 50 / 10 % in QA, shrinking with the numeric counter.
+
+### Town
+- LABEL MANAGER: plates sort by screen Y and any two whose boxes meet are
+  spread apart; a plate fades out while the E-prompt for the same landmark
+  shows (`setPromptAt` from the render loop), so no title doubles up.
+- FOREST RING: the belt inside the blob is 72 % trees / 28 % bushes, and
+  the cliff tiles up to two deep beyond the blob carry their own trees and
+  bushes (445 trees, 235 bushes, 245 of them on cliff tiles), drawn in
+  front of their cubes — no raw tile edge shows. The straight west wall
+  stays bare for the gate.
+
+### HUD
+- The stamina/mana globe sits beside the health globe at the bottom-left
+  (four-fifths scale); stats and the XP row moved right of it; the portal
+  icon sits right of the hotbar.
+- COMMANDS is pinned to the bottom edge with a permanent "COMMANDS v / ^"
+  handle that folds the sheet down (remembered in localStorage).
+- Stat icons: crossed swords for damage and a shield for armor on the HUD
+  and the character sheet.
+- XP bar: 120 x 12 px, glowing gold fill with a moving sheen, a tooltip
+  "XP: 7 / 156" and the same text overlaid.
+
+### Level-up, hints, type
+- The LEVEL UP! banner rides over the hero (positioned every frame) for
+  4.5 s beside the flash and pillar; the floating duplicate text is gone.
+- Popup timers doubled: tutorial banners 11 s, descend note 5.2 s, boss
+  note 8.4 s, death note 5.2 s.
+- Every panel root inherits a crisp dark drop shadow.
+
+### QA (browser, zero console errors)
+- 24 items added: 48 cells, 26 stacks, scroll 397 > 222. Boss fill
+  321.7 / 161.7 / 33.1 px. Town audit clean. Zoomed-out edges wrapped in
+  forest. COMMANDS folds and unfolds by its handle. Level-up banner at the
+  hero's head.
+
 ## 2026-09-03 (iteration 49) - Dual globes, nameplates, orc anchors, tree lines, bestiary keys, portal icon, loot-then-stairs ending
 
 ### Text and type

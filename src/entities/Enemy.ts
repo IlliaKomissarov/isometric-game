@@ -784,7 +784,8 @@ export interface EnemyAIDeps {
   pathfinder: Pathfinder;
   isWalkable: WalkableFn;
   isOpaque: (gx: number, gy: number) => boolean;
-  getPlayerPos: () => { x: number; y: number };
+  /** CO-OP (it.59): the hero this body should hunt (nearest living, unhidden). */
+  getPlayerPos: (self: Enemy) => { x: number; y: number };
   /** Resolve a melee strike frame (range re-check + rolls inside). */
   meleeStrike: (
     source: Enemy,
@@ -801,7 +802,7 @@ export interface EnemyAIDeps {
   /** Boss summoning hook (Hollow King) — spawn reinforcements near a point. */
   summonMinions?: (x: number, y: number) => void;
   /** Rogue Vanish (it.32): while true, nothing can see the player. */
-  isPlayerHidden?: () => boolean;
+  isPlayerHidden?: (self: Enemy) => boolean;
 }
 
 export type EnemyAIState = 'idle' | 'chase' | 'flee';
@@ -1295,7 +1296,7 @@ export class Enemy extends Entity {
       return; // Flinching: no thinking, no moving.
     }
 
-    const player = this.ai.getPlayerPos();
+    const player = this.ai.getPlayerPos(this);
     const dx = player.x - this.pos.x;
     const dy = player.y - this.pos.y;
     const dist = Math.hypot(dx, dy);
@@ -1317,7 +1318,7 @@ export class Enemy extends Entity {
     // chases bleed out through the lost-LOS timer.
     const los =
       hasLineOfSight(myTile.x, myTile.y, playerTile.x, playerTile.y, this.ai.isOpaque) &&
-      !(this.ai.isPlayerHidden?.() ?? false);
+      !(this.ai.isPlayerHidden?.(this) ?? false);
 
     // Cowardice: badly hurt melee types run — unless cornered once already
     // (desperation latch): a beast with nowhere to run stops running.

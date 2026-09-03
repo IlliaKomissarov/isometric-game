@@ -76,7 +76,8 @@ export class ProjectileSystem {
   constructor(
     private readonly viewport: Viewport,
     private readonly isWalkable: WalkableFn,
-    private readonly player: Player,
+    /** CO-OP (it.59): every seat's hero (null = empty seat); enemy shots may hit any of them. */
+    private readonly players: ReadonlyArray<Player | null>,
     /** Nearest living enemy within radius of a point (player-faction hits). */
     private readonly findEnemyAt: (x: number, y: number, radius: number) => Entity | null,
   ) {}
@@ -143,11 +144,15 @@ export class ProjectileSystem {
       }
 
       if (p.faction === 'enemy') {
-        const pdx = this.player.pos.x - p.x;
-        const pdy = this.player.pos.y - p.y;
-        if (Math.hypot(pdx, pdy) <= HIT_RADIUS && this.player.action !== 'dead') {
-          this.combat.projectileHit(p.sourceId, p.minDamage, p.maxDamage, p.toHit, p.dirX, p.dirY);
-          this.impact(p, true);
+        for (const hero of this.players) {
+          if (!hero || hero.action === 'dead') continue;
+          const pdx = hero.pos.x - p.x;
+          const pdy = hero.pos.y - p.y;
+          if (Math.hypot(pdx, pdy) <= HIT_RADIUS) {
+            this.combat.projectileHit(p.sourceId, hero.id, p.minDamage, p.maxDamage, p.toHit, p.dirX, p.dirY);
+            this.impact(p, true);
+            break;
+          }
         }
       } else {
         const enemy = this.findEnemyAt(p.x, p.y, HIT_RADIUS);

@@ -26,6 +26,22 @@ export class GameLoop {
   private running = false;
   private rafId = 0;
   private _tick = 0;
+  /**
+   * LOCKSTEP GATE (it.59): when set, a tick executes only if the gate says
+   * its frame is known. A closed gate drops the accumulator instead of
+   * banking time — the party never "catches up" in a burst.
+   */
+  gate: ((tick: number) => boolean) | null = null;
+  /**
+   * HIDDEN-TAB CLOCK (it.59): browsers pause requestAnimationFrame in a
+   * background tab, which would stall a lockstep party the moment one player
+   * alt-tabs. With this on, a Web Worker (whose timers are not throttled)
+   * drives the fixed steps while the tab is hidden; rAF takes over again on
+   * return. Rendering is skipped while hidden.
+   */
+  keepAliveHidden = false;
+  private worker: Worker | null = null;
+  private frame: ((now: number) => void) | null = null;
 
   constructor(private readonly callbacks: LoopCallbacks) {}
 
@@ -47,19 +63,54 @@ export class GameLoop {
 
       this.accumulator += frameTime;
       while (this.accumulator >= FIXED_DT) {
+        if (this.gate && !this.gate(this._tick)) {
+          this.accumulator = 0;
+          break;
+        }
         this.callbacks.update(FIXED_DT, this._tick);
         this._tick++;
         this.accumulator -= FIXED_DT;
       }
-      this.callbacks.render(this.accumulator / FIXED_DT);
-      this.rafId = requestAnimationFrame(frame);
+      if (!document.hidden) this.callbacks.render(this.accumulator / FIXED_DT);
+      if (!document.hidden || !this.worker) this.rafId = requestAnimationFrame(frame);
     };
+    this.frame = frame;
     this.rafId = requestAnimationFrame(frame);
+    if (this.keepAliveHidden && !this.worker) this.startWorkerClock();
   }
+
+  private startWorkerClock(): void {
+    try {
+      const src = 'setInterval(() => postMessage(0), 16);';
+      const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      this.worker = new Worker(url);
+      URL.revokeObjectURL(url);
+      this.worker.onmessage = () => {
+        if (!this.running || !document.hidden || !this.frame) return;
+        this.frame(performance.now());
+      };
+      // Back in the foreground: hand the clock back to rAF.
+      document.addEventListener('visibilitychange', this.onVisibility);
+    } catch {
+      this.worker = null; // No worker: the tab simply pauses when hidden.
+    }
+  }
+
+  private readonly onVisibility = (): void => {
+    if (!this.running || document.hidden || !this.frame) return;
+    cancelAnimationFrame(this.rafId);
+    this.lastTime = performance.now();
+    this.rafId = requestAnimationFrame(this.frame);
+  };
 
   stop(): void {
     this.running = false;
     cancelAnimationFrame(this.rafId);
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+      document.removeEventListener('visibilitychange', this.onVisibility);
+    }
   }
 
   /**
@@ -69,6 +120,7 @@ export class GameLoop {
    */
   step(count: number): void {
     for (let i = 0; i < count; i++) {
+      if (this.gate && !this.gate(this._tick)) break;
       this.callbacks.update(FIXED_DT, this._tick);
       this._tick++;
     }

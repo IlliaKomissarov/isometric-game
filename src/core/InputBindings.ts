@@ -34,11 +34,22 @@ const KEY_AXES: Record<string, { sx: number; sy: number }> = {
 
 const ATTACK_KEYS = new Set(['Space', 'KeyF']);
 
+/** Focus sits in a text field: game keys must not fire (chat, lobby, it.59). */
+function isTyping(): boolean {
+  const el = document.activeElement;
+  if (!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
+}
+
 export class InputBindings {
   private readonly held = new Set<string>();
   private readonly attackHeld = new Set<string>();
   private readonly worldScratch = vec2();
   private readonly abort = new AbortController();
+  /** CO-OP (it.59): when true, pointer aim is streamed as AIM commands (throttled). */
+  aimSync = false;
+  private lastAimSent = 0;
+  private readonly lastAim = vec2(NaN, NaN);
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -88,10 +99,28 @@ export class InputBindings {
       { signal },
     );
     canvas.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
+    // AIM SYNC (it.59): the cursor's world point rides the command stream so
+    // every peer resolves this hero's swings and casts toward the same spot.
+    canvas.addEventListener(
+      'pointermove',
+      (e: PointerEvent) => {
+        if (!this.aimSync) return;
+        const now = performance.now();
+        if (now - this.lastAimSent < 90) return;
+        const w = this.camera.pointerToWorld(e.offsetX, e.offsetY, this.worldScratch);
+        if (Math.hypot(w.x - this.lastAim.x, w.y - this.lastAim.y) < 0.2) return;
+        this.lastAimSent = now;
+        this.lastAim.x = w.x;
+        this.lastAim.y = w.y;
+        this.inputQueue.enqueue({ type: 'AIM', playerId: this.playerId, x: Math.round(w.x * 100) / 100, y: Math.round(w.y * 100) / 100 });
+      },
+      { signal },
+    );
 
     window.addEventListener(
       'keydown',
       (e: KeyboardEvent) => {
+        if (isTyping()) return; // The chat line / a name field owns the keys (it.59).
         if (ATTACK_KEYS.has(e.code)) {
           e.preventDefault();
           if (e.repeat) return;
@@ -162,6 +191,7 @@ export class InputBindings {
     );
   }
 
+  /** A pointer click while aiming also pins the aim point (co-op stream). */
   private emitDirection(): void {
     let sx = 0;
     let sy = 0;

@@ -1,5 +1,105 @@
 # Development Log
 
+## 2026-09-03 (iteration 59) - 4-player online co-op: lockstep over PeerJS, party lobby, shared stash, chat
+
+### The choice: deterministic lockstep over WebRTC (PeerJS)
+- The engine was built for this from milestone 1: a 60 Hz fixed step, every
+  intent an `InputCommand` with a `playerId`, every roll on a seeded stream.
+  So the network carries INTENT only. Each fixed tick a peer drains its local
+  queue, stamps the commands for tick `now + 6`, and sends them to the Party
+  Leader; the leader merges one lane per online seat (slot order) into a
+  FRAME and broadcasts it; a tick executes only when its frame is known.
+  Four machines run four identical worlds with nothing serialised.
+- Transport: PeerJS 1.5.5 (`npm i peerjs`). The free public PeerJS broker
+  only brokers the WebRTC handshake (no account, no key; the default
+  `peerjs` key is public by design). After that the party talks browser to
+  browser over a reliable ordered DataChannel in a star around the leader.
+  Zero infrastructure, works from GitHub Pages, nothing hardcoded.
+- Room codes (`KNG-482`) come from `crypto.getRandomValues`; the peer id is
+  derived from the code. Every inbound message is shape-checked; chat and
+  nicknames are stripped of control characters, capped, and rendered with
+  `textContent` (never HTML) — a `<b>` sent in chat shows as text.
+
+### The party lobby (`src/ui/CoopLobby.ts`)
+- Title screen → CO-OP MULTIPLAYER: nickname, class pick, CREATE PARTY (a
+  room code with COPY) or JOIN PARTY (the code, any casing / spacing). Seats
+  list in slot colours (gold leader, sky, rose, moss) with class, level,
+  READY / LEADER / offline; lobby chat; the leader's START DELVE unlocks
+  when every online seat is ready. A full party, a build mismatch, or a
+  party already in the crypt is refused with a sentence, never a crash.
+- Each class keeps one persistent co-op hero in a hidden save slot (11–14);
+  the lobby sends its sheet with `hello`, so every peer builds identical
+  heroes (level, gear, skills) in seat order — identical entity ids.
+
+### The sim goes N-player
+- One `MovementSystem`, `SkillSystem` and `InventorySystem` per seat, each
+  answering only its own `playerId`; `CombatSystem` holds a seat table with
+  per-seat swing state, `nearestPlayer()` (the enemy AI's target rule:
+  nearest living, unhidden hero) and `seatOf()`; projectiles can hit any
+  hero; `TownSystem` resolves the trader per command and the STASH is one
+  shared object — the leader's stash is the party's, every put / take /
+  gold move is a lockstep command, so all four see the same chest live.
+- Aim rides the stream: `AIM` commands (throttled cursor world point) so
+  swings and casts resolve toward the same spot on every peer; held-attack
+  targeting uses line of sight instead of the per-screen fog in co-op.
+- The Party Leader's feet open stairs, gates, portals, teleporters and the
+  seal room; a `WARP` command (coliseum waves, level select, the victory
+  choice, the epilogue's return) is honoured only from the leader's seat
+  ("ONLY THE PARTY LEADER OPENS THE WAY" for anyone else). A warp raises a
+  BARRIER: the deciding tick closes the gate, each peer reports when its
+  new floor stands, the leader answers RESUME, everyone clears the stale
+  delay window and steps out together. `[System] Leader entering …
+  Warping party...` lands in chat.
+- Wall-clock beats that touched sim state now count ticks: the arena
+  teleporter rise and the boss loot burst (solo too).
+- Kills give every hero on the floor the full XP; a fallen hero lies where
+  they fell and rises beside the entrance at half health after ten seconds
+  (no death overlay in co-op); frost auras, gold piles and pickups work per
+  hero. Hit-stop and the cheat menu are off in co-op (a local-only edit
+  would fork the sim); ESC's pause never stops a party's loop.
+
+### Seeing the party
+- Pixi nameplates (nickname + hp bar in the seat colour) over every hero;
+  a PARTY HUD under the depth label (★ marks the leader); four colour dots
+  on the minimap; party-mates' swings, hurt flashes and level-up rings.
+- `#chat` (lower-left, collapsible, unread badge): ENTER opens the line,
+  ENTER sends, ESC closes; `[Nick]: text`, `[System] …`. While typing, a
+  capture-phase filter swallows every game hotkey. Rate-limited.
+- A WAITING FOR THE PARTY veil when the sim holds > 0.7 s (with who is
+  late, or "the floor is being raised on every screen…").
+
+### Losing people gracefully
+- A dropped joiner (link close or 9 s of heartbeat silence): the leader
+  stops waiting on the seat, injects a `LEAVE` command into the next frame,
+  every sim despawns that hero on the same tick, chat says so. A vanished
+  leader: the joiner flips to SOLO — it becomes its own leader, generates
+  frames locally, the other seats despawn, the run goes on. Leaving the run
+  tears down the wire, the chat, the HUD, the worker clock — nothing lingers.
+- Chrome pauses requestAnimationFrame in a hidden tab, which would have
+  frozen the party the moment one player alt-tabbed: in co-op a Web Worker
+  (timers unthrottled) drives the fixed steps while the tab is hidden and
+  rAF takes over on return; rendering is skipped while hidden.
+
+### Verified live (two Chrome tabs through the public broker)
+- Create → code → join → both rosters agree; lobby chat sanitised; ready /
+  start → both runs at the same seed, same seats, ticks in step.
+- Joiner walks, chats, deposits to the stash: the host sees the same
+  position, the line, the same stash. Determinism hash (every entity's
+  id / pos / hp / action + stash + party sheets) at tick 14000: identical.
+- Leader into the gate: both peers on depth I on the same tick, same
+  positions, 18 enemies each, barrier released. Both hunt the same foe:
+  hash at tick 21000 mid-fight identical; the leader fell and rose again
+  on both. Joiner's tab closed → host held ~9 s, dropped the seat, went on.
+  Mirrored: host closed → joiner continued solo. A third tab joining
+  mid-run got the polite refusal. `npm run build` passes with PeerJS
+  bundled. Zero console errors in every tab; nothing left after exit.
+
+### Known limits
+- Rejoining is possible while the party is in the lobby; a peer that drops
+  mid-run rejoins the next delve (there is no mid-run state snapshot yet).
+- The party travels as one (no split floors); the leader's stash is the
+  party's for the session; joiners keep their own slot's stash on save.
+
 ## 2026-09-03 (iteration 58) - Arena exits by teleporter only, records tabs hardened, the E radius
 
 ### The arenas

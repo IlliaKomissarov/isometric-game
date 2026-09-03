@@ -3146,6 +3146,90 @@
       #victory-modal .am-cancel { padding: 6px 18px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
       #victory-modal .am-cancel:hover { color: var(--ink); border-color: var(--frame-gold); }
       body:not(.in-run) #victory-modal { display: none; }
+
+      /* ===================================================================
+         IT.59 — CO-OP: THE PARTY LOBBY, CHAT, PARTY HUD, THE WAITING VEIL
+         =================================================================== */
+      #coop-panel { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(4, 3, 6, 0.82); z-index: 60; }
+      #coop-panel.show { display: flex; }
+      #coop-panel .cp-box { width: 640px; max-width: 94vw; max-height: 92vh; overflow-y: auto; padding: 24px 28px 18px; background: var(--panel-bg); border: 2px solid var(--frame-iron); box-shadow: inset 0 0 0 1px var(--frame-gold), inset 0 0 28px rgba(0, 0, 0, 0.7), 0 14px 44px rgba(0, 0, 0, 0.85); text-align: center; }
+      #coop-panel h2 { margin: 0 0 4px; font-family: var(--font-display); font-size: 20px; letter-spacing: 0.3em; color: var(--frame-gold-hi); }
+      #coop-panel .cp-sub { margin: 0 0 16px; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 14px; color: var(--ink-dim); }
+      #coop-panel .cp-field { display: flex; flex-direction: column; gap: 6px; margin: 0 auto 14px; width: 260px; }
+      #coop-panel .cp-field span { font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.2em; color: var(--ink-dim); }
+      #coop-panel input[type="text"] { padding: 8px 10px; font-family: 'Crimson Pro', serif; font-size: 16px; color: var(--ink); background: #0d0a12; border: 1px solid var(--frame-iron); outline: none; text-align: center; letter-spacing: 0.06em; }
+      #coop-panel input[type="text"]:focus { border-color: var(--frame-gold); box-shadow: 0 0 10px rgba(200, 165, 88, 0.3); }
+      #coop-panel .cp-classes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 6px; }
+      #coop-panel .cp-classes::after { content: attr(data-note); grid-column: 1 / -1; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 12.5px; color: var(--ink-dim); }
+      #coop-panel .cp-classes button { display: flex; flex-direction: column; gap: 2px; padding: 9px 6px; background: linear-gradient(180deg, #221b2c, #0f0c14); border: 1px solid var(--frame-iron); cursor: pointer; color: var(--ink); }
+      #coop-panel .cp-classes button b { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.14em; color: var(--ink); }
+      #coop-panel .cp-classes button span { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11.5px; color: var(--ink-dim); }
+      #coop-panel .cp-classes button.on { border-color: var(--frame-gold); box-shadow: 0 0 12px rgba(200, 165, 88, 0.35); }
+      #coop-panel .cp-classes button.on b { color: #ffd070; }
+      #coop-panel .cp-classes button:disabled { opacity: 0.45; cursor: default; }
+      #coop-panel .cp-classes-small button { padding: 6px 4px; }
+      #coop-panel .cp-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin: 14px 0 8px; }
+      #coop-panel .cp-join { display: flex; gap: 6px; align-items: center; }
+      #coop-panel .cp-join input { width: 110px; text-transform: uppercase; }
+      #coop-panel .menu-btn { min-width: 170px; }
+      #coop-panel .menu-btn:disabled { opacity: 0.4; cursor: default; }
+      #coop-panel .menu-btn.on { border-color: var(--frame-gold); color: #ffd070; }
+      #coop-panel .cp-status { min-height: 18px; margin: 6px 0; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 13.5px; color: var(--ink-dim); }
+      #coop-panel .cp-status.err { color: #e06060; }
+      #coop-panel .cp-back { padding: 6px 18px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
+      #coop-panel .cp-back:hover { color: var(--ink); border-color: var(--frame-gold); }
+      #coop-panel .cp-code { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 12px; }
+      #coop-panel .cp-code span { font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.2em; color: var(--ink-dim); }
+      #coop-panel .cp-code b { font-family: var(--font-display); font-size: 26px; letter-spacing: 0.22em; color: #ffd070; text-shadow: 0 0 14px rgba(255, 208, 112, 0.35); }
+      #coop-panel .cp-code button { padding: 4px 10px; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.16em; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
+      #coop-panel .cp-code button:hover { color: var(--ink); border-color: var(--frame-gold); }
+      #coop-panel .cp-members { list-style: none; margin: 0 0 10px; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+      #coop-panel .cp-members li { display: grid; grid-template-columns: 12px 1fr auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 7px 10px; text-align: left; background: #0d0a12; border: 1px solid var(--frame-iron); border-left: 3px solid var(--slot-color, #555); }
+      #coop-panel .cp-members li i { grid-row: 1 / 3; width: 10px; height: 10px; border-radius: 50%; background: var(--slot-color); box-shadow: 0 0 8px var(--slot-color); }
+      #coop-panel .cp-members li b { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.06em; color: var(--ink); }
+      #coop-panel .cp-members li span { grid-column: 2; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 12px; color: var(--ink-dim); }
+      #coop-panel .cp-members li em { grid-column: 3; grid-row: 1 / 3; font-family: 'Cinzel', serif; font-style: normal; font-size: 9.5px; letter-spacing: 0.14em; color: var(--ink-dim); }
+      #coop-panel .cp-members li.ready em { color: #8ee08a; }
+      #coop-panel .cp-members li.offline { opacity: 0.45; }
+      #coop-panel .cp-members li.empty { display: block; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 12.5px; color: var(--ink-dim); opacity: 0.6; border-left-color: #333; }
+      #coop-panel .cp-chat { margin: 8px 0 4px; text-align: left; }
+      #coop-panel .cp-log { height: 110px; overflow-y: auto; padding: 6px 8px; background: #0a080e; border: 1px solid var(--frame-iron); font-family: 'Crimson Pro', serif; font-size: 13px; line-height: 1.35; }
+      #coop-panel .cp-chat input { width: 100%; margin-top: 6px; text-align: left; box-sizing: border-box; }
+
+      /* The HUD chat (lower-left, above the hotbar's shadow). */
+      #chat { position: fixed; left: 14px; bottom: 112px; width: 340px; z-index: 30; font-family: 'Crimson Pro', serif; pointer-events: auto; }
+      #chat .chat-head { display: flex; align-items: center; justify-content: space-between; padding: 3px 8px; background: rgba(10, 8, 14, 0.85); border: 1px solid var(--frame-iron); border-bottom: none; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.2em; color: var(--ink-dim); }
+      #chat .chat-toggle { min-width: 18px; padding: 0 4px; font-family: 'Cinzel', serif; font-size: 10px; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
+      #chat.unread .chat-toggle { color: #ffd070; border-color: var(--frame-gold); }
+      #chat .chat-log { height: 132px; overflow-y: auto; padding: 5px 8px; background: rgba(10, 8, 14, 0.72); border: 1px solid var(--frame-iron); font-size: 13.5px; line-height: 1.32; color: var(--ink); }
+      #chat .chat-msg { word-break: break-word; text-shadow: 0 1px 2px #000; }
+      #chat .chat-sys { color: #a89c80; font-style: italic; }
+      #chat .chat-line input { width: 100%; box-sizing: border-box; padding: 5px 8px; font-family: 'Crimson Pro', serif; font-size: 14px; color: var(--ink); background: rgba(13, 10, 18, 0.92); border: 1px solid var(--frame-iron); border-top: none; outline: none; opacity: 0.55; }
+      #chat.typing .chat-line input, #chat .chat-line input:focus { opacity: 1; border-color: var(--frame-gold); box-shadow: 0 0 10px rgba(200, 165, 88, 0.3); }
+      #chat.collapsed .chat-log, #chat.collapsed .chat-line { display: none; }
+      #chat.collapsed { width: 120px; }
+      body:not(.in-run) #chat { display: none; }
+
+      /* The party HUD (upper-left, under the depth label). */
+      #party-hud { position: fixed; left: 14px; top: 96px; display: flex; flex-direction: column; gap: 5px; z-index: 22; pointer-events: none; }
+      #party-hud .ph-row { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px; width: 168px; padding: 4px 8px 5px; background: rgba(10, 8, 14, 0.7); border: 1px solid var(--frame-iron); border-left: 3px solid var(--slot-color); }
+      #party-hud .ph-row.me { border-color: var(--frame-gold); border-left-color: var(--slot-color); }
+      #party-hud .ph-row b { font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.08em; color: var(--slot-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #party-hud .ph-row span { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11px; color: var(--ink-dim); text-align: right; }
+      #party-hud .ph-bar { grid-column: 1 / 3; height: 5px; margin-top: 3px; background: #1a1418; border: 1px solid #000; }
+      #party-hud .ph-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(180deg, #d84040, #7a1414); transition: width 0.15s; }
+      #party-hud .ph-row.dead { opacity: 0.5; }
+      #party-hud .ph-row.dead .ph-bar i { background: #3a2a2a; }
+      body:not(.in-run) #party-hud { display: none; }
+
+      /* The waiting veil: the sim holds until the party is back in step. */
+      #coop-wait { position: fixed; inset: 0; display: none; align-items: flex-start; justify-content: center; padding-top: 18vh; pointer-events: none; z-index: 44; }
+      #coop-wait.show { display: flex; }
+      #coop-wait .cw-box { padding: 10px 22px; background: rgba(10, 8, 14, 0.85); border: 1px solid var(--frame-iron); box-shadow: inset 0 0 0 1px var(--frame-gold), 0 8px 30px rgba(0, 0, 0, 0.7); text-align: center; }
+      #coop-wait b { display: block; font-family: var(--font-display); font-size: 14px; letter-spacing: 0.3em; color: var(--frame-gold-hi); animation: cw-pulse 1.4s ease-in-out infinite; }
+      #coop-wait span { display: block; margin-top: 4px; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 13px; color: var(--ink-dim); }
+      @keyframes cw-pulse { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+      #death-note[data-revive]::after { content: attr(data-revive); display: block; margin-top: 6px; font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.2em; color: #ffd070; }
     </style>
   </head>
   <body>
@@ -3296,6 +3380,7 @@
         <button class="menu-btn" data-menu="continue" hidden>CONTINUE</button>
         <button class="menu-btn" data-menu="play">START GAME</button>
         <button class="menu-btn" data-menu="load">LOAD GAME</button>
+        <button class="menu-btn" data-menu="coop">CO-OP MULTIPLAYER</button>
         <button class="menu-btn" data-menu="settings">SETTINGS</button>
         <button class="menu-btn" data-menu="credits">CREDITS</button>
         <div class="mm-foot">ESC pauses · the dark remembers your last delver</div>

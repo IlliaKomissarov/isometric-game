@@ -48,14 +48,26 @@ export type InputCommand =
   | { type: 'BUYBACK'; playerId: number; index: number }
   | { type: 'STASH_PUT'; playerId: number; backpackIndex: number }
   | { type: 'STASH_TAKE'; playerId: number; index: number }
-  | { type: 'STASH_GOLD'; playerId: number; amount: number };
+  | { type: 'STASH_GOLD'; playerId: number; amount: number }
+  /** CO-OP (it.59): where this player is aiming (world point) — swings and casts follow it on every peer. */
+  | { type: 'AIM'; playerId: number; x: number; y: number }
+  /** CO-OP (it.59): a floor change decided by the PARTY LEADER (solo: always honoured). */
+  | { type: 'WARP'; playerId: number; to: 'coliseum' | 'town' | 'floor' | 'crown' | 'portalBack'; n?: number }
+  /** CO-OP (it.59): the leader's frame says this hero left the party. */
+  | { type: 'LEAVE'; playerId: number };
 
 export class InputQueue {
   private queue: InputCommand[] = [];
+  /**
+   * CO-OP (it.59): every locally produced command is stamped with this seat
+   * before it enters the stream, so the HUD panels (which write playerId 0)
+   * never need to know which seat the local hero holds.
+   */
+  stamp = 0;
 
   /** Enqueue a command from local input (or, later, from the network layer). */
   enqueue(cmd: InputCommand): void {
-    this.queue.push(cmd);
+    this.queue.push(cmd.playerId === this.stamp ? cmd : { ...cmd, playerId: this.stamp });
   }
 
   /**

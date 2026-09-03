@@ -41,8 +41,12 @@ export class InventorySystem {
   }
 
   /** Apply one tick's drained commands (shares the array with MovementSystem). */
+  /** CO-OP (it.59): the seat this hero holds — only its own commands apply. */
+  slot = 0;
+
   apply(commands: ReadonlyArray<InputCommand>): void {
     for (const cmd of commands) {
+      if (cmd.playerId !== this.slot) continue;
       switch (cmd.type) {
         case 'EQUIP':
           this.player.equipFromBackpack(cmd.backpackIndex);

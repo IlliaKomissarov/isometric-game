@@ -20,6 +20,8 @@ export interface MainMenuHooks {
   loadGame: () => void;
   /** Open the settings + controls panel. */
   settings: () => void;
+  /** CO-OP MULTIPLAYER (it.59): the party lobby. */
+  coop: () => void;
 }
 
 interface Ember {
@@ -59,6 +61,9 @@ export class MainMenuUI {
         } else if (act === 'load') {
           audio.sfx('uiClick');
           this.hooks.loadGame();
+        } else if (act === 'coop') {
+          audio.sfx('uiConfirm');
+          this.hooks.coop();
         } else if (act === 'settings') {
           audio.sfx('uiClick');
           this.hooks.settings();

@@ -10,11 +10,11 @@
 /** Central registry of every event and its payload type. Extend here only. */
 export interface GameEvents {
   /** Player switched between click-to-move and direct (WASD) control. */
-  'input:modeChanged': { mode: 'path' | 'direct' };
+  'input:modeChanged': { mode: 'path' | 'direct'; playerId: number };
   /** A path was computed and the player started following it. */
   'player:pathStarted': { path: ReadonlyArray<{ x: number; y: number }> };
   /** Player entered a new grid tile (drives fog-of-war recomputation). */
-  'player:tileChanged': { gx: number; gy: number };
+  'player:tileChanged': { gx: number; gy: number; playerId: number };
   /** A strike frame resolved (feedback: slash arc color, whiff, audio, VFX). */
   'combat:swing': { sourceId: number; targetId: number; result: 'hit' | 'crit' | 'miss' };
   /** An entity took damage (drives hit flash, health bars, orb UI, blood).
@@ -33,11 +33,11 @@ export interface GameEvents {
   /** A ground item appeared (loot roll succeeded). */
   'item:dropped': { uid: number; itemId: string; x: number; y: number };
   /** The player reached a chest they ordered opened. */
-  'chest:reached': { chestId: number };
+  'chest:reached': { chestId: number; playerId: number };
   /** A chest spilled its loot (glint VFX + audio hook). */
   'chest:opened': { chestId: number; x: number; y: number };
   /** The player walked into pickup range of their targeted ground item. */
-  'item:pickupArrived': { uid: number };
+  'item:pickupArrived': { uid: number; playerId: number };
   /** An item left the ground and entered an inventory. */
   'item:pickedUp': { itemId: string };
   /** Backpack or equipment changed — UI should re-render. */

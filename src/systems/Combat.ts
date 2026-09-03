@@ -75,63 +75,113 @@ const BUTTON_TARGET_RANGE = 1.7;
  */
 const STRIKE_REACH = 1.7;
 
+/** One hero's swing state (it.59: one per party seat). */
+interface SwingState {
+  target: Entity | null;
+  /** How the current swing started: click orders can be move-cancelled. */
+  source: 'click' | 'button';
+  held: boolean;
+  /** Timing locked in at swing start (from the weapon profile). */
+  windup: number;
+  recover: number;
+}
+
 export class CombatSystem {
   private readonly rand: () => number;
-  private swingTarget: Entity | null = null;
-  /** How the current swing started: click orders can be move-cancelled. */
-  private swingSource: 'click' | 'button' = 'click';
-  private attackHeld = false;
-  /** Timing locked in at swing start (from the weapon profile). */
-  private swingWindup = 14;
-  private swingRecover = 18;
+  private readonly swings: SwingState[] = [];
 
   /** Wired by main after ProjectileSystem exists (avoids a construction cycle). */
   fireProjectile: ((opts: import('./Projectiles').ProjectileSpawn) => void) | null = null;
 
-  /** Mouse-aim provider (it.33, wired by main): untargeted swings and
-   *  shots go toward the CURSOR, never into stale-facing empty space. */
-  aimDir: (() => { x: number; y: number }) | null = null;
+  /** Aim provider (it.33, per hero since it.59): untargeted swings and
+   *  shots go toward the hero's aim point, never into stale-facing space. */
+  aimDir: ((p: Player) => { x: number; y: number }) | null = null;
 
   constructor(
-    private readonly player: Player,
-    private readonly movement: MovementSystem,
+    /** CO-OP (it.59): one hero per seat (null = empty seat); index = seat. */
+    private readonly players: ReadonlyArray<Player | null>,
+    private readonly movements: ReadonlyArray<MovementSystem | null>,
     private readonly isWalkable: WalkableFn,
-    /** Nearest living, fog-visible enemy to a point (wired in main). */
+    /** Nearest living, targetable enemy to a point (wired in main). */
     private readonly findNearestEnemy: (x: number, y: number, range: number) => Entity | null,
     seed: number,
   ) {
     this.rand = mulberry32(seed ^ 0xc0bba7e5);
+    for (let i = 0; i < players.length; i++) this.swings.push({ target: null, source: 'click', held: false, windup: 14, recover: 18 });
+  }
+
+  /** The seat a hero entity sits in, or -1 for anything that is not a party hero. */
+  seatOf(entity: Entity | null | undefined): number {
+    if (!entity) return -1;
+    for (let i = 0; i < this.players.length; i++) if (this.players[i] === entity) return i;
+    return -1;
+  }
+
+  /**
+   * The living hero nearest a point (the enemy AI's target rule, it.59).
+   * A Vanished rogue is skipped unless `includeHidden`; when nobody
+   * qualifies the first hero standing (or lying) anywhere is returned so the
+   * AI always has a point to think about.
+   */
+  nearestPlayer(x: number, y: number, includeHidden = false): Player | null {
+    let best: Player | null = null;
+    let bestD = Infinity;
+    for (const p of this.players) {
+      if (!p || p.action === 'dead' || p.hp <= 0) continue;
+      if (!includeHidden && p.stealthed) continue;
+      const d = Math.hypot(p.pos.x - x, p.pos.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    if (best) return best;
+    for (const p of this.players) if (p) return p;
+    return null;
   }
 
   /** Consume this tick's action-button commands (shares the drained array). */
   applyCommands(commands: ReadonlyArray<InputCommand>): void {
     for (const cmd of commands) {
-      if (cmd.type === 'ATTACK_DOWN') this.attackHeld = true;
-      else if (cmd.type === 'ATTACK_UP') this.attackHeld = false;
+      const sw = this.swings[cmd.playerId];
+      if (!sw) continue;
+      if (cmd.type === 'ATTACK_DOWN') sw.held = true;
+      else if (cmd.type === 'ATTACK_UP') sw.held = false;
     }
   }
 
   /**
-   * The enemy the player is about to strike / locked onto — drives the
+   * The enemy a hero is about to strike / locked onto — drives the
    * target ring. Null when nothing is targeted.
    */
-  getDisplayTarget(): Entity | null {
-    if (this.player.action === 'attack' && this.swingTarget && this.swingTarget.hp > 0) {
-      return this.swingTarget;
+  getDisplayTarget(seat = 0): Entity | null {
+    const p = this.players[seat];
+    const sw = this.swings[seat];
+    const mv = this.movements[seat];
+    if (!p || !sw || !mv) return null;
+    if (p.action === 'attack' && sw.target && sw.target.hp > 0) {
+      return sw.target;
     }
-    const clickTarget = this.movement.peekAttackTarget();
+    const clickTarget = mv.peekAttackTarget();
     if (clickTarget) return clickTarget;
-    if (this.attackHeld) {
-      const profile = this.player.weaponProfile;
+    if (sw.held) {
+      const profile = p.weaponProfile;
       const range = profile.ranged ? profile.range : BUTTON_TARGET_RANGE;
-      return this.findNearestEnemy(this.player.pos.x, this.player.pos.y, range);
+      return this.findNearestEnemy(p.pos.x, p.pos.y, range);
     }
     return null;
   }
 
-  /** Fixed-tick step: advances the player's attack state machine. */
+  /** Fixed-tick step: advances every hero's attack state machine (seat order). */
   update(): void {
-    const p = this.player;
+    for (let i = 0; i < this.players.length; i++) this.updateSeat(i);
+  }
+
+  private updateSeat(i: number): void {
+    const p = this.players[i];
+    const mv = this.movements[i];
+    const sw = this.swings[i];
+    if (!p || !mv || !sw) return;
     if (p.action === 'dead') return;
 
     if (p.action === 'hit') {
@@ -140,40 +190,41 @@ export class CombatSystem {
     }
 
     if (p.action === 'attack') {
-      this.advancePlayerSwing();
+      this.advancePlayerSwing(i);
       return;
     }
 
     // Idle: a click-ordered target in reach swings first…
-    const clickTarget = this.movement.getAttackTargetInRange();
+    const clickTarget = mv.getAttackTargetInRange();
     if (clickTarget) {
-      this.beginPlayerSwing(clickTarget, 'click');
+      this.beginPlayerSwing(i, clickTarget, 'click');
       return;
     }
     // …otherwise the held action button swings at whatever is close —
     // or at the air (whiff), exactly like mashing A in Dark Alliance.
-    if (this.attackHeld) {
+    if (sw.held) {
       const profile = p.weaponProfile;
       const range = profile.ranged ? profile.range : Math.max(BUTTON_TARGET_RANGE, profile.range);
       const target = this.findNearestEnemy(p.pos.x, p.pos.y, range);
-      this.beginPlayerSwing(target, 'button');
+      this.beginPlayerSwing(i, target, 'button');
     }
   }
 
-  private beginPlayerSwing(target: Entity | null, source: 'click' | 'button'): void {
-    const p = this.player;
+  private beginPlayerSwing(i: number, target: Entity | null, source: 'click' | 'button'): void {
+    const p = this.players[i]!;
+    const sw = this.swings[i];
     const profile = p.weaponProfile;
     p.action = 'attack';
     p.actionTicks = 0;
-    this.swingTarget = target;
-    this.swingSource = source;
+    sw.target = target;
+    sw.source = source;
     // FROST-TOUCHED (it.53): a chilled hero swings a third slower.
     const chill = p.chillTicks > 0 ? 1.33 : 1;
-    this.swingWindup = Math.round(profile.windupTicks * chill);
-    this.swingRecover = Math.round(profile.recoverTicks * chill);
+    sw.windup = Math.round(profile.windupTicks * chill);
+    sw.recover = Math.round(profile.recoverTicks * chill);
     if (!target && this.aimDir) {
-      // No victim picked: the swing/draw still goes where the mouse points.
-      const a = this.aimDir();
+      // No victim picked: the swing/draw still goes where the hero aims.
+      const a = this.aimDir(p);
       p.facing.x = a.x;
       p.facing.y = a.y;
     }
@@ -186,32 +237,35 @@ export class CombatSystem {
     }
   }
 
-  private advancePlayerSwing(): void {
-    const p = this.player;
+  private advancePlayerSwing(i: number): void {
+    const p = this.players[i]!;
+    const sw = this.swings[i];
+    const mv = this.movements[i]!;
     // A click swing is cancelled when a newer order cleared its target;
     // button swings are short and always complete (attack commitment).
-    if (this.swingSource === 'click' && !this.movement.hasAttackTarget()) {
+    if (sw.source === 'click' && !mv.hasAttackTarget()) {
       p.action = 'idle';
-      this.swingTarget = null;
+      sw.target = null;
       return;
     }
     p.actionTicks++;
-    if (p.actionTicks === this.swingWindup) {
-      this.resolvePlayerStrike();
+    if (p.actionTicks === sw.windup) {
+      this.resolvePlayerStrike(i);
     }
-    if (p.actionTicks >= this.swingWindup + this.swingRecover) {
+    if (p.actionTicks >= sw.windup + sw.recover) {
       p.action = 'idle';
     }
   }
 
-  private resolvePlayerStrike(): void {
-    const profile = this.player.weaponProfile;
+  private resolvePlayerStrike(i: number): void {
+    const p = this.players[i]!;
+    const sw = this.swings[i];
+    const profile = p.weaponProfile;
     if (profile.ranged) {
-      this.loosePlayerProjectile(profile.range);
+      this.loosePlayerProjectile(i, profile.range);
       return;
     }
-    const p = this.player;
-    const target = this.swingTarget;
+    const target = sw.target;
     // Strike reach must always cover the selection range (livelock rule).
     const reach = Math.max(STRIKE_REACH, profile.range + 0.5);
     const inReach =
@@ -292,10 +346,10 @@ export class CombatSystem {
    * position (dodgeable in flight) — or straight along the facing when
    * firing at the air. To-hit and damage roll on impact, like enemy arrows.
    */
-  private loosePlayerProjectile(range: number): void {
-    const p = this.player;
+  private loosePlayerProjectile(i: number, range: number): void {
+    const p = this.players[i]!;
     const profile = p.weaponProfile;
-    const target = this.swingTarget;
+    const target = this.swings[i].target;
     let tx: number;
     let ty: number;
     if (target && target.hp > 0) {
@@ -379,8 +433,9 @@ export class CombatSystem {
     reach: number,
     effect?: 'slow',
   ): void {
-    const p = this.player;
-    if (p.action === 'dead') return;
+    // The body hunted the nearest unhidden hero (it.59): that is who it swings at.
+    const p = this.nearestPlayer(source.pos.x, source.pos.y);
+    if (!p || p.action === 'dead') return;
     const dx = p.pos.x - source.pos.x;
     const dy = p.pos.y - source.pos.y;
     const dist = Math.hypot(dx, dy);
@@ -408,9 +463,9 @@ export class CombatSystem {
   }
 
   /** Resolve a projectile impact on the player (archers, future casters). */
-  projectileHit(sourceId: number, minDamage: number, maxDamage: number, toHit: number, dirX: number, dirY: number): void {
-    const p = this.player;
-    if (p.action === 'dead') return;
+  projectileHit(sourceId: number, targetId: number, minDamage: number, maxDamage: number, toHit: number, dirX: number, dirY: number): void {
+    const p = this.players[this.seatOf(state.getEntity(targetId))];
+    if (!p || p.action === 'dead') return;
     if (this.rand() >= toHit) {
       eventBus.emit('combat:swing', { sourceId, targetId: p.id, result: 'miss' });
       return;
@@ -436,14 +491,16 @@ export class CombatSystem {
   dealDamage(event: DamageEvent): void {
     const target = state.getEntity(event.targetId);
     if (!target || target.hp <= 0 || target.action === 'dead') return;
-    if (this.godMode && target === this.player) return; // Cheat: untouchable.
+    const targetHero = this.players[this.seatOf(target)] ?? null;
+    if (this.godMode && targetHero) return; // Cheat: untouchable.
 
     // Skill buffs (it.32): War Cry / Arcane Intellect amplify the hero's
     // outgoing damage; Stone Skin absorbs a fraction of what comes in.
     let rolled = event.amount;
-    if (event.sourceId === this.player.id) rolled = Math.round(rolled * this.player.damageMult);
-    if (target === this.player && this.player.damageReduction > 0) {
-      rolled = Math.round(rolled * (1 - this.player.damageReduction));
+    const sourceHero = this.players[this.seatOf(state.getEntity(event.sourceId))] ?? null;
+    if (sourceHero) rolled = Math.round(rolled * sourceHero.damageMult);
+    if (targetHero && targetHero.damageReduction > 0) {
+      rolled = Math.round(rolled * (1 - targetHero.damageReduction));
     }
     // Armor is flat reduction; a landed hit always deals at least 1.
     // Thorns (it.53) bites past armor — it is the hero's own steel coming back.
@@ -458,15 +515,15 @@ export class CombatSystem {
 
     // ELITE AFFIXES (it.53).
     const source = state.getEntity(event.sourceId) as (Entity & { affix?: string | null }) | null;
-    if (source && source !== this.player && source.affix === 'vampiric' && source.hp > 0) {
+    if (source && !sourceHero && source.affix === 'vampiric' && source.hp > 0) {
       // Vampiric: a fifth of every wound flows back into the champion.
       source.hp = Math.min(source.hpMax, source.hp + Math.ceil(amount * 0.2));
       eventBus.emit('entity:healed', { entityId: source.id, amount: Math.ceil(amount * 0.2) });
     }
     const thorny = (target as Entity & { affix?: string | null }).affix === 'thorns';
-    if (thorny && event.sourceId === this.player.id && !event.reflected && target.hp > 0) {
+    if (thorny && sourceHero && !event.reflected && target.hp > 0) {
       // Thorns: 15 % of the blow comes back at the striker.
-      this.dealDamage({ sourceId: target.id, targetId: this.player.id, amount: Math.max(1, Math.ceil(amount * 0.15)), reflected: true });
+      this.dealDamage({ sourceId: target.id, targetId: sourceHero.id, amount: Math.max(1, Math.ceil(amount * 0.15)), reflected: true });
     }
 
     if (target.hp === 0) {
@@ -476,7 +533,7 @@ export class CombatSystem {
 
     // Hit recovery: hard hits interrupt whatever the victim was doing.
     // Maces (forceStagger) bypass the threshold — crushing blows always tell.
-    const isPlayer = target === this.player;
+    const isPlayer = !!targetHero;
     if (event.forceStagger || amount >= (isPlayer ? PLAYER_STUN_THRESHOLD : STUN_THRESHOLD)) {
       const recovery = isPlayer ? PLAYER_HIT_RECOVERY_TICKS : target.hitRecoveryTicks;
       if (recovery > 0) {

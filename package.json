@@ -12,6 +12,7 @@
     "deploy": "node scripts/deploy-pages.mjs"
   },
   "dependencies": {
+    "peerjs": "^1.5.5",
     "pixi.js": "^8.6.6"
   },
   "devDependencies": {

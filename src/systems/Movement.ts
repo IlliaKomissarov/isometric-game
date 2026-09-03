@@ -60,6 +60,8 @@ export class MovementSystem {
   private readonly lastAttackGoal = vec2(-1, -1);
   private pickupTarget: { uid: number; x: number; y: number } | null = null;
   private chestTarget: { id: number; x: number; y: number } | null = null;
+  /** CO-OP (it.59): the seat this system drives — only its own commands apply. */
+  playerId = 0;
 
   constructor(
     private readonly player: Player,
@@ -89,6 +91,7 @@ export class MovementSystem {
   /** Apply one tick's worth of drained input commands (local or remote). */
   applyCommands(commands: ReadonlyArray<InputCommand>): void {
     for (const cmd of commands) {
+      if (cmd.playerId !== this.playerId) continue;
       switch (cmd.type) {
         case 'MOVE_TO':
           this.attackTarget = null;
@@ -133,7 +136,7 @@ export class MovementSystem {
             this.pickupTarget = null;
             if (chestDist <= CHEST_PROMPT_RANGE) {
               // INSTANT (it.58): the prompt is showing, so E opens it at once.
-              eventBus.emit('chest:reached', { chestId: chest.id });
+              eventBus.emit('chest:reached', { chestId: chest.id, playerId: this.playerId });
             } else {
               this.chestTarget = { id: chest.id, x: chest.x, y: chest.y };
               this.startPathTo(Math.floor(chest.x), Math.floor(chest.y));
@@ -148,7 +151,7 @@ export class MovementSystem {
             this.attackTarget = null;
             this.pickupTarget = null;
             if (Math.hypot(chest.x - this.player.pos.x, chest.y - this.player.pos.y) <= CHEST_PROMPT_RANGE) {
-              eventBus.emit('chest:reached', { chestId: chest.id });
+              eventBus.emit('chest:reached', { chestId: chest.id, playerId: this.playerId });
             } else {
               this.chestTarget = { id: chest.id, x: chest.x, y: chest.y };
               this.startPathTo(Math.floor(chest.x), Math.floor(chest.y));
@@ -211,7 +214,7 @@ export class MovementSystem {
         } else if (
           Math.hypot(this.chestTarget.x - this.player.pos.x, this.chestTarget.y - this.player.pos.y) <= CHEST_PROMPT_RANGE
         ) {
-          eventBus.emit('chest:reached', { chestId: this.chestTarget.id });
+          eventBus.emit('chest:reached', { chestId: this.chestTarget.id, playerId: this.playerId });
           this.chestTarget = null;
           this.clearPath();
         }
@@ -224,7 +227,7 @@ export class MovementSystem {
           Math.hypot(this.pickupTarget.x - this.player.pos.x, this.pickupTarget.y - this.player.pos.y) <=
           PICKUP_RANGE
         ) {
-          eventBus.emit('item:pickupArrived', { uid: this.pickupTarget.uid });
+          eventBus.emit('item:pickupArrived', { uid: this.pickupTarget.uid, playerId: this.playerId });
           this.pickupTarget = null;
           this.clearPath();
         }
@@ -239,7 +242,7 @@ export class MovementSystem {
     const tileX = Math.floor(this.player.pos.x);
     const tileY = Math.floor(this.player.pos.y);
     if (tileX !== prevTileX || tileY !== prevTileY) {
-      eventBus.emit('player:tileChanged', { gx: tileX, gy: tileY });
+      eventBus.emit('player:tileChanged', { gx: tileX, gy: tileY, playerId: this.playerId });
     }
   }
 
@@ -416,6 +419,6 @@ export class MovementSystem {
     if (this.mode === mode) return;
     this.mode = mode;
     if (mode === 'direct') this.clearPath();
-    eventBus.emit('input:modeChanged', { mode });
+    eventBus.emit('input:modeChanged', { mode, playerId: this.playerId });
   }
 }

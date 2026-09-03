@@ -462,6 +462,17 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] DUNGEON RECORDS / ARENA COLISEUM RECORDS independent, safe on stale saves, arena tab open before any trial
 - [x] One `PROMPT_RANGE` for plate and E; chests answer E inside `CHEST_PROMPT_RANGE` without pathing
 
+## Iteration 59 - 4-Player Online Co-op: Lockstep over PeerJS, Lobby, Shared Stash, Chat (2026-09-03)
+
+- [x] PeerJS (free public broker, no keys) star transport; `KNG-482` codes from `crypto.getRandomValues`
+- [x] Deterministic lockstep (6-tick input delay), warp BARRIER, LEAVE frames, solo fallback when the leader vanishes
+- [x] Title → CO-OP MULTIPLAYER lobby: nickname, class, create / join, ready-up, leader START, lobby chat
+- [x] N-seat sim: per-seat movement / skills / inventory, seat-aware combat + projectiles, enemy AI hunts the nearest hero
+- [x] Shared town stash as lockstep commands; leader-only stairs / gates / portals / teleporters / WARP
+- [x] Nameplates + hp bars, party HUD, minimap dots, HUD chat (sanitised, hotkey-safe), waiting veil, 10 s revive
+- [x] Hidden-tab worker clock; cheat menu and hit-stop off in co-op; `npm run build` with PeerJS bundled
+- [x] Two-tab live QA: identical determinism hashes at ticks 14000 and 21000, gate warp, drop / host-loss / late-join refusal
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

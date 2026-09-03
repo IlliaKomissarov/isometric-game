@@ -46,6 +46,8 @@ export { CLASS_SKILLS, type SkillDef };
 /** Lazy world accessors — always resolve against the CURRENT floor. */
 export interface SkillDeps {
   player: Player;
+  /** CO-OP (it.59): the seat this hero holds — only its own commands apply. */
+  slot?: number;
   combat: () => CombatSystem;
   enemiesNear: (x: number, y: number, r: number) => Enemy[];
   isWalkable: (gx: number, gy: number) => boolean;
@@ -203,8 +205,9 @@ export class SkillSystem {
     return Math.atan2((aim.x + aim.y) / 2, aim.x - aim.y);
   }
 
-  apply(commands: InputCommand[]): void {
+  apply(commands: ReadonlyArray<InputCommand>): void {
     for (const cmd of commands) {
+      if (cmd.playerId !== (this.deps.slot ?? 0)) continue;
       if (cmd.type === 'SKILL') this.cast(cmd.slot);
       else if (cmd.type === 'UNLOCK_SKILL') this.unlockSkill(cmd.id);
       else if (cmd.type === 'UNLOCK_PASSIVE') this.unlockPassive(cmd.id);

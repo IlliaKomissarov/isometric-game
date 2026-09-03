@@ -15,7 +15,7 @@
  * in under the transition fade (lazy loading — see SpriteLibrary.ensure).
  */
 
-import { Application, Container, Sprite } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
@@ -75,6 +75,12 @@ import { SkillTreeUI } from '@/ui/SkillTree';
 import { CharacterSheetUI } from '@/ui/CharacterSheet';
 import { BestiaryUI } from '@/ui/Bestiary';
 import { GoreSystem } from '@/render/Gore';
+import { hasLineOfSight } from '@/utils/los';
+import { PARTY_COLORS, PARTY_COLOR_CSS, type MemberInfo } from '@/net/PeerNet';
+import { Lockstep } from '@/net/Lockstep';
+import { ChatUI } from '@/ui/Chat';
+import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
+import type { PlayerSave } from '@/persist/SaveGame';
 import { makeDraggable } from '@/ui/draggable';
 import { auditTownLayout } from '@/town/TownMap';
 import { TownSystem } from '@/systems/Town';
@@ -98,6 +104,8 @@ interface World {
   enemies: EnemyPool;
   chests: ChestSystem;
   input: InputBindings;
+  /** CO-OP (it.59): one locomotion system per party seat (null = empty seat). `movement` is the local hero's. */
+  movements: Array<MovementSystem | null>;
   stairs: { x: number; y: number; sprite: Sprite };
   /** Sealed boss arena floor (it.28): stairs hidden until every foe falls. */
   isArena: boolean;
@@ -427,6 +435,11 @@ async function boot(): Promise<void> {
   });
 
   const mainMenu = new MainMenuUI({
+    // CO-OP MULTIPLAYER (it.59): the party lobby.
+    coop: () => {
+      mainMenu.hide();
+      coopLobby.open(lastHero);
+    },
     // START GAME always opens the character selection (it.37 flow rule).
     play: () => void openClassSelect(),
     // CONTINUE resumes the most recent slot in town (it.39).
@@ -470,7 +483,25 @@ async function boot(): Promise<void> {
     save?: SaveGame;
     /** Restart / change class: a fresh hero that keeps the slot's stash. */
     stash?: StashState;
+    /** CO-OP (it.59): the party this run belongs to. */
+    coop?: CoopStart;
   }
+
+  /**
+   * CO-OP HEROES (it.59): each class keeps one persistent co-op hero in a
+   * hidden slot (11–14) — the lobby shows its level, the run saves to it.
+   */
+  const COOP_SLOT: Record<ClassArchetype, number> = { warrior: 11, mage: 12, ranger: 13, rogue: 14 };
+  const coopLobby = new CoopLobbyUI({
+    heroFor: (cls) => saves.read(COOP_SLOT[cls])?.player ?? null,
+    stashFor: (cls) => saves.read(COOP_SLOT[cls])?.stash ?? { items: [], gold: 0 },
+    start: (cfg) => {
+      const me = cfg.members.find((m) => m.slot === cfg.localSlot);
+      if (!me) return;
+      void beginRun(me.cls, 0, { slot: COOP_SLOT[me.cls], save: saves.read(COOP_SLOT[me.cls]) ?? undefined, coop: cfg });
+    },
+    closed: () => showMainMenu(),
+  });
 
   let starting = false;
   const beginRun = async (cls: ClassArchetype, startFloor = 0, opts: RunOptions = { slot: saves.firstFree() ?? 1 }): Promise<void> => {
@@ -572,12 +603,30 @@ async function boot(): Promise<void> {
     state.clear();
     const inputQueue = new InputQueue();
 
+    // ---- THE PARTY (it.59) --------------------------------------------------
+    // Solo is a party of one. In co-op every peer builds the SAME roster in
+    // seat order, from the SAME hero sheets, so entity ids and everything
+    // downstream line up on four machines (deterministic lockstep).
+    const coop = opts.coop ?? null;
+    const net = coop?.net ?? null;
+    const localSlot = coop?.localSlot ?? 0;
+    inputQueue.stamp = localSlot;
+    const roster: MemberInfo[] = coop ? coop.members : [{ slot: 0, name: 'You', cls: chosenClass, ready: true, hero: null, online: true }];
+    const seatCount = Math.max(...roster.map((m) => m.slot)) + 1;
+    /** The Party Leader's seat: the only hero whose feet open stairs, gates and portals. */
+    let leaderSlot = 0;
+    const lockstep = net ? new Lockstep(net, localSlot, roster.map((m) => m.slot)) : null;
+    const chat = coop ? new ChatUI({ send: (text) => net?.chat(text) }) : null;
+    /** A hero revives beside the floor's entrance ten seconds after falling (co-op only). */
+    const COOP_REVIVE_TICKS = 600;
+    const ownStash: StashState = loaded?.stash ?? { items: [], gold: 0 };
+
     const seedParam = new URLSearchParams(location.search).get('seed');
-    const baseSeed = loaded ? loaded.seed : seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
-    /** Per-floor memory (it.39): rebuilt floors look the way they were left. */
-    const floors: Record<number, FloorMemory> = loaded ? { ...loaded.floors } : {};
+    const baseSeed = coop ? coop.seed : loaded ? loaded.seed : seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
+    /** Per-floor memory (it.39): rebuilt floors look the way they were left. A party starts with none — the crypt must match on every peer. */
+    const floors: Record<number, FloorMemory> = coop ? {} : loaded ? { ...loaded.floors } : {};
     const memKey = (f: number, arena: boolean): number => (arena ? 1000 + f : f);
-    let deepestFloor = loaded?.deepestFloor ?? 0;
+    let deepestFloor = coop ? 0 : (loaded?.deepestFloor ?? 0);
     // RECORDS (it.54): the dungeon and arena ledgers — global, merged with the slot's copy.
     const stats = new StatsManager();
     stats.load();
@@ -593,51 +642,165 @@ async function boot(): Promise<void> {
     let floor =
       Number.isFinite(depthParam) && depthParam >= 1 ? Math.min(Math.floor(depthParam), MAX_DEPTH) : startFloor;
 
-    // The hero's own atlases (+ the knight fallback) stream in before
+    // Every hero's atlases (+ the knight fallback) stream in before
     // anything renders; buildWorld fetches the floor's roster itself.
-    await spriteLib.ensure([...animsForHero(chosenClass), ...animsForHero('warrior')]);
+    await spriteLib.ensure([...roster.flatMap((m) => animsForHero(m.cls)), ...animsForHero('warrior')]);
 
-    const player = new Player(chosenClass);
-    state.register(player);
-    // Starter kit fits the trade (it.32): the class's basic arms.
-    if (loaded) {
-      // RESTORE (it.39): the sheet, the bags, the worn gear.
-      player.level = loaded.player.level;
-      player.xp = loaded.player.xp;
-      player.gold = loaded.player.gold;
-      player.hpMax = loaded.player.hpMax;
-      player.hp = Math.min(loaded.player.hpMax, Math.max(1, loaded.player.hp));
-      player.resource = Math.min(player.resourceMax, loaded.player.resource);
-      player.skillPoints = loaded.player.skillPoints;
-      for (const id of loaded.player.unlocked) player.unlockedSkills.add(id);
-      for (const id of loaded.player.passives) player.passives.add(id);
-      for (const [k, v] of Object.entries(loaded.player.bestiary ?? {})) player.bestiary.set(k, { seen: v.seen, killed: v.killed });
-      player.goldCollected = loaded.player.goldCollected ?? 0;
-      loaded.player.loadout.forEach((id, i) => {
-        player.loadout[i] = id && player.unlockedSkills.has(id) ? id : null;
+    /** RESTORE (it.39): the sheet, the bags, the worn gear. */
+    const applyHeroSave = (p: Player, ps: PlayerSave): void => {
+      p.level = ps.level;
+      p.xp = ps.xp;
+      p.gold = ps.gold;
+      p.hpMax = ps.hpMax;
+      p.hp = Math.min(ps.hpMax, Math.max(1, ps.hp));
+      p.resource = Math.min(p.resourceMax, ps.resource);
+      p.skillPoints = ps.skillPoints;
+      for (const id of ps.unlocked) p.unlockedSkills.add(id);
+      for (const id of ps.passives) p.passives.add(id);
+      for (const [k, v] of Object.entries(ps.bestiary ?? {})) p.bestiary.set(k, { seen: v.seen, killed: v.killed });
+      p.goldCollected = ps.goldCollected ?? 0;
+      ps.loadout.forEach((id, i) => {
+        p.loadout[i] = id && p.unlockedSkills.has(id) ? id : null;
       });
-      for (const id of loaded.player.backpack) if (ITEMS[id]) player.addItem(id);
-      for (const { itemId } of loaded.player.equipped) {
+      for (const id of ps.backpack) if (ITEMS[id]) p.addItem(id);
+      for (const { itemId } of ps.equipped) {
         if (!ITEMS[itemId]) continue;
-        player.addItem(itemId);
-        player.equipFromBackpack(player.backpack.length - 1);
+        p.addItem(itemId);
+        p.equipFromBackpack(p.backpack.length - 1);
       }
-    } else {
-      // STARTER KIT (it.42): the class weapon and a chest piece go straight
-      // onto the paperdoll — nobody walks out of town bare-handed.
-      const starterWeapon = chosenClass === 'ranger' ? 'short_bow' : chosenClass === 'mage' ? 'apprentice_wand' : chosenClass === 'rogue' ? 'worn_katana' : 'rusty_sword';
-      const starterChest = chosenClass === 'mage' ? 'cloth_robe' : 'leather_jerkin';
+    };
+    /** STARTER KIT (it.42): the class weapon and a chest piece go straight onto the paperdoll. */
+    const giveStarterKit = (p: Player, cls: ClassArchetype): void => {
+      const starterWeapon = cls === 'ranger' ? 'short_bow' : cls === 'mage' ? 'apprentice_wand' : cls === 'rogue' ? 'worn_katana' : 'rusty_sword';
+      const starterChest = cls === 'mage' ? 'cloth_robe' : 'leather_jerkin';
       for (const id of [starterWeapon, starterChest]) {
-        player.addItem(id);
-        player.equipFromBackpack(player.backpack.length - 1);
+        p.addItem(id);
+        p.equipFromBackpack(p.backpack.length - 1);
       }
       // SECONDARY ARM (it.48): a bow for the melee trades, a blade for the ranger.
-      player.addItem(chosenClass === 'ranger' ? 'rusty_sword' : 'short_bow');
+      p.addItem(cls === 'ranger' ? 'rusty_sword' : 'short_bow');
       // Every delver leaves town with two draughts and a way back (it.39).
-      player.addItem('health_potion');
-      player.addItem('health_potion');
+      p.addItem('health_potion');
+      p.addItem('health_potion');
+    };
+
+    /** One party seat: the hero, its colours, its co-op bookkeeping. */
+    interface Seat {
+      slot: number;
+      name: string;
+      cls: ClassArchetype;
+      color: number;
+      colorCss: string;
+      player: Player;
+      /** Left the party (LEAVE frame / lost link): despawned, ignored everywhere. */
+      gone: boolean;
+      /** Last AIM point from this seat's command stream (co-op). */
+      aim: { x: number; y: number } | null;
+      /** Overhead nameplate + hp bar (co-op). */
+      plate: { root: Container; bar: Graphics } | null;
     }
-    if (spriteLib.loaded) player.enableKnightRig(); // The class body replaces the crystal.
+    const party: Array<Seat | null> = [];
+    /** The live seat → hero table shared with combat / projectiles (a seat that leaves goes null). */
+    const seatPlayers: Array<Player | null> = [];
+    for (let s = 0; s < seatCount; s++) {
+      const m = roster.find((r) => r.slot === s);
+      if (!m) {
+        party.push(null);
+        seatPlayers.push(null);
+        continue;
+      }
+      const p = new Player(m.cls);
+      state.register(p);
+      const sheet = coop ? m.hero : (loaded?.player ?? null);
+      if (sheet) applyHeroSave(p, sheet);
+      else giveStarterKit(p, m.cls);
+      if (spriteLib.loaded) p.enableKnightRig(); // The class body replaces the crystal.
+      party.push({ slot: s, name: m.name, cls: m.cls, color: PARTY_COLORS[s] ?? 0xffffff, colorCss: PARTY_COLOR_CSS[s] ?? '#fff', player: p, gone: false, aim: null, plate: null });
+      seatPlayers.push(p);
+    }
+    const me = party[localSlot]!;
+    const player = me.player;
+    const seatOf = (entity: Entity | null | undefined): Seat | null => {
+      if (!entity) return null;
+      for (const s of party) if (s && !s.gone && s.player === entity) return s;
+      return null;
+    };
+    const leaderHero = (): Player => party[leaderSlot]?.player ?? player;
+    const liveSeats = (): Seat[] => party.filter((s): s is Seat => !!s && !s.gone);
+    /** Spread the party around a tile: the leader on it, the rest on the nearest free tiles. */
+    const RING: ReadonlyArray<readonly [number, number]> = [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [0, 2], [-2, 0], [0, -2], [2, 1], [1, 2]];
+    const placeParty = (cx: number, cy: number, isWalkable: (gx: number, gy: number) => boolean): void => {
+      let k = 0;
+      for (const seat of liveSeats()) {
+        let placed = false;
+        for (; k < RING.length; k++) {
+          const gx = Math.floor(cx) + RING[k][0];
+          const gy = Math.floor(cy) + RING[k][1];
+          if (!isWalkable(gx, gy)) continue;
+          seat.player.warpTo(k === 0 ? cx : gx + 0.5, k === 0 ? cy : gy + 0.5);
+          k++;
+          placed = true;
+          break;
+        }
+        if (!placed) seat.player.warpTo(cx, cy);
+        seat.player.action = 'idle';
+      }
+    };
+    /** CO-OP NAMEPLATES (it.59): the nickname and an hp bar over every hero, in the seat colour. */
+    if (coop) {
+      for (const seat of liveSeats()) {
+        const root = new Container();
+        root.position.set(0, -96);
+        const label = new Text({
+          text: seat.name,
+          style: { fontFamily: 'Cinzel, Georgia, serif', fontSize: 11, fontWeight: '700', fill: seat.colorCss, stroke: { color: 0x000000, width: 3 }, letterSpacing: 1 },
+        });
+        label.anchor.set(0.5, 1);
+        label.position.set(0, -2);
+        label.resolution = 2;
+        const bar = new Graphics();
+        root.addChild(label, bar);
+        seat.player.container.addChild(root);
+        seat.plate = { root, bar };
+      }
+    }
+    const updatePlates = (): void => {
+      for (const seat of liveSeats()) {
+        const pl = seat.plate;
+        if (!pl) continue;
+        const frac = Math.max(0, Math.min(1, seat.player.hp / Math.max(1, seat.player.hpMax)));
+        pl.bar.clear();
+        pl.bar.rect(-24, 0, 48, 5).fill({ color: 0x000000, alpha: 0.75 });
+        pl.bar.rect(-23, 1, 46 * frac, 3).fill({ color: seat.player.action === 'dead' ? 0x553333 : seat.color });
+        pl.root.alpha = seat.player.action === 'dead' ? 0.55 : 1;
+        pl.root.scale.set(Enemy.hudScale);
+      }
+    };
+    /** Aim (it.33, per seat since it.59): the mouse in solo; the seat's AIM stream in co-op. */
+    const aimWorldPoint = (p: Player): { x: number; y: number } | null => {
+      if (coop) {
+        const seat = seatOf(p);
+        return seat?.aim ? { x: seat.aim.x, y: seat.aim.y } : null;
+      }
+      return lastMouse.seen ? world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2()) : null;
+    };
+    const aimFor = (p: Player): { x: number; y: number } => {
+      const w = aimWorldPoint(p);
+      if (w) {
+        const dx = w.x - p.pos.x;
+        const dy = w.y - p.pos.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 0.2) return { x: dx / len, y: dy / len };
+      }
+      const flen = Math.hypot(p.facing.x, p.facing.y) || 1;
+      return { x: p.facing.x / flen, y: p.facing.y / flen };
+    };
+    let leaderNoteCooldown = 0;
+    const leaderOnlyNote = (): void => {
+      if (leaderNoteCooldown > 0) return;
+      leaderNoteCooldown = 90;
+      world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'ONLY THE PARTY LEADER OPENS THE WAY', 'miss');
+    };
 
     /**
      * Live ANIMATED paperdoll (it.15): idle-animation frames of the actual
@@ -704,15 +867,17 @@ async function boot(): Promise<void> {
       return frames.length <= 6 && frames.length > 2 ? [...frames, ...frames.slice(1, -1).reverse()] : frames;
     };
 
-    // Town economy + stash (it.39): the stash belongs to the SLOT.
-    const town = new TownSystem(player, opts.stash ?? loaded?.stash ?? { items: [], gold: 0 });
-    let townVisits = loaded ? 1 : 0;
+    // Town economy + stash (it.39): the stash belongs to the SLOT — in co-op
+    // the PARTY shares the leader's stash (it.59) and every deposit or
+    // withdrawal is a lockstep command, so all four see the same chest.
+    const town = new TownSystem((slot) => (party[slot] && !party[slot]!.gone ? party[slot]!.player : null), coop ? coop.stash : (opts.stash ?? loaded?.stash ?? { items: [], gold: 0 }));
+    let townVisits = coop ? 0 : loaded ? 1 : 0;
     let pendingPortal = false;
     let portalCooldown = 0;
     /** HIT-STOP (it.48): sim ticks frozen when heavy steel lands — the frame the blow READS. */
     let hitStopTicks = 0;
     const hitStop = (ticks: number): void => {
-      if (world.town) return;
+      if (world.town || coop) return; // Lockstep never holds a frame (it.59).
       hitStopTicks = Math.min(3, Math.max(hitStopTicks, ticks));
     };
     const vignetteEl = document.getElementById('vignette');
@@ -773,7 +938,7 @@ async function boot(): Promise<void> {
       b.addEventListener('click', () => {
         audio.sfx('uiConfirm');
         arenaModal.classList.remove('open');
-        enterColiseum(Number(b.dataset.waves));
+        inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'coliseum', n: Number(b.dataset.waves) });
       });
     });
     window.addEventListener(
@@ -879,20 +1044,7 @@ async function boot(): Promise<void> {
       b.addEventListener('click', () => {
         audio.sfx('uiConfirm');
         victoryModal.classList.remove('open');
-        if (b.dataset.victory === 'crown') {
-          if (!victoryShown) {
-            victoryShown = true;
-            runEndgame();
-          }
-        } else {
-          victoryShown = false;
-          withFade(async () => {
-            await preloadFloor(0, 'hub');
-            if (!world.town) captureFloor();
-            if (!swapWorld(() => buildWorld(0, 'hub'))) return;
-            enterTown(false);
-          });
-        }
+        inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: b.dataset.victory === 'crown' ? 'crown' : 'town' });
       });
     });
     window.addEventListener(
@@ -980,33 +1132,46 @@ async function boot(): Promise<void> {
         }
       }
       // The teleporter (it.56): opened by the last wave or by T; stepping onto its pad goes home.
-      if (c.exit && !transitioning && Math.hypot(player.pos.x - (c.exit.x + 0.5), player.pos.y - (c.exit.y + 0.5)) < 0.9) leaveColiseum();
+      if (c.exit && !transitioning) {
+        const lead = leaderHero();
+        if (Math.hypot(lead.pos.x - (c.exit.x + 0.5), lead.pos.y - (c.exit.y + 0.5)) < 0.9) leaveColiseum();
+        else if (coop && Math.hypot(player.pos.x - (c.exit.x + 0.5), player.pos.y - (c.exit.y + 0.5)) < 0.9) leaderOnlyNote();
+      }
     };
     let emptyArenaTicks = 0;
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
     let portalArmed = false;
     let pendingInteract: number | null = null;
-    const inventorySystem = new InventorySystem(player, {
-      heal: (fraction) => {
-        const healed = world.combat.heal(player.id, Math.round(player.hpMax * fraction));
-        audio.sfx('potion');
-        if (healed > 0) {
-          world.dmgText.show(player.pos.x, player.pos.y - 0.3, `+${healed}`, 'miss');
-          world.ambience.burst(player.pos.x, player.pos.y, 0xd83030, 10);
-        }
-        updateOrb();
-      },
-      restore: (fraction) => {
-        player.resource = Math.min(player.resourceMax, player.resource + player.resourceMax * fraction);
-        audio.sfx('potion');
-        world.ambience.burst(player.pos.x, player.pos.y, 0x6f86b8, 10);
-      },
-      portal: () => {
-        if (world.town || transitioning || pendingPortal) return false;
-        pendingPortal = true;
-        return true;
-      },
-    });
+    const makeInventory = (p: Player, slot: number): InventorySystem => {
+      const inv = new InventorySystem(p, {
+        heal: (fraction) => {
+          const healed = world.combat.heal(p.id, Math.round(p.hpMax * fraction));
+          if (p === player) audio.sfx('potion');
+          if (healed > 0) {
+            world.dmgText.show(p.pos.x, p.pos.y - 0.3, `+${healed}`, 'miss');
+            world.ambience.burst(p.pos.x, p.pos.y, 0xd83030, 10);
+          }
+          if (p === player) updateOrb();
+        },
+        restore: (fraction) => {
+          p.resource = Math.min(p.resourceMax, p.resource + p.resourceMax * fraction);
+          if (p === player) audio.sfx('potion');
+          world.ambience.burst(p.pos.x, p.pos.y, 0x6f86b8, 10);
+        },
+        portal: () => {
+          if (coop && slot !== leaderSlot) {
+            if (slot === localSlot) leaderOnlyNote();
+            return false;
+          }
+          if (world.town || transitioning || pendingPortal) return false;
+          pendingPortal = true;
+          return true;
+        },
+      });
+      inv.slot = slot;
+      return inv;
+    };
+    const inventories: Array<InventorySystem | null> = party.map((s) => (s ? makeInventory(s.player, s.slot) : null));
     const stateSync = new StateSyncSystem(inputQueue);
     const inventoryUI = new InventoryUI(player, inputQueue, 0, buildPaperdollFrames);
     const tutorial = new TutorialUI();
@@ -1107,7 +1272,8 @@ async function boot(): Promise<void> {
       return `${m}:${s.toString().padStart(2, '0')}`;
     };
 
-    on('input:modeChanged', ({ mode }) => {
+    on('input:modeChanged', ({ mode, playerId }) => {
+      if (playerId !== localSlot) return;
       rowMove?.classList.toggle('active', mode === 'path');
       rowDirect?.classList.toggle('active', mode === 'direct');
     });
@@ -1276,18 +1442,28 @@ async function boot(): Promise<void> {
       if (memory) chests.applyMemory(memory.openedChests);
       const pathfinder = new Pathfinder(dungeon.width, dungeon.height, scene.isWalkable);
       // Attack/approach range follows the wielded weapon (reach or fire range).
-      const getAttackRange = (): number => Math.max(ATTACK_RANGE, player.weaponProfile.range);
-      const movement = new MovementSystem(player, pathfinder, scene.isWalkable, loot, chests, getAttackRange, viewport);
+      // ONE LOCOMOTION SYSTEM PER SEAT (it.59): each answers only its own commands.
+      const movements: Array<MovementSystem | null> = party.map((seat) => {
+        if (!seat || seat.gone) return null;
+        const hero = seat.player;
+        const mv = new MovementSystem(hero, pathfinder, scene.isWalkable, loot, chests, () => Math.max(ATTACK_RANGE, hero.weaponProfile.range), viewport);
+        mv.playerId = seat.slot;
+        return mv;
+      });
+      const movement = movements[localSlot]!;
       // Enemy queries are wired through a late-bound pool reference
       // (combat must exist before the pool, whose AI deps call into combat).
       let enemiesRef: EnemyPool | null = null;
-      /** TARGETING query: fog-gated (you can only aim at what you can see). */
+      /** TARGETING query: fog-gated (you can only aim at what you can see).
+       *  In co-op (it.59) the fog is per-screen, so the gate is pure sim: line of sight. */
       const findNearestEnemy = (x: number, y: number, range: number): Entity | null => {
         let best: Entity | null = null;
         let bestDist = range;
         enemiesRef?.forEachActive((enemy) => {
           if (enemy.hp <= 0 || enemy.action === 'dead') return;
-          if (!lighting.isVisible(Math.floor(enemy.pos.x), Math.floor(enemy.pos.y))) return;
+          if (coop) {
+            if (!hasLineOfSight(Math.floor(x), Math.floor(y), Math.floor(enemy.pos.x), Math.floor(enemy.pos.y), scene.isOpaque)) return;
+          } else if (!lighting.isVisible(Math.floor(enemy.pos.x), Math.floor(enemy.pos.y))) return;
           const d = Math.hypot(enemy.pos.x - x, enemy.pos.y - y);
           if (d <= bestDist) {
             bestDist = d;
@@ -1310,20 +1486,10 @@ async function boot(): Promise<void> {
         });
         return best;
       };
-      const combat = new CombatSystem(player, movement, scene.isWalkable, findNearestEnemy, seed);
+      const combat = new CombatSystem(seatPlayers, movements, scene.isWalkable, findNearestEnemy, seed);
       combat.godMode = cheatState.god; // Cheats survive the floor transition.
-      // Untargeted swings aim at the mouse cursor (it.33).
-      combat.aimDir = () => {
-        if (lastMouse.seen) {
-          const w = camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2());
-          const dx = w.x - player.pos.x;
-          const dy = w.y - player.pos.y;
-          const len = Math.hypot(dx, dy);
-          if (len > 0.2) return { x: dx / len, y: dy / len };
-        }
-        const flen = Math.hypot(player.facing.x, player.facing.y) || 1;
-        return { x: player.facing.x / flen, y: player.facing.y / flen };
-      };
+      // Untargeted swings aim at the mouse cursor (it.33) — per seat since it.59.
+      combat.aimDir = aimFor;
       // AoE cleave sweep: every living enemy in range (fog-independent sim).
       combat.enemiesNear = (x, y, r) => {
         const out: Entity[] = [];
@@ -1333,7 +1499,7 @@ async function boot(): Promise<void> {
         });
         return out;
       };
-      const projectiles = new ProjectileSystem(viewport, scene.isWalkable, player, findEnemyAt);
+      const projectiles = new ProjectileSystem(viewport, scene.isWalkable, seatPlayers, findEnemyAt);
       const vfx = new VfxSystem(viewport.objectLayer, viewport.ambienceLayer);
       const gore = new GoreSystem(viewport.groundLayer);
       projectiles.combat = combat;
@@ -1385,7 +1551,8 @@ async function boot(): Promise<void> {
           pathfinder,
           isWalkable: scene.isWalkable,
           isOpaque: scene.isOpaque,
-          getPlayerPos: () => player.pos,
+          // CO-OP (it.59): every body hunts the nearest unhidden living hero.
+          getPlayerPos: (self) => combat.nearestPlayer(self.pos.x, self.pos.y)?.pos ?? player.pos,
           meleeStrike: (src, min, max, toHit, reach, effect) =>
             combat.enemyStrike(src, min, max, toHit, reach, effect),
           shootArrow: (src, tx, ty, min, max, toHit) => {
@@ -1407,7 +1574,7 @@ async function boot(): Promise<void> {
             });
           },
           // Rogue Vanish (it.32): a hidden player cannot be seen or hunted.
-          isPlayerHidden: () => player.stealthed,
+          isPlayerHidden: (self) => combat.nearestPlayer(self.pos.x, self.pos.y)?.stealthed ?? false,
           // Hollow King at half health: two Ember Wretches claw out of the floor.
           summonMinions: (x, y) => {
             audio.sfx('summon');
@@ -1551,10 +1718,9 @@ async function boot(): Promise<void> {
         tutorial.setZones([]);
       }
 
-      // Player joins this floor's stage at its entrance.
-      viewport.objectLayer.addChild(player.container);
-      player.warpTo(dungeon.spawn.x + 0.5, dungeon.spawn.y + 0.5);
-      player.action = 'idle';
+      // The party joins this floor's stage at its entrance (it.59: spread around it).
+      for (const seat of liveSeats()) viewport.objectLayer.addChild(seat.player.container);
+      placeParty(dungeon.spawn.x + 0.5, dungeon.spawn.y + 0.5, scene.isWalkable);
 
       // Screen-space pickers for attack/loot clicks.
       const pickScratch = vec2();
@@ -1597,12 +1763,14 @@ async function boot(): Promise<void> {
         }
         return chests.pickAtCanvas(canvasX, canvasY, camera);
       };
-      const input = new InputBindings(app.canvas, camera, inputQueue, 0, scene.isWalkable, pickEnemy, pickItem, pickChest);
+      const input = new InputBindings(app.canvas, camera, inputQueue, localSlot, scene.isWalkable, pickEnemy, pickItem, pickChest);
+      input.aimSync = !!coop; // The cursor rides the command stream (it.59).
 
       lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
       if (memory?.explored) lighting.unpackExplored(base64ToBytes(memory.explored));
       minimap.setWorld(dungeon, lighting, stairs);
-      const unsubscribe = eventBus.on('player:tileChanged', ({ gx, gy }) => {
+      const unsubscribe = eventBus.on('player:tileChanged', ({ gx, gy, playerId }) => {
+        if (playerId !== localSlot) return; // The fog is the LOCAL hero's eyes (it.59).
         lighting.updateVisibility(gx, gy);
         minimap.markDirty();
       });
@@ -1622,6 +1790,7 @@ async function boot(): Promise<void> {
         ambience,
         loot,
         movement,
+        movements,
         combat,
         projectiles,
         enemies,
@@ -1659,9 +1828,9 @@ async function boot(): Promise<void> {
       w.vfx.clear();
       w.gore.clear();
       w.enemies.destroyAll();
-      // The hero survives the viewport teardown — but only detach them if
+      // The heroes survive the viewport teardown — but only detach them if
       // they still stand in THIS world (the next one may already own them).
-      if (player.container.parent === w.viewport.objectLayer) player.container.removeFromParent();
+      for (const seat of liveSeats()) if (seat.player.container.parent === w.viewport.objectLayer) seat.player.container.removeFromParent();
       w.viewport.destroy();
     };
 
@@ -1725,7 +1894,8 @@ async function boot(): Promise<void> {
         },
         stats: stats.snapshot(),
         activeTicks,
-        stash: { items: [...town.stash.items], gold: town.stash.gold },
+        // CO-OP (it.59): the party's stash is the LEADER's; a joiner keeps its own slot's stash.
+        stash: coop && !net?.isHost ? { items: [...ownStash.items], gold: ownStash.gold } : { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
       };
       const ok = saves.write(save);
@@ -1748,15 +1918,17 @@ async function boot(): Promise<void> {
         next = make();
       } catch (err) {
         console.error('[floor] build failed — staying on the current floor:', err);
-        // The failed attempt may have re-parented the hero; put them back.
-        if (player.container.parent !== world.viewport.objectLayer) {
-          world.viewport.objectLayer.addChild(player.container);
+        // The failed attempt may have re-parented the heroes; put them back.
+        for (const seat of liveSeats()) {
+          if (seat.player.container.parent !== world.viewport.objectLayer) world.viewport.objectLayer.addChild(seat.player.container);
         }
         return false;
       }
       const old = world;
       world = next;
-      skills.clearZones(); // Firewalls/traps stay in the old world's grave.
+      for (const sk of skillSystems) sk?.clearZones(); // Firewalls/traps stay in the old world's grave.
+      arenaTeleporterIn = 0;
+      bossLoot = null;
       destroyWorld(old);
       interactHint?.classList.remove('show', 'dim'); // No floating chips survive a floor.
       pendingInteract = null;
@@ -1777,11 +1949,11 @@ async function boot(): Promise<void> {
       floor = 0;
       updateDepth();
       floorStartTick = state.tick;
-        floorActiveTicks = 0;
-      player.action = 'idle';
+      floorActiveTicks = 0;
+      for (const seat of liveSeats()) seat.player.action = 'idle';
       if (viaPortal) {
-        player.warpTo(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5);
-        world.lighting.updateVisibility(t.layout.portal.x, t.layout.portal.y);
+        placeParty(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         audio.sfx('portal');
       }
       if (portalReturn) {
@@ -1815,7 +1987,8 @@ async function boot(): Promise<void> {
     /** Scroll of Town Portal: remember where we stood, then fade to town. */
     const castPortal = (): void =>
       withFade(async () => {
-        portalReturn = { floor, arena: world.isArena, x: player.pos.x, y: player.pos.y };
+        const lead = leaderHero();
+        portalReturn = { floor, arena: world.isArena, x: lead.pos.x, y: lead.pos.y };
         captureFloor();
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) {
@@ -1838,9 +2011,8 @@ async function boot(): Promise<void> {
         updateDepth();
         floorStartTick = state.tick;
         floorActiveTicks = 0;
-        player.warpTo(r.x, r.y);
-        player.action = 'idle';
-        world.lighting.updateVisibility(Math.floor(r.x), Math.floor(r.y));
+        placeParty(r.x, r.y, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         minimap.markDirty();
         updateOrb();
         audio.sfx('portal');
@@ -1862,8 +2034,10 @@ async function boot(): Promise<void> {
     );
 
     // --- ACTIVE SKILLS (it.32): hotkeys 1–4, wired to the CURRENT floor ----
-    const skills = new SkillSystem({
-      player,
+    // ONE SKILL SYSTEM PER SEAT (it.59): the HUD binds to the local hero's.
+    const makeSkills = (hero: Player, slot: number): SkillSystem => new SkillSystem({
+      player: hero,
+      slot,
       combat: () => world.combat,
       enemiesNear: (x, y, r) => {
         const out: Enemy[] = [];
@@ -1878,23 +2052,13 @@ async function boot(): Promise<void> {
       glint: (x, y) => world.ambience.playGlint(x, y),
       shake: (a) => world.camera.addShake(a),
       inTown: () => !!world.town, // Respec is a town rite (it.48).
-      interruptMove: () => world.movement.interrupt(), // Casts cut the walk (it.53).
+      interruptMove: () => world.movements[slot]?.interrupt(), // Casts cut the walk (it.53).
       text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
       sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
       vfx: (anim, x, y, opts) => world.vfx.play(anim, x, y, opts),
-      aim: () => {
-        if (lastMouse.seen) {
-          const w = world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2());
-          const dx = w.x - player.pos.x;
-          const dy = w.y - player.pos.y;
-          const len = Math.hypot(dx, dy);
-          if (len > 0.2) return { x: dx / len, y: dy / len };
-        }
-        const flen = Math.hypot(player.facing.x, player.facing.y) || 1;
-        return { x: player.facing.x / flen, y: player.facing.y / flen };
-      },
-      // The cursor's exact world point (it.38): ground zones land ON it.
-      aimPoint: () => (lastMouse.seen ? world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2()) : null),
+      aim: () => aimFor(hero),
+      // The aim's exact world point (it.38): ground zones land ON it.
+      aimPoint: () => aimWorldPoint(hero),
       zoneVisual: (kind, x, y) => {
         // Persistent ground objects for skill zones (it.33): a gold trap
         // rune, a burning flame bed, or a pale rain sigil.
@@ -1949,7 +2113,11 @@ async function boot(): Promise<void> {
         };
       },
     });
-    subs.push(() => skills.destroy());
+    const skillSystems: Array<SkillSystem | null> = party.map((s) => (s ? makeSkills(s.player, s.slot) : null));
+    const skills = skillSystems[localSlot]!;
+    subs.push(() => {
+      for (const sk of skillSystems) sk?.destroy();
+    });
     // BOSS DISINTEGRATION (it.43): embers lift off the collapsing body each frame.
     Enemy.onBossDeathFrame = (e, p) => {
       if (p < 0.45) return;
@@ -2064,15 +2232,24 @@ async function boot(): Promise<void> {
     const floorFade = document.getElementById('floor-fade');
     let transitioning = false;
     let transitionSerial = 0;
+    /** The tick being executed (set at the top of every tickUpdate). */
+    let simTick = 0;
     const withFade = (work: () => Promise<void>): void => {
       if (transitioning) return;
       transitioning = true;
       const serial = ++transitionSerial;
       audio.sfx('stairs');
       floorFade?.classList.add('show');
+      // THE BARRIER (it.59): nothing past this tick runs on any peer until
+      // every peer's new floor stands — the party steps out together.
+      lockstep?.enterBarrier(simTick + 1);
       const finish = (): void => {
         if (!alive || serial !== transitionSerial) return;
         floorFade?.classList.remove('loading');
+        if (lockstep && lockstep.inBarrier) {
+          lockstep.markReady(); // `transitioning` clears on RESUME — the same tick for all.
+          return;
+        }
         later(() => {
           floorFade?.classList.remove('show');
           transitioning = false;
@@ -2128,7 +2305,7 @@ async function boot(): Promise<void> {
         await preloadFloor(floor, 'arena');
         captureFloor();
         if (!swapWorld(() => buildWorld(floor, 'arena'))) return;
-        player.action = 'idle';
+        for (const seat of liveSeats()) seat.player.action = 'idle';
         updateOrb();
         world.dmgText.show(player.pos.x + 1.2, player.pos.y - 0.6, 'THE ARENA SEALS SHUT', 'crit');
       });
@@ -2143,7 +2320,7 @@ async function boot(): Promise<void> {
         updateDepth();
         floorStartTick = state.tick;
         floorActiveTicks = 0;
-        player.action = 'idle';
+        for (const seat of liveSeats()) seat.player.action = 'idle';
         const c = world.coliseum;
         if (c) {
           c.waves = waves;
@@ -2152,8 +2329,8 @@ async function boot(): Promise<void> {
           c.timer = 5 * 60;
           c.startActive = activeTicks;
         }
-        player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
-        world.lighting.updateVisibility(world.dungeon.spawn.x, world.dungeon.spawn.y);
+        placeParty(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         minimap.markDirty();
         updateOrb();
         world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE TRIAL BEGINS', 'crit');
@@ -2181,7 +2358,7 @@ async function boot(): Promise<void> {
         updateDepth();
         floorStartTick = state.tick;
         floorActiveTicks = 0;
-        player.action = 'idle';
+        for (const seat of liveSeats()) seat.player.action = 'idle';
         updateOrb();
       });
     };
@@ -2203,7 +2380,7 @@ async function boot(): Promise<void> {
       }
       overlay?.classList.add('show');
     };
-    const levelSelect = new LevelSelectUI(jumpToFloor);
+    const levelSelect = new LevelSelectUI((target) => inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'floor', n: target }));
     levelSelect.unlock(Math.max(floor, deepestFloor));
     // DEEP SAVE (it.48): the hero stands exactly where the save was written.
     if (loaded?.pos && floor > 0 && !world.town) {
@@ -2218,6 +2395,7 @@ async function boot(): Promise<void> {
 
     // --- Cheat menu (F1 / `) ------------------------------------------------
     const portraitFrames: HTMLCanvasElement[] = classPreviewFrames(player.archetype);
+    // In co-op the cheat menu stays shut (it.59): a local-only edit would fork the sim.
     const cheatMenu = new CheatMenuUI({
       toggleGod: () => {
         cheatState.god = !cheatState.god;
@@ -2343,6 +2521,8 @@ async function boot(): Promise<void> {
         const ranged = player.weaponProfile.ranged;
         world.ambience.impactFlash(entity.pos.x, entity.pos.y, ranged ? 0xffb060 : 0xfff0d0, 0.8 + Math.min(1.2, amount / 16));
         if (!ranged) world.ambience.slashArc(entity.pos.x, entity.pos.y, dirX ?? 1, dirY ?? 0, 0xffe6c0, 0.8);
+      } else if (entity instanceof Player && entity !== player) {
+        entity.onDamaged(); // A party-mate's hurt flash (it.59).
       } else if (entity === player) {
         player.onDamaged();
         // HURT (it.48): a red flash at the edges and a recoil away from the blow.
@@ -2371,7 +2551,14 @@ async function boot(): Promise<void> {
         const target = state.getEntity(targetId);
         if (target) world.dmgText.show(target.pos.x - 0.4, target.pos.y - 0.4, 'CRIT!', 'crit');
       }
-      if (sourceId !== player.id) {
+      const strikerSeat = seatOf(state.getEntity(sourceId));
+      if (strikerSeat && strikerSeat.player !== player) {
+        // A party-mate's swing (it.59): its arc and whoosh, no enemy grunt.
+        if (!strikerSeat.player.weaponProfile.ranged) {
+          strikerSeat.player.showSlash(result);
+          if (result === 'miss') audio.sfx('swing');
+        }
+      } else if (sourceId !== player.id) {
         // Every ENEMY melee strike whooshes at its strike frame (it.21) —
         // ranged foes already sound their bow/bolt at launch. A species
         // attack grunt rides on top.
@@ -2443,12 +2630,18 @@ async function boot(): Promise<void> {
       tutorial.notify('chest', 'The old locks give easily. Take what the dead no longer need.');
     });
 
-    on('item:pickupArrived', ({ uid }) => {
+    on('item:pickupArrived', ({ uid, playerId }) => {
+      const seat = party[playerId];
+      if (!seat || seat.gone) return;
       const itemId = world.loot.pickup(uid);
       if (itemId) {
-        audio.sfx(ITEMS[itemId]?.rarity === 'rare' ? 'rarePickup' : 'pickup');
-        player.addItem(itemId);
-        tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
+        seat.player.addItem(itemId);
+        if (seat.player === player) {
+          audio.sfx(ITEMS[itemId]?.rarity === 'rare' ? 'rarePickup' : 'pickup');
+          tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
+        } else if (chat) {
+          chat.system(`${seat.name} picked up ${ITEMS[itemId]?.name ?? itemId}.`);
+        }
       }
     });
 
@@ -2484,8 +2677,18 @@ async function boot(): Promise<void> {
         }
         // XP flows strictly from kills (it.22): value scales with the foe's
         // floor-scaled hp. Level-ups burst gold light and ring the shimmer.
+        // CO-OP (it.59): every hero on the floor shares the kill in full.
         const xpGain = entity.xpValue();
-        const levelsGained = player.grantXp(xpGain);
+        let levelsGained = 0;
+        for (const seat of liveSeats()) {
+          const lv = seat.player.grantXp(xpGain);
+          if (seat.player === player) levelsGained = lv;
+          else if (lv > 0) {
+            world.ambience.burst(seat.player.pos.x, seat.player.pos.y, 0xffd98a, 20);
+            world.vfx.play('vfx_ring', seat.player.pos.x, seat.player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
+            chat?.system(`${seat.name} reached level ${seat.player.level}.`);
+          }
+        }
         world.dmgText.show(entity.pos.x, entity.pos.y - 0.5, `+${xpGain} xp`, 'miss');
         if (levelsGained > 0) {
           audio.sfx('levelUp');
@@ -2547,17 +2750,8 @@ async function boot(): Promise<void> {
           }
           // The VICTORY BEAT: only after the body burns down to its fade does
           // the treasure erupt — a clear, earned pause before the reward.
-          later(() => {
-            if (world !== w) return;
-            for (let i = 0; i < 3; i++) {
-              const a = (i / 3) * Math.PI * 2 + 0.5;
-              w.loot.dropRareAt(bx + Math.cos(a) * 0.9, by + Math.sin(a) * 0.9);
-            }
-            w.ambience.playGlint(bx, by);
-            w.ambience.burst(bx, by, 0xffd9a0, 20);
-            w.camera.addKick(7);
-            w.camera.addShake(0.4);
-          }, 3300);
+          // Tick-clocked (it.59): loot is sim state, so the beat counts ticks.
+          bossLoot = { x: bx, y: by, ticks: 198, world: w };
           bossNote?.classList.add('show');
           later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
@@ -2588,38 +2782,28 @@ async function boot(): Promise<void> {
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
             const delay = entity === w.boss ? 7600 : 1100;
             // FINAL DEPTH (it.49): no automatic ending. The Hollow King's spoils lie
-            // where he fell; the last stair opens behind the arena and the ending
-            // waits for the hero to CLIMB IT.
-            later(() => {
-              if (world !== w) return;
-              // THE TELEPORTER (it.58): every arena's only way out rises at its heart —
-              // no stair. Depths V / X / XV descend; depth XX asks home-or-crown.
-              const room = w.dungeon.rooms[0];
-              const px = room.x + Math.floor(room.w / 2);
-              const py = room.y + Math.floor(room.h / 2);
-              w.victoryPortal = { x: px, y: py };
-              spawnTeleporterAt(px, py);
-              victoryPortalArmed = true;
-              w.ambience.burst(px + 0.5, py + 0.5, 0xffd9a0, 20);
-              w.ambience.playGlint(px + 0.5, py + 0.5);
-              w.dmgText.show(px + 0.5, py + 0.2, floor >= MAX_DEPTH ? 'THE TELEPORTER RISES · HOME, OR THE CROWN' : 'THE TELEPORTER RISES · STEP ON TO DESCEND', 'crit');
-              if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
-              else tutorial.notify('arenaTeleporter', 'The warden is down. Take the spoils, then step onto the teleporter at the heart of the arena to go deeper.');
-              audio.sfx('gateOpen');
-              audio.setBossMusic(false);
-            }, delay);
+            // where he fell; the teleporter rises at the arena's heart (it.58) and the
+            // ending waits for the hero to STEP ON IT. Tick-clocked since it.59.
+            arenaTeleporterIn = Math.round((delay / 1000) * 60);
           }
         }
         return;
       }
-      if (entity === player) {
+      const fallen = seatOf(entity);
+      if (fallen) {
         // The hero falls where they stood (death sheet plays out), THEN the
         // death overlay offers RISE AGAIN / RESTART / MAIN MENU (it.36).
-        player.action = 'dead';
-        player.actionTicks = 0;
-        inputQueue.enqueue({ type: 'STOP', playerId: 0 });
-        deathNote?.classList.add('show');
-        later(() => deathNote?.classList.remove('show'), 5200); // Doubled (it.50).
+        // CO-OP (it.59): they lie there and rise beside the entrance later.
+        fallen.player.action = 'dead';
+        fallen.player.actionTicks = 0;
+        if (fallen.player === player) {
+          inputQueue.enqueue({ type: 'STOP', playerId: localSlot });
+          deathNote?.classList.add('show');
+          if (!coop) later(() => deathNote?.classList.remove('show'), 5200); // Doubled (it.50).
+          else chat?.system('You have fallen. You rise beside the entrance in 10 s.');
+        } else {
+          chat?.system(`${fallen.name} has fallen.`);
+        }
       }
     });
 
@@ -2655,6 +2839,137 @@ async function boot(): Promise<void> {
       minimap.markDirty();
       updateOrb();
     };
+    /** CO-OP REVIVE (it.59): the fallen hero rises beside the floor's entrance at half health (sim, deterministic). */
+    const reviveSeat = (seat: Seat): void => {
+      const hero = seat.player;
+      let placed = false;
+      for (const [ox, oy] of RING) {
+        const gx = world.dungeon.spawn.x + ox;
+        const gy = world.dungeon.spawn.y + oy;
+        if (!world.scene.isWalkable(gx, gy)) continue;
+        hero.warpTo(gx + 0.5, gy + 0.5);
+        placed = true;
+        break;
+      }
+      if (!placed) hero.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
+      hero.hp = Math.max(1, Math.round(hero.hpMax * 0.5));
+      hero.action = 'idle';
+      hero.actionTicks = 0;
+      world.ambience.burst(hero.pos.x, hero.pos.y, 0xffd98a, 18);
+      if (hero === player) {
+        world.lighting.updateVisibility(Math.floor(hero.pos.x), Math.floor(hero.pos.y));
+        minimap.markDirty();
+        updateOrb();
+        deathNote?.classList.remove('show');
+        world.dmgText.show(hero.pos.x, hero.pos.y - 1.2, 'YOU RISE AGAIN', 'crit');
+      } else {
+        chat?.system(`${seat.name} rises again.`);
+      }
+    };
+    /** A seat leaves the party (LEAVE frame / the leader's link died): the hero despawns on every peer. */
+    const removeSeat = (slot: number): void => {
+      const seat = party[slot];
+      if (!seat || seat.gone) return;
+      seat.gone = true;
+      seatPlayers[slot] = null;
+      world.movements[slot] = null;
+      skillSystems[slot]?.clearZones();
+      inventories[slot] = null;
+      state.unregister(seat.player.id);
+      seat.player.container.removeFromParent();
+      seat.player.destroy();
+      refreshPartyHud(); // The leader's [System] line already told everyone.
+    };
+    /** Tick-clocked beats (it.59): the arena teleporter and the boss's loot burst. */
+    let arenaTeleporterIn = 0;
+    let bossLoot: { x: number; y: number; ticks: number; world: World } | null = null;
+    const raiseArenaTeleporter = (): void => {
+      const w = world;
+      if (!w.isArena || w.victoryPortal) return;
+      // THE TELEPORTER (it.58): every arena's only way out rises at its heart —
+      // no stair. Depths V / X / XV descend; depth XX asks home-or-crown.
+      const room = w.dungeon.rooms[0];
+      const px = room.x + Math.floor(room.w / 2);
+      const py = room.y + Math.floor(room.h / 2);
+      w.victoryPortal = { x: px, y: py };
+      spawnTeleporterAt(px, py);
+      victoryPortalArmed = true;
+      w.ambience.burst(px + 0.5, py + 0.5, 0xffd9a0, 20);
+      w.ambience.playGlint(px + 0.5, py + 0.5);
+      w.dmgText.show(px + 0.5, py + 0.2, floor >= MAX_DEPTH ? 'THE TELEPORTER RISES · HOME, OR THE CROWN' : 'THE TELEPORTER RISES · STEP ON TO DESCEND', 'crit');
+      if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
+      else tutorial.notify('arenaTeleporter', 'The warden is down. Take the spoils, then step onto the teleporter at the heart of the arena to go deeper.');
+      audio.sfx('gateOpen');
+      audio.setBossMusic(false);
+    };
+    /** Home from anywhere (the victory choice, the epilogue, a WARP town). */
+    const goHome = (): void =>
+      withFade(async () => {
+        await preloadFloor(0, 'hub');
+        if (!world.town) captureFloor();
+        if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+        enterTown(false);
+      });
+
+    // ---- PARTY HUD + WAITING VEIL (it.59) --------------------------------
+    const partyHud = document.createElement('div');
+    partyHud.id = 'party-hud';
+    if (coop) document.body.appendChild(partyHud);
+    const partyRows = new Map<number, { hp: HTMLElement; row: HTMLElement }>();
+    const refreshPartyHud = (): void => {
+      if (!coop) return;
+      partyHud.innerHTML = '';
+      partyRows.clear();
+      for (const seat of liveSeats()) {
+        const row = document.createElement('div');
+        row.className = 'ph-row' + (seat.slot === localSlot ? ' me' : '');
+        row.style.setProperty('--slot-color', seat.colorCss);
+        const name = document.createElement('b');
+        name.textContent = seat.name + (seat.slot === leaderSlot ? ' ★' : '');
+        const cls = document.createElement('span');
+        cls.textContent = seat.cls;
+        const bar = document.createElement('div');
+        bar.className = 'ph-bar';
+        const hp = document.createElement('i');
+        bar.appendChild(hp);
+        row.append(name, cls, bar);
+        partyHud.appendChild(row);
+        partyRows.set(seat.slot, { hp, row });
+      }
+    };
+    refreshPartyHud();
+    let partyHudClock = 0;
+    const coopWait = document.createElement('div');
+    coopWait.id = 'coop-wait';
+    coopWait.innerHTML = '<div class="cw-box"><b>WAITING FOR THE PARTY</b><span></span></div>';
+    if (coop) document.body.appendChild(coopWait);
+    const updatePartyHud = (dt: number): void => {
+      partyHudClock += dt;
+      if (partyHudClock < 0.1) return;
+      partyHudClock = 0;
+      for (const seat of liveSeats()) {
+        const r = partyRows.get(seat.slot);
+        if (!r) continue;
+        r.hp.style.width = `${Math.max(0, Math.min(100, (seat.player.hp / Math.max(1, seat.player.hpMax)) * 100)).toFixed(1)}%`;
+        r.row.classList.toggle('dead', seat.player.action === 'dead');
+      }
+      if (lockstep) {
+        const ms = lockstep.stalledMs;
+        const show = ms > 700;
+        coopWait.classList.toggle('show', show);
+        if (show) {
+          const missing = lockstep.isLeader ? lockstep.missingSlots(state.tick + 1).map((s) => party[s]?.name ?? `seat ${s + 1}`) : [];
+          const span = coopWait.querySelector('span');
+          if (span) span.textContent = lockstep.inBarrier ? 'the floor is being raised on every screen…' : missing.length ? `waiting on ${missing.join(', ')}` : 'waiting for the leader…';
+        }
+      }
+      if (coop && player.action === 'dead' && deathNote) {
+        const left = Math.max(0, Math.ceil((COOP_REVIVE_TICKS - player.actionTicks) / 60));
+        deathNote.dataset.revive = `YOU RISE AGAIN IN ${left}s`;
+      }
+    };
+
+    if (coop) cheatMenu.destroy();
 
     // --- Loop ---------------------------------------------------------------
     const cameraFocus = vec2();
@@ -2689,6 +3004,7 @@ async function boot(): Promise<void> {
 
     function tickUpdate(dt: number, tick: number): void {
       {
+        simTick = tick;
         if (hitStopTicks > 0) {
           // HIT-STOP (it.48): the world holds its breath for a frame or two.
           hitStopTicks--;
@@ -2711,16 +3027,57 @@ async function boot(): Promise<void> {
         }
 
         state.forEach((entity) => entity.beginTick());
-        const commands = inputQueue.drain();
-        world.movement.applyCommands(commands);
+        // THE COMMAND STREAM (it.59): solo drains the local queue; co-op ships
+        // it and executes the party's merged frame for this tick.
+        const local = inputQueue.drain();
+        const commands = lockstep ? lockstep.frame(tick, local) : local;
+        if (leaderNoteCooldown > 0) leaderNoteCooldown--;
+        for (const cmd of commands) {
+          if (cmd.type === 'AIM') {
+            const seat = party[cmd.playerId];
+            if (seat && !seat.gone) seat.aim = { x: cmd.x, y: cmd.y };
+          } else if (cmd.type === 'LEAVE') {
+            removeSeat(cmd.playerId);
+          } else if (cmd.type === 'WARP') {
+            if (coop && cmd.playerId !== leaderSlot) {
+              if (cmd.playerId === localSlot) leaderOnlyNote();
+              continue;
+            }
+            if (transitioning) continue;
+            if (cmd.to === 'coliseum') {
+              chat?.system('Leader entering the Coliseum. Warping party...');
+              enterColiseum(cmd.n ?? 5);
+            } else if (cmd.to === 'town') {
+              victoryShown = false;
+              chat?.system('Leader returning to town. Warping party...');
+              goHome();
+            } else if (cmd.to === 'floor' && cmd.n !== undefined) {
+              chat?.system(`Leader fast-travelling to depth ${ROMAN[cmd.n - 1] ?? cmd.n}. Warping party...`);
+              jumpToFloor(cmd.n);
+            } else if (cmd.to === 'crown') {
+              if (!victoryShown) {
+                victoryShown = true;
+                runEndgame();
+              }
+            } else if (cmd.to === 'portalBack') {
+              returnThroughPortal();
+            }
+          }
+        }
+        for (const mv of world.movements) mv?.applyCommands(commands);
         world.combat.applyCommands(commands);
-        inventorySystem.apply(commands);
-        skills.apply(commands); // Hotkeys 1–4 (it.32).
+        for (const inv of inventories) inv?.apply(commands);
+        for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
         town.apply(commands); // Buy / sell / stash (it.39).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
           if (cmd.type !== 'TOWN_PORTAL') continue;
           // FREE TOWN PORTAL (it.43): T opens the way home on a 12 s cooldown.
+          // CO-OP (it.59): only the Party Leader's rift moves the party.
+          if (coop && cmd.playerId !== leaderSlot) {
+            if (cmd.playerId === localSlot) leaderOnlyNote();
+            continue;
+          }
           if (world.town) world.dmgText.show(player.pos.x, player.pos.y - 1, 'YOU ARE HOME', 'miss');
           else if (world.coliseum) {
             // T (it.56): the teleporter rises at the centre; a second T while it stands leaves at once.
@@ -2743,19 +3100,37 @@ async function boot(): Promise<void> {
           pendingPortal = false;
           castPortal();
         }
-        world.movement.update(dt);
+        for (const mv of world.movements) mv?.update(dt);
         world.combat.update();
-        skills.update();
+        for (const sk of skillSystems) sk?.update();
         if (++sheetClock % 60 === 0) charSheetUI.tick();
         world.projectiles.update(dt);
         state.forEach((entity) => entity.update(dt));
         world.enemies.separate();
         // FROST-TOUCHED AURAS (it.53): a chilled hero inside three tiles of a frost champion.
         world.enemies.forEachActive((e) => {
-          if (e.affix === 'frost' && e.hp > 0 && Math.hypot(e.pos.x - player.pos.x, e.pos.y - player.pos.y) < FROST_AURA_RADIUS) {
-            player.chillTicks = Math.max(player.chillTicks, 12);
+          if (e.affix !== 'frost' || e.hp <= 0) return;
+          for (const seat of liveSeats()) {
+            const hero = seat.player;
+            if (Math.hypot(e.pos.x - hero.pos.x, e.pos.y - hero.pos.y) < FROST_AURA_RADIUS) hero.chillTicks = Math.max(hero.chillTicks, 12);
           }
         });
+        // TICK-CLOCKED BEATS (it.59): sim state must never wait on a wall clock.
+        if (arenaTeleporterIn > 0 && --arenaTeleporterIn === 0) raiseArenaTeleporter();
+        if (bossLoot && --bossLoot.ticks <= 0) {
+          const bl = bossLoot;
+          bossLoot = null;
+          if (world === bl.world) {
+            for (let i = 0; i < 3; i++) {
+              const a = (i / 3) * Math.PI * 2 + 0.5;
+              world.loot.dropRareAt(bl.x + Math.cos(a) * 0.9, bl.y + Math.sin(a) * 0.9);
+            }
+            world.ambience.playGlint(bl.x, bl.y);
+            world.ambience.burst(bl.x, bl.y, 0xffd9a0, 20);
+            world.camera.addKick(7);
+            world.camera.addShake(0.4);
+          }
+        }
         if (world.coliseum) updateColiseum();
         // A remembered-cleared arena (it.58): the teleporter stands from the first tick.
         if (world.isArena && world.arenaCleared && !world.victoryPortal && !transitioning) {
@@ -2766,26 +3141,37 @@ async function boot(): Promise<void> {
         }
         if (world.victoryPortal && !transitioning && !victoryShown) {
           const vp = world.victoryPortal;
-          const d = Math.hypot(player.pos.x - (vp.x + 0.5), player.pos.y - (vp.y + 0.5));
+          const lead = leaderHero();
+          const d = Math.hypot(lead.pos.x - (vp.x + 0.5), lead.pos.y - (vp.y + 0.5));
           if (d > 1.6) victoryPortalArmed = true;
           else if (d < 0.9 && victoryPortalArmed && !victoryModal.classList.contains('open')) {
             victoryPortalArmed = false;
             if (floor >= MAX_DEPTH) {
-              victoryModal.classList.add('open');
-              audio.sfx('portal');
+              if (localSlot === leaderSlot) {
+                victoryModal.classList.add('open');
+                audio.sfx('portal');
+              } else {
+                world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE LEADER WEIGHS THE CROWN', 'miss');
+              }
             } else {
               pendingDescend = true; // Depths V / X / XV: the teleporter goes deeper (it.58).
             }
           }
+          if (coop && localSlot !== leaderSlot && Math.hypot(player.pos.x - (vp.x + 0.5), player.pos.y - (vp.y + 0.5)) < 0.9) leaderOnlyNote();
         }
 
         // Player death animation runs to completion, then the death overlay
         // takes over (it.36) — the loop freezes until a choice is made.
-        if (player.action === 'dead') {
-          player.actionTicks++;
-          if (player.actionTicks >= PLAYER_DEATH_TICKS && !runMenus.isDeathShown) {
+        // CO-OP (it.59): no overlay — the fallen rise beside the entrance after ten seconds.
+        for (const seat of liveSeats()) {
+          const hero = seat.player;
+          if (hero.action !== 'dead') continue;
+          hero.actionTicks++;
+          if (coop) {
+            if (hero.actionTicks >= COOP_REVIVE_TICKS) reviveSeat(seat);
+          } else if (hero.actionTicks >= PLAYER_DEATH_TICKS && !runMenus.isDeathShown) {
             runMenus.showDeath(
-              `${floor < 0 ? 'The Coliseum' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${player.level} · ${formatTime(state.tick)} in the dark`,
+              `${floor < 0 ? 'The Coliseum' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark`,
             );
           }
         }
@@ -2806,43 +3192,49 @@ async function boot(): Promise<void> {
           }
         }
 
-        // GOLD PICKUP (it.22): walking over a pile scoops it up.
+        // GOLD PICKUP (it.22): walking over a pile scoops it up — whichever hero gets there (it.59).
         for (const pile of world.goldPiles) {
           if (pile.taken) continue;
-          if (Math.hypot(player.pos.x - pile.x, player.pos.y - pile.y) < 0.75) {
+          for (const seat of liveSeats()) {
+            const hero = seat.player;
+            if (hero.action === 'dead' || Math.hypot(hero.pos.x - pile.x, hero.pos.y - pile.y) >= 0.75) continue;
             pile.taken = true;
             // DESTROY, don't hide (it.26): destroyed sprites stay gone.
             pile.sprite.destroy();
             pile.glow.destroy();
-            player.gold += pile.amount;
-            player.goldCollected += pile.amount;
-            audio.sfx('gold');
+            hero.gold += pile.amount;
+            hero.goldCollected += pile.amount;
+            if (hero === player) audio.sfx('gold');
             world.ambience.sparks(pile.x, pile.y, 0, 0, 6, 0xffd870);
             world.dmgText.show(pile.x, pile.y, `+${pile.amount} gold`, 'crit');
-            updateProgressHud();
+            if (hero === player) updateProgressHud();
+            break;
           }
         }
 
         // PROXIMITY TRIGGER (it.19): TOUCHING the staircase starts the descent.
+        // CO-OP (it.59): the PARTY LEADER's feet decide; everyone else is warned.
+        const lead = leaderHero();
         const stairsDist = Math.hypot(
-          player.pos.x - (world.stairs.x + 0.5),
-          player.pos.y - (world.stairs.y + 0.5),
+          lead.pos.x - (world.stairs.x + 0.5),
+          lead.pos.y - (world.stairs.y + 0.5),
         );
+        if (coop && localSlot !== leaderSlot && !world.isArena && !world.town && Math.hypot(player.pos.x - (world.stairs.x + 0.5), player.pos.y - (world.stairs.y + 0.5)) < 0.8) leaderOnlyNote();
         // INSTANT ARENA TELEPORT (it.29): stepping inside the boss chamber's
         // room bounds seizes the player — immediate fade-teleport.
-        if (player.action !== 'dead' && world.arenaThreshold && !transitioning) {
+        if (lead.action !== 'dead' && world.arenaThreshold && !transitioning) {
           const t = world.arenaThreshold;
-          const px = Math.floor(player.pos.x);
-          const py = Math.floor(player.pos.y);
+          const px = Math.floor(lead.pos.x);
+          const py = Math.floor(lead.pos.y);
           if (px >= t.x && px < t.x + t.w && py >= t.y && py < t.y + t.h) {
             pendingArena = true;
           }
         }
 
-        // Town portal home → back through the rift (armed once the hero steps off it).
+        // Town portal home → back through the rift (armed once the leader steps off it).
         if (world.town && portalReturn && !transitioning) {
           const pt = world.town.layout.portal;
-          const d = Math.hypot(player.pos.x - (pt.x + 0.5), player.pos.y - (pt.y + 0.5));
+          const d = Math.hypot(lead.pos.x - (pt.x + 0.5), lead.pos.y - (pt.y + 0.5));
           if (!portalArmed && d > 1.4) portalArmed = true;
           if (portalArmed && d < 0.7) returnThroughPortal();
         }
@@ -2866,7 +3258,7 @@ async function boot(): Promise<void> {
 
         // The town gate opens on CONTACT (it.44): touching the archway's front tile descends at once.
         const gateReach = world.town ? 1.05 : 0.8;
-        if (player.action !== 'dead' && stairsDist < gateReach) {
+        if (lead.action !== 'dead' && stairsDist < gateReach) {
           if (!world.isArena && floor > 0 && isBossFloor(floor)) {
             pendingArena = true; // Fallback portal (the seal itself).
           } else if (world.isArena && !world.arenaCleared) {
@@ -3045,9 +3437,16 @@ async function boot(): Promise<void> {
             enemy.setShadowLight(world.lighting.lightDirAt(enemy.pos.x, enemy.pos.y));
           }
         });
-        // The hero sits in the same lighting language as the world.
-        player.setSceneTint(world.lighting.getTintAt(player.pos.x, player.pos.y, 0.7));
-        player.setShadowLight(world.lighting.lightDirAt(player.pos.x, player.pos.y));
+        // The heroes sit in the same lighting language as the world (the whole party, it.59).
+        for (const seat of liveSeats()) {
+          const hero = seat.player;
+          hero.setSceneTint(world.lighting.getTintAt(hero.pos.x, hero.pos.y, 0.7));
+          hero.setShadowLight(world.lighting.lightDirAt(hero.pos.x, hero.pos.y));
+        }
+        if (coop) {
+          updatePlates();
+          updatePartyHud(frameDt);
+        }
 
         if (world.town) {
           const t = world.town;
@@ -3082,7 +3481,7 @@ async function boot(): Promise<void> {
         }
 
         // Target ring: pulsing bracket under the foe the player is striking.
-        const target = world.combat.getDisplayTarget();
+        const target = world.combat.getDisplayTarget(localSlot);
         if (target) {
           const s = worldToScreen(target.pos.x, target.pos.y, pickRingScratch);
           world.targetRing.position.set(s.x, s.y);
@@ -3201,9 +3600,14 @@ async function boot(): Promise<void> {
       const t = world.town;
       if (!t) return;
       for (const cmd of commands) {
+        const seat = party[cmd.playerId];
+        if (!seat || seat.gone) continue;
+        const hero = seat.player;
+        const isLocal = cmd.playerId === localSlot;
+        const isLeader = cmd.playerId === leaderSlot;
         if (cmd.type === 'PICKUP_NEAREST') {
           // SYMMETRICAL E (it.41): an open trade / stash window closes on the same key.
-          if (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen || arenaModal.classList.contains('open')) {
+          if (isLocal && (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen || arenaModal.classList.contains('open'))) {
             shopUI.close();
             stashUI.close();
             statsUI.close();
@@ -3212,17 +3616,21 @@ async function boot(): Promise<void> {
           }
           // E at the portal stone or the gate takes it (no need to step in) —
           // the radii MATCH THE PROMPT (it.58): if the chip is showing, E acts.
+          // CO-OP (it.59): only the leader's E moves the party.
           if (portalReturn && !transitioning) {
             const pt = t.layout.portal;
-            if (Math.hypot(player.pos.x - (pt.x + 0.5), player.pos.y - (pt.y + 0.5)) < 3) {
-              returnThroughPortal();
+            if (Math.hypot(hero.pos.x - (pt.x + 0.5), hero.pos.y - (pt.y + 0.5)) < 3) {
+              if (isLeader) returnThroughPortal();
+              else if (isLocal) leaderOnlyNote();
               continue;
             }
           }
-          if (!transitioning && Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5)) < 3.2) {
-            pendingDescend = true;
+          if (!transitioning && Math.hypot(hero.pos.x - (t.layout.gate.x + 0.5), hero.pos.y - (t.layout.gate.y + 0.5)) < 3.2) {
+            if (isLeader) pendingDescend = true;
+            else if (isLocal) leaderOnlyNote();
             continue;
           }
+          if (!isLocal) continue; // Stalls and boards are windows on THIS screen.
           let best: Interactable | null = null;
           let bestD = PROMPT_RANGE;
           for (const it of t.interactables) {
@@ -3236,7 +3644,7 @@ async function boot(): Promise<void> {
         } else if (cmd.type === 'OPEN_CHEST') {
           const it = t.interactables.find((i) => i.id === cmd.chestId);
           if (!it) continue;
-          pendingInteract = it.id;
+          if (isLocal) pendingInteract = it.id;
           // Walk to the nearest walkable tile beside the footprint.
           let goal: { x: number; y: number } | null = null;
           let goalD = Infinity;
@@ -3245,14 +3653,14 @@ async function boot(): Promise<void> {
               const gx = tile.x + ox;
               const gy = tile.y + oy;
               if (!world.scene.isWalkable(gx, gy)) continue;
-              const d = Math.hypot(player.pos.x - (gx + 0.5), player.pos.y - (gy + 0.5));
+              const d = Math.hypot(hero.pos.x - (gx + 0.5), hero.pos.y - (gy + 0.5));
               if (d < goalD) {
                 goalD = d;
                 goal = { x: gx, y: gy };
               }
             }
           }
-          if (goal) world.movement.applyCommands([{ type: 'MOVE_TO', playerId: 0, gx: goal.x, gy: goal.y }]);
+          if (goal) world.movements[cmd.playerId]?.applyCommands([{ type: 'MOVE_TO', playerId: cmd.playerId, gx: goal.x, gy: goal.y }]);
         }
       }
       if (pendingInteract !== null) {
@@ -3298,13 +3706,13 @@ async function boot(): Promise<void> {
 
     const runMenus = new RunMenusUI({
       pause: () => {
-        loop.stop();
+        if (!coop) loop.stop(); // A party never waits on one player's menu (it.59).
         saveNow(); // Autosave on pause (it.39).
       },
       resume: () => {
         inputQueue.clear(); // Keys mashed while paused never replay.
         lastRenderTime = performance.now();
-        loop.start();
+        if (!coop) loop.start();
       },
       restart: () => restartRun(),
       mainMenu: () => exitToMenu(),
@@ -3317,6 +3725,43 @@ async function boot(): Promise<void> {
       respawn: () => respawnPlayer(),
       canPause: () => !transitioning && !victoryShown,
     });
+
+    // ---- THE WIRE (it.59) --------------------------------------------------
+    if (lockstep && net && chat) {
+      loop.gate = (t) => lockstep.canStep(t);
+      loop.keepAliveHidden = true; // An alt-tabbed peer must never freeze the party.
+      lockstep.onResume = () => {
+        transitioning = false; // The same tick on every peer.
+        floorFade?.classList.remove('show', 'loading');
+        inputQueue.clear();
+      };
+      subs.push(
+        net.onMessage((msg) => {
+          if (msg.t === 'chat') {
+            const seat = party[msg.slot];
+            chat.push(seat?.name ?? `Delver ${msg.slot + 1}`, PARTY_COLOR_CSS[msg.slot] ?? '#ddd', msg.text);
+          } else if (msg.t === 'sys') {
+            chat.system(msg.text);
+          }
+        }),
+      );
+      // The leader vanished: the run goes on ALONE — no crash, no frozen screen.
+      net.onHostLost((reason) => {
+        if (!alive) return;
+        chat.system(`${reason} Continuing alone — you can host a new party from the title.`);
+        lockstep.goSolo();
+        leaderSlot = localSlot;
+        for (const seat of liveSeats()) if (seat.slot !== localSlot) removeSeat(seat.slot);
+        if (lockstep.inBarrier) lockstep.markReady();
+        transitioning = false;
+        floorFade?.classList.remove('show', 'loading');
+        coopWait.classList.remove('show');
+        refreshPartyHud();
+      });
+      chat.system(net.isHost ? `Party ${net.code} in the crypt. You are the Party Leader.` : `Party ${net.code} in the crypt. ${party[leaderSlot]?.name ?? 'The leader'} leads.`);
+      chat.system('ENTER to chat · the leader opens stairs, gates and portals · the fallen rise after 10 s.');
+    }
+    minimap.party = coop ? () => liveSeats().filter((s) => s.player !== player).map((s) => ({ x: s.player.pos.x, y: s.player.pos.y, color: s.colorCss, dead: s.player.action === 'dead' })) : null;
 
     if (!world.town) audio.setMusic('dungeon');
     audio.playIntroSting();
@@ -3345,7 +3790,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot }),
       });
     }
 
@@ -3354,18 +3799,19 @@ async function boot(): Promise<void> {
       slot,
       stash: () => ({ items: [...town.stash.items], gold: town.stash.gold }),
       save: saveNow,
-      returnToTown: () => {
-        victoryShown = false;
-        withFade(async () => {
-          await preloadFloor(0, 'hub');
-          if (!world.town) captureFloor();
-          if (!swapWorld(() => buildWorld(0, 'hub'))) return;
-          enterTown(false);
-        });
-      },
+      returnToTown: () => inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' }),
       destroy: () => {
         if (!alive) return;
         alive = false;
+        // CO-OP TEARDOWN (it.59): tell the party, close the wire, drop every handle.
+        if (net?.isHost) net.broadcast({ t: 'end', reason: 'The Party Leader has left the crypt.' });
+        loop.gate = null;
+        lockstep?.destroy();
+        net?.destroy();
+        chat?.destroy();
+        partyHud.remove();
+        coopWait.remove();
+        minimap.party = null;
         loop.stop();
         shopUI.destroy();
         stashUI.destroy();
@@ -3389,7 +3835,7 @@ async function boot(): Promise<void> {
         minimap.destroy();
         tutorial.destroy();
         destroyWorld(world);
-        player.destroy();
+        for (const seat of party) if (seat && !seat.gone) seat.player.destroy();
         state.clear();
         if (skillBar) skillBar.innerHTML = '';
         // HUD back to a neutral slate for the next run.
@@ -3418,7 +3864,7 @@ async function boot(): Promise<void> {
   }
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings };
+    (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby };
   }
 }
 

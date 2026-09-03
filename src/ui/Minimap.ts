@@ -37,6 +37,8 @@ export class MinimapUI {
   private dirty = true;
   private visible = true;
   private readonly abort = new AbortController();
+  /** CO-OP (it.59): the other heroes, drawn in their seat colours. */
+  party: (() => Array<{ x: number; y: number; color: string; dead: boolean }>) | null = null;
 
   constructor() {
     this.wrap = document.createElement('div');
@@ -95,6 +97,17 @@ export class MinimapUI {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.drawImage(this.base, 0, 0);
 
+    // Party (it.59): steady colour-coded dots under the local pulse.
+    if (this.party) {
+      for (const m of this.party()) {
+        ctx.fillStyle = m.color;
+        ctx.globalAlpha = m.dead ? 0.35 : 1;
+        ctx.beginPath();
+        ctx.arc(m.x * SCALE, m.y * SCALE, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
     // Player: pulsing dot.
     const r = 2.6 + Math.sin(time * 6) * 0.7;
     ctx.fillStyle = COLOR_PLAYER;

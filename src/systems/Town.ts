@@ -35,7 +35,8 @@ export class TownSystem {
   readonly stash: StashState;
 
   constructor(
-    private readonly player: Player,
+    /** CO-OP (it.59): resolve the hero behind a command's seat (null = nobody there). */
+    private readonly getPlayer: (slot: number) => Player | null,
     stash: StashState,
   ) {
     this.stash = { items: [...stash.items], gold: stash.gold };
@@ -79,8 +80,9 @@ export class TownSystem {
 
   /** Apply one tick's commands (shares the drained array with the other systems). */
   apply(commands: ReadonlyArray<InputCommand>): void {
-    const p = this.player;
     for (const cmd of commands) {
+      const p = this.getPlayer(cmd.playerId);
+      if (!p) continue;
       switch (cmd.type) {
         case 'BUY': {
           const table = cmd.vendor === 'alchemist' ? this.stockAlch : this.stock;

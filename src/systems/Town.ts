@@ -60,7 +60,9 @@ export class TownSystem {
     for (let i = 0; i < magicCount; i++) stock.push(magic[Math.floor(rand() * magic.length)]);
     if (deepestFloor >= 8 && rand() < 0.5) stock.push(rare[Math.floor(rand() * rare.length)]);
     this.stock = [...new Set(stock.filter((id) => id in ITEMS))];
-    const alch = [...staples, 'scroll_town_portal'];
+    // The ALCHEMIST (it.49): every draught the catalog knows, deeper delvers get more elixirs.
+    const alch = [...staples];
+    for (const d of Object.values(ITEMS)) if (d.slot === 'consumable' && !d.use?.portal && !alch.includes(d.id)) alch.push(d.id);
     if (deepestFloor >= 5) alch.push('elixir', 'mana_potion');
     this.stockAlch = alch.filter((id) => id in ITEMS);
     this.buyback = [];

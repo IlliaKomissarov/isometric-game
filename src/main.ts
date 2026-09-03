@@ -768,7 +768,7 @@ async function boot(): Promise<void> {
         hudBuffs.innerHTML = buffs
           .map((b) => `<div class="buff${b.debuff ? ' debuff' : ''}" data-buff="${b.id}" title="${b.name}">${buffIconHtml(b)}<i class="buff-ring"></i><b class="buff-time"></b></div>`)
           .join('');
-        headBuffs.innerHTML = buffs.map((b) => `<div class="buff${b.debuff ? ' debuff' : ''}" data-buff="${b.id}">${buffIconHtml(b)}<i class="buff-ring"></i></div>`).join('');
+        headBuffs.innerHTML = buffs.map((b) => `<div class="buff${b.debuff ? ' debuff' : ''}" data-buff="${b.id}">${buffIconHtml(b)}<i class="buff-ring"></i><b class="buff-time"></b></div>`).join('');
       }
       if (!buffs.length || player.action === 'dead') {
         headBuffs.classList.remove('show');
@@ -776,7 +776,7 @@ async function boot(): Promise<void> {
       }
       for (const b of buffs) {
         const frac = Math.max(0, Math.min(1, b.ticks / b.max));
-        const secs = Math.ceil(b.ticks / 60);
+        const secs = b.ticks < 600 ? (b.ticks / 60).toFixed(1) : `${Math.ceil(b.ticks / 60)}`; // "3.5s" under ten seconds (it.49).
         for (const root of [hudBuffs, headBuffs]) {
           const el = root.querySelector<HTMLElement>(`[data-buff="${b.id}"]`);
           if (!el) continue;
@@ -1660,7 +1660,9 @@ async function boot(): Promise<void> {
     // TOWN PORTAL button (it.43): the built-in free way home, beside the hotbar.
     const tpButton = document.createElement('button');
     tpButton.id = 'tp-button';
-    tpButton.innerHTML = '<kbd>T</kbd><span>TOWN PORTAL</span><i></i>';
+    // The PORTAL RITE lives on the HUD (it.49): the scroll's own icon, the T key, the cooldown.
+    tpButton.innerHTML = `<span class="tp-icon">${itemIconHtml(ITEMS.scroll_town_portal)}</span><kbd>T</kbd><i></i>`;
+    tpButton.title = 'Town Portal (T) — a rift home, free, 12 s cooldown';
     tpButton.addEventListener('click', () => inputQueue.enqueue({ type: 'TOWN_PORTAL', playerId: 0 }));
     document.body.appendChild(tpButton);
     const buildSkillBar = (): void => {
@@ -1702,9 +1704,18 @@ async function boot(): Promise<void> {
 
     const resourceFill = document.getElementById('resource-fill');
     const resourceText = document.getElementById('resource-text');
+    // THE RESOURCE GLOBE (it.49): the right-hand orb — stamina gold, mana blue.
+    const orb2Wrap = document.getElementById('orb2-wrap');
+    const orb2Fill = document.getElementById('orb2-fill');
+    const orb2Label = document.getElementById('orb2-label');
+    const orb2Name = document.getElementById('orb2-name');
+    if (orb2Wrap) orb2Wrap.classList.toggle('mana', player.resourceName !== 'STAMINA');
+    if (orb2Name) orb2Name.textContent = player.resourceName;
     const updateSkillHud = (): void => {
       if (resourceFill) resourceFill.style.width = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
       if (resourceText) resourceText.textContent = `${Math.round(player.resource)} / ${player.resourceMax}`; // Readable gauge (it.48).
+      if (orb2Fill) orb2Fill.style.height = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
+      if (orb2Label) orb2Label.textContent = `${Math.round(player.resource)}`;
       const tpNote = tpButton.querySelector('i');
       if (tpNote) tpNote.textContent = world.town ? 'in town' : portalCooldown > 0 ? `${Math.ceil(portalCooldown / 60)}s` : 'ready';
       tpButton.classList.toggle('cooling', portalCooldown > 0 || !!world.town);
@@ -1983,7 +1994,7 @@ async function boot(): Promise<void> {
         // HURT (it.48): a red flash at the edges and a recoil away from the blow.
         if (klen > 0) world.camera.addKickDir(kdx / klen, kdy / klen, 6);
         else world.camera.addKick(5);
-        hurtFlashTimer = 0.3;
+        hurtFlashTimer = 0.15; // A short pulse (it.49), max alpha 0.25 in the stylesheet.
         vignetteEl?.classList.add('hurt');
         updateOrb();
         tutorial.notify('hurt', 'You bleed. Their heavy blows are telegraphed — step away as they rear back.');
@@ -2117,6 +2128,20 @@ async function boot(): Promise<void> {
           world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
           // GOLDEN PILLAR (it.48): a column of light climbs off the hero; a second chime rings.
           audio.sfx('rarePickup');
+          // SCREEN FLASH + BANNER (it.49).
+          {
+            const flash = document.getElementById('level-flash');
+            const banner = document.getElementById('levelup-banner');
+            if (flash) {
+              flash.classList.add('show');
+              later(() => flash.classList.remove('show'), 120);
+            }
+            if (banner) {
+              banner.innerHTML = `LEVEL UP!<small>LEVEL ${player.level} · +${levelsGained} SKILL POINT${levelsGained > 1 ? 'S' : ''}</small>`;
+              banner.classList.add('show');
+              later(() => banner.classList.remove('show'), 2400);
+            }
+          }
           world.vfx.play('vfx_aura', player.pos.x, player.pos.y, { scale: 1.5, lift: 30, fps: 16, tint: 0xffd070, overlay: true });
           {
             const s = worldToScreen(player.pos.x, player.pos.y, vec2());
@@ -2193,22 +2218,17 @@ async function boot(): Promise<void> {
             const w = world;
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
             const delay = entity === w.boss ? 7600 : 1100;
-            if (floor >= MAX_DEPTH && w.boss && (entity === w.boss || w.boss.hp <= 0)) {
-              // FINAL VICTORY (it.43): the arena clears with the Hollow King's last form down
-              // (whatever died last) -> the sequence runs itself after the collapse.
-              later(() => {
-                if (world !== w || victoryShown) return;
-                victoryShown = true;
-                runEndgame();
-              }, entity === w.boss ? 7800 : 2500);
-            }
+            // FINAL DEPTH (it.49): no automatic ending. The Hollow King's spoils lie
+            // where he fell; the last stair opens behind the arena and the ending
+            // waits for the hero to CLIMB IT.
             later(() => {
               if (world !== w) return;
               w.stairs.sprite.renderable = true;
               w.lighting.registerProp(w.stairs.x, w.stairs.y, w.stairs.sprite);
               w.ambience.burst(w.stairs.x + 0.5, w.stairs.y + 0.5, 0xffd9a0, 20);
               w.ambience.playGlint(w.stairs.x + 0.5, w.stairs.y + 0.5);
-              w.dmgText.show(w.stairs.x + 0.5, w.stairs.y + 0.2, 'THE WAY OPENS', 'crit');
+              w.dmgText.show(w.stairs.x + 0.5, w.stairs.y + 0.2, floor >= MAX_DEPTH ? 'THE LAST STAIR OPENS' : 'THE WAY OPENS', 'crit');
+              if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then climb the stair at the arena\u2019s far end to end the delve.');
               audio.sfx('gateOpen');
               audio.setBossMusic(false);
             }, delay);
@@ -2653,7 +2673,9 @@ async function boot(): Promise<void> {
             } else {
               pct = (boss.hp / boss.hpMax) * 100;
             }
-            bossBarFill.style.width = `${Math.round(pct)}%`;
+            // The fill lives inside the frame's window (11.7% → 88.3% of the track), so
+            // its width is hp/max × that window (it.49) — proportional and smooth.
+            bossBarFill.style.width = `${(Math.max(0, Math.min(100, pct)) * 0.766).toFixed(1)}%`;
             if (bossHpEl) bossHpEl.textContent = boss.action === 'transition' ? 'RISING' : `${Math.max(0, Math.ceil(boss.hp))} / ${boss.hpMax}`;
           }
         } else if (bossBar?.classList.contains('show')) {

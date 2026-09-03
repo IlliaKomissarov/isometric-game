@@ -148,7 +148,8 @@ export const ITEMS: Record<string, ItemDef> = {
 };
 
 const BY_RARITY: Record<Rarity, ItemDef[]> = { common: [], magic: [], rare: [], legendary: [] };
-for (const def of Object.values(ITEMS)) BY_RARITY[def.rarity].push(def);
+// The town portal is a HUD rite now (it.49): its scroll never drops or rolls from a chest.
+for (const def of Object.values(ITEMS)) if (!def.use?.portal) BY_RARITY[def.rarity].push(def);
 // Potions drop from the dead too (it.39): a healing potion joins the common pool twice.
 BY_RARITY.common.push(ITEMS.health_potion, ITEMS.health_potion, ITEMS.mana_potion);
 

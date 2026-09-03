@@ -397,6 +397,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Armorer + alchemist vendors, dungeon records board
 - [x] Boss-floor-only pentagrams, secondary starter arm, save v3 resumes at the exact spot
 
+## Iteration 49 - Dual Globes, Nameplates, Orc Anchors, Tree Lines, Ending Flow (2026-09-03)
+
+- [x] English audit + text-shadow typography pass; lock reasons read "REQUIRES LEVEL N"
+- [x] Gate two tiles out; town nameplates; distinct alchemist body; camp props
+- [x] Sentinel forward-facing verified; orc per-clip feet anchors; softer hurt flash
+- [x] Dual globe HUD; inventory height cap; tree prerequisite lines; "3.5s" buff timers; proportional boss fill
+- [x] Bestiary keeps scroll + arrow keys; level-up flash + banner; portal scroll off drop tables, HUD scroll icon
+- [x] Final boss: loot first, victory on the exit stair
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -142,13 +142,13 @@ export function canUnlockSkill(p: Progress, id: string): UnlockCheck {
   if (!def) return { ok: false, reason: 'unknown' };
   if (p.unlockedSkills.has(id)) return { ok: false, reason: 'learned' };
   const need = tierLevel(def.tier);
-  if (p.level < need) return { ok: false, reason: `level ${need}` };
+  if (p.level < need) return { ok: false, reason: `requires level ${need}` };
   if (def.tier > 1) {
     const prev = CLASS_SKILLS[def.cls][def.tier - 2];
-    if (!p.unlockedSkills.has(prev.id)) return { ok: false, reason: `needs ${prev.name}` };
+    if (!p.unlockedSkills.has(prev.id)) return { ok: false, reason: `requires ${prev.name}` };
   }
   const cost = skillCost(p, def);
-  if (p.skillPoints < cost) return { ok: false, reason: `${cost} point${cost > 1 ? 's' : ''}` };
+  if (p.skillPoints < cost) return { ok: false, reason: `needs ${cost} skill point${cost > 1 ? 's' : ''}` };
   return { ok: true, reason: '' };
 }
 
@@ -156,9 +156,9 @@ export function canUnlockPassive(p: Progress, id: string): UnlockCheck {
   const def = PASSIVE_BY_ID[id];
   if (!def) return { ok: false, reason: 'unknown' };
   if (p.passives.has(id)) return { ok: false, reason: 'learned' };
-  if (p.level < PASSIVE_LEVEL) return { ok: false, reason: `level ${PASSIVE_LEVEL}` };
-  if (!CLASS_SKILLS[def.cls].some((s) => p.unlockedSkills.has(s.id))) return { ok: false, reason: `any ${def.cls} skill` };
+  if (p.level < PASSIVE_LEVEL) return { ok: false, reason: `requires level ${PASSIVE_LEVEL}` };
+  if (!CLASS_SKILLS[def.cls].some((s) => p.unlockedSkills.has(s.id))) return { ok: false, reason: `requires any ${def.cls} skill` };
   const cost = skillCost(p, def);
-  if (p.skillPoints < cost) return { ok: false, reason: `${cost} point${cost > 1 ? 's' : ''}` };
+  if (p.skillPoints < cost) return { ok: false, reason: `needs ${cost} skill point${cost > 1 ? 's' : ''}` };
   return { ok: true, reason: '' };
 }

@@ -95,10 +95,12 @@ export class Villagers {
       layer.addChild(body);
       this.merchant = { body, clock: 0, scale: mscale };
     }
-    if (alchemistAt && spriteLib.hasAnim('merchant_walk')) {
-      const mp = spriteLib.paintedHeight('merchant_walk') || 57;
+    // The ALCHEMIST (it.49): the peasant body in violet, not the merchant's twin.
+    const ALCH = spriteLib.hasAnim('villager_walk') ? 'villager_walk' : 'merchant_walk';
+    if (alchemistAt && spriteLib.hasAnim(ALCH)) {
+      const mp = spriteLib.paintedHeight(ALCH) || 57;
       const mscale = 62 / mp;
-      const body = new Sprite(spriteLib.frame('merchant_walk', 5, 0));
+      const body = new Sprite(spriteLib.frame(ALCH, 6, 0));
       body.anchor.set(0.5, 0.86);
       body.scale.set(mscale);
       body.tint = 0xb8a0ff; // Violet robes: the alchemist.

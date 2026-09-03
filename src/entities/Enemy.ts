@@ -102,6 +102,8 @@ export interface EnemyTypeDef {
     heightMult?: number;
     /** Explicit feet anchor (it.44) — for packs whose painted bounds include a baked shadow the auto anchor misreads. */
     feetAnchor?: number;
+    /** Per-animation feet anchors (it.49): packs whose sheets sit at different heights per clip. */
+    feetAnchors?: Record<string, number>;
   };
   /** Flat damage reduction at level 1 (it.42; grows +½ per level). */
   armor?: number;
@@ -423,6 +425,10 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       hitAnim: 'orc_hit',
       anchorY: 0.95,
       feetAnchor: 0.95, // The pack bakes a long drop shadow; anchor by hand so the slinger walks the ground.
+      // IT.49: measured solid-pixel bottoms per clip (walk 89 / idle 92 / attack 70 /
+      // hit 79 / death 83 of 96) — the attack and hit clips sit high in their
+      // cells, so each gets its own feet line and the slinger stays grounded.
+      feetAnchors: { orc_walk: 0.95, orc_idle: 0.97, orc_attack: 0.75, orc_hit: 0.84, orc_death: 0.885 },
       scale: 0.55,
       tint: 0xffffff,
       stride: 0.45,
@@ -942,6 +948,8 @@ export class Enemy extends Entity {
     const e = spriteLib.entry(anim);
     const sprite = this.def.sprite;
     if (!e || !e.painted || !sprite) return sprite?.anchorY ?? 1;
+    const perAnim = sprite.feetAnchors?.[anim];
+    if (perAnim !== undefined) return perAnim;
     if (sprite.feetAnchor !== undefined) return sprite.feetAnchor;
     const paintedH = e.painted.bottom - e.painted.top + 1;
     const shadow = sprite.ownShadow ? 0 : paintedH * 0.07;

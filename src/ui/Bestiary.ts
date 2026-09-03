@@ -61,6 +61,11 @@ export class BestiaryUI {
         if (e.code === 'KeyB' && !e.repeat) {
           e.preventDefault();
           this.toggle();
+        } else if ((e.code === 'ArrowDown' || e.code === 'ArrowUp') && this.visible) {
+          // ARROW KEYS (it.49): step through the known entries.
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.step(e.code === 'ArrowDown' ? 1 : -1);
         } else if (e.code === 'Escape' && this.visible) {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -73,6 +78,18 @@ export class BestiaryUI {
 
   get isOpen(): boolean {
     return this.visible;
+  }
+
+  /** Move the selection through the KNOWN entries (wrapping). */
+  private step(dir: number): void {
+    const p = this.player;
+    const kinds = (Object.keys(ENEMY_TYPES) as EnemyKind[]).filter((k) => p.bestiaryRevealed || p.bestiary.has(k));
+    if (!kinds.length) return;
+    const i = this.selected ? kinds.indexOf(this.selected) : -1;
+    this.selected = kinds[(i + dir + kinds.length) % kinds.length];
+    audio.sfx('uiHover');
+    this.render();
+    this.panel.querySelector<HTMLElement>('.bs-row.lit')?.scrollIntoView({ block: 'nearest' });
   }
 
   toggle(): void {
@@ -120,6 +137,8 @@ export class BestiaryUI {
 
   private render(): void {
     this.stopAnim();
+    // The list keeps its scroll across a re-render (it.49): picking an entry no longer snaps to the top.
+    const keepScroll = this.panel.querySelector<HTMLElement>('.bs-list')?.scrollTop ?? 0;
     const p = this.player;
     const kinds = Object.keys(ENEMY_TYPES) as EnemyKind[];
     const revealed = p.bestiaryRevealed;
@@ -173,6 +192,8 @@ export class BestiaryUI {
     this.panel.innerHTML = `
       <div class="bs-head drag-handle"><h3>BESTIARY</h3><span class="bs-count">${seenKinds.length} / ${kinds.length} KNOWN</span><button class="tp-close" data-close>✕</button></div>
       <div class="bs-body"><div class="bs-list">${list}</div><div class="bs-detail">${detail}</div></div>`;
+    const listEl = this.panel.querySelector<HTMLElement>('.bs-list');
+    if (listEl) listEl.scrollTop = keepScroll;
     this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
     this.panel.querySelectorAll<HTMLButtonElement>('.bs-row[data-kind]').forEach((b) => {
       b.addEventListener('click', () => {

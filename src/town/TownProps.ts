@@ -11,7 +11,7 @@
  * and an `update(dt)` for the render-side fog drift at the gate.
  */
 
-import { Sprite } from 'pixi.js';
+import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
@@ -136,6 +136,41 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     glowAt(ox, oy, 0x5060a0, 0.35, 1.6, 30);
   };
 
+  /**
+   * TEXT PLATES (it.49): a dark, gold-rimmed nameplate hovering over every
+   * landmark — stash, stalls, the records board, the camp, the gate — so
+   * the town reads at a glance. Drawn last in the object layer, bobbing.
+   */
+  const plates: Array<{ node: Container; baseY: number; phase: number }> = [];
+  const plate = (x: number, y: number, label: string, lift: number): void => {
+    const node = new Container();
+    const text = new Text({
+      text: label,
+      style: {
+        fontFamily: 'Darinia, Cinzel, Georgia, serif',
+        fontSize: 11,
+        letterSpacing: 2,
+        fill: 0xf0d48a,
+        stroke: { color: 0x0a0806, width: 3 },
+        dropShadow: { color: 0x000000, alpha: 0.9, blur: 2, distance: 2, angle: Math.PI / 2 },
+      },
+      resolution: 2,
+    });
+    text.anchor.set(0.5);
+    const w = text.width + 22;
+    const h = text.height + 10;
+    const bg = new Graphics();
+    bg.roundRect(-w / 2, -h / 2, w, h, 3).fill({ color: 0x0b0910, alpha: 0.82 }).stroke({ width: 1, color: 0xc8a558, alpha: 0.75 });
+    bg.moveTo(-w / 2 - 6, 0).lineTo(-w / 2, 0).stroke({ width: 1, color: 0xc8a558, alpha: 0.6 });
+    bg.moveTo(w / 2, 0).lineTo(w / 2 + 6, 0).stroke({ width: 1, color: 0xc8a558, alpha: 0.6 });
+    node.addChild(bg, text);
+    const s = worldToScreen(x + 0.5, y + 0.5, scratch);
+    node.position.set(s.x, s.y - lift);
+    node.zIndex = 1e6 + plates.length; // Above every roof and body.
+    viewport.objectLayer.addChild(node);
+    plates.push({ node, baseY: s.y - lift, phase: plates.length * 1.7 });
+  };
+
   let nextId = 1;
   for (const p of layout.props) {
     switch (p.kind) {
@@ -150,8 +185,10 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // Vendors by POSITION (it.48): the armorer's and the alchemist's stalls.
         if (layout.merchant.tiles.some((t) => t.x === p.x && t.y === p.y)) {
           interactables.push({ id: nextId++, kind: 'merchant', x: layout.merchant.x + 0.5, y: layout.merchant.y + 0.5, label: 'E · ARMORER', tiles: layout.merchant.tiles });
+          plate(p.x + 1, p.y, 'THE ARMORER', 112);
         } else if (layout.alchemist.tiles.some((t) => t.x === p.x && t.y === p.y)) {
           interactables.push({ id: nextId++, kind: 'alchemist', x: layout.alchemist.x + 0.5, y: layout.alchemist.y + 0.5, label: 'E · ALCHEMIST', tiles: layout.alchemist.tiles });
+          plate(p.x + 1, p.y, 'THE ALCHEMIST', 112);
         }
         break;
       }
@@ -159,6 +196,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         stashSprite = standing(p, 'stash_closed', 0.82);
         interactables.push({ id: nextId++, kind: 'stash', x: p.x + 0.5, y: p.y + 0.5, label: 'E · STASH', tiles: [{ x: p.x, y: p.y }] });
         glowAt(p.x, p.y, 0xd8a85c, 0.35, 0.9, 10);
+        plate(p.x, p.y, 'TOWN STASH', 64);
         break;
       }
       case 'campfire': {
@@ -166,6 +204,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         glowAt(p.x, p.y, 0xff9040, 0.75, 2.6, 18);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 5.5, 255, 150, 60, 0.85);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        plate(p.x, p.y, 'THE HEROES\u2019 CAMP', 92);
         break;
       }
       case 'torch': {
@@ -192,6 +231,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // A thin wall along y at x = p.x + w: everything east of that line draws in front.
         if (spr) spr.zIndex = depthKey(p.x + (p.w ?? 1), p.y + 0.5) + 2;
         gateFog(p);
+        plate(layout.gate.x, layout.gate.y, 'THE DUNGEON GATE', 150);
         break;
       }
       case 'tavern': {
@@ -285,6 +325,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         standing(p, 'signpost', 0.95);
         interactables.push({ id: nextId++, kind: 'board', x: p.x + 0.5, y: p.y + 0.5, label: 'E · DUNGEON RECORDS', tiles: [{ x: p.x, y: p.y }] });
         glowAt(p.x, p.y, 0xd8a85c, 0.22, 0.8, 8);
+        plate(p.x, p.y, 'DUNGEON RECORDS', 78);
         break;
       }
     }
@@ -294,6 +335,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   let clock = 0;
   const update = (dt: number): void => {
     clock += dt;
+    for (const pl of plates) pl.node.position.y = pl.baseY + Math.sin(clock * 1.3 + pl.phase) * 2.5;
     for (const f of fog) {
       const t = clock * f.speed + f.phase;
       f.sprite.position.set(f.x + Math.sin(t) * 14, f.y + Math.cos(t * 0.7) * 5 - (t % 3) * 4);
@@ -303,6 +345,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const destroy = (): void => {
     for (const f of fog) f.sprite.destroy();
     fog.length = 0;
+    for (const pl of plates) pl.node.destroy({ children: true });
+    plates.length = 0;
   };
   return { occluders, interactables, stashSprite, update, destroy };
 }

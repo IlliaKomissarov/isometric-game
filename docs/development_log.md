@@ -1,5 +1,68 @@
 # Development Log
 
+## 2026-09-03 (iteration 49) - Dual globes, nameplates, orc anchors, tree lines, bestiary keys, portal icon, loot-then-stairs ending
+
+### Text and type
+- Audit: every in-game string was already English; the one Cyrillic
+  fragment was a code comment (TownMap) and is now English. Lock reasons
+  read "REQUIRES LEVEL 5" / "REQUIRES WHIRLWIND" / "NEEDS 2 SKILL POINTS".
+  A high-contrast text shadow now sits on every readable UI line (tree
+  text, shop rows, bestiary rows/stats, character sheet, HUD labels, tips).
+
+### Town
+- The gate segment stands TWO tiles out from the west wall (x 3, threshold
+  (3,26)); the strip behind it is solid rock (no cube, nothing walks there).
+- Floating NAMEPLATES (Pixi text on a dark gold-rimmed plate, bobbing,
+  drawn above every roof): TOWN STASH, THE ARMORER, THE ALCHEMIST, DUNGEON
+  RECORDS, THE HEROES' CAMP, THE DUNGEON GATE.
+- The alchemist wears the peasant body (`villager_walk`) in violet — no
+  longer the armorer's twin. The camp gained a keg, a crate and cookware
+  beside the three resting heroes.
+
+### Sprites
+- Crypt Sentinel (halberdier) verified walking toward its movement vector
+  in-game after the it.48 half-turn map (a spawned sentinel approaching from
+  the east shows its left profile).
+- Orc Slinger: measured solid-pixel bottoms per clip (walk 89 / idle 92 /
+  attack 70 / hit 79 / death 83 of 96) — the attack and hit clips sit high
+  in their cells. New `feetAnchors` per animation (attack 0.75, hit 0.84,
+  death 0.885, idle 0.97, walk 0.95) keep the slinger grounded mid-swing.
+- Hurt flash toned down: max alpha 0.25, 0.15 s pulse.
+
+### HUD
+- DUAL GLOBES: the health globe on the left, a resource globe on the right
+  (the same gargoyle glass hue-rotated gold for stamina / blue for mana)
+  with the numeric value and the resource name; the old bar is gone. The
+  COMMANDS sheet moved under the minimap so the globe owns the corner.
+- Inventory: drag verified (header pointerdown → pointermove); the panel is
+  capped at the viewport height and scrolls, the pack list grows to 232 px.
+- Skill tree: prerequisite lines between tiers (gold when the tier below is
+  learned, green when ready) above the padlocked silhouettes.
+- Buff timers read "3.5s" under ten seconds on the HUD and over the head.
+- Boss bar fill = hp/max × the frame window (76.6% of the track) — it was
+  clamped, so it only started shrinking below 77%.
+
+### Bestiary
+- The list keeps its scroll when an entry is picked; Up/Down arrows cycle
+  the known entries and scroll the lit row into view.
+
+### Level-up, portal, ending
+- Level-up: gold screen flash + "LEVEL UP! · LEVEL N · +1 SKILL POINT"
+  banner over the it.48 pillar, aura and chimes.
+- Scroll of Town Portal never drops or rolls from chests and left the
+  alchemist's table; the HUD button beside the hotbar is now the scroll's
+  icon with the T key and cooldown.
+- FINAL DEPTH: killing the Hollow King's last form no longer ends the run.
+  The spoils drop, the last stair opens behind the arena with a hint, and
+  THE CRYPT IS CONQUERED plays only when the hero climbs it.
+
+### QA (browser, zero console errors)
+- Town audit clean; 6 nameplates; MANA globe reads 120 for a mage.
+- Sentinel walks forward; orc attack clip anchored at 0.75; level-up
+  banner/flash shown; bestiary scroll kept at 300 and arrows cycle
+  archer → orc → boss; depth XX arena cleared with no ending, stair
+  revealed, stepping on it shows the epilogue.
+
 ## 2026-09-03 (iteration 48) - Combat feel, boss bar, buff timers, respec, dual vendors, records board, deep save
 
 ### Map, portal, HUD

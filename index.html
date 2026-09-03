@@ -2810,6 +2810,121 @@
       .sb-glyph { width: 22px; text-align: center; color: var(--gold); font-size: 15px; }
       .sb-key { flex: 1; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: #cfc4a8; }
       .sb-val { font-family: var(--font-display); font-size: 16px; color: #ffd070; }
+
+      /* ===================================================================
+         IT.49 — DUAL GLOBES, PORTAL ICON, TREE LINES, LEVEL-UP, TYPOGRAPHY
+         =================================================================== */
+      /* The resource globe mirrors the health globe on the right of the bar. */
+      #orb2-wrap {
+        position: fixed;
+        right: 12px;
+        bottom: 4px;
+        width: 190px;
+        height: 150px;
+        background: url('assets/ui/hud/health_globe.png') center top / 190px auto no-repeat;
+        filter: hue-rotate(58deg) saturate(1.15) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.9));
+        pointer-events: none;
+        user-select: none;
+        z-index: 3;
+      }
+      #orb2-wrap.mana { filter: hue-rotate(212deg) saturate(1.1) drop-shadow(0 4px 10px rgba(0, 0, 0, 0.9)); }
+      #orb2 {
+        position: absolute;
+        left: 41px;
+        top: 20px;
+        width: 108px;
+        height: 108px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #2a1616;
+        mix-blend-mode: multiply;
+      }
+      #orb2-fill {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 100%;
+        background: linear-gradient(180deg, #ffd0c0 0%, #ffb0a0 40%, #f08070 100%);
+        transition: height 0.18s ease;
+      }
+      #orb2-label {
+        position: absolute;
+        left: 41px;
+        top: 66px;
+        width: 108px;
+        text-align: center;
+        font-family: var(--font-display);
+        font-size: 17px;
+        color: #fff8e6;
+        text-shadow: 0 1px 2px #000, 0 0 8px #000, 0 0 14px rgba(255, 220, 90, 0.6);
+        line-height: 1;
+        z-index: 2;
+      }
+      #orb2-name {
+        position: absolute;
+        left: 41px;
+        top: 92px;
+        width: 108px;
+        text-align: center;
+        font-family: 'Cinzel', serif;
+        font-size: 8.5px;
+        letter-spacing: 0.22em;
+        color: #f4ecd8;
+        text-shadow: 0 1px 2px #000, 0 0 6px #000;
+        z-index: 2;
+      }
+      body:not(.in-run) #orb2-wrap, body:not(.in-run) #level-flash, body:not(.in-run) #levelup-banner { display: none; }
+      #resource-wrap { display: none; } /* The bar gave way to the globe. */
+      #char-stats { bottom: 44px; }
+      /* The command sheet moves under the minimap so the globe owns the corner. */
+      #controls { top: 268px; bottom: auto; right: 12px; }
+      /* The portal rite: the scroll's icon beside the hotbar. */
+      #tp-button {
+        flex-direction: column;
+        justify-content: center;
+        gap: 1px;
+        width: 60px;
+        height: 62px;
+        padding: 3px 4px;
+        right: calc(50% + 172px);
+        bottom: 18px;
+      }
+      #tp-button .tp-icon { display: block; width: 30px; height: 30px; }
+      #tp-button .tp-icon img { width: 30px; height: 30px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 1px 2px #000); }
+      #tp-button kbd { font-size: 10px; line-height: 1; }
+      #tp-button i { font-size: 8.5px; letter-spacing: 0.08em; line-height: 1; }
+      #tp-button.cooling .tp-icon img { filter: grayscale(1) brightness(0.6); }
+      /* Skill tree: prerequisite lines between the tiers. */
+      .st-node[data-skill] + .st-node[data-skill]::before {
+        content: '';
+        position: absolute;
+        left: 29px;
+        top: -7px;
+        width: 2px;
+        height: 7px;
+        background: var(--frame-iron);
+      }
+      .st-node.st-learned + .st-node[data-skill]::before { background: var(--frame-gold-hi); box-shadow: 0 0 6px rgba(255, 208, 112, 0.7); }
+      .st-node.st-ready + .st-node[data-skill]::before { background: #6f9a5a; }
+      /* Hurt flash: a short, soft pulse. */
+      #vignette { transition: background 0.15s ease-out; }
+      #vignette.hurt { background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 40%, rgba(160, 12, 12, 0.25) 100%); }
+      /* Buff timers over the hero's head. */
+      #player-buffs .buff-time { bottom: -11px; font-size: 8px; }
+      /* Level-up flash + banner. */
+      #level-flash { position: fixed; inset: 0; background: radial-gradient(ellipse at center, rgba(255, 214, 120, 0.55) 0%, rgba(255, 180, 60, 0) 68%); opacity: 0; pointer-events: none; z-index: 39; transition: opacity 0.7s ease-out; }
+      #level-flash.show { opacity: 1; transition: opacity 0.05s; }
+      #levelup-banner { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%) scale(0.85); font-family: var(--font-display); font-size: 46px; letter-spacing: 0.3em; color: #ffd070; text-shadow: 0 0 26px rgba(255, 200, 80, 0.85), 0 2px 4px #000, 0 0 2px #000; text-align: center; opacity: 0; pointer-events: none; z-index: 40; transition: opacity 0.25s ease, transform 0.25s ease; }
+      #levelup-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      #levelup-banner small { display: block; margin-top: 6px; font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.34em; color: #f4ecd8; text-shadow: 0 1px 3px #000; }
+      /* Inventory: never taller than the screen; the pack scrolls. */
+      #inv-panel { max-height: calc(100vh - 20px); overflow-y: auto; box-sizing: border-box; }
+      #inv-panel .inv-scroll { max-height: 232px; }
+      /* Typography polish: crisp faces with a high-contrast shadow on every readable line. */
+      .st-text b, .st-text em, .tp-row .tp-name, .tp-row .tp-gold, .bs-row-name, .bs-row-meta, .bs-stat span, .bs-stat b, .cs-row, #char-stats, #depth-label, #run-timer, #controls .row span, #controls .row kbd, .skill-tip b, .skill-tip span, #item-tip, #inv-tooltip, .inv-slot-label, .sb-key, .inv-belt-note, .inv-count, .inv-gold {
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.6);
+      }
     </style>
   </head>
   <body>
@@ -2824,6 +2939,14 @@
       </div>
       <div id="orb-label">140</div>
     </div>
+    <!-- The RESOURCE GLOBE (it.49): stamina gold / mana blue, right-hand twin of the health orb. -->
+    <div id="orb2-wrap">
+      <div id="orb2"><div id="orb2-fill"></div></div>
+      <div id="orb2-label">100</div>
+      <div id="orb2-name">STAMINA</div>
+    </div>
+    <div id="level-flash"></div>
+    <div id="levelup-banner"></div>
 
     <div id="progress-hud">
       <div id="level-label">LVL 1</div>

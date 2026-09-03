@@ -180,11 +180,11 @@ export function buildTownLayout(): TownLayout {
   };
 
   // ---- STREETS ----
-  const gate = { x: 2, y: 26 }; // WEST (it.48): the threshold INSIDE the archway, a 1×4 segment standing ONE TILE OUT from the west wall (x 2, y 25–28).
+  const gate = { x: 3, y: 26 }; // WEST (it.49): the threshold INSIDE the archway, a 1×4 segment standing TWO tiles out from the west wall (x 3, y 25–28).
   ellipse(30, 22, 9.5, 6.5, KIND_COBBLE); // The market square.
   street([[13, 13], [17, 15], [21, 18], [24, 20]], KIND_COBBLE, 1.2); // The north-west quarter's lane -> square.
   street([[30, 28], [29, 33], [30, 38], [30, 44]], KIND_COBBLE, 1.3); // South street -> lower plaza.
-  street([[4, 26], [8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.3); // High street: WEST gate -> square -> east.
+  street([[5, 26], [8, 27], [15, 29], [22, 28], [38, 28], [45, 27], [52, 25]], KIND_COBBLE, 1.3); // High street: WEST gate -> square -> east.
   ellipse(30, 44.5, 3.5, 2.2, KIND_COBBLE); // Lower plaza.
   street([[36, 12], [34, 16]], KIND_DIRT, 1.0); // Tavern lane.
   street([[45, 27], [47, 20]], KIND_DIRT, 0.9); // NE cottage.
@@ -232,7 +232,7 @@ export function buildTownLayout(): TownLayout {
     houses.push({ x, y, w: 3, h: 3 });
   };
 
-  // The DUNGEON GATE (WEST, it.47 — "приклеїти до стіни"): the baked ruin
+  // The DUNGEON GATE (WEST, it.47 — glued to the wall): the baked ruin
   // gate is a THIN WALL SEGMENT four tiles long whose arch faces EAST, so it
   // belongs IN the west wall, not in front of it. The west wall is a straight
   // two-tile column (x 0–1, y 19–34) whose lit east face is the flat wall the
@@ -243,12 +243,13 @@ export function buildTownLayout(): TownLayout {
   // bare cobble (x 2–10, y 19–34) — no props, trees, lights or collision.
   clearFor(2, 19, 9, 16, 0, KIND_COBBLE);
   for (let y = 19; y <= 34; y++) for (let x = 0; x <= 1; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_WALL; // The straight west wall.
-  // ONE TILE OUT (it.48): the segment stands on x 2 with the wall column behind it.
-  props.push({ kind: 'ruingate', x: 2, y: 25, w: 1, h: 4 });
-  for (let y = 25; y <= 28; y++) grid[idx(2, y)] = TILE_BLOCKED; // The segment's piers.
+  // TWO TILES OUT (it.49): the segment stands on x 3; the strip behind it (x 2)
+  // is solid rock so nothing walks between the gate and the wall.
+  props.push({ kind: 'ruingate', x: 3, y: 25, w: 1, h: 4 });
+  for (let y = 25; y <= 28; y++) grid[idx(3, y)] = TILE_BLOCKED; // The segment's piers.
+  for (let y = 25; y <= 28; y++) grid[idx(2, y)] = TILE_BLOCKED; // The rock spur behind it (no cube: not adjacent to floor).
   grid[idx(gate.x, gate.y)] = TILE_FLOOR; // The opening — the threshold.
   tileKind[idx(gate.x, gate.y)] = KIND_COBBLE;
-  grid[idx(1, gate.y)] = TILE_BLOCKED; // No wall cube behind the opening (it would draw over the gate).
   belt[idx(gate.x, gate.y)] = 0; // Never a belt tile: the forest pass must not re-block the threshold.
   // The guards keep watch from the far end of the apron, off the wall.
   const guards = [
@@ -342,6 +343,10 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'barrels_stacked', x: 14, y: 39 });
   decal({ kind: 'pots', x: 19, y: 39 });
   block({ kind: 'torch', x: 21, y: 39 });
+  // THE CAMP (it.49): a few more comforts around the fire — a keg, a crate, cookware.
+  block({ kind: 'barrel', x: 13, y: 36, variant: 'barrel_a' });
+  block({ kind: 'crates', x: 21, y: 37 });
+  decal({ kind: 'pots', x: 15, y: 41 });
 
   // Torch posts along the streets.
   for (const [x, y] of [[27, 32], [31, 32], [28, 36], [32, 36], [28, 41], [32, 41], [11, 26], [17, 27], [24, 27], [36, 27], [43, 26], [50, 24], [30, 8], [26, 12]] as const) {

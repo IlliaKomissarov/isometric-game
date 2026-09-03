@@ -838,6 +838,9 @@ export class Enemy extends Entity {
   level = 1;
   /** Elite affix (it.53) — null for the common dead. */
   affix: EnemyAffix | null = null;
+  /** SPAWN RISE (it.54): ticks left climbing out of the ground (sim; frozen until 0). */
+  riseTicks = 0;
+  private riseTotal = 30;
   private readonly titleText: Text;
   private readonly aura: Graphics;
   private flashTicks = 0;
@@ -939,6 +942,7 @@ export class Enemy extends Entity {
     this.affix = null;
     this.titleText.visible = false;
     this.aura.visible = false;
+    this.riseTicks = 0;
     this.lastGoalTile.x = -1;
     this.lastGoalTile.y = -1;
     this.flashTicks = 0;
@@ -1020,6 +1024,12 @@ export class Enemy extends Entity {
       this.body.scale.set(1);
       this.shadow.visible = true;
     }
+  }
+
+  /** Climb out of the sand over `ticks` (it.54): frozen and half-sunk until then. */
+  beginRise(ticks: number): void {
+    this.riseTicks = ticks;
+    this.riseTotal = ticks;
   }
 
   /**
@@ -1119,6 +1129,23 @@ export class Enemy extends Entity {
     return this.affix ? Math.round(base * 1.5) : base; // Champions pay half again (it.53).
   }
 
+  /** The rise (it.54): the body slides up out of the ground and fades in. */
+  private syncRise(): void {
+    if (this.riseTicks > 0) {
+      const t = this.riseTicks / Math.max(1, this.riseTotal);
+      this.body.position.y = 2 + 46 * t * t;
+      this.body.alpha = Math.min(1, 0.25 + (1 - t) * 0.9);
+      this.aura.visible = false;
+      this.titleText.visible = false;
+    } else if (this.body.position.y !== 2 && this.action !== 'dead') {
+      this.body.position.y = 2;
+      if (this.hp > 0) {
+        this.body.alpha = 1;
+        if (this.affix) this.aura.visible = true;
+      }
+    }
+  }
+
   /** Called when hp reaches 0 (`entity:died`): start the death animation. */
   beginDeath(): void {
     this.action = 'dead';
@@ -1167,6 +1194,11 @@ export class Enemy extends Entity {
 
   override update(dt: number): void {
     if (!this.spawned) return;
+    if (this.riseTicks > 0) {
+      // Rising (it.54): no thought, no step, no strike until the body is up.
+      this.riseTicks--;
+      return;
+    }
 
     // TIGHT BOUNDS CLAMP (it.14): no matter what moved this body last tick
     // (separation shove, knockback, kite slide), it must END the tick as a
@@ -1472,6 +1504,7 @@ export class Enemy extends Entity {
 
     if (this.usesSprite()) {
       this.syncSpriteAnim();
+      this.syncRise();
       return;
     }
 

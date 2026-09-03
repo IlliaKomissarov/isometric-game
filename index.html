@@ -3102,6 +3102,32 @@
       #arena-modal .am-cancel { padding: 6px 18px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
       #arena-modal .am-cancel:hover { color: var(--ink); border-color: var(--frame-gold); }
       body:not(.in-run) #wave-hud, body:not(.in-run) #wave-banner, body:not(.in-run) #arena-modal { display: none; }
+
+      /* ===================================================================
+         IT.54 — THE HALL OF RECORDS (LEADERBOARD)
+         =================================================================== */
+      #leaderboard { width: 640px; }
+      .lb-tabs { display: flex; gap: 6px; padding: 12px 18px 0; }
+      .lb-tab { flex: 1; padding: 8px 10px; font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.22em; color: var(--ink-dim); background: linear-gradient(180deg, #1b1622, #0b0910); border: 1px solid var(--frame-iron); cursor: pointer; }
+      .lb-tab:hover { color: var(--ink); border-color: var(--frame-gold); }
+      .lb-tab.active { color: #ffd070; border-color: var(--frame-gold); box-shadow: inset 0 0 0 1px rgba(200, 165, 88, 0.35), 0 0 12px rgba(200, 165, 88, 0.25); }
+      .lb-body { padding: 10px 18px 0; }
+      .lb-lens { display: flex; gap: 6px; margin-bottom: 8px; }
+      .lb-len { padding: 4px 10px; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.16em; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
+      .lb-len.active, .lb-len:hover { color: #ffd070; border-color: var(--frame-gold); }
+      .lb-table { width: 100%; border-collapse: collapse; font-family: 'Crimson Pro', serif; font-size: 13.5px; color: var(--ink); }
+      .lb-table th { padding: 5px 8px; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.2em; color: #7d7466; text-align: left; border-bottom: 1px solid var(--frame-iron); }
+      .lb-table td { padding: 5px 8px; border-bottom: 1px solid rgba(59, 50, 68, 0.6); }
+      .lb-table tr.lb-first td { color: #ffd070; text-shadow: 0 0 8px rgba(255, 208, 112, 0.4); }
+      .lb-table .lb-rank { font-family: var(--font-display); color: var(--gold); width: 46px; }
+      .lb-table .lb-time { font-family: var(--font-display); font-size: 14px; color: #f4ecd8; letter-spacing: 0.06em; }
+      .lb-table .lb-date { color: var(--ink-dim); font-style: italic; }
+      .lb-table tr.lb-empty td { color: #4a4452; font-style: italic; }
+      .lb-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 12px 18px 4px; }
+      .lb-sum { display: flex; flex-direction: column; gap: 3px; padding: 7px 9px; background: rgba(8, 6, 10, 0.6); border: 1px solid var(--frame-iron); }
+      .lb-sum span { font-family: 'Cinzel', serif; font-size: 8.5px; letter-spacing: 0.18em; color: #7d7466; }
+      .lb-sum b { font-family: var(--font-display); font-size: 12.5px; color: #ffd070; }
+      .lb-sum b.lb-rankname { color: #ff8c3a; }
     </style>
   </head>
   <body>

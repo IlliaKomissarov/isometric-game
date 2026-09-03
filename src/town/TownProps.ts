@@ -363,9 +363,9 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'board': {
         // DUNGEON RECORDS (it.48): a signpost board with the run's tallies.
         standing(p, 'signpost', 0.95);
-        interactables.push({ id: nextId++, kind: 'board', x: p.x + 0.5, y: p.y + 0.5, label: 'E · DUNGEON RECORDS', tiles: [{ x: p.x, y: p.y }] });
+        interactables.push({ id: nextId++, kind: 'board', x: p.x + 0.5, y: p.y + 0.5, label: 'E · HALL OF RECORDS', tiles: [{ x: p.x, y: p.y }] });
         glowAt(p.x, p.y, 0xd8a85c, 0.22, 0.8, 8);
-        plate(p.x, p.y, 'DUNGEON RECORDS', 78);
+        plate(p.x, p.y, 'HALL OF RECORDS', 78);
         break;
       }
     }

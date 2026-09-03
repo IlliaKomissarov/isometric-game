@@ -429,6 +429,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] 5/10/15/20-wave trials with 15 s intermissions, banners, grand chest and the rift home
 - [x] Swings, strikes and shots 25 % faster; casts interrupt walking
 
+## Iteration 54 - Split Ledgers, Active Clock, Hall of Records, Living Coliseum, Boss Waves (2026-09-03)
+
+- [x] Dungeon and arena ledgers in StatsManager, persisted globally and in the save
+- [x] Active clock: frozen in town and intermissions, ticking on floors and live waves
+- [x] Two-tab Hall of Records leaderboard with ranked tables and tallies
+- [x] Cheering crowd, blood, broken steel, barricades, cages, banners, flicker and sand drift
+- [x] Rising spawns; wardens on every fifth wave with horn, beam, shake; the crowd roars on champion kills
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

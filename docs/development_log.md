@@ -1,5 +1,54 @@
 # Development Log
 
+## 2026-09-03 (iteration 54) - Split ledgers, the active clock, the Hall of Records, a living coliseum, boss waves
+
+### Records and the clock
+- `systems/StatsManager.ts`: two ledgers. DUNGEON: deepest depth, kills,
+  wardens slain, per-floor clear records (deepest first, fastest within a
+  depth, top 10). ARENA: best wave, kills, champions felled, clear records
+  per 5 / 10 / 15 / 20-wave trial (fastest first, top 10), gladiator rank
+  (Untested / Sand-blooded / Novice / Veteran / Champion / Crown of the
+  Sand). Global in localStorage (`iso-arpg-records`) and copied into the
+  save (`stats`); loading merges best-of-both.
+- THE ACTIVE CLOCK: `activeTicks` advances only on dungeon floors and during
+  a live arena wave — the town and the intermissions stand still. The HUD
+  timer shows it; floor clears record `floorActiveTicks`; a trial records
+  its active span; `activeTicks` is saved.
+
+### The Hall of Records
+- `ui/LeaderboardPanel.ts` replaces the old tallies board: two tabs,
+  DUNGEON SPEEDRUNS and GLADIATOR COLISEUM (with 5/10/15/20 selectors), a
+  ranked table (rank, class, MM:SS, floor or wave, date) with the ledger's
+  tallies beneath (deepest / kills / wardens / this delver; best wave /
+  arena kills / champions / rank).
+
+### The coliseum, alive
+- THE CROWD: ninety townsfolk in two rows on the wall ring, each cycling
+  frames on its own beat and bouncing — a stand that never sits still.
+- DETAIL: 34 blood-soaked patches and a dozen broken weapons on the sand,
+  spiked barricades flanking each gate, iron cages and red/blue war banners
+  on the wall, torches with an additive flicker glow, ember hotspots, and a
+  dry sand drift across the floor.
+- SPAWNS: every body climbs out of the sand (`Enemy.beginRise`: frozen,
+  half-sunk and translucent, sliding up over 24–42 ticks through a ring of
+  dust) — no pop-ins.
+- BOSS WAVES: wave 5 the Tomb Warden, 10 the Frost Warden, 15 Vyrissa, 20
+  the Hollow King (level wave+3), rising at the north gate behind a red
+  light beam, a pentagram flash, a 0.85 shake, a 3-tick hit-stop and the
+  ARENA HORN (the war horn under a brass swell). The boss bar tracks it.
+- THE CROWD ROARS: every champion or boss felled on the sand plays the
+  synthesized crowd swell, a gold burst and a glint.
+
+### QA (browser, zero console errors)
+- Clock: 0:00 after 300 town ticks; 0:05 after 300 dungeon ticks; still
+  0:05 back in town and through the trial's intermission; 0:06 in the fight.
+- Hall of Records opens from the board with both tabs and empty ledgers.
+- Wave 1 bodies rising (riseTicks 15–29, body 18–27 px sunk, alpha 0.5).
+- Wave 5: "THE TOMB WARDEN ENTERS", bar 1302 / 1302; trial complete ->
+  arena ledger: best wave 5, 51 kills, 1 champion, one 5-wave record.
+- Floor I cleared -> a speedrun record on the dungeon tab; the save carries
+  `stats` and `activeTicks`.
+
 ## 2026-09-03 (iteration 53) - Elite affixes, the Trial Coliseum, combat acceleration
 
 ### Elites

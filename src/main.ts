@@ -32,7 +32,8 @@ import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
 import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
-import { StatsBoardUI } from '@/ui/StatsBoard';
+import { LeaderboardUI } from '@/ui/LeaderboardPanel';
+import { StatsManager } from '@/systems/StatsManager';
 import { dressColiseum, generateColiseumMap, type ColiseumMap } from '@/scenes/Coliseum';
 import { AFFIXES, FROST_AURA_RADIUS } from '@/entities/Enemy';
 import type { ClassArchetype } from '@/network/Serialization';
@@ -153,6 +154,8 @@ interface ColiseumState {
   center: { x: number; y: number };
   /** The way home, once the last wave falls. */
   exit: { x: number; y: number } | null;
+  /** Active-clock reading when the trial began (it.54). */
+  startActive: number;
   update: (dt: number) => void;
   destroy: () => void;
 }
@@ -571,6 +574,13 @@ async function boot(): Promise<void> {
     const floors: Record<number, FloorMemory> = loaded ? { ...loaded.floors } : {};
     const memKey = (f: number, arena: boolean): number => (arena ? 1000 + f : f);
     let deepestFloor = loaded?.deepestFloor ?? 0;
+    // RECORDS (it.54): the dungeon and arena ledgers — global, merged with the slot's copy.
+    const stats = new StatsManager();
+    stats.load();
+    stats.merge(loaded?.stats);
+    /** THE ACTIVE CLOCK (it.54): ticks only on dungeon floors and during a live wave. */
+    let activeTicks = loaded?.activeTicks ?? 0;
+    let floorActiveTicks = 0;
     const playtimeBase = loaded?.playtimeTicks ?? 0;
     const createdAt = loaded?.createdAt ?? Date.now();
 
@@ -773,6 +783,33 @@ async function boot(): Promise<void> {
       },
       { signal: ac.signal, capture: true },
     );
+    /** SPAWN RISE (it.54): a body climbs out of the sand through a ring of dust. */
+    const riseFromSand = (e: Enemy, ticks: number): void => {
+      e.beginRise(ticks);
+      world.vfx.play('vfx_ring', e.pos.x, e.pos.y, { scale: 0.75, flat: true, fps: 22, tint: 0xd8c090, alpha: 0.9 });
+      world.ambience.sparks(e.pos.x, e.pos.y, 0, 0, 10, 0xd8c090);
+    };
+    /** BOSS ENTRANCE (it.54): the ground shakes, a red beam stands on the gate, the horn sounds. */
+    const bossEntrance = (b: Enemy): void => {
+      world.camera.addShake(0.85);
+      world.camera.addKick(9);
+      audio.sfx('arenaHorn');
+      const s = worldToScreen(b.pos.x, b.pos.y, vec2());
+      const beam = new Sprite(assets.get('glow'));
+      beam.anchor.set(0.5, 0.9);
+      beam.blendMode = 'add';
+      beam.tint = 0xff3030;
+      beam.scale.set(1.8, 7);
+      beam.alpha = 0.95;
+      beam.position.set(s.x, s.y + 6);
+      world.viewport.ambienceLayer.addChild(beam);
+      pillars.push({ sprite: beam, life: -0.6 }); // A longer beat than a level-up.
+      world.vfx.play('vfx_pentagram', b.pos.x, b.pos.y, { fps: 9, scale: 1.3, depthBias: -60, alpha: 0.95 });
+      world.ambience.burst(b.pos.x, b.pos.y, 0xff4040, 40);
+      world.ambience.bloodSpray(b.pos.x, b.pos.y, undefined, undefined, 20);
+      hitStop(3);
+    };
+
     /** One wave: more bodies and more champions every time (sim). */
     const spawnWave = (c: ColiseumState): void => {
       const n = Math.min(24, 4 + c.wave * 2);
@@ -788,11 +825,25 @@ async function boot(): Promise<void> {
         const roll = rand();
         if (roll < eliteChance) e.setAffix(AFFIXES[Math.floor((roll / eliteChance) * 3) % 3]);
         e.aiState = 'chase';
-        world.ambience.burst(e.pos.x, e.pos.y, 0xd0303a, 8);
+        riseFromSand(e, 24 + Math.floor(rand() * 18));
       }
       c.alive = n;
-      audio.sfx('bossHorn');
-      showWaveBanner(`WAVE ${c.wave}`);
+      // BOSS WAVES (it.54): every fifth wave a warden climbs the sand.
+      if (c.wave % 5 === 0) {
+        const kind = BOSS_LADDER[Math.min(BOSS_LADDER.length - 1, c.wave / 5 - 1)];
+        const pad = c.pads[0];
+        const b = world.enemies.spawn(kind, pad.x + 0.5, pad.y + 0.5, c.wave + 3);
+        b.aiState = 'chase';
+        riseFromSand(b, 70);
+        world.boss = b;
+        world.bossSeen = false;
+        c.alive++;
+        bossEntrance(b);
+        showWaveBanner(`${b.def.name.toUpperCase()} ENTERS`);
+      } else {
+        audio.sfx('bossHorn');
+        showWaveBanner(`WAVE ${c.wave}`);
+      }
     };
     const updateColiseum = (): void => {
       const c = world.coliseum;
@@ -812,8 +863,10 @@ async function boot(): Promise<void> {
         c.alive = alive;
         if (alive === 0) {
           audio.sfx('gateOpen');
+          stats.noteArenaWave(c.wave); // The ledger (it.54).
           if (c.wave >= c.waves) {
             c.phase = 'done';
+            stats.recordArenaClear(player.archetype, c.waves, activeTicks - c.startActive); // The trial's time (it.54).
             showWaveBanner('TRIAL COMPLETE!');
             // The prize and the way home.
             world.chests.spawnAt(c.center.x, c.center.y, true);
@@ -953,6 +1006,7 @@ async function boot(): Promise<void> {
     };
     const updateDepth = (): void => {
       if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
+      if (floor > 0) stats.noteDepth(floor);
     };
     updateOrb();
     updateDepth();
@@ -962,6 +1016,7 @@ async function boot(): Promise<void> {
     const timerLabel = document.getElementById('timer');
     const descendSub = document.getElementById('descend-sub');
     let floorStartTick = 0;
+    void floorStartTick;
     const formatTime = (ticks: number): string => {
       const totalSec = Math.floor(ticks / 60);
       const m = Math.floor(totalSec / 60);
@@ -1342,7 +1397,7 @@ async function boot(): Promise<void> {
       if (isColiseum) {
         const cmap = dungeon as ColiseumMap;
         const dressing = dressColiseum(cmap, viewport, lighting, ambience);
-        coliseumState = { waves: 5, wave: 0, phase: 'intermission', timer: 5 * 60, alive: 0, pads: cmap.pads, center: cmap.center, exit: null, update: dressing.update, destroy: dressing.destroy };
+        coliseumState = { waves: 5, wave: 0, phase: 'intermission', timer: 5 * 60, alive: 0, pads: cmap.pads, center: cmap.center, exit: null, startActive: 0, update: dressing.update, destroy: dressing.destroy };
       }
       let townState: World['town'] = null;
       if (layout) {
@@ -1586,6 +1641,8 @@ async function boot(): Promise<void> {
           bestiary: Object.fromEntries([...player.bestiary].map(([k, v]) => [k, { ...v }])),
           goldCollected: player.goldCollected,
         },
+        stats: stats.snapshot(),
+        activeTicks,
         stash: { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
       };
@@ -1638,6 +1695,7 @@ async function boot(): Promise<void> {
       floor = 0;
       updateDepth();
       floorStartTick = state.tick;
+        floorActiveTicks = 0;
       player.action = 'idle';
       if (viaPortal) {
         player.warpTo(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5);
@@ -1697,6 +1755,7 @@ async function boot(): Promise<void> {
         floor = r.floor;
         updateDepth();
         floorStartTick = state.tick;
+        floorActiveTicks = 0;
         player.warpTo(r.x, r.y);
         player.action = 'idle';
         world.lighting.updateVisibility(Math.floor(r.x), Math.floor(r.y));
@@ -1957,8 +2016,9 @@ async function boot(): Promise<void> {
       withFade(async () => {
         const next = floor + 1;
         await preloadFloor(next, 'normal');
-        const clearTime = formatTime(state.tick - floorStartTick);
+        const clearTime = formatTime(floorActiveTicks);
         const fromTown = !!world.town;
+        if (!fromTown && floor > 0) stats.recordFloorClear(player.archetype, floor, floorActiveTicks); // SPEEDRUN LEDGER (it.54).
         if (!fromTown) captureFloor();
         if (!swapWorld(() => buildWorld(next))) return;
         floor = next;
@@ -1967,6 +2027,7 @@ async function boot(): Promise<void> {
         levelSelect.unlock(floor);
         // The run timer resets cleanly on every floor transition.
         floorStartTick = state.tick;
+        floorActiveTicks = 0;
         if (descendSub) descendSub.textContent = fromTown ? 'The gate seals behind you' : `Depth ${ROMAN[floor - 2] ?? floor - 1} delved in ${clearTime}`;
         descendNote?.classList.add('show');
         descendSub?.classList.add('show');
@@ -1999,6 +2060,7 @@ async function boot(): Promise<void> {
         floor = -1;
         updateDepth();
         floorStartTick = state.tick;
+        floorActiveTicks = 0;
         player.action = 'idle';
         const c = world.coliseum;
         if (c) {
@@ -2006,6 +2068,7 @@ async function boot(): Promise<void> {
           c.wave = 0;
           c.phase = 'intermission';
           c.timer = 5 * 60;
+          c.startActive = activeTicks;
         }
         player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
         world.lighting.updateVisibility(world.dungeon.spawn.x, world.dungeon.spawn.y);
@@ -2034,6 +2097,7 @@ async function boot(): Promise<void> {
         deepestFloor = Math.max(deepestFloor, floor);
         updateDepth();
         floorStartTick = state.tick;
+        floorActiveTicks = 0;
         player.action = 'idle';
         updateOrb();
       });
@@ -2110,6 +2174,7 @@ async function boot(): Promise<void> {
           deepestFloor = Math.max(deepestFloor, floor);
           updateDepth();
           floorStartTick = state.tick;
+        floorActiveTicks = 0;
           player.action = 'idle';
           levelSelect.unlock(floor);
           updateOrb();
@@ -2310,6 +2375,14 @@ async function boot(): Promise<void> {
         if (entity.spawnIndex >= 0) world.killed.add(entity.spawnIndex); // FloorMemory (it.39).
         player.noteKill(entity.def.kind); // Bestiary (it.42).
         eventBus.emit('bestiary:changed', {});
+        stats.noteKill(!!world.coliseum, entity.def.kind.startsWith('boss')); // The ledgers (it.54).
+        if (world.coliseum && (entity.affix || entity.def.kind.startsWith('boss'))) {
+          // THE CROWD ROARS (it.54): a champion or a boss falls on the sand.
+          audio.sfx('crowd');
+          world.ambience.burst(entity.pos.x, entity.pos.y, 0xffd070, 34);
+          world.ambience.playGlint(entity.pos.x, entity.pos.y);
+          world.dmgText.show(entity.pos.x, entity.pos.y - 1.6, 'THE CROWD ROARS', 'crit');
+        }
         // PHASED BOSS (it.30): a form with a nextPhase does not die.
         if (entity.beginPhaseTransition()) {
           audio.sfx('bossDie');
@@ -2540,6 +2613,11 @@ async function boot(): Promise<void> {
         }
         state.tick = tick;
         stateSync.update(tick);
+        // THE ACTIVE CLOCK (it.54): the town and the intermissions stand still.
+        if (!world.town && (!world.coliseum || world.coliseum.phase === 'fight')) {
+          activeTicks++;
+          floorActiveTicks++;
+        }
 
         state.forEach((entity) => entity.beginTick());
         const commands = inputQueue.drain();
@@ -2728,7 +2806,7 @@ async function boot(): Promise<void> {
             continue;
           }
           p.life += frameDt;
-          const t = p.life / 1.5;
+          const t = Math.max(0, p.life / 1.5);
           p.sprite.alpha = 0.95 * (1 - t) * (1 - t);
           p.sprite.scale.set(1.4 + t * 0.8, 5.5 + t * 4);
           if (t >= 1) {
@@ -2769,7 +2847,7 @@ async function boot(): Promise<void> {
         const halo = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
         world.playerHalo.position.set(halo.x, halo.y - 22);
         world.playerHalo.alpha = 0.3 + Math.sin(timeSec * 3.1) * 0.05;
-        if (timerLabel) timerLabel.textContent = formatTime(state.tick - floorStartTick);
+        if (timerLabel) timerLabel.textContent = formatTime(activeTicks); // The active clock (it.54).
 
         // Proximity prompt: an "E — OPEN" chip floats over a nearby chest —
         // or, in town, over the stall / stash / gate / portal (it.39).
@@ -2952,15 +3030,8 @@ async function boot(): Promise<void> {
     const charSheetUI = new CharacterSheetUI(player);
     const bestiaryUI = new BestiaryUI(player);
     // DUNGEON RECORDS (it.48): the board's tallies come straight from the run.
-    const statsUI = new StatsBoardUI(() => {
-      let kills = 0;
-      let bosses = 0;
-      for (const [kind, v] of player.bestiary) {
-        kills += v.killed;
-        if (kind.startsWith('boss')) bosses += v.killed;
-      }
-      return { kills, bosses, gold: player.goldCollected, deepest: deepestFloor, playtimeTicks: playtimeBase + state.tick };
-    });
+    // THE HALL OF RECORDS (it.54): the board opens the two-tab leaderboard.
+    const statsUI = new LeaderboardUI(stats, () => ({ cls: player.archetype, playtimeTicks: playtimeBase + state.tick, gold: player.goldCollected }));
     // DRAGGABLE WINDOWS (it.41): every panel by its header, remembered per panel.
     const undrag = [
       ['inv-panel', 'inventory'],
@@ -3131,6 +3202,7 @@ async function boot(): Promise<void> {
         if (mode === 'hub') enterTown(false);
         updateDepth();
         floorStartTick = state.tick;
+        floorActiveTicks = 0;
         player.action = 'idle';
         levelSelect.unlock(floor);
         updateOrb();
@@ -3230,6 +3302,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
     const all = new Set<string>(['folk_walk', 'torch', ...VFX_ANIMS]);
     for (const f of [1, 3, 5, 9, 14, 20]) for (const k of kindPoolFor(f)) for (const a of animsForKind(k)) all.add(a);
     for (const a of animsForKind('fallen')) all.add(a);
+    for (const k of BOSS_LADDER) for (const a of animsForKind(k)) all.add(a); // Boss waves (it.54).
     return [...all];
   }
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));

@@ -45,6 +45,8 @@ export type SfxName =
   | 'pickup'
   | 'gold'
   | 'levelUp'
+  | 'arenaHorn'
+  | 'crowd'
   | 'enemyHit'
   | 'enemyGrowl'
   | 'chest'
@@ -856,6 +858,21 @@ export class AudioManager {
       case 'ui':
         // A tiny high metallic tick (Sword Parry, fast + quiet).
         if (!this.playVariant('parry', 0.14, 1.85)) this.blip('square', 840, 620, 0.04, 0.18);
+        break;
+      case 'arenaHorn':
+        // THE ARENA HORN (it.54): the war horn under a low brass swell and a drum of noise.
+        this.playVariant('horn', 1.0, 0.9);
+        this.blip('sawtooth', 98, 82, 1.4, 0.35);
+        this.blip('sawtooth', 147, 123, 1.2, 0.25, 0.08);
+        this.noise(0.9, 60, 220, 0.5, 0.8, 0.05);
+        break;
+      case 'crowd':
+        // THE CROWD ROARS (it.54): three swells of filtered noise and a few whistles.
+        this.noise(1.7, 300, 1500, 0.34, 0.6);
+        this.noise(1.3, 500, 2400, 0.24, 0.7, 0.25);
+        this.noise(1.0, 200, 900, 0.3, 0.5, 0.55);
+        this.blip('triangle', 1760, 1320, 0.25, 0.12, 0.3);
+        this.blip('triangle', 1480, 1980, 0.22, 0.1, 0.6);
         break;
       case 'victory':
         this.blip('triangle', 523, 523, 0.14, 0.5);

@@ -11,6 +11,7 @@
  */
 
 import type { ClassArchetype, EquipmentSlot } from '@/network/Serialization';
+import type { RecordsSnapshot } from '@/systems/StatsManager';
 
 export const SAVE_VERSION = 3;
 export const SAVE_SLOTS = 3;
@@ -71,6 +72,10 @@ export interface SaveGame {
    */
   pos?: { x: number; y: number };
   arena?: boolean;
+  /** RECORDS (it.54): the dungeon and arena ledgers, merged on load. */
+  stats?: RecordsSnapshot;
+  /** Active run ticks (dungeon floors + live waves only). */
+  activeTicks?: number;
   deepestFloor: number;
   playtimeTicks: number;
   player: PlayerSave;

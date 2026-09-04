@@ -502,6 +502,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] `LoadingScreen.ts`: filigree frame, turning rune seal, honest bronze progress bar, fifteen lore tips, wired to every zone change
 - [x] Assets baked from `test-models` (compass cross, Darinia filigree); all serve; clean build; zero console errors
 
+## Iteration 63 - Dual-Orientation Engine, Virtual Controls, Performance Scaler (2026-09-04)
+
+- [x] `OrientationManager`: one source of truth (`--app-w/--app-h/--stage-h/--pad-h/--hud-scale/--orb-scale` + body classes), live rotation on a `dt*12` spring, snap when hidden
+- [x] Canvas sized to the `#app` stage box, not the window; portrait = 65% crypt / 35% gothic control pad, landscape = edge-to-edge with floating corner controls
+- [x] `VirtualJoystick` + `TouchControls`: PointerEvents, `touch-action: none`, per-control pointer capture, true multi-touch, haptics, fullscreen
+- [x] `PerformanceScaler`: rolling 60-frame average walking a 2 → 0.75 resolution ladder with hysteresis; caps title particle counts
+- [x] Device matrix: 33 devices x 2 orientations, all 66 asserted for overflow, 44 px targets, control/HUD collisions and text clipping — zero failures
+- [x] Live rotation mid-run keeps the player, position, hp, entities and tick; desktop unchanged; clean build; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Crypt of the Hollow King</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -3614,6 +3614,332 @@
         100% { opacity: 1; transform: none; filter: brightness(1) blur(0); }
       }
       @keyframes mm-intro-soft { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+      /* ===================================================================
+         IT.63 — DUAL-ORIENTATION ENGINE: THE STAGE BOX, THE CONTROL PAD,
+         HUD REFLOW, RESPONSIVE PANELS
+         =================================================================== */
+      :root {
+        /* Owned by OrientationManager; every layout below reads these, so a
+           simulated viewport and a real one take exactly the same path. */
+        --app-w: 100vw;
+        --app-h: 100vh;
+        --stage-h: 100vh;
+        --pad-h: 0px;
+        --hud-scale: 1;
+        --sat: env(safe-area-inset-top, 0px);
+        --sar: env(safe-area-inset-right, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+        --sal: env(safe-area-inset-left, 0px);
+      }
+      html, body { width: 100%; height: 100%; overscroll-behavior: none; touch-action: manipulation; }
+      /* The crypt's own box. In landscape it is the whole viewport; in
+         portrait it is the band above the control pad. */
+      #app {
+        position: fixed;
+        left: 0; top: 0;
+        width: var(--app-w);
+        height: var(--stage-h);
+        overflow: hidden;
+      }
+      #app canvas { touch-action: none; }
+      #vignette { height: var(--stage-h); }
+      body.sim-viewport #app { box-shadow: 0 0 0 1px #c8a558, 0 0 40px rgba(0, 0, 0, 0.9); }
+      /* A transform on the body makes it the containing block for `position:
+         fixed` descendants, so a simulated viewport anchors the WHOLE HUD —
+         not just the stage — exactly as a real device of that size would. */
+      body.sim-viewport {
+        width: var(--app-w); height: var(--app-h);
+        transform: translateZ(0);
+        overflow: hidden;
+      }
+      body.sim-viewport::after {
+        content: 'SIMULATED VIEWPORT';
+        position: fixed; right: 6px; bottom: 4px; z-index: 200;
+        font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.2em; color: #c8a558;
+        pointer-events: none;
+      }
+
+      /* ---- the virtual controls ---------------------------------------- */
+      #touch-controls { position: fixed; inset: 0; display: none; z-index: 24; pointer-events: none; touch-action: none; }
+      #touch-controls.show { display: block; }
+      #touch-controls .tc-left, #touch-controls .tc-right { position: absolute; pointer-events: none; }
+      #touch-controls .vj-zone, #touch-controls .tc-btn { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+
+      .vj-zone { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+      .vj-base {
+        position: relative;
+        width: calc(132px * var(--hud-scale)); height: calc(132px * var(--hud-scale));
+        border-radius: 50%;
+        background: radial-gradient(circle at 50% 42%, rgba(44, 37, 52, 0.6) 0%, rgba(12, 9, 16, 0.55) 62%, rgba(8, 6, 11, 0.4) 100%);
+        border: 2px solid rgba(122, 98, 56, 0.75);
+        box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.8), 0 2px 10px rgba(0, 0, 0, 0.7);
+        transition: opacity 0.18s;
+      }
+      .vj-base::after {
+        content: ''; position: absolute; inset: 12%;
+        border-radius: 50%; border: 1px dashed rgba(200, 165, 88, 0.25);
+      }
+      .vj-knob {
+        position: absolute; left: 50%; top: 50%;
+        width: calc(58px * var(--hud-scale)); height: calc(58px * var(--hud-scale));
+        margin-left: calc(-29px * var(--hud-scale)); margin-top: calc(-29px * var(--hud-scale));
+        border-radius: 50%;
+        background: radial-gradient(circle at 50% 35%, #6a5a3a 0%, #2c2434 55%, #14101a 100%);
+        border: 2px solid #c8a558;
+        box-shadow: 0 0 14px rgba(200, 165, 88, 0.35), inset 0 2px 6px rgba(255, 220, 150, 0.18);
+      }
+      .vj-zone.held .vj-knob { box-shadow: 0 0 22px rgba(255, 208, 112, 0.7), inset 0 2px 6px rgba(255, 220, 150, 0.3); }
+      .vj-zone.floating .vj-base { opacity: 0.55; }
+      .vj-zone.floating.held .vj-base { opacity: 1; }
+
+      .tc-btn {
+        position: absolute;
+        display: flex; align-items: center; justify-content: center;
+        min-width: 44px; min-height: 44px;
+        padding: 0; margin: 0;
+        border-radius: 50%;
+        background: radial-gradient(circle at 50% 36%, #2c2534 0%, #171320 58%, #0c0910 100%);
+        border: 2px solid #4a3d2c;
+        box-shadow: inset 0 0 0 1px #07050a, inset 0 -4px 10px rgba(0, 0, 0, 0.7), 0 2px 0 rgba(0, 0, 0, 0.9);
+        color: #c8a558;
+        font-family: 'Cinzel', 'Georgia', serif; font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.06s, box-shadow 0.12s, border-color 0.12s, color 0.12s;
+      }
+      .tc-btn span { line-height: 1; pointer-events: none; }
+      .tc-btn.held { transform: scale(0.93); border-color: #ffd070; color: #ffe9a8; box-shadow: inset 0 0 0 1px #07050a, inset 0 4px 12px rgba(0, 0, 0, 0.85), 0 0 18px rgba(255, 208, 112, 0.55); }
+      .tc-attack {
+        width: calc(96px * var(--hud-scale)); height: calc(96px * var(--hud-scale));
+        font-size: calc(34px * var(--hud-scale));
+        border-color: #7a3030;
+        background: radial-gradient(circle at 50% 36%, #47222a 0%, #24131a 58%, #120a0e 100%);
+        color: #ffb0a0;
+      }
+      .tc-attack.held { border-color: #ff8060; box-shadow: 0 0 26px rgba(255, 110, 70, 0.6), inset 0 4px 12px rgba(0, 0, 0, 0.85); }
+      .tc-skill { width: calc(58px * var(--hud-scale)); height: calc(58px * var(--hud-scale)); font-size: calc(18px * var(--hud-scale)); }
+      .tc-use { width: calc(50px * var(--hud-scale)); height: calc(50px * var(--hud-scale)); font-size: calc(17px * var(--hud-scale)); }
+      .tc-potion { border-color: #6a2c34; color: #ff8a8a; }
+      .tc-mana { border-color: #2c4a6a; color: #8ab8ff; }
+
+      /* The right cluster packs into wrapping rows: utilities on top, the
+         skills under them, the attack at the thumb's rest. Rows cannot
+         overlap, whatever the screen or the scale. */
+      #touch-controls .tc-right {
+        display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end;
+        gap: calc(7px * var(--hud-scale));
+      }
+      .tc-row { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; align-items: center; gap: calc(7px * var(--hud-scale)); max-width: 100%; }
+      .tc-row-main { align-items: flex-end; }
+      .tc-btn { position: relative; flex: 0 0 auto; }
+
+      /* NO PAD (landscape anywhere, and a tablet held upright): the canvas is
+         edge to edge and the controls float in the lower corners, the stick
+         coming to whichever thumb presses down. This is the DEFAULT anchor —
+         the phone pad below overrides it. */
+      #touch-controls .tc-left {
+        left: calc(var(--sal) + 6px); bottom: calc(var(--sab) + 6px);
+        width: calc(200px * var(--hud-scale)); height: calc(200px * var(--hud-scale));
+      }
+      #touch-controls .tc-right { right: calc(var(--sar) + 6px); bottom: calc(var(--sab) + 6px); }
+
+      /* PORTRAIT: a gothic slate pad under the crypt holds both halves, so a
+         thumb is never over the fight or an enemy's health bar. */
+      body.orient-portrait.has-pad #touch-controls {
+        top: auto; height: var(--pad-h); bottom: 0;
+        background:
+          linear-gradient(180deg, rgba(10, 8, 14, 0.98) 0%, rgba(16, 12, 22, 0.99) 30%, rgba(8, 6, 11, 1) 100%);
+        border-top: 2px solid #4a3d2c;
+        box-shadow: inset 0 3px 0 #0a080d, inset 0 6px 22px rgba(0, 0, 0, 0.9), 0 -8px 26px rgba(0, 0, 0, 0.7);
+        pointer-events: auto;
+      }
+      body.orient-portrait.has-pad #touch-controls::before {
+        content: ''; position: absolute; left: 10px; right: 10px; top: 4px; height: 14px;
+        background: url('assets/ui/frames/filigree_band.png') center / auto 14px repeat-x;
+        opacity: 0.18; pointer-events: none;
+      }
+      body.orient-portrait.has-pad #touch-controls .tc-left {
+        left: calc(var(--sal) + 4px); bottom: calc(var(--sab) + 4px);
+        width: 46%; height: calc(var(--pad-h) - var(--sab) - 12px);
+      }
+      body.orient-portrait.has-pad #touch-controls .tc-right {
+        right: calc(var(--sar) + 4px); bottom: calc(var(--sab) + 4px);
+        width: 52%; height: calc(var(--pad-h) - var(--sab) - 12px);
+      }
+
+      /* ---- HUD reflow --------------------------------------------------- */
+      /* On touch the key-legend and the desktop hotbar step aside: the pad
+         carries those actions now. */
+      body.touch-controls-on #controls, body.touch-controls-on #skill-bar, body.touch-controls-on #tp-button { display: none !important; }
+      body.orient-portrait.has-pad #minimap { top: calc(var(--sat) + 6px); right: calc(var(--sar) + 6px); transform-origin: top right; transform: scale(calc(0.62 * var(--hud-scale))); }
+      body.orient-portrait.has-pad #hud-buffs { bottom: calc(var(--pad-h) + 8px); }
+      body.orient-portrait.has-pad #party-hud { top: calc(var(--sat) + 62px); left: calc(var(--sal) + 6px); transform-origin: top left; transform: scale(calc(0.8 * var(--hud-scale))); }
+      body.orient-portrait.has-pad #chat { display: none; }
+      /* The globes ride the dividing border between crypt and pad. */
+      /* The globes straddle the dividing border, scaled to the strip the
+         control cluster leaves them (see `orbScale`). */
+      body.orient-portrait.has-pad #orb-wrap { left: calc(var(--sal) + 4px); bottom: calc(var(--pad-h) - 10px); transform-origin: left bottom; transform: scale(var(--orb-scale)); }
+      body.orient-portrait.has-pad #orb2-wrap { left: calc(var(--sal) + 4px + 180px * var(--orb-scale)); bottom: calc(var(--pad-h) - 10px); transform-origin: left bottom; transform: scale(var(--orb-scale)); }
+      body.orient-portrait.has-pad #char-stats { left: auto; right: calc(var(--sar) + 8px); bottom: calc(var(--pad-h) + 6px); transform-origin: right bottom; transform: scale(calc(0.8 * var(--hud-scale))); }
+      body.orient-portrait.has-pad #progress-hud { bottom: calc(var(--pad-h) + 44px); }
+      body.orient-portrait.has-pad #depth-label { top: calc(var(--sat) + 4px); left: calc(var(--sal) + 8px); }
+      body.orient-portrait.has-pad #run-timer { top: calc(var(--sat) + 4px); }
+
+      /* Landscape on touch: both lower corners belong to the thumbs, so the
+         globes and their readouts move to the LOWER CENTRE where no hand
+         covers them. */
+      body.orient-landscape.touch-controls-on #orb-wrap { left: calc(var(--app-w) / 2 - 120px); transform-origin: left bottom; transform: scale(calc(0.6 * var(--hud-scale))); }
+      body.orient-landscape.touch-controls-on #orb2-wrap { left: calc(var(--app-w) / 2 + 2px); transform-origin: left bottom; transform: scale(calc(0.6 * var(--hud-scale))); }
+      body.orient-landscape.touch-controls-on #progress-hud { left: 50% !important; right: auto; transform: translateX(-50%); bottom: calc(80px * var(--hud-scale)); max-width: calc(var(--app-w) - 16px); }
+      body.orient-landscape.touch-controls-on #char-stats { left: 50%; right: auto; bottom: calc(108px * var(--hud-scale)); transform-origin: center bottom; transform: translateX(-50%) scale(calc(0.82 * var(--hud-scale))); }
+      body.orient-landscape.touch-controls-on #minimap { transform-origin: top right; transform: scale(calc(0.78 * var(--hud-scale))); }
+      body.orient-landscape.touch-controls-on #chat { bottom: calc(var(--sab) + 210px * var(--hud-scale)); }
+
+      /* Tight screens: the furniture that is nice-to-have gets out of the way. */
+      body.tier-micro #minimap, body.tier-compact.orient-portrait #minimap { opacity: 0.85; }
+      body.tier-micro #char-stats, body.tier-micro #progress-hud { display: none; }
+      body.tier-micro #depth-label { font-size: 11px; }
+      body.tier-micro .tc-portal, body.tier-micro .tc-full, body.tier-micro .tc-mana { display: none; }
+      body.tier-micro #touch-controls .tc-right { width: calc(190px * var(--hud-scale)); }
+
+      /* ---- panels: every window fits the viewport it is given ----------- */
+      #inv-panel, #skill-tree, #char-sheet, #bestiary, .town-panel, #leaderboard, #settings-panel, #cheat-menu, #save-panel {
+        max-width: calc(var(--app-w) - 12px);
+        max-height: calc(var(--app-h) - 12px);
+        overflow: auto;
+        box-sizing: border-box;
+      }
+      #coop-panel .cp-frame, #credits .modal-panel, .modal .modal-panel {
+        max-width: calc(var(--app-w) - 12px);
+        max-height: calc(var(--app-h) - 12px);
+        box-sizing: border-box;
+      }
+      /* Small screens: windows become full-bleed sheets that scroll. */
+      body.tier-micro #inv-panel, body.tier-compact #inv-panel, body.tier-standard.orient-portrait #inv-panel,
+      body.tier-micro #skill-tree, body.tier-compact #skill-tree, body.tier-standard.orient-portrait #skill-tree,
+      body.tier-micro #char-sheet, body.tier-compact #char-sheet, body.tier-standard.orient-portrait #char-sheet,
+      body.tier-micro #bestiary, body.tier-compact #bestiary, body.tier-standard.orient-portrait #bestiary,
+      body.tier-micro .town-panel, body.tier-compact .town-panel, body.tier-standard.orient-portrait .town-panel,
+      body.tier-micro #leaderboard, body.tier-compact #leaderboard, body.tier-standard.orient-portrait #leaderboard {
+        left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: calc(var(--app-w) - 12px) !important;
+        max-height: calc(var(--app-h) * 0.9) !important;
+      }
+      /* Portrait stacks the multi-column windows; landscape keeps the columns. */
+      body.orient-portrait.tier-micro .st-cols, body.orient-portrait.tier-compact .st-cols, body.orient-portrait.tier-standard .st-cols { grid-template-columns: 1fr; }
+      body.orient-portrait.tier-micro .bs-cols, body.orient-portrait.tier-compact .bs-cols, body.orient-portrait.tier-standard .bs-cols,
+      body.orient-portrait.tier-micro .tp-cols, body.orient-portrait.tier-compact .tp-cols, body.orient-portrait.tier-standard .tp-cols { grid-template-columns: 1fr; }
+      body.orient-portrait.tier-micro .cp-setup, body.orient-portrait.tier-compact .cp-setup, body.orient-portrait.tier-standard .cp-setup,
+      body.orient-portrait.tier-micro .cp-party-lower, body.orient-portrait.tier-compact .cp-party-lower, body.orient-portrait.tier-standard .cp-party-lower { grid-template-columns: 1fr; }
+      body.orient-portrait.tier-micro .cp-cards, body.orient-portrait.tier-compact .cp-cards { grid-template-columns: repeat(2, 1fr); }
+      /* Panel tabs and controls stay thumb-sized on touch. */
+      body.input-touch .st-slot, body.input-touch .lb-tab, body.input-touch .set-tabs button,
+      body.input-touch .tp-close, body.input-touch .cp-btn, body.input-touch .menu-btn, body.input-touch .mm-btn { min-height: 44px; }
+      body.input-touch .tp-close { min-width: 44px; width: 44px; height: 44px; }
+      body.input-touch .tp-close i, body.input-touch .tp-close::after { width: 26px; height: 26px; background-size: 26px 26px; }
+
+      /* The title stack on a small screen. */
+      body.tier-micro #main-menu .mm-logo span { font-size: 22px; }
+      body.tier-micro #main-menu .mm-logo span:last-child { font-size: 25px; }
+      body.tier-micro #main-menu .mm-btn { padding: 7px 10px; font-size: 11px; letter-spacing: 0.14em; }
+      body.tier-micro #main-menu .mm-pill { display: none; }
+      body.tier-micro #main-menu .mm-tag, body.tier-micro #main-menu .mm-foot { display: none; }
+      body.tier-micro #main-menu .mm-stack { gap: 5px; }
+      body.tier-compact #main-menu .mm-logo span { font-size: 27px; }
+      body.tier-compact #main-menu .mm-logo span:last-child { font-size: 31px; }
+      body.tier-compact #main-menu .mm-foot { display: none; }
+      #main-menu .mm-panel { max-height: calc(var(--app-h) - 16px); overflow: auto; }
+      /* A pivoted monitor or a phone in portrait: the stack still centres. */
+      body.orient-portrait #main-menu .mm-panel { width: min(460px, calc(var(--app-w) - 24px)); }
+
+      /* The loading screen and modals never exceed the viewport either. */
+      #loading-screen .ls-frame { max-width: calc(var(--app-w) - 16px); max-height: calc(var(--app-h) - 16px); overflow: auto; }
+      body.tier-micro #loading-screen .ls-seal, body.tier-compact #loading-screen .ls-seal { width: 74px; height: 74px; }
+      body.tier-micro #loading-screen .ls-tip { font-size: 11px; }
+      #settings-panel .set-action { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      #settings-panel .set-action span { display: flex; flex-direction: column; gap: 1px; }
+      #settings-panel .set-action small { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
+      #settings-panel .set-btn { padding: 6px 12px; font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.16em; color: var(--ink); background: #0d0a12; border: 1px solid #5a4a30; cursor: pointer; }
+      #settings-panel .set-btn:hover { color: #ffd070; border-color: #c8a558; }
+
+      /* ---- it.63 fixes found by the device matrix ---------------------- */
+      /* The XP strip is anchored beside the desktop orbs; on a narrow screen
+         it must come back to the left edge and stay inside the viewport. */
+      body.orient-portrait.has-pad #progress-hud,
+      body.tier-micro #progress-hud, body.tier-compact #progress-hud {
+        left: calc(var(--sal) + 8px) !important;
+        right: auto;
+        max-width: calc(var(--app-w) - 16px);
+        overflow: hidden;
+      }
+      body.tier-standard.orient-portrait #progress-hud { left: calc(var(--sal) + 8px) !important; max-width: calc(var(--app-w) - 16px); }
+      /* Same for the stat strip, which shares the desktop's left offsets. */
+      body.tier-compact.orient-portrait #char-stats, body.tier-standard.orient-portrait #char-stats { max-width: calc(var(--app-w) - 16px); overflow: hidden; }
+
+      /* The cluster gets a definite box, so its rows wrap inside the screen
+         instead of growing a column taller than the pad. */
+      #touch-controls .tc-right {
+        width: min(calc(var(--app-w) * 0.5), calc(330px * var(--hud-scale)));
+        max-height: calc(var(--stage-h) - 12px);
+      }
+      body.orient-portrait.has-pad #touch-controls .tc-right {
+        width: 52%;
+        max-height: calc(var(--pad-h) - var(--sab) - 12px);
+      }
+      body.orient-landscape #touch-controls .tc-right { max-height: calc(var(--app-h) - var(--sat) - var(--sab) - 12px); }
+
+      /* MICRO (a 240x320 handset): three rows of 44 px targets do not fit
+         beside a stick, so the cluster carries the five that matter —
+         attack, two skills, interact and the healing draught. The rest stay
+         on the keyboard, which is what a device this size actually has. */
+      body.tier-micro .tc-skill-2, body.tier-micro .tc-skill-3 { display: none; }
+      body.tier-micro #touch-controls .tc-right { width: 54%; }
+      body.tier-micro .tc-row { gap: 5px; }
+      body.tier-micro #touch-controls .tc-right { gap: 5px; }
+      /* The utility row folds into the main row on a micro screen. */
+      body.tier-micro .tc-row-use { display: contents; }
+
+      /* ---- it.63: collisions the matrix caught ------------------------- */
+      /* The cluster needs room for four 44 px targets in a row, or its rows
+         wrap and the column grows out of the pad into the fight. */
+      body.orient-portrait.has-pad #touch-controls .tc-right { width: max(200px, 52%); }
+      body.orient-portrait.has-pad #touch-controls .tc-left { width: calc(100% - max(200px, 52%) - 10px); }
+      body.tier-micro.orient-portrait.has-pad #touch-controls .tc-right { width: max(100px, 54%); }
+      body.tier-micro.orient-portrait.has-pad #touch-controls .tc-left { width: calc(100% - max(100px, 54%) - 8px); }
+      /* Micro keeps its utility row a row (folding it into the column would
+         give every button a line of its own). */
+      body.tier-micro .tc-row-use { display: flex; }
+      /* Inside the pad the controls hold the 44 px minimum, so four fit one
+         row and the cluster never grows taller than the slate. */
+      body.orient-portrait.has-pad .tc-skill, body.orient-portrait.has-pad .tc-use { width: 44px; height: 44px; font-size: 16px; }
+      body.orient-portrait.has-pad .tc-attack { width: calc(76px * var(--hud-scale)); height: calc(76px * var(--hud-scale)); font-size: calc(28px * var(--hud-scale)); }
+      body.orient-portrait.has-pad .tc-row { gap: 6px; }
+      body.orient-portrait.has-pad #touch-controls .tc-right { gap: 6px; }
+
+      /* WHEREVER THE CONTROLS FLOAT (landscape, and a tablet held upright)
+         both lower corners belong to the thumbs, so the globes and their
+         readouts sit at the lower CENTRE. */
+      body.touch-controls-on:not(.has-pad) #orb-wrap { left: calc(var(--app-w) / 2 - 120px); transform-origin: left bottom; transform: scale(calc(0.6 * var(--hud-scale))); }
+      body.touch-controls-on:not(.has-pad) #orb2-wrap { left: calc(var(--app-w) / 2 + 2px); transform-origin: left bottom; transform: scale(calc(0.6 * var(--hud-scale))); }
+      body.touch-controls-on:not(.has-pad) #progress-hud { left: 50% !important; right: auto; transform: translateX(-50%); bottom: calc(80px * var(--hud-scale)); max-width: calc(var(--app-w) - 16px); }
+      body.touch-controls-on:not(.has-pad) #char-stats { left: 50%; right: auto; bottom: calc(108px * var(--hud-scale)); transform-origin: center bottom; transform: translateX(-50%) scale(calc(0.82 * var(--hud-scale))); }
+
+      /* No free band between the hands: the meters take the top instead. */
+      body.hud-top #orb-wrap { left: calc(var(--app-w) / 2 - 96px) !important; top: calc(var(--sat) + 22px) !important; bottom: auto !important; transform-origin: left top; transform: scale(0.48) !important; }
+      body.hud-top #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: calc(var(--sat) + 22px) !important; bottom: auto !important; transform-origin: left top; transform: scale(0.48) !important; }
+      body.hud-top #progress-hud { left: 50% !important; right: auto !important; bottom: auto !important; top: calc(var(--sat) + 4px) !important; transform: translateX(-50%) !important; }
+      body.hud-top #char-stats { left: auto !important; right: calc(var(--sar) + 8px) !important; bottom: auto !important; top: calc(var(--sat) + 150px * var(--hud-scale)) !important; transform-origin: right top; transform: scale(calc(0.8 * var(--hud-scale))) !important; }
+      body.hud-top #run-timer { display: none; }
+      /* The top band now carries the meters, so the map makes room for them. */
+      body.hud-top #minimap { transform-origin: top right; transform: scale(0.72); }
+
+      /* MICRO with touch: the lower band is entirely thumbs, so the globes
+         move to the TOP, the run clock steps aside, and a landscape micro
+         screen drops the minimap it has no room for. */
+      body.tier-micro.touch-controls-on #run-timer { display: none; }
+      body.tier-micro.touch-controls-on #minimap { display: none; }
+      body.tier-micro.touch-controls-on #orb-wrap { left: calc(var(--app-w) / 2 - 84px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.42) !important; }
+      body.tier-micro.touch-controls-on #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.42) !important; }
     </style>
   </head>
   <body>

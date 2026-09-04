@@ -13,6 +13,7 @@
 
 import { audio } from '@/engine/AudioManager';
 import { setVisual, visuals } from '@/core/VisualSettings';
+import { toggleFullscreen } from '@/ui/TouchControls';
 
 type Tab = 'audio' | 'visuals' | 'controls';
 
@@ -121,6 +122,10 @@ export class SettingsUI {
         </label>
       </div>
       <div data-pane="visuals" hidden>
+        <div class="set-row set-action">
+          <span>Fullscreen<small>the whole screen, no browser chrome</small></span>
+          <button type="button" class="set-btn" data-fullscreen>TOGGLE</button>
+        </div>
         ${toggle('shake', 'Screen shake', 'kicks and tremors on heavy blows')}
         ${toggle('gore', 'Blood & gore', 'sprays, stains and corpses')}
         ${toggle('flash', 'Hurt flash', 'the red edge when you bleed')}
@@ -152,6 +157,10 @@ export class SettingsUI {
         else if (key === 'amb') audio.setAmb(Number(input.value) / 100);
         if (key !== 'muted') audio.sfx('ui'); // Audible feedback while sliding.
       });
+    });
+    this.panel.querySelector('[data-fullscreen]')?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      void toggleFullscreen();
     });
     this.panel.querySelectorAll<HTMLInputElement>('input[data-visual]').forEach((input) => {
       input.addEventListener('change', () => {

@@ -1,5 +1,98 @@
 # Development Log
 
+## 2026-09-04 (iteration 63) - Dual-orientation engine, virtual controls, performance scaler
+
+### The layout spine (`src/core/OrientationManager.ts`)
+- One place decides how big the play area is, which way the device is held
+  and how dense the HUD may be. It publishes the answer as custom properties
+  — `--app-w`, `--app-h`, `--stage-h`, `--pad-h`, `--hud-scale`, `--orb-scale`
+  — and as body classes (`orient-portrait` / `orient-landscape`, `has-pad`,
+  `input-touch`, `tier-micro … tier-huge`). The DOM HUD and the WebGL stage
+  both read that one source, so they cannot disagree.
+- The canvas is no longer sized to the window: Pixi's `resizeTo` follows the
+  `#app` box, whose height is `--stage-h`. In portrait that is the band above
+  the control pad; in landscape it is the whole viewport.
+- ROTATION IS LIVE. `screen.orientation`, `resize`, `visualViewport` and a
+  `matchMedia` listener all feed one recompute. Classes flip at once and the
+  numbers spring to their new values on a `dt * 12` exponential lerp, so the
+  HUD glides to its new anchors while the simulation keeps ticking. Nothing
+  reloads, nothing re-initialises, no input is dropped. A hidden page snaps
+  instead of springing — there is nothing on screen to animate, and a frozen
+  rAF would otherwise leave the numbers behind the classes.
+
+### Two architectures
+- PORTRAIT (phone): the crypt takes the upper 65% and a gothic slate pad
+  takes the lower 35%, filigree along its lip, stick left and the control
+  cluster right — no thumb is ever over the fight. The globes straddle the
+  dividing border, scaled by `--orb-scale` to the strip the cluster leaves
+  them. Minimap top-right, buffs above the pad, party HUD top-left.
+- LANDSCAPE (and a tablet held upright): the canvas is edge to edge and the
+  controls float in the lower corners, the stick coming to whichever thumb
+  presses down.
+- THE PAD IS A PHONE ARCHITECTURE. A thumb's arc is the same few centimetres
+  whatever the glass, so a fixed 35% band would waste half a tablet's screen
+  (on a 2640 px-tall viewport it would be a metre of slate). Above a 600 px
+  short edge the controls float instead. That is the one place this iteration
+  reads the brief's "lower 35–40%" as a phone rule rather than a universal one.
+
+### The virtual controls (`TouchControls.ts`, `VirtualJoystick.ts`)
+- Raw PointerEvents with `touch-action: none`: no 300 ms tap delay, no
+  double-tap zoom, no long-press menu. Each control captures its own pointer
+  id, so the left thumb keeps steering while the right one hammers skills.
+  Verified: a synthetic three-finger sequence produced DIRECT_MOVE, SKILL,
+  ATTACK_DOWN, another DIRECT_MOVE (the stick still steering under the other
+  two fingers), ATTACK_UP, STOP — in order, nothing dropped.
+- The cluster packs into three wrapping rows (utilities, skills, attack)
+  rather than an absolute arc, which is what keeps every target its full
+  44 px and non-overlapping from 240 px to 8K. The stick reports a screen
+  vector that becomes the isometric world axes, exactly as the keyboard does.
+- Haptics on every press (`navigator.vibrate(15)`), fullscreen from the
+  cluster and from Settings, and a `releaseAll()` on every orientation change
+  so a rotation never leaves a thumb "held" on the old layout.
+- Nothing here touches the simulation: every control becomes an
+  `InputCommand` on the queue, stamped with the local seat, so a co-op party
+  stays in lockstep.
+
+### The frame budget (`PerformanceScaler.ts`)
+- A rolling 60-frame average walks a resolution ladder (2 → 1.5 → 1 → 0.75)
+  with hysteresis: a second under budget steps down, three comfortable
+  seconds step back up, never twice inside two seconds. The HUD is DOM text,
+  so it stays crisp at the device's own resolution either way. Verified:
+  forcing 0.75 shrank the buffer to 1152x521 while the CSS box stayed
+  1536x695; back to 1 restored it.
+- `quality` also caps the title's ember and fog counts, so a weak device gets
+  a calm sky rather than a slideshow.
+
+### The device matrix
+- 33 devices x 2 orientations = 66 configurations, each asserted for: the
+  stage box and the renderer agreeing; the portrait split; every HUD element
+  and control inside the viewport; every touch target at least 44x44; no
+  control overlapping another or the stick; no HUD element under a control;
+  no globe under the map; and no clipped text. All 66 pass.
+- The harness drives the same code path a real device does (`simulate(w, h)`
+  writes the same properties), and a transform on the body makes the
+  simulated box the containing block for every fixed element, so the whole
+  HUD anchors to it and not to the real window.
+- What the matrix caught and this iteration fixed: the cluster's rows wrapped
+  out of the pad on a 360 px phone (targets now hold 44 px inside the pad so
+  four fit a row); a tablet held upright had no anchor for the stick zone
+  (the corner anchors became the default); the globes sat under the floating
+  stick (they move to the lower centre, and to the TOP BAND when a measured
+  free band between stick and cluster is under 250 px); the XP strip kept a
+  desktop left offset; and a more specific rule was quietly beating the
+  top-band anchors.
+- MICRO (240x320) is the one screen where 44 px targets and a 60/40 split
+  cannot both hold: there the split evens to ~56/44, the cluster carries five
+  essentials (attack, two skills, interact, draught) and the map steps aside.
+
+### Verified live
+- Rotation with a run in progress, both directions: same player object, same
+  position, same hp, same entity count, still ticking, no reload, no errors.
+- Portrait 400x720 → pad 252 / stage 468 with the canvas at 400x468; rotate
+  to 720x400 → pad 0, canvas 720x400, controls floating, HUD at lower centre.
+- Desktop is untouched: no pad, no touch controls, the keyboard HUD intact.
+- `npm run build` clean; zero console errors across the whole pass.
+
 ## 2026-09-04 (iteration 62) - Menu cleanup, gothic close medallions, skill node states, the opening and the loading screen
 
 ### The asset audit (`public/assets/test-models`)

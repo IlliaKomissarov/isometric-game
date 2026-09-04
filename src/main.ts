@@ -82,6 +82,9 @@ import { ChatUI } from '@/ui/Chat';
 import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
 import { TitleScreen } from '@/ui/TitleScreen';
 import { LoadingScreen } from '@/ui/LoadingScreen';
+import { layout } from '@/core/OrientationManager';
+import { perf } from '@/core/PerformanceScaler';
+import { touchControls } from '@/ui/TouchControls';
 import { visuals } from '@/core/VisualSettings';
 import type { PlayerSave } from '@/persist/SaveGame';
 import { makeDraggable } from '@/ui/draggable';
@@ -212,16 +215,24 @@ const BOSS_LEVELS: Record<number, number> = { 5: 7, 10: 13, 15: 18, 20: 25 };
 async function boot(): Promise<void> {
   // --- Renderer -------------------------------------------------------------
   const app = new Application();
+  // THE STAGE BOX (it.63): in portrait the crypt keeps the upper band and a
+  // control pad takes the rest, so the renderer follows `#app` — whose size
+  // the OrientationManager owns — rather than the whole window.
+  const appEl = document.getElementById('app')!;
   await app.init({
-    resizeTo: window,
+    resizeTo: appEl,
     antialias: false,
     background: PALETTE.background,
     preference: 'webgl',
     resolution: Math.min(window.devicePixelRatio, 2),
     autoDensity: true,
   });
-  document.getElementById('app')!.appendChild(app.canvas);
+  appEl.appendChild(app.canvas);
   app.ticker.stop(); // The fixed-timestep GameLoop drives rendering.
+  // Every reflow frame resizes the buffer, so a rotation glides instead of
+  // snapping; the camera reads `app.screen`, so centring follows for free.
+  layout.onReflow(() => app.resize());
+  perf.attach(app); // The rolling frame budget owns the buffer resolution.
 
   // CURSOR FIRST (it.25 freeze fix): the gothic pointer exists during the
   // loading screen and from the very first frame of every run.
@@ -655,6 +666,7 @@ async function boot(): Promise<void> {
     const loaded = opts.save ?? null;
     const slot = opts.slot;
     const subs: Array<() => void> = [];
+    const subsOnLayout: Array<() => void> = [];
     const on = <K extends keyof GameEvents>(event: K, handler: (payload: GameEvents[K]) => void): void => {
       subs.push(eventBus.on(event, handler));
     };
@@ -672,6 +684,13 @@ async function boot(): Promise<void> {
     document.body.classList.add('in-run');
     state.clear();
     const inputQueue = new InputQueue();
+    // THE VIRTUAL CONTROLS (it.63): live for this run, silent behind a modal.
+    touchControls.attach(inputQueue, {
+      blocked: () =>
+        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open'),
+    });
+    // A rotation must never leave a thumb "held" on the old layout.
+    subsOnLayout.push(layout.onChange(() => touchControls.releaseAll()));
 
     // ---- THE PARTY (it.59) --------------------------------------------------
     // Solo is a party of one. In co-op every peer builds the SAME roster in
@@ -4063,6 +4082,8 @@ async function boot(): Promise<void> {
         for (const id of timers) clearTimeout(id);
         timers.clear();
         for (const off of subs) off();
+        for (const off of subsOnLayout) off();
+        touchControls.attach(null, null);
         ac.abort();
         runMenus.destroy();
         cheatMenu.destroy();
@@ -4101,6 +4122,7 @@ async function boot(): Promise<void> {
 
   if (import.meta.env.DEV) {
     (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby, titleScreen, savePanel, loading };
+    (window as unknown as { __layout: unknown }).__layout = { layout, perf, touchControls, app };
   }
 }
 

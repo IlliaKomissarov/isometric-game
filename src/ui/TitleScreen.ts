@@ -21,6 +21,7 @@
 
 import { type Application, Container, Sprite, Texture, TilingSprite } from 'pixi.js';
 import { visuals } from '@/core/VisualSettings';
+import { perf } from '@/core/PerformanceScaler';
 
 /** Hermite ease between two edges (the intro's staged fades). */
 function smoothstep(a: number, b: number, x: number): number {
@@ -329,8 +330,10 @@ export class TitleScreen {
   private seedMotes(): void {
     const w = this.app.screen.width;
     const h = this.app.screen.height;
-    const embers = visuals.particles ? 110 : 36;
-    const ash = visuals.particles ? 55 : 18;
+    // The frame budget has the last word (it.63): a weak device gets a calm sky.
+    const budget = perf.particleBudget;
+    const embers = Math.round((visuals.particles ? 110 : 36) * budget);
+    const ash = Math.round((visuals.particles ? 55 : 18) * budget);
     for (let i = 0; i < embers + ash; i++) {
       const isAsh = i >= embers;
       const spr = new Sprite(isAsh ? this.ashTex : this.emberTex);

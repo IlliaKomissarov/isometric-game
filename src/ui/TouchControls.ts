@@ -20,6 +20,7 @@ import type { InputCommand, InputQueue } from '@/core/InputQueue';
 import { layout } from '@/core/OrientationManager';
 import { audio } from '@/engine/AudioManager';
 import { VirtualJoystick } from './VirtualJoystick';
+import { fit } from './FitScaler';
 
 /** The controls exist only while a run does; main hands the queue over. */
 export interface TouchHooks {
@@ -111,6 +112,8 @@ export class TouchControls {
   private attacking = false;
   private rowUse!: HTMLElement;
   private rowSkills!: HTMLElement;
+  private tray!: HTMLElement;
+  private trayToggle!: HTMLButtonElement;
 
   constructor() {
     this.root = document.createElement('div');
@@ -143,10 +146,94 @@ export class TouchControls {
     this.mk(rowMain, 'tc-use tc-interact', 'INTERACT', 'E', () => this.tap({ type: 'PICKUP_NEAREST', playerId: 0 }));
     this.mk(rowMain, 'tc-attack', 'ATTACK', '⚔', () => this.press('attack'), () => this.release('attack'));
 
+    this.buildTray();
     layout.onChange(() => this.applyLayout());
     // The free band changes with every reflow frame, not only on a flip.
     layout.onReflow(() => this.placeHud());
     this.applyLayout();
+  }
+
+  /**
+   * THE SYSTEM TRAY (it.65): a phone has no keyboard, so the bag, the tree,
+   * the sheet, the map and the pause menu were simply unreachable — the one
+   * thing no amount of layout work could fix. A single gothic ☰ opens a
+   * column of them beside the fullscreen corner.
+   *
+   * Each entry dispatches the SAME key the desktop uses, so there is one code
+   * path into every panel and no second way for them to disagree.
+   */
+  private buildTray(): void {
+    this.tray = document.createElement('div');
+    this.tray.id = 'tc-tray';
+    this.trayToggle = document.createElement('button');
+    this.trayToggle.type = 'button';
+    this.trayToggle.className = 'tc-tray-toggle';
+    this.trayToggle.setAttribute('aria-label', 'Menus');
+    this.trayToggle.innerHTML = '<span>☰</span>';
+    const list = document.createElement('div');
+    list.className = 'tc-tray-list';
+    const items: Array<[string, string, string]> = [
+      ['BAG', 'KeyI', '🎒'],
+      ['SKILLS', 'KeyK', '✦'],
+      ['HERO', 'KeyC', '👤'],
+      ['MAP', 'KeyM', '🗺'],
+      ['PAUSE', 'Escape', '⏸'],
+    ];
+    // Fullscreen lives in the tray on touch: the screen corners belong to the
+    // map and the thumb clusters, and a corner button collided with both.
+    const fsBtn = document.createElement('button');
+    fsBtn.type = 'button';
+    fsBtn.className = 'tc-tray-item';
+    fsBtn.setAttribute('aria-label', 'FULLSCREEN');
+    fsBtn.innerHTML = '<i>⛶</i><em>FULLSCREEN</em>';
+    fsBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.haptic();
+      audio.sfx('uiClick');
+      this.openTray(false);
+      void toggleFullscreen();
+    });
+    for (const [label, code, glyph] of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tc-tray-item';
+      b.setAttribute('aria-label', label);
+      b.innerHTML = `<i>${glyph}</i><em>${label}</em>`;
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.haptic();
+        audio.sfx('uiClick');
+        this.openTray(false);
+        // The panels all listen on window; one path in for keys and thumbs.
+        window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true }));
+        fit.schedule(); // The panel just gained a box — fit it to the phone.
+        window.setTimeout(() => fit.schedule(), 60);
+      });
+      list.appendChild(b);
+    }
+    list.appendChild(fsBtn);
+    // Tapping the darkened ground closes the sheet.
+    const veil = document.createElement('div');
+    veil.className = 'tc-tray-veil';
+    veil.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.openTray(false);
+    });
+    this.tray.append(this.trayToggle, veil, list);
+    document.body.appendChild(this.tray);
+    this.trayToggle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.haptic();
+      audio.sfx('uiClick');
+      this.openTray(!this.tray.classList.contains('open'));
+    });
+  }
+
+  private openTray(on: boolean): void {
+    this.tray.classList.toggle('open', on);
   }
 
   private row(cls: string): HTMLElement {
@@ -227,7 +314,9 @@ export class TouchControls {
   private refresh(): void {
     this.root.classList.toggle('show', this.shouldShow);
     document.body.classList.toggle('touch-controls-on', this.shouldShow);
+    this.tray?.classList.toggle('show', this.shouldShow);
     if (!this.shouldShow) {
+      this.openTray(false);
       this.stick.reset();
       document.body.classList.remove('hud-top');
     }
@@ -313,6 +402,7 @@ export class TouchControls {
 
   /** A rotation or a modal must not leave the hero walking into a wall. */
   releaseAll(): void {
+    this.openTray(false);
     this.stick.reset();
     for (const b of this.buttons) {
       b.pointerId = null;

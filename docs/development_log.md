@@ -1,5 +1,70 @@
 # Development Log
 
+## 2026-09-04 (iteration 65) - A phone has no keyboard: the system tray, panel fit, HUD restack
+
+### The bug behind every other bug
+- The report was "no inventory, no spell tree, no cheat menu". None of those
+  panels was broken. They opened on I, K and F1 — and a phone has no keyboard,
+  so on a phone they simply did not exist. Iteration 64 fitted and scaled
+  panels a player had no way to reach. That is the whole root cause, and it
+  was invisible from a desktop browser at 1536 px.
+
+### The system tray (`src/ui/TouchControls.ts`)
+- A single gothic bar under the depth label opens a centred sheet: BAG,
+  SKILLS, HERO, MAP, PAUSE and FULLSCREEN. Every entry is 172x44, above the
+  44 px minimum, and the sheet sits inside the screen at every tested size
+  (measured 96..294 x 170..490 on a 390x660 phone).
+- Each entry dispatches the SAME key the desktop uses, so there is one code
+  path into every panel and no second way for them to disagree.
+- Fullscreen moved from the corner into the tray on touch. The corners belong
+  to the map and to two thumb clusters; on a short landscape screen the button
+  had nowhere left to stand. A desktop keeps its corner button.
+- The sheet closes on its own veil, on any entry, and on `releaseAll()`, so a
+  rotation or a modal can never leave it hanging over the fight.
+
+### The globes were fighting two rules at once
+- Iteration 63 pinned the globes to the top band on micro screens with
+  `!important`; iteration 65 pinned them above the pad. Both applied. The
+  result on a 320x480 phone: the health globe at x76 and the mana globe at
+  x62 — crossed over each other, on top of the depth label, at the top of a
+  screen whose pad was at the bottom.
+- The top-band rules (`tier-micro` and `hud-top`) are decisions about the
+  FLOATING layout and are now scoped `:not(.has-pad)`. The pad layout owns the
+  globes whenever there is a pad.
+- In micro landscape the globes shrank from 0.42 to 0.36 so the depth label
+  keeps its corner with real clearance rather than a pixel.
+
+### Health and stamina, horizontally
+- The XP strip was crossing the globes because it was anchored to the HUD
+  scale (~46 px up) while the globes are 150 px of art scaled by their own
+  factor. Both the pad and the floating layouts now stack off the globes'
+  real height: `150px * var(--orb-scale)` plus a gap. Measured zero overlap
+  among globe, mana globe, XP strip and stat line at every size.
+
+### The freeze, and why there are no observers in `FitScaler`
+- A fit writes a transform and toggles a class. A `ResizeObserver` or a class
+  `MutationObserver` then schedules the next fit from inside the effects of
+  the last one, and on a hidden page `schedule()` runs synchronously — the
+  loop never yields and the tab locks up. A re-entrancy flag does not help,
+  because the calls are sequential rather than nested. Both observers were
+  removed; fits are driven by the layout, by resizes, by the openers, and by
+  a 450 ms heartbeat. The freeze is gone.
+- `.fit-centred` is now applied only after a successful measure. A closed
+  panel measures zero, and centring it before it had a scale left it half a
+  panel off-centre the moment it opened.
+
+### Verified live at 390x660 with touch forced
+- Tray opens and closes; every entry drives its panel: bag 333x523, skill tree
+  374x588, character sheet 378x493, bestiary 378x582, cheat menu 300x592,
+  level select 327x475, pause 320x445 — all inside the screen.
+- The map entry toggles the minimap and restores it; pause opens and closes
+  without leaving the run.
+- Desktop at 1600x900: panels keep their own CSS placement (not centred, no
+  fit transform), no touch controls, no tray, corner fullscreen button back.
+- 33 devices x 2 orientations: 66/66 pass for document scroll, elements inside
+  the viewport, 56 px targets, control overlap, HUD-under-thumb, HUD-under-tray
+  and HUD-against-HUD. `PAGES=1 npm run build` clean; zero console errors.
+
 ## 2026-09-04 (iteration 64) - Emergency mobile fix: viewport lock, contain-fit panels, ARPG touch controls
 
 ### The document may never scroll

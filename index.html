@@ -3941,12 +3941,14 @@
          readouts sit at the lower CENTRE. */
       body.touch-controls-on:not(.has-pad) #orb-wrap { left: calc(var(--app-w) / 2 - 120px); transform-origin: left bottom; transform: scale(calc(0.6 * var(--hud-scale))); }
       body.touch-controls-on:not(.has-pad) #orb2-wrap { left: calc(var(--app-w) / 2 + 2px); transform-origin: left bottom; transform: scale(calc(0.6 * var(--hud-scale))); }
-      body.touch-controls-on:not(.has-pad) #progress-hud { left: 50% !important; right: auto; transform: translateX(-50%); bottom: calc(80px * var(--hud-scale)); max-width: calc(var(--app-w) - 16px); }
-      body.touch-controls-on:not(.has-pad) #char-stats { left: 50%; right: auto; bottom: calc(108px * var(--hud-scale)); transform-origin: center bottom; transform: translateX(-50%) scale(calc(0.82 * var(--hud-scale))); }
+      /* Above the globes, never through them: the globe art is 150 px tall and
+         the pair is scaled by --orb-scale. */
+      body.touch-controls-on:not(.has-pad) #progress-hud { left: 50% !important; right: auto; transform: translateX(-50%); bottom: calc(150px * var(--orb-scale) + 8px); max-width: calc(var(--app-w) - 16px); }
+      body.touch-controls-on:not(.has-pad) #char-stats { left: 50%; right: auto; bottom: calc(150px * var(--orb-scale) + 30px); transform-origin: center bottom; transform: translateX(-50%) scale(calc(0.82 * var(--hud-scale))); }
 
       /* No free band between the hands: the meters take the top instead. */
-      body.hud-top #orb-wrap { left: calc(var(--app-w) / 2 - 96px) !important; top: calc(var(--sat) + 22px) !important; bottom: auto !important; transform-origin: left top; transform: scale(0.48) !important; }
-      body.hud-top #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: calc(var(--sat) + 22px) !important; bottom: auto !important; transform-origin: left top; transform: scale(0.48) !important; }
+      body.hud-top:not(.has-pad) #orb-wrap { left: calc(var(--app-w) / 2 - 96px) !important; top: calc(var(--sat) + 22px) !important; bottom: auto !important; transform-origin: left top; transform: scale(0.48) !important; }
+      body.hud-top:not(.has-pad) #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: calc(var(--sat) + 22px) !important; bottom: auto !important; transform-origin: left top; transform: scale(0.48) !important; }
       body.hud-top #progress-hud { left: 50% !important; right: auto !important; bottom: auto !important; top: calc(var(--sat) + 4px) !important; transform: translateX(-50%) !important; }
       body.hud-top #char-stats { left: auto !important; right: calc(var(--sar) + 8px) !important; bottom: auto !important; top: calc(var(--sat) + 150px * var(--hud-scale)) !important; transform-origin: right top; transform: scale(calc(0.8 * var(--hud-scale))) !important; }
       body.hud-top #run-timer { display: none; }
@@ -3961,8 +3963,8 @@
       /* Under ~420 px of height, three rows of controls and a map cannot share
          the screen. The map steps aside; M still summons it. */
       body.touch-controls-on.orient-landscape.short-screen #minimap { display: none; }
-      body.tier-micro.touch-controls-on #orb-wrap { left: calc(var(--app-w) / 2 - 84px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.42) !important; }
-      body.tier-micro.touch-controls-on #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.42) !important; }
+      body.tier-micro.touch-controls-on:not(.has-pad) #orb-wrap { left: calc(var(--app-w) / 2 - 72px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.36) !important; }
+      body.tier-micro.touch-controls-on:not(.has-pad) #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.36) !important; }
 
       /* ===================================================================
          IT.64 — VIEWPORT LOCK, CONTAIN-FIT PANELS, ARPG TOUCH CONTROLS,
@@ -4180,6 +4182,85 @@
       body.tier-micro #fullscreen-btn i { width: 13px; height: 13px; }
       body.tier-micro #fullscreen-btn i::before { box-shadow: 8px 8px 0 -2px #c8a558; }
       body.tier-micro #fullscreen-btn i::after { box-shadow: -8px 8px 0 -2px #c8a558; }
+
+      /* ===================================================================
+         IT.65 — THE PHONE CAN REACH ITS PANELS, AND THE HUD STOPS COLLIDING
+         =================================================================== */
+
+      /* A managed panel is centred while the scaler owns it; the inline
+         transform supplies the translate AND the scale together. */
+      /* The cheat panel hangs from a fixed top offset, so its ceiling has to
+         allow for that offset — `--app-h - 12px` let it run off the bottom. */
+      #cheat-menu { max-height: calc(var(--app-h) - 68px); }
+      .fit-centred {
+        left: 50% !important;
+        top: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        margin: 0 !important;
+        transform-origin: center center;
+      }
+
+      /* ---- the system tray --------------------------------------------- */
+      /* The toggle sits under the depth label on the left — the one strip of
+         screen that belongs to neither the map nor a thumb. Its list opens as
+         a centred sheet, which cannot collide with anything. */
+      #tc-tray { position: fixed; top: calc(var(--sat) + 44px); left: calc(var(--sal) + 6px); z-index: 91; display: none; }
+      #tc-tray.show { display: block; }
+      .tc-tray-veil { display: none; position: fixed; inset: 0; background: rgba(4, 3, 6, 0.6); z-index: -1; }
+      #tc-tray.open .tc-tray-veil { display: block; }
+      .tc-tray-toggle {
+        width: 38px; height: 38px;
+        display: flex; align-items: center; justify-content: center;
+        padding: 0;
+        font-size: 17px; line-height: 1; color: #e6c88a;
+        background: radial-gradient(circle at 50% 32%, rgba(44, 37, 52, 0.86) 0%, rgba(18, 14, 24, 0.9) 60%, rgba(10, 8, 14, 0.92) 100%);
+        border: 1px solid #5a4a30;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9), inset 0 2px 0 rgba(255, 214, 140, 0.12), 0 2px 10px rgba(0, 0, 0, 0.6);
+        cursor: pointer;
+        touch-action: none;
+      }
+      .tc-tray-toggle:hover, #tc-tray.open .tc-tray-toggle { border-color: #c8a558; color: #ffd070; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9), 0 0 14px rgba(200, 165, 88, 0.45); }
+      .tc-tray-list {
+        display: none; flex-direction: column; gap: 6px;
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        padding: 12px;
+        background: linear-gradient(180deg, rgba(26, 21, 34, 0.96), rgba(12, 9, 16, 0.97));
+        border: 1px solid #5a4a30;
+        box-shadow: inset 0 0 0 3px #0a080d, inset 0 0 0 4px #7a6238, 0 20px 50px rgba(0, 0, 0, 0.9);
+      }
+      #tc-tray.open .tc-tray-list { display: flex; }
+      .tc-tray-item { min-width: 172px; justify-content: flex-start; }
+      .tc-tray-item {
+        display: flex; align-items: center; gap: 8px;
+        min-height: 44px; padding: 0 12px 0 10px;
+        font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; letter-spacing: 0.16em;
+        color: #e6c88a;
+        background: linear-gradient(180deg, rgba(34, 27, 44, 0.94), rgba(15, 12, 20, 0.96));
+        border: 1px solid #5a4a30;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9), 0 2px 10px rgba(0, 0, 0, 0.6);
+        cursor: pointer;
+        touch-action: none;
+      }
+      .tc-tray-item i { font-style: normal; font-size: 15px; }
+      .tc-tray-item em { font-style: normal; }
+      .tc-tray-item:hover, .tc-tray-item:active { border-color: #c8a558; color: #ffd070; }
+      /* On touch the corner control moves into the tray sheet, so the map and
+         the thumb clusters keep the corners to themselves. */
+      body.touch-controls-on #fullscreen-btn { display: none; }
+      body.touch-controls-on #party-hud { top: calc(var(--sat) + 96px); }
+
+      /* ---- the phone HUD stops overlapping itself ---------------------- */
+      /* The XP strip used to run straight through the globes. It now sits
+         above them, and the stat line keeps to the other side. */
+      body.orient-portrait.has-pad #progress-hud {
+        bottom: calc(var(--pad-h) + 150px * var(--orb-scale) + 8px) !important;
+      }
+      body.orient-portrait.has-pad #char-stats {
+        bottom: calc(var(--pad-h) + 150px * var(--orb-scale) + 30px) !important;
+      }
+      /* The globes sit flush on the divider, side by side, never overlapping. */
+      body.orient-portrait.has-pad #orb2-wrap { left: calc(var(--sal) + 6px + 186px * var(--orb-scale)) !important; }
     </style>
   </head>
   <body>

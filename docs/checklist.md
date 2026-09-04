@@ -521,6 +521,17 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Gothic fullscreen button top-right on every screen, with a short-screen fallback position
 - [x] Rotation and resize reflow instantly; 66/66 device configs pass; class screen fits at 28 viewports; clean build; zero console errors
 
+## Iteration 65 - A Phone Has No Keyboard: System Tray, Panel Fit, HUD Restack (2026-09-04)
+
+- [x] Root cause found: the bag, tree, sheet, map and pause opened on keys only, so a phone could not reach them at all
+- [x] System tray: gothic toggle + centred sheet with BAG / SKILLS / HERO / MAP / PAUSE / FULLSCREEN, 172x44 entries, dispatching the same keys the desktop uses
+- [x] Fullscreen moved into the tray on touch (the corners belong to the map and the thumb clusters); desktop keeps its corner button
+- [x] Fixed crossed-over globes: the it.63 `tier-micro` / `hud-top` top-band rules are scoped `:not(.has-pad)` so the pad layout owns the globes
+- [x] XP strip and stat line now stack off the globes' real height (`150px * var(--orb-scale)`) in both the pad and floating layouts
+- [x] `FitScaler` runs without observers (they fed back into their own writes and froze the tab); 450 ms heartbeat plus explicit schedules
+- [x] `.fit-centred` applied only after a successful measure, so a closed panel is never centred without a scale
+- [x] Verified at 390x660: every tray entry opens a panel that fits; desktop keeps CSS placement; 66/66 device configs pass; clean build; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

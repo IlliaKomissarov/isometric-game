@@ -3789,6 +3789,11 @@ async function boot(): Promise<void> {
     const shopUI = new ShopUI(player, town, inputQueue);
     const stashUI = new StashUI(player, town, inputQueue);
     const skillTreeUI = new SkillTreeUI(player, inputQueue, () => !!world.town);
+    // EVERY WINDOW FITS (it.65): the run's panels are built per run, so they
+    // are registered here rather than at boot.
+    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'leaderboard', 'level-select']) {
+      fit.add(document.getElementById(id), { max: 0.96, minScale: 0.4, base: 'translate(-50%, -50%)', responsive: true });
+    }
     const charSheetUI = new CharacterSheetUI(player);
     const bestiaryUI = new BestiaryUI(player);
     // DUNGEON RECORDS (it.48): the board's tallies come straight from the run.

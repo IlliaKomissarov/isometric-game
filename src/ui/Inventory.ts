@@ -98,6 +98,14 @@ export class InventoryUI {
     this.panel.classList.toggle('open', this.visible);
     if (!this.visible) this.hideTooltip();
     audio.sfx(this.visible ? 'invOpen' : 'invClose');
+    if (this.visible) {
+      const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+      closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+      closeBtn?.addEventListener('click', () => {
+        audio.sfx('uiClick');
+        this.toggle();
+      });
+    }
   }
 
   /** Run teardown: listeners, timers and DOM (it.36). */
@@ -157,7 +165,7 @@ export class InventoryUI {
     const backpackCells = filled + empties;
 
     this.panel.innerHTML = `
-      <h3 class="drag-handle">INVENTORY</h3>
+      <h3 class="drag-handle">INVENTORY<button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></h3>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
       <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts</span></div>

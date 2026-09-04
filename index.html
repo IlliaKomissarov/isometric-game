@@ -3420,6 +3420,200 @@
       #credits .cr-viewport:hover .cr-scroll { animation-play-state: paused; }
       @keyframes cr-roll { from { transform: translateY(0); } to { transform: translateY(calc(-100% - 320px)); } }
       #credits .cr-list b { display: block; margin: 14px 0 4px; font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.24em; color: #c8a558; }
+
+      /* ===================================================================
+         IT.62 — GOTHIC CLOSE MEDALLIONS, SKILL NODE STATES, THE LOADING
+         SCREEN, AND THE OPENING SEQUENCE
+         =================================================================== */
+
+      /* ---- the close medallion (bestiary, tree, sheet, shop, stash, bags) ---- */
+      .tp-close {
+        position: relative;
+        width: 30px; height: 30px; padding: 0; flex: 0 0 auto;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: 0; line-height: 0; color: transparent;
+        background: radial-gradient(circle at 50% 38%, #2c2534 0%, #171320 55%, #0c0910 100%);
+        border: 1px solid #4a3d2c; border-radius: 50%;
+        box-shadow: inset 0 0 0 1px #07050a, inset 0 3px 6px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(0, 0, 0, 0.9);
+        cursor: pointer;
+        transition: border-color 0.14s, box-shadow 0.14s, transform 0.06s;
+      }
+      .tp-close i {
+        display: block; width: 22px; height: 22px;
+        background: url('assets/ui/frames/close_cross.png') center / contain no-repeat;
+        filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.9));
+        transition: opacity 0.14s, transform 0.14s;
+      }
+      .tp-close::after {
+        content: ''; position: absolute; inset: 3px; border-radius: 50%;
+        background: url('assets/ui/frames/close_cross_hot.png') center / 22px 22px no-repeat;
+        opacity: 0; transition: opacity 0.16s;
+      }
+      .tp-close:hover, .tp-close:focus-visible {
+        outline: none;
+        border-color: #c8a558;
+        box-shadow: inset 0 0 0 1px #07050a, inset 0 3px 6px rgba(0, 0, 0, 0.8), 0 0 14px rgba(200, 165, 88, 0.45);
+      }
+      .tp-close:hover i, .tp-close:focus-visible i { opacity: 0; }
+      .tp-close:hover::after, .tp-close:focus-visible::after { opacity: 1; }
+      .tp-close:active {
+        transform: translateY(1px);
+        box-shadow: inset 0 0 0 1px #07050a, inset 0 5px 10px rgba(0, 0, 0, 0.95), 0 0 8px rgba(200, 165, 88, 0.25);
+      }
+      .tp-close:active i, .tp-close:active::after { transform: scale(0.88); }
+      #inv-panel h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+      /* ---- skill tree node states ---- */
+      .st-node { padding-right: 30px; }
+      .st-badge {
+        position: absolute; top: 6px; right: 6px;
+        padding: 1px 5px;
+        font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.1em;
+        color: #6c6154; background: #0b0810; border: 1px solid #332c25;
+      }
+      .st-node.st-learned .st-badge {
+        color: #ffd070; border-color: #c8a558; background: #16110c;
+        text-shadow: 0 0 8px rgba(255, 208, 112, 0.7);
+        box-shadow: 0 0 10px rgba(200, 165, 88, 0.35);
+      }
+      .st-node.st-ready .st-badge { color: #d8a860; border-color: #7a5c2e; }
+      .st-plus {
+        position: absolute; top: 6px; left: 6px;
+        width: 15px; height: 15px; display: flex; align-items: center; justify-content: center;
+        font-family: 'Cinzel', serif; font-size: 13px; font-weight: 700; line-height: 1;
+        color: #0b0810; background: #d8a860; border-radius: 50%;
+        box-shadow: 0 0 10px rgba(216, 168, 96, 0.7);
+        animation: st-plus-beat 1.5s ease-in-out infinite;
+      }
+      @keyframes st-plus-beat { 0%, 100% { transform: scale(1); box-shadow: 0 0 8px rgba(216, 168, 96, 0.5); } 50% { transform: scale(1.14); box-shadow: 0 0 16px rgba(216, 168, 96, 0.9); } }
+
+      .st-node.st-learned {
+        border-width: 2px;
+        border-color: var(--frame-gold);
+        background: linear-gradient(180deg, rgba(60, 46, 20, 0.32), rgba(0, 0, 0, 0.3));
+        box-shadow: inset 0 0 18px rgba(200, 165, 88, 0.16), 0 0 12px rgba(200, 165, 88, 0.22);
+        animation: st-learned-breathe 3.6s ease-in-out infinite;
+      }
+      @keyframes st-learned-breathe {
+        0%, 100% { box-shadow: inset 0 0 16px rgba(200, 165, 88, 0.12), 0 0 10px rgba(200, 165, 88, 0.18); }
+        50% { box-shadow: inset 0 0 24px rgba(200, 165, 88, 0.24), 0 0 20px rgba(255, 208, 112, 0.38); }
+      }
+      .st-node.st-learned .st-icon { filter: saturate(1.25) brightness(1.12) drop-shadow(0 0 6px rgba(255, 208, 112, 0.45)); }
+      .st-node.st-learned .st-text b { color: #ffd070; }
+
+      .st-node.st-ready { border-color: #8a6a34; box-shadow: 0 0 12px rgba(180, 140, 70, 0.28); animation: st-ready-pulse 2s ease-in-out infinite; }
+      .st-node.st-ready:hover { box-shadow: 0 0 18px rgba(216, 168, 96, 0.5); animation: none; }
+      @keyframes st-ready-pulse {
+        0%, 100% { border-color: #6d5327; box-shadow: 0 0 8px rgba(150, 116, 56, 0.2); }
+        50% { border-color: #c8a558; box-shadow: 0 0 18px rgba(200, 165, 88, 0.45); }
+      }
+
+      .st-node.st-locked { opacity: 1; border-color: #2b262f; background: rgba(0, 0, 0, 0.34); }
+      .st-node.st-locked .st-icon { filter: grayscale(1) brightness(0.62); opacity: 0.5; }
+      .st-node.st-locked .st-text b { color: #6d6560; }
+      .st-node.st-locked .st-text span, .st-node.st-locked .st-text em { color: #58524c; }
+      .st-node.st-locked .st-tier { color: #4f4842; }
+      /* The padlock watermark: a carved iron body under a shackle. */
+      .st-lock {
+        position: absolute; right: 8px; bottom: 7px;
+        width: 15px; height: 12px; border-radius: 2px;
+        background: #6a6058; opacity: 0.28; pointer-events: none;
+      }
+      .st-lock::before {
+        content: ''; position: absolute; left: 50%; top: -8px;
+        width: 9px; height: 9px; margin-left: -4.5px;
+        border: 2px solid #6a6058; border-bottom: none;
+        border-radius: 5px 5px 0 0;
+      }
+      .st-lock::after {
+        content: ''; position: absolute; left: 50%; top: 4px;
+        width: 2px; height: 4px; margin-left: -1px; background: #1a1720;
+      }
+
+      /* ---- the loading screen ---- */
+      #loading-screen {
+        position: fixed; inset: 0; z-index: 120;
+        display: none; align-items: center; justify-content: center;
+        background:
+          radial-gradient(ellipse at 50% 62%, rgba(72, 44, 20, 0.28) 0%, transparent 60%),
+          linear-gradient(180deg, #14111b 0%, #0a0810 55%, #050409 100%);
+        opacity: 0; transition: opacity 0.22s ease-out;
+      }
+      #loading-screen.open { display: flex; opacity: 1; }
+      #loading-screen.lifting { opacity: 0; }
+      #loading-screen .ls-frame {
+        position: relative; width: 560px; max-width: 92vw; padding: 30px 34px 26px;
+        text-align: center;
+        background: linear-gradient(180deg, rgba(26, 21, 34, 0.9), rgba(12, 9, 16, 0.94));
+        border: 1px solid #5a4a30;
+        box-shadow: inset 0 0 0 3px #0a080d, inset 0 0 0 4px #7a6238, inset 0 0 50px rgba(0, 0, 0, 0.85), 0 24px 60px rgba(0, 0, 0, 0.9);
+      }
+      #loading-screen .ls-fil {
+        position: absolute; left: 12px; right: 12px; height: 22px;
+        background: url('assets/ui/frames/filigree_band.png') center / auto 22px repeat-x;
+        opacity: 0.32; pointer-events: none;
+      }
+      #loading-screen .ls-fil-top { top: 6px; }
+      #loading-screen .ls-fil-bottom { bottom: 6px; transform: scaleY(-1); }
+      #loading-screen .ls-corner {
+        position: absolute; width: 26px; height: 26px;
+        background: url('assets/ui/frames/filigree_corner.png') center / contain no-repeat;
+        opacity: 0.6; pointer-events: none;
+      }
+      #loading-screen .ls-corner.tl { top: 4px; left: 4px; }
+      #loading-screen .ls-corner.tr { top: 4px; right: 4px; transform: scaleX(-1); }
+      #loading-screen .ls-corner.bl { bottom: 4px; left: 4px; transform: scaleY(-1); }
+      #loading-screen .ls-corner.br { bottom: 4px; right: 4px; transform: scale(-1, -1); }
+      #loading-screen .ls-seal { position: relative; width: 118px; height: 118px; margin: 6px auto 16px; }
+      #loading-screen .ls-seal i {
+        position: absolute; inset: 0;
+        background: url('assets/ui/frames/load_seal.png') center / contain no-repeat;
+        animation: ls-turn 7s linear infinite;
+        filter: drop-shadow(0 0 12px rgba(200, 150, 70, 0.45));
+      }
+      #loading-screen .ls-seal b {
+        position: absolute; inset: -18%;
+        background: radial-gradient(circle, rgba(255, 180, 90, 0.3) 0%, rgba(255, 140, 60, 0.12) 42%, transparent 68%);
+        animation: ls-breathe 2.4s ease-in-out infinite;
+      }
+      @keyframes ls-turn { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      @keyframes ls-breathe { 0%, 100% { opacity: 0.5; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.06); } }
+      #loading-screen .ls-title {
+        margin: 0 0 14px;
+        font-family: var(--font-display); font-size: 17px; letter-spacing: 0.34em;
+        color: #e9c777; text-shadow: 0 2px 0 #000, 0 0 22px rgba(233, 199, 119, 0.35);
+      }
+      #loading-screen .ls-track {
+        position: relative; height: 12px; margin: 0 auto 14px; width: 78%;
+        background: linear-gradient(180deg, #0a080d, #14111a);
+        border: 1px solid #4a3d2c;
+        box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.9);
+      }
+      #loading-screen .ls-bar {
+        height: 100%; width: 0;
+        background: linear-gradient(180deg, #f0cf85 0%, #c8a558 40%, #8a6a2e 100%);
+        box-shadow: 0 0 12px rgba(200, 165, 88, 0.6);
+        transition: width 0.09s linear;
+      }
+      #loading-screen .ls-tip {
+        margin: 0; min-height: 34px;
+        font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 14px; line-height: 1.45;
+        color: #9a8f7e;
+      }
+      #loading-screen .ls-tip::before { content: '\201C'; }
+      #loading-screen .ls-tip::after { content: '\201D'; }
+
+      /* ---- the opening sequence (the DOM half: logo, then the stack) ---- */
+      #main-menu.intro .mm-logo { animation: mm-intro-logo 1.5s ease-out both, mm-float 5.2s ease-in-out 1.5s infinite; }
+      #main-menu.intro .mm-tag, #main-menu.intro .mm-rule { animation: mm-intro-soft 0.9s ease-out 1.05s both; }
+      #main-menu.intro .mm-stack { animation: mm-intro-soft 0.8s ease-out 1.25s both; }
+      #main-menu.intro .mm-foot { animation: mm-intro-soft 0.8s ease-out 1.5s both; }
+      @keyframes mm-intro-logo {
+        0% { opacity: 0; transform: translateY(16px) scale(0.97); filter: brightness(0.2) blur(6px); }
+        45% { opacity: 0.5; filter: brightness(0.7) blur(2px); }
+        100% { opacity: 1; transform: none; filter: brightness(1) blur(0); }
+      }
+      @keyframes mm-intro-soft { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
     </style>
   </head>
   <body>
@@ -3570,7 +3764,6 @@
           <button class="mm-btn" data-menu="continue"><span>CONTINUE</span><small class="mm-pill" data-continue-pill>no delver yet</small></button>
           <button class="mm-btn" data-menu="play"><span>SINGLE PLAYER</span></button>
           <button class="mm-btn" data-menu="coop"><span>CO-OP MULTIPLAYER</span></button>
-          <button class="mm-btn" data-menu="records"><span>HALL OF RECORDS</span></button>
           <button class="mm-btn" data-menu="settings"><span>SETTINGS</span></button>
           <button class="mm-btn" data-menu="credits"><span>CREDITS</span></button>
           <button class="mm-btn" data-menu="exit"><span>EXIT GAME</span></button>

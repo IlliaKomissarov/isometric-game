@@ -64,6 +64,7 @@ export type SfxName =
   | 'skillPoison'
   | 'skillVanish'
   // ---- UI voice (it.36): every menu/panel interaction speaks ----
+  | 'introHorn'
   | 'uiHover'
   | 'uiClick'
   | 'uiConfirm'
@@ -736,6 +737,15 @@ export class AudioManager {
         this.playVariant('hRoar', 0.8, 0.8, 0.05, 0.15); // The dying roar.
         this.blip('sawtooth', 90, 26, 1.1, 0.5);
         break;
+      case 'introHorn': {
+        // THE OPENING (it.62): a deep horn swell under a slow bronze bell.
+        if (!this.playSlice('horn', 0, 4, 0.55, 0.55, 0)) this.blip('sawtooth', 96, 88, 1.8, 0.32);
+        this.blip('sine', 58, 52, 2.4, 0.34);
+        this.blip('triangle', 233, 231, 2.6, 0.1, 0.18); // The bell's fundamental…
+        this.blip('sine', 466, 462, 2.2, 0.06, 0.2); // …and its octave.
+        this.noise(1.6, 900, 200, 0.05, 1.2, 0.1); // Dust falling off the doors.
+        break;
+      }
       case 'bossHorn':
         if (!this.playSlice('horn', 0, 6, 1.0, 0.8, 0)) this.blip('sawtooth', 140, 130, 1.2, 0.5);
         this.playVariant('hRoar', 0.75, 0.9, 0.08, 0.8); // The keeper ROARS back.

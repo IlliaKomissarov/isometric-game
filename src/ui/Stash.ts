@@ -84,7 +84,7 @@ export class StashUI {
     const pack = p.backpack.map((id, i) => (ITEMS[id] ? row(ITEMS[id], 'data-put', i) : '')).join('');
     const stash = s.items.map((id, i) => (ITEMS[id] ? row(ITEMS[id], 'data-take', i) : '')).join('');
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>THE STASH</h3><span class="tp-purse">◆ ${p.gold} carried · ◆ ${s.gold} stashed</span><button class="tp-close" data-close>✕</button></div>
+      <div class="tp-head drag-handle"><h3>THE STASH</h3><span class="tp-purse">◆ ${p.gold} carried · ◆ ${s.gold} stashed</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
         <div class="tp-col"><h4>YOUR PACK · ${p.backpack.length}</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing carried</span>'}</div></div>
         <div class="tp-col"><h4>STASH · ${s.items.length}/${STASH_CAPACITY}</h4><div class="tp-list">${stash || '<span class="tp-empty">Empty</span>'}</div></div>
@@ -94,7 +94,12 @@ export class StashUI {
         <button data-gold="-100">WITHDRAW 100</button><button data-gold="-all">WITHDRAW ALL</button>
       </div>
       <div class="tp-note">Click an item to move it · gold in the stash never leaves the slot · ESC closes</div>`;
-    this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+    closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    closeBtn?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      this.close();
+    });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-put]').forEach((b) => {
       b.addEventListener('click', () => {
         this.queue.enqueue({ type: 'STASH_PUT', playerId: 0, backpackIndex: Number(b.dataset.put) });

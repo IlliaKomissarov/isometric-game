@@ -2,8 +2,8 @@
  * @module ui/MainMenu
  * The title screen's button stack (it.36, rebuilt it.61).
  *
- *   CONTINUE · SINGLE PLAYER · CO-OP MULTIPLAYER · HALL OF RECORDS ·
- *   SETTINGS · CREDITS · EXIT GAME
+ *   CONTINUE · SINGLE PLAYER · CO-OP MULTIPLAYER · SETTINGS · CREDITS ·
+ *   EXIT GAME  (the records live on the town's board, it.62)
  *
  * Pure DOM over the Pixi title atmosphere (`TitleScreen`). Every action goes
  * through hooks wired by main (which owns the run lifecycle). CONTINUE
@@ -22,8 +22,6 @@ export interface MainMenuHooks {
   continueGame: () => void;
   /** CO-OP MULTIPLAYER → the party lobby. */
   coop: () => void;
-  /** HALL OF RECORDS → the dual-tab leaderboard. */
-  records: () => void;
   /** SETTINGS → the tabbed settings panel. */
   settings: () => void;
   /** EXIT GAME → the leave prompt. */
@@ -73,9 +71,6 @@ export class MainMenuUI {
           } else if (act === 'coop') {
             audio.sfx('uiConfirm');
             this.hooks.coop();
-          } else if (act === 'records') {
-            audio.sfx('uiClick');
-            this.hooks.records();
           } else if (act === 'settings') {
             audio.sfx('uiClick');
             this.hooks.settings();
@@ -153,6 +148,18 @@ export class MainMenuUI {
     this.visible = true;
     this.root.classList.add('show');
     this.focusStack();
+  }
+
+  /**
+   * THE OPENING (it.62): the panel arrives with the scene — the logo rises
+   * out of the dark on the fog's heels, the stack a beat later. The CSS
+   * carries the timing; this only arms it (and re-arms it on a replay).
+   */
+  playIntro(): void {
+    this.root.classList.remove('intro');
+    void this.root.offsetWidth;
+    this.root.classList.add('intro');
+    window.setTimeout(() => this.root.classList.remove('intro'), 2600);
   }
 
   hide(): void {

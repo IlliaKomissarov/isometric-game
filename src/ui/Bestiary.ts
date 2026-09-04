@@ -191,11 +191,16 @@ export class BestiaryUI {
         <div class="bs-scale">Depth scaling: life ×(1 + 0.3·(level−1)) · damage +1/level · armor +½/level. Rare spawns roll one level above their floor.</div>`;
     }
     this.panel.innerHTML = `
-      <div class="bs-head drag-handle"><h3>BESTIARY</h3><span class="bs-count">${seenKinds.length} / ${kinds.length} KNOWN</span><button class="tp-close" data-close>✕</button></div>
+      <div class="bs-head drag-handle"><h3>BESTIARY</h3><span class="bs-count">${seenKinds.length} / ${kinds.length} KNOWN</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="bs-body"><div class="bs-list">${list}</div><div class="bs-detail">${detail}</div></div>`;
     const listEl = this.panel.querySelector<HTMLElement>('.bs-list');
     if (listEl) listEl.scrollTop = keepScroll;
-    this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+    closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    closeBtn?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      this.close();
+    });
     this.panel.querySelectorAll<HTMLButtonElement>('.bs-row[data-kind]').forEach((b) => {
       b.addEventListener('click', () => {
         audio.sfx('uiClick');

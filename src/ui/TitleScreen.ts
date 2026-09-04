@@ -22,6 +22,12 @@
 import { type Application, Container, Sprite, Texture, TilingSprite } from 'pixi.js';
 import { visuals } from '@/core/VisualSettings';
 
+/** Hermite ease between two edges (the intro's staged fades). */
+function smoothstep(a: number, b: number, x: number): number {
+  const k = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return k * k * (3 - 2 * k);
+}
+
 interface Mote {
   spr: Sprite;
   vx: number;
@@ -125,6 +131,13 @@ export class TitleScreen {
   private dim = 0;
   private dimTarget = 0;
   private wasDim = false;
+  /**
+   * INTRO (it.62): 0 at the black, 1 once the scene stands at rest. Read off
+   * the WALL CLOCK, not accumulated frames — a tab hidden mid-sequence must
+   * come back to a title that already stands, not to a frozen black screen.
+   */
+  private introAt = -1;
+  private introSpan = 1.5;
   private readonly onResize = (): void => this.layout();
   /** Fires when every sub-menu has closed again (focus goes back to the stack). */
   onUndim: (() => void) | null = null;
@@ -228,6 +241,25 @@ export class TitleScreen {
 
   get isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * THE OPENING (it.62): black, then the fog sweeps across, the braziers
+   * catch, the embers rise. Runs on the scene's own clock, so it survives a
+   * slow first frame. `seconds` is the whole sweep.
+   */
+  playIntro(seconds = 1.5): void {
+    this.introSpan = seconds;
+    this.introAt = performance.now();
+  }
+
+  private get intro(): number {
+    if (this.introAt < 0) return 1;
+    return Math.min(1, (performance.now() - this.introAt) / (this.introSpan * 1000));
+  }
+
+  get introDone(): boolean {
+    return this.intro >= 1;
   }
 
   /** Sub-menus lower the scene (also polled from the DOM every frame). */
@@ -354,6 +386,11 @@ export class TitleScreen {
   private update(dt: number): void {
     this.clock += dt;
     const t = this.clock;
+    const io = this.intro;
+    // The sweep: fog first, then the light, then the motes.
+    const fogIn = smoothstep(0, 0.5, io);
+    const lightIn = smoothstep(0.25, 0.85, io);
+    const moteIn = smoothstep(0.45, 1, io);
     const w = this.app.screen.width;
     const h = this.app.screen.height;
 
@@ -364,26 +401,29 @@ export class TitleScreen {
     if (this.wasDim && !dimNow) this.onUndim?.();
     this.wasDim = dimNow;
     this.dim += (this.dimTarget - this.dim) * Math.min(1, dt * 9);
-    this.dimmer.alpha = this.dim * 0.5;
+    // The intro's blackout rides the same veil the sub-menus dim behind.
+    this.dimmer.alpha = Math.max(this.dim * 0.5, 1 - smoothstep(0, 0.55, io));
 
     // Fog drifts sideways; the two sheets breathe against each other.
-    this.fog[0].tilePosition.x += 11 * dt;
+    // The opening sweep drives the fog hard across, then it settles.
+    const sweep = 1 + (1 - io) * (1 - io) * 40;
+    this.fog[0].tilePosition.x += 11 * dt * sweep;
     this.fog[0].tilePosition.y = Math.sin(t * 0.11) * 18;
-    this.fog[0].alpha = (0.2 + 0.05 * Math.sin(t * 0.37)) * (1 - this.dim * 0.5);
-    this.fog[1].tilePosition.x -= 6.5 * dt;
+    this.fog[0].alpha = (0.2 + 0.05 * Math.sin(t * 0.37)) * (1 - this.dim * 0.5) * fogIn;
+    this.fog[1].tilePosition.x -= 6.5 * dt * sweep;
     this.fog[1].tilePosition.y = Math.cos(t * 0.083) * 26 + t * 2;
-    this.fog[1].alpha = (0.26 + 0.06 * Math.sin(t * 0.29 + 1.7)) * (1 - this.dim * 0.5);
+    this.fog[1].alpha = (0.26 + 0.06 * Math.sin(t * 0.29 + 1.7)) * (1 - this.dim * 0.5) * fogIn;
 
     // Braziers: flame flicker on stacked sines (no two braziers agree).
     for (const b of this.braziers) {
       const s = b.seed;
       const flick = 0.78 + 0.1 * Math.sin(t * 7.3 + s) + 0.06 * Math.sin(t * 13.1 + s * 3) + 0.05 * Math.sin(t * 2.2 + s * 7) + 0.04 * Math.sin(t * 29 + s);
-      b.spr.alpha = flick * (1 - this.dim * 0.45);
-      b.core.alpha = (0.55 + 0.25 * Math.sin(t * 9.7 + s * 2) + 0.1 * Math.sin(t * 23 + s)) * (1 - this.dim * 0.45);
+      b.spr.alpha = flick * (1 - this.dim * 0.45) * lightIn;
+      b.core.alpha = (0.55 + 0.25 * Math.sin(t * 9.7 + s * 2) + 0.1 * Math.sin(t * 23 + s)) * (1 - this.dim * 0.45) * lightIn;
       const base = Math.max(2.4, w / 480);
       b.spr.scale.set(base * (0.97 + 0.03 * Math.sin(t * 5.1 + s)), base * (1 + 0.05 * Math.sin(t * 6.7 + s * 2)));
     }
-    this.floorGlow.alpha = (0.7 + 0.08 * Math.sin(t * 1.9) + 0.04 * Math.sin(t * 6.1)) * (1 - this.dim * 0.4);
+    this.floorGlow.alpha = (0.7 + 0.08 * Math.sin(t * 1.9) + 0.04 * Math.sin(t * 6.1)) * (1 - this.dim * 0.4) * lightIn;
 
     // The vignette's weight pulses with the light.
     this.vignette.alpha = 0.88 + 0.06 * Math.sin(t * 0.8);
@@ -398,7 +438,7 @@ export class TitleScreen {
       }
       const k = m.life / m.max;
       const envelope = k < 0.15 ? k / 0.15 : k > 0.75 ? (1 - k) / 0.25 : 1;
-      m.spr.alpha = m.peak * envelope * (1 - this.dim * 0.35);
+      m.spr.alpha = m.peak * envelope * (1 - this.dim * 0.35) * moteIn;
       m.spr.x += (m.vx + Math.sin(t * 0.9 + m.phase) * m.sway) * dt;
       m.spr.y += m.vy * dt;
       if (isAsh) m.spr.rotation += m.spin * dt;

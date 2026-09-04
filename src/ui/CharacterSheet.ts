@@ -83,7 +83,7 @@ export class CharacterSheetUI {
     if (p.poisonBladeTicks > 0) buffs.push(`envenomed blades · ${Math.ceil(p.poisonBladeTicks / 60)}s`);
     const loadout = p.loadout.map((id, i) => `<span class="cs-skill">${i + 1} · ${id ? SKILL_BY_ID[id]?.name ?? id : '—'}</span>`).join('');
     this.panel.innerHTML = `
-      <div class="cs-head drag-handle"><h3>CHARACTER</h3><span class="cs-class">${p.archetype.toUpperCase()} · LEVEL ${p.level}</span><button class="tp-close" data-close>✕</button></div>
+      <div class="cs-head drag-handle"><h3>CHARACTER</h3><span class="cs-class">${p.archetype.toUpperCase()} · LEVEL ${p.level}</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="cs-grid">
         <div class="cs-block"><h4>PROGRESS</h4>
           ${row('Experience', `${p.xp} / ${p.xpToNext()}`)}
@@ -109,7 +109,12 @@ export class CharacterSheetUI {
       <div class="cs-block cs-wide"><h4>HOTBAR</h4><div class="cs-skills">${loadout}</div></div>
       <div class="cs-block cs-wide"><h4>PASSIVES</h4>${passives.length ? passives.map((d) => `<div class="cs-row"><span>${d.glyph} ${d.name}</span><b>${d.hint}</b></div>`).join('') : '<div class="cs-empty">None learned yet</div>'}</div>
       <div class="cs-block cs-wide"><h4>ACTIVE EFFECTS</h4>${buffs.length ? buffs.map((b) => `<div class="cs-row"><span>${b}</span></div>`).join('') : '<div class="cs-empty">None</div>'}</div>`;
-    this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+    closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    closeBtn?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      this.close();
+    });
   }
 
   destroy(): void {

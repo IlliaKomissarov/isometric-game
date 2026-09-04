@@ -1,5 +1,95 @@
 # Development Log
 
+## 2026-09-04 (iteration 62) - Menu cleanup, gothic close medallions, skill node states, the opening and the loading screen
+
+### The asset audit (`public/assets/test-models`)
+- Three finds carried this iteration, all from packs already in the tree:
+  * `compass.png` — an ornate steel cross with a red gem at its heart. It is
+    the close button's crisp metallic cross, and the seal that turns while a
+    floor is raised. Baked twice: cold iron with a bronze cast for rest, and
+    a gold-graded copy under its own bloom for hover.
+  * `Darinia/ornaments/*` — black line-art filigree, recoloured to gold by
+    keeping the alpha and repainting the pixels. The loading screen's top and
+    bottom bands and its four corner knots.
+  * `buttons.png` and the inventory frames were examined and passed over:
+    their red-and-silver banners fight the crypt's bronze.
+- Everything lands in `public/assets/ui/frames/` (a bake script, not the
+  atlas — these are DOM backgrounds, not sprites).
+
+### The stack
+- HALL OF RECORDS is gone from the title. The ledgers were never a title
+  concern: they live on the town's Hall of Records board, where the delver
+  who set them stands. Six buttons now sit under the logo, balanced again.
+
+### Gothic close medallions
+- Every panel's plain `✕` is replaced by a carved medallion: a dark iron
+  disc with an inset shadow and a bronze rim, the steel cross at its centre.
+  Hover swaps the cross for the gold-lit copy, lights the rim and throws a
+  soft outer glow; pressing sinks the disc a pixel, deepens the inset and
+  shrinks the cross to 88%. Each one answers a metallic tick on hover and a
+  click on strike.
+- Fitted to the bestiary, skill tree, character sheet, armorer, alchemist
+  and stash — and the INVENTORY, which had no close control at all before
+  (only the I key).
+
+### Skill tree node states
+- UNLOCKED: full-colour icon (saturated and lifted, with its own soft
+  halo), a two-pixel gold border over a warm wash, a gold rank badge, the
+  name in gold, and a 3.6 s breathing glow.
+- READY: a bronze border pulsing on a 2 s cycle, a bright gold `+` beating
+  in the corner, and a bronze badge. The pulse stops under the cursor.
+- LOCKED: the icon desaturated to half at 50% opacity, a weathered iron
+  border, muted name and text, and a padlock watermark drawn in CSS (body,
+  shackle and keyhole) at 28% opacity.
+- The badge reads the node's rank in its path — `1/4` through `4/4` for the
+  actives, `1/2` and `2/2` for the passives. This game's skills are learned
+  once rather than ranked, so the badge shows the true progression rather
+  than an invented `1/5`.
+- Every tooltip opens with its state in brackets: `[UNLOCKED · LEVEL 1/4]`,
+  `[READY TO LEARN · 1 SKILL POINT]`, `[LOCKED · REQUIRES LEVEL 5]` or the
+  real gate when it is not a level (`[LOCKED · REQUIRES FIREWALL]`), then
+  the name, what it does, and what it would cost.
+
+### The opening
+- On the first title only: black, then the fog sweeps across at forty times
+  its resting speed and settles, the braziers catch and the vignette
+  breathes, the embers begin to rise — and the logo lifts out of the dark
+  through a blur into its gold, with a deep horn under a bronze bell
+  (`introHorn`: a horn slice and a low sine swell under a two-note bell,
+  with dust falling off the doors). The tagline, rule, stack and footer
+  follow it in. One and a half seconds, then the scene stands at rest.
+- The sequence is read off the WALL CLOCK, not accumulated frames: a player
+  who alt-tabs during it comes back to a title that already stands rather
+  than to a frozen black screen.
+
+### The loading screen (`src/ui/LoadingScreen.ts`)
+- One overlay for every zone change — entering the crypt, descending, the
+  arena sealing, the trial coliseum, a portal home, the rift back, a
+  fast-travel jump, a co-op join. Dark slate under gold filigree bands and
+  corner knots, the rune seal turning at seven seconds a revolution inside a
+  breathing amber bloom, the destination in gold, a bronze progress bar, and
+  one of fifteen lore tips drawn from the crypt's own rules.
+- The bar is honest: `open` → `atlases` (the floor's roster streamed in) →
+  `world` (built) → `ready`, easing toward each milestone and creeping the
+  last sliver so it never sits frozen, and always finishing at 100% before
+  the screen lifts. A 400 ms deadline guards the finish so a stalled frame
+  clock can never hold the screen up.
+
+### Verified live
+- Title: six buttons, records gone, the opening runs and completes.
+- Loading screen on a real town-portal transition: opened as THE PORTAL
+  HOME, the bar walked 0% to 100% across ten samples, closed, and the hero
+  stood in town.
+- Skill tree at level 12 with six points: 24 nodes, 24 badges, 20 locked
+  with padlocks, 4 ready with `+`. Learning Fireball flipped it to gold with
+  a `1/4` badge, its hotbar picker and `[UNLOCKED · LEVEL 1/4]`; its
+  neighbour then read `[LOCKED · REQUIRES FIREWALL]`.
+- Close medallions on the bestiary, character sheet, inventory, armorer and
+  stash: all 30x30, inside their panels, hover swapping to the lit cross,
+  each closing its panel.
+- Every new asset serves (five 200s); `npm run build` clean and the frames
+  copied into `dist`; zero console errors across the whole pass.
+
 ## 2026-09-04 (iteration 61) - The title rebuilt: animated atmosphere, gothic logo, menu categories
 
 ### The atmosphere (`src/ui/TitleScreen.ts`, Pixi)

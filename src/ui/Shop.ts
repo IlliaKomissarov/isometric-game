@@ -112,13 +112,18 @@ export class ShopUI {
       })
       .join('');
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>${vendor === 'alchemist' ? 'THE ALCHEMIST' : 'THE ARMORER'}</h3><span class="tp-vendor">${vendor === 'alchemist' ? 'draughts · scrolls' : 'arms · armor'}</span><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close>✕</button></div>
+      <div class="tp-head drag-handle"><h3>${vendor === 'alchemist' ? 'THE ALCHEMIST' : 'THE ARMORER'}</h3><span class="tp-vendor">${vendor === 'alchemist' ? 'draughts · scrolls' : 'arms · armor'}</span><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
         <div class="tp-col"><h4>FOR SALE</h4><div class="tp-list">${sale || '<span class="tp-empty">Sold out</span>'}${buyback ? `<h4 class="tp-sub">BUYBACK · what you sold</h4>${buyback}` : ''}</div></div>
         <div class="tp-col"><h4>YOUR PACK · sell</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing to sell</span>'}</div></div>
       </div>
       <div class="tp-note">Click an item to buy or sell · sold goods wait on the counter until the next visit · ESC closes</div>`;
-    this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+    closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    closeBtn?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      this.close();
+    });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-buy]').forEach((b) => {
       b.addEventListener('click', () => this.queue.enqueue({ type: 'BUY', playerId: 0, index: Number(b.dataset.buy), vendor }));
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));

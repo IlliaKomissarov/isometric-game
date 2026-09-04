@@ -81,6 +81,7 @@ import { CATCH_UP_STEPS, Lockstep } from '@/net/Lockstep';
 import { ChatUI } from '@/ui/Chat';
 import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
 import { TitleScreen } from '@/ui/TitleScreen';
+import { LoadingScreen } from '@/ui/LoadingScreen';
 import { visuals } from '@/core/VisualSettings';
 import type { PlayerSave } from '@/persist/SaveGame';
 import { makeDraggable } from '@/ui/draggable';
@@ -451,13 +452,9 @@ async function boot(): Promise<void> {
 
   // THE TITLE ATMOSPHERE (it.61): the Pixi scene under the menu; its own rAF.
   const titleScreen = new TitleScreen(app);
+  // THE LOADING SCREEN (it.62): one overlay for every zone change.
+  const loading = new LoadingScreen();
   titleScreen.onUndim = () => mainMenu.focusStack();
-  // HALL OF RECORDS from the title: the global ledgers, the last delver as "this delver".
-  const menuStats = new StatsManager();
-  const menuRecords = new LeaderboardUI(menuStats, () => {
-    const s = saves.latest();
-    return { cls: s?.player.archetype ?? lastHero ?? 'warrior', playtimeTicks: s?.playtimeTicks ?? 0, gold: s?.player.goldCollected ?? 0 };
-  });
   // EXIT GAME: a browser tab cannot always be closed by a script — say so.
   const exitModal = document.getElementById('exit-modal')!;
   const closeExit = (): void => exitModal.classList.remove('open');
@@ -490,10 +487,6 @@ async function boot(): Promise<void> {
       mainMenu.hide();
       coopLobby.open(lastHero);
     },
-    records: () => {
-      menuStats.load();
-      menuRecords.open('dungeon');
-    },
     exit: () => {
       const note = exitModal.querySelector<HTMLElement>('.am-say');
       if (note) note.textContent = 'The crypt keeps what you have won. Leave the dark for now?';
@@ -511,6 +504,7 @@ async function boot(): Promise<void> {
   });
   mainMenu.setLastHero(lastHero);
 
+  let introPlayed = false;
   const showMainMenu = (): void => {
     document.body.classList.remove('in-run');
     audio.setMusic('menu');
@@ -518,6 +512,13 @@ async function boot(): Promise<void> {
     mainMenu.setContinue(latest ? { cls: latest.player.archetype, level: latest.player.level, floor: latest.pos && latest.floor > 0 ? latest.floor : 0 } : null);
     titleScreen.show();
     mainMenu.show();
+    if (!introPlayed) {
+      // THE OPENING (it.62): black, fog, embers, then the logo and the horn.
+      introPlayed = true;
+      titleScreen.playIntro(1.5);
+      mainMenu.playIntro();
+      window.setTimeout(() => audio.sfx('introHorn'), 620);
+    }
     performance.mark('boot:menu'); // Boot-time telemetry (QA reads it).
   };
 
@@ -581,10 +582,13 @@ async function boot(): Promise<void> {
     }
     const fade = document.getElementById('floor-fade');
     fade?.classList.add('show', 'loading');
+    loading.open(opts.coop ? 'joining the party' : startFloor > 0 ? `descending to depth ${startFloor}` : 'entering the crypt');
     try {
       run?.destroy();
       run = null;
+      loading.step('atlases');
       run = await startRun(cls, startFloor, opts);
+      loading.step('ready');
       performance.mark('run:ready');
     } catch (err) {
       console.error('[run] failed to start:', err);
@@ -593,6 +597,7 @@ async function boot(): Promise<void> {
     } finally {
       fade?.classList.remove('loading');
       fade?.classList.remove('show');
+      void loading.close();
       starting = false;
     }
   };
@@ -1394,6 +1399,7 @@ async function boot(): Promise<void> {
       } catch (err) {
         console.warn('[floor] atlas preload failed — procedural fallback:', err);
       }
+      loading.step('atlases'); // The floor's roster is in (it.62).
     };
 
     // SYNCHRONOUS world construction (it.37): no await between the old
@@ -2100,7 +2106,7 @@ async function boot(): Promise<void> {
           return;
         }
         enterTown(true);
-      });
+      }, 'the portal home');
 
     /** Step back through the town portal to the remembered floor and spot. */
     const returnThroughPortal = (): void =>
@@ -2120,7 +2126,7 @@ async function boot(): Promise<void> {
         minimap.markDirty();
         updateOrb();
         audio.sfx('portal');
-      });
+      }, 'back through the rift');
 
     if (world.town) enterTown(false);
 
@@ -2339,17 +2345,20 @@ async function boot(): Promise<void> {
     let transitionSerial = 0;
     /** The tick being executed (set at the top of every tickUpdate). */
     let simTick = 0;
-    const withFade = (work: () => Promise<void>): void => {
+    const withFade = (work: () => Promise<void>, label?: string): void => {
       if (transitioning) return;
       transitioning = true;
       const serial = ++transitionSerial;
       audio.sfx('stairs');
       floorFade?.classList.add('show');
+      if (label) loading.open(label); // THE LOADING SCREEN (it.62).
       // THE BARRIER (it.59): nothing past this tick runs on any peer until
       // every peer's new floor stands — the party steps out together.
       lockstep?.enterBarrier(simTick + 1);
       const finish = (): void => {
         if (!alive || serial !== transitionSerial) return;
+        loading.step('ready');
+        void loading.close();
         floorFade?.classList.remove('loading');
         if (lockstep && lockstep.inBarrier) {
           lockstep.markReady(); // `transitioning` clears on RESUME — the same tick for all.
@@ -2363,6 +2372,7 @@ async function boot(): Promise<void> {
       later(() => {
         floorFade?.classList.add('loading');
         void work()
+          .then(() => loading.step('world'))
           .catch((err) => console.error('[floor] transition failed:', err))
           .finally(finish);
       }, 300);
@@ -2399,7 +2409,7 @@ async function boot(): Promise<void> {
           descendNote?.classList.remove('show');
           descendSub?.classList.remove('show');
         }, 5200); // Doubled (it.50).
-      });
+      }, `descending to depth ${ROMAN[floor] ?? floor + 1}`);
 
     /**
      * BOSS ARENA TELEPORT (it.28): crossing the boss-floor threshold seizes
@@ -2413,7 +2423,7 @@ async function boot(): Promise<void> {
         for (const seat of liveSeats()) seat.player.action = 'idle';
         updateOrb();
         world.dmgText.show(player.pos.x + 1.2, player.pos.y - 0.6, 'THE ARENA SEALS SHUT', 'crit');
-      });
+      }, 'the arena seals shut');
 
     /** THE TRIAL COLISEUM (it.53): fade out of town into the sand. */
     const enterColiseum = (waves: number): void =>
@@ -2440,7 +2450,7 @@ async function boot(): Promise<void> {
         updateOrb();
         world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE TRIAL BEGINS', 'crit');
         tutorial.notify('coliseum', 'The Trial Coliseum: waves pour from the four gates. Between waves you have fifteen seconds to loot and drink. T abandons the trial.');
-      });
+      }, 'the trial coliseum');
     /** Home from the sand — no return rift, the trial is over. */
     const leaveColiseum = (): void =>
       withFade(async () => {
@@ -2449,7 +2459,7 @@ async function boot(): Promise<void> {
         portalReturn = null;
         stats.save(); // The ledger lands the moment the sand is left (it.55).
         enterTown(false);
-      });
+      }, 'back to town');
 
     /** Level-select jump: fade-covered travel to any unlocked depth. */
     const jumpToFloor = (target: number): void => {
@@ -2465,7 +2475,7 @@ async function boot(): Promise<void> {
         floorActiveTicks = 0;
         for (const seat of liveSeats()) seat.player.action = 'idle';
         updateOrb();
-      });
+      }, `depth ${ROMAN[target - 1] ?? target}`);
     };
 
     /**
@@ -3070,7 +3080,7 @@ async function boot(): Promise<void> {
         if (!world.town) captureFloor();
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
         enterTown(false);
-      });
+      }, 'back to town');
 
     // ---- PARTY HUD + WAITING VEIL (it.59) --------------------------------
     const partyHud = document.createElement('div');
@@ -4037,6 +4047,7 @@ async function boot(): Promise<void> {
         coopWait.remove();
         lostModal.remove();
         minimap.party = null;
+        void loading.close();
         loop.stop();
         shopUI.destroy();
         stashUI.destroy();
@@ -4089,7 +4100,7 @@ async function boot(): Promise<void> {
   }
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby, titleScreen, menuRecords, savePanel };
+    (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby, titleScreen, savePanel, loading };
   }
 }
 

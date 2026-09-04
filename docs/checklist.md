@@ -492,6 +492,16 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] 200 ms rise-in transitions with the scene dimmed; ESC closes any sub-menu and returns focus to the stack
 - [x] 1.39 ms/frame at full particle load; no clipping at 1280x800 / 1920x1080 / 2560x1080 / 3840x1600; zero console errors; clean build
 
+## Iteration 62 - Menu Cleanup, Close Medallions, Node States, Opening, Loading Screen (2026-09-04)
+
+- [x] HALL OF RECORDS removed from the title stack (the ledgers live on the town board)
+- [x] Gothic close medallions on bestiary / skill tree / character / armorer / alchemist / stash / inventory, with hover, press and metallic SFX
+- [x] Skill node states: gold-bordered breathing UNLOCKED with rank badge, pulsing bronze READY with `+`, desaturated LOCKED with padlock watermark
+- [x] Tooltips open with `[UNLOCKED · LEVEL x/y]` / `[READY TO LEARN · n]` / `[LOCKED · REQUIRES LEVEL n]`
+- [x] 1.5 s opening: fog sweep, braziers catching, embers rising, the logo out of the dark under a horn and bell (wall-clocked)
+- [x] `LoadingScreen.ts`: filigree frame, turning rune seal, honest bronze progress bar, fifteen lore tips, wired to every zone change
+- [x] Assets baked from `test-models` (compass cross, Darinia filigree); all serve; clean build; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -2,9 +2,16 @@
  * @module ui/SkillTree
  * The skill tree window (it.41, hotkey K): four class paths side by side —
  * the hero's own path first and flagged — each with its four actives down
- * the tiers and two passives beneath. Nodes read LEARNED / READY / LOCKED
- * (with the reason), show their point cost (double for another class),
- * and learned actives carry a 1·2·3·4 slot picker that sets the hotbar.
+ * the tiers and two passives beneath.
+ *
+ * NODE STATES (it.62) read at a glance:
+ *   UNLOCKED  full-colour icon, gold border and glow, a gold rank badge
+ *             (`2/4`), and a slow ambient pulse.
+ *   READY     a pulsing bronze border and a bright `+` corner.
+ *   LOCKED    the icon desaturated to half, weathered iron border, a
+ *             padlock watermark and muted text.
+ * Every node's tooltip opens with `[UNLOCKED · LEVEL x/y]`,
+ * `[READY TO LEARN · n points]` or `[LOCKED · REQUIRES LEVEL n]`.
  *
  * Pure DOM. Every change is an InputCommand (UNLOCK_SKILL / UNLOCK_PASSIVE
  * / EQUIP_SKILL) applied by SkillSystem inside the tick; the panel
@@ -31,6 +38,28 @@ import {
 import type { ClassArchetype } from '@/network/Serialization';
 
 const CLASS_TITLE: Record<ClassArchetype, string> = { warrior: 'WARRIOR', mage: 'MAGE', ranger: 'RANGER', rogue: 'ROGUE' };
+
+/** Text bound for a `title=` attribute. */
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * The tooltip's opening line says the state outright (it.62), then the
+ * name, what it does, and what it would cost.
+ */
+function tooltip(state: string, badge: string, name: string, hint: string, cost: number, reason: string | undefined, needLevel: number): string {
+  const head =
+    state === 'learned'
+      ? `[UNLOCKED · LEVEL ${badge}]`
+      : state === 'ready'
+        ? `[READY TO LEARN · ${cost} SKILL POINT${cost > 1 ? 'S' : ''}]`
+        : /level/i.test(reason ?? '')
+          ? `[LOCKED · REQUIRES LEVEL ${needLevel}]`
+          : `[LOCKED · ${(reason ?? 'unavailable').toUpperCase()}]`;
+  const tail = state === 'learned' ? '' : state === 'ready' ? '\nClick to learn it.' : `\n${reason ?? ''}`;
+  return `${head}\n${name} — ${hint}${tail}`;
+}
 
 export class SkillTreeUI {
   private readonly panel: HTMLElement;
@@ -100,6 +129,7 @@ export class SkillTreeUI {
     const cols = order
       .map((cls) => {
         const mine = cls === own;
+        const tierCount = CLASS_SKILLS[cls].length;
         const actives = CLASS_SKILLS[cls]
           .map((def) => {
             const learned = p.unlockedSkills.has(def.id);
@@ -107,6 +137,8 @@ export class SkillTreeUI {
             const slot = p.loadout.indexOf(def.id);
             const cost = skillCost(p, def);
             const state = learned ? 'learned' : check?.ok ? 'ready' : 'locked';
+            const badge = `${def.tier}/${tierCount}`;
+            const tip = tooltip(state, badge, def.name, def.hint, cost, check?.reason, tierLevel(def.tier));
             const picker =
               learned
                 ? `<div class="st-slots">${[0, 1, 2, 3]
@@ -124,25 +156,32 @@ export class SkillTreeUI {
                 ? `LEARN · ${cost} pt${cost > 1 ? 's' : ''}`
                 : `LOCKED · ${check?.reason ?? ''}`;
             return `
-              <div class="st-node st-${state}${mine ? ' st-own' : ''}${this.picking === def.id ? ' picking' : ''}" data-skill="${def.id}" data-state="${state}">
+              <div class="st-node st-${state}${mine ? ' st-own' : ''}${this.picking === def.id ? ' picking' : ''}" data-skill="${def.id}" data-state="${state}" title="${esc(tip)}">
                 <div class="st-tier">T${def.tier} · L${tierLevel(def.tier)}</div>
-                ${icon}${state === 'locked' ? '<span class="st-lock" aria-hidden="true">🔒</span>' : ''}
+                <span class="st-badge">${badge}</span>
+                ${state === 'ready' ? '<span class="st-plus" aria-hidden="true">+</span>' : ''}
+                ${icon}${state === 'locked' ? '<span class="st-lock" aria-hidden="true"></span>' : ''}
                 <div class="st-text"><b>${def.name}</b><span>${def.hint}</span><em>${meta}</em></div>
                 ${picker}
               </div>`;
           })
           .join('');
+        const passiveCount = PASSIVES[cls].length;
         const passives = PASSIVES[cls]
-          .map((def) => {
+          .map((def, i) => {
             const learned = p.passives.has(def.id);
             const check = learned ? null : canUnlockPassive(p, def.id);
             const cost = skillCost(p, def);
             const state = learned ? 'learned' : check?.ok ? 'ready' : 'locked';
             const meta = learned ? 'LEARNED' : check?.ok ? `LEARN · ${cost} pt${cost > 1 ? 's' : ''}` : `LOCKED · ${check?.reason ?? ''}`;
+            const badge = `${i + 1}/${passiveCount}`;
+            const tip = tooltip(state, badge, def.name, def.hint, cost, check?.reason, PASSIVE_LEVEL);
             return `
-              <div class="st-node st-passive st-${state}${mine ? ' st-own' : ''}" data-passive="${def.id}" data-state="${state}">
+              <div class="st-node st-passive st-${state}${mine ? ' st-own' : ''}" data-passive="${def.id}" data-state="${state}" title="${esc(tip)}">
                 <div class="st-tier">PASSIVE · L${PASSIVE_LEVEL}</div>
-                <span class="st-icon st-glyph">${def.glyph}</span>${state === 'locked' ? '<span class="st-lock" aria-hidden="true">🔒</span>' : ''}
+                <span class="st-badge">${badge}</span>
+                ${state === 'ready' ? '<span class="st-plus" aria-hidden="true">+</span>' : ''}
+                <span class="st-icon st-glyph">${def.glyph}</span>${state === 'locked' ? '<span class="st-lock" aria-hidden="true"></span>' : ''}
                 <div class="st-text"><b>${def.name}</b><span>${def.hint}</span><em>${meta}</em></div>
               </div>`;
           })
@@ -174,13 +213,18 @@ export class SkillTreeUI {
         <span class="st-points">${p.skillPoints} SKILL POINT${p.skillPoints === 1 ? '' : 'S'}</span>
         <span class="st-level">LEVEL ${p.level}</span>
         <button class="st-respec" data-respec${this.inTown() ? '' : ' disabled'} title="${this.inTown() ? 'Refund every learned skill and passive' : 'Only in town or at the camp'}">RESET SKILLS${this.inTown() ? '' : ' · TOWN ONLY'}</button>
-        <button class="tp-close" data-close>✕</button>
+        <button class="tp-close" data-close title="Close (ESC)"><i></i></button>
       </div>
       <div class="st-synergy">Your class path casts at <b>+${Math.round((SYNERGY.power - 1) * 100)}% power</b>, <b>${Math.round((1 - SYNERGY.cooldown) * 100)}% shorter cooldowns</b>, and every hit inflicts <b>${SYNERGY_STATUS[own]}</b>. Other paths cost two points a rank.</div>
       <div class="st-cols">${cols}</div>
       <div class="st-bar">${bar}<span class="st-bar-note">${this.picking ? 'Choose a hotkey for the selected skill' : 'Learned skills go on the hotbar: pick 1 · 2 · 3 · 4 on the node, or click a learned skill then a slot'}</span></div>`;
 
-    this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+    closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    closeBtn?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      this.close();
+    });
     this.panel.querySelector('[data-respec]')?.addEventListener('click', () => {
       if (!this.inTown()) {
         audio.sfx('uiBack');

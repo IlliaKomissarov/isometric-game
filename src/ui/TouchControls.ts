@@ -63,6 +63,40 @@ export async function toggleFullscreen(): Promise<boolean> {
   }
 }
 
+/**
+ * THE FULLSCREEN CONTROL (it.64): a gothic corner button on every screen —
+ * the title, the crypt, a phone or a desktop. Small, unobtrusive, and the
+ * one place a player looks for it.
+ */
+export class FullscreenButton {
+  private readonly el: HTMLButtonElement;
+
+  constructor() {
+    this.el = document.createElement('button');
+    this.el.id = 'fullscreen-btn';
+    this.el.type = 'button';
+    this.el.title = 'Fullscreen';
+    this.el.setAttribute('aria-label', 'Toggle fullscreen');
+    this.el.innerHTML = '<i></i>';
+    document.body.appendChild(this.el);
+    this.el.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    this.el.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      void toggleFullscreen();
+    });
+    for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+      document.addEventListener(ev, () => this.sync());
+    }
+    this.sync();
+  }
+
+  private sync(): void {
+    const on = !!(document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
+    this.el.classList.toggle('on', on);
+    this.el.title = on ? 'Leave fullscreen' : 'Fullscreen';
+  }
+}
+
 export class TouchControls {
   private readonly root: HTMLElement;
   private readonly padLeft: HTMLElement;
@@ -75,6 +109,8 @@ export class TouchControls {
   private enabled = false;
   private lastDir = { x: 0, y: 0 };
   private attacking = false;
+  private rowUse!: HTMLElement;
+  private rowSkills!: HTMLElement;
 
   constructor() {
     this.root = document.createElement('div');
@@ -86,7 +122,7 @@ export class TouchControls {
     this.root.append(this.padLeft, this.padRight);
     document.body.appendChild(this.root);
 
-    this.stick = new VirtualJoystick(this.padLeft, { radius: 56, deadzone: 0.2 });
+    this.stick = new VirtualJoystick(this.padLeft, { radius: 60, deadzone: 0.12 });
     this.stick.onChange = (x, y) => this.steer(x, y);
 
     // The right cluster packs into three wrapping rows — utilities, skills,
@@ -96,13 +132,11 @@ export class TouchControls {
     const rowUse = this.row('tc-row-use');
     const rowSkills = this.row('tc-row-skills');
     const rowMain = this.row('tc-row-main');
-    this.mk(rowUse, 'tc-use tc-full', 'FULLSCREEN', '⛶', () => {
-      void toggleFullscreen();
-      audio.sfx('uiClick');
-    });
-    this.mk(rowUse, 'tc-use tc-portal', 'PORTAL', '⌂', () => this.tap({ type: 'TOWN_PORTAL', playerId: 0 }));
-    this.mk(rowUse, 'tc-use tc-mana', 'MANA', '✦', () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
-    this.mk(rowUse, 'tc-use tc-potion', 'HEALTH', '♥', () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
+    this.rowUse = rowUse;
+    this.rowSkills = rowSkills;
+    this.mk(rowUse, 'tc-use tc-portal', 'TOWN PORTAL', '⌂', () => this.tap({ type: 'TOWN_PORTAL', playerId: 0 }));
+    this.mk(rowUse, 'tc-use tc-mana', 'MANA DRAUGHT', '✦', () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
+    this.mk(rowUse, 'tc-use tc-potion', 'HEALING DRAUGHT', '❤', () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
     for (let i = 0; i < 4; i++) {
       this.mk(rowSkills, `tc-skill tc-skill-${i}`, `SKILL ${i + 1}`, String(i + 1), () => this.tap({ type: 'SKILL', playerId: 0, slot: i }));
     }
@@ -201,9 +235,15 @@ export class TouchControls {
 
   private applyLayout(): void {
     const s = layout.state;
-    // The pad anchors the stick; everywhere else it comes to the thumb.
-    this.stick.setFloating(s.padH < 1);
-    this.stick.setRadius(s.tier === 'micro' ? 34 : s.tier === 'compact' ? 44 : 56);
+    // The base always comes to the thumb now (it.64) — only the travel changes.
+    this.stick.setRadius(s.tier === 'micro' ? 40 : s.tier === 'compact' ? 52 : 62);
+    // IN THE PAD (it.64) the utilities ride above the stick on the left. Four
+    // 56 px skills plus the attack already fill the right half of a phone;
+    // splitting the load is what keeps every target its full size and stops
+    // the cluster growing up out of the slate into the fight.
+    const wantLeft = s.padH > 0;
+    if (wantLeft && this.rowUse.parentElement !== this.padLeft) this.padLeft.insertBefore(this.rowUse, this.padLeft.firstChild);
+    else if (!wantLeft && this.rowUse.parentElement !== this.padRight) this.padRight.insertBefore(this.rowUse, this.rowSkills);
     this.refresh();
     this.placeHud();
   }
@@ -296,3 +336,4 @@ export class TouchControls {
 }
 
 export const touchControls = new TouchControls();
+export const fullscreenButton = new FullscreenButton();

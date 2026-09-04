@@ -1,5 +1,91 @@
 # Development Log
 
+## 2026-09-04 (iteration 64) - Emergency mobile fix: viewport lock, contain-fit panels, ARPG touch controls
+
+### The document may never scroll
+- `html, body` are `position: fixed`, full-size, `overflow: hidden !important`,
+  with `touch-action: none`, no text selection and no tap highlight. `#app`
+  and its canvas the same. Panels that need to scroll do it INSIDE themselves
+  with `overscroll-behavior: contain`, so a flick at the end of a list can
+  never rubber-band the page. Inputs keep text selection and normal touch.
+- Measured on the title, the class screen and the live HUD: no vertical or
+  horizontal document scrollbar at any tested size.
+
+### The class screen was cropping — the fix (`src/ui/FitScaler.ts`)
+- The bug: four 205 px cards in a flex row are 1008 px wide. On a 320 px
+  phone the row ran from x −344 to 664 — every card off-screen.
+- The fix is contain-fit, exactly as an image is fitted:
+  `scale = min(1, availW / naturalW, availH / naturalH)`, against 90–94% of
+  the viewport. Natural size is read from `offsetWidth`/`scrollWidth`, which
+  CSS transforms do not affect, so the measurement can never spiral.
+- Three things had to be right before the formula could work:
+  * The panel needs a DESIGN WIDTH, not the viewport's. `max-content` was
+    wrong — it refuses to wrap, so a one-line heading set the width and the
+    scale collapsed. The class screen is laid out at 1040 px on a desktop,
+    560 px on a tablet and 430 px on a phone (matching its 4/2/2 card grid)
+    and is then scaled down as one piece.
+  * The natural size must be the CONTENT's. `offsetWidth` alone lies when a
+    flex parent has already clamped the box while its children overflow it.
+  * The 200 ms entrance from it.61 ended on `transform: none`, and a
+    keyframe outranks an inline style — it was silently throwing the scale
+    away every time. Full-screen overlays now slide as a whole; panels that
+    carry their own centring transform fade instead.
+- Registered on the class screen, the title stack, credits, pause, death,
+  exit, the co-op lobby, the loading frame and settings. Verified across 28
+  viewports from 240x320 to 7680x4320: every one fits with zero cropping,
+  zero off-screen elements and no document overflow.
+
+### The touch controls, rebuilt
+- Translucent slate under an embossed bronze ring: a lit top edge, a deep
+  inner shadow, an inner hairline circle, and a gold bloom when held. The
+  attack is its own red-iron circle, the healing draught rose, the mana
+  draught steel-blue.
+- Sizes are the brief's: 56x56 for every skill and utility, 80x80 minimum
+  for the attack (104 px at full HUD scale), with real spacing between them.
+- The stick is rebuilt around direct pointer tracking. The base SPAWNS UNDER
+  THE THUMB on `pointerdown` — verified: the base's centre landed within a
+  pixel of the touch point — and the knob is written straight from the
+  pointer's own coordinates inside the event, with no rAF hop and no easing.
+  A heading is published the instant it changes. Deadzone down from 0.2 to
+  0.12. Verified: every synthetic move produced a command immediately.
+- In the PAD the draughts moved above the stick on the left. Four 56 px
+  skills plus an 80 px attack already fill the right half of a phone;
+  splitting the load is what keeps every target full size and stops the
+  cluster growing up out of the slate into the fight.
+
+### The fullscreen corner
+- A gothic 38 px button with four carved brackets, top-right on every
+  screen — title and crypt, phone and desktop. It calls
+  `requestFullscreen()` (with the webkit spelling as a fallback), turns
+  green while active, exits cleanly, and survives being refused. On a short
+  landscape screen, where the control cluster owns the whole right edge, it
+  moves under the depth label instead. Settings keeps its own row.
+
+### Instant reflow
+- Rotation and resize now land on the new layout in the SAME frame. The
+  it.63 spring was right for a deliberate change and wrong for a rotation:
+  a canvas easing toward its new size shows the old one stretched, and a HUD
+  sliding to new anchors is a moving target for a thumb already reaching for
+  it.
+
+### Verified live
+- 33 devices x 2 orientations, all 66 asserted for document scroll, stage
+  agreement, elements inside the viewport, 56 px minimum targets, control
+  overlap, stick overlap and HUD-under-thumb: zero failures.
+- Class selection fits inside the screen at 28 viewports including 320x480,
+  390x844 and 968x2376.
+- Joystick spawns under the thumb and answers every move immediately.
+- `requestFullscreen` invoked from the corner button and from Settings.
+- `npm run build` clean; zero console errors.
+
+### What the matrix caught on the way
+- The pad's left half could not hold three 56 px draughts on one line (it
+  wrapped and squeezed the stick out of the slate).
+- The globes straddling the pad's border collided with the new draught row,
+  so they now sit just above it.
+- Under ~420 px of height a map cannot share the screen with two thumb
+  clusters, so it steps aside there (M still summons it).
+
 ## 2026-09-04 (iteration 63) - Dual-orientation engine, virtual controls, performance scaler
 
 ### The layout spine (`src/core/OrientationManager.ts`)

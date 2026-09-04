@@ -511,6 +511,16 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Device matrix: 33 devices x 2 orientations, all 66 asserted for overflow, 44 px targets, control/HUD collisions and text clipping — zero failures
 - [x] Live rotation mid-run keeps the player, position, hp, entities and tick; desktop unchanged; clean build; zero console errors
 
+## Iteration 64 - Emergency Mobile Fix: Viewport Lock, Contain-Fit, ARPG Touch Controls (2026-09-04)
+
+- [x] `html, body, #app, canvas` locked: fixed, full-size, `overflow: hidden !important`, `touch-action: none`, no selection; panels scroll inside themselves
+- [x] `FitScaler`: contain-fit (`min(1, availW/natW, availH/natH)`) on every modal; class screen laid out at a design width per tier and scaled as one piece
+- [x] Fixed the entrance keyframe that was outranking the inline fit scale (overlays now slide, centred panels fade)
+- [x] Touch controls redesigned: embossed bronze rings on translucent slate, 56 px skills, 80 px+ attack, colour-coded draughts
+- [x] Joystick rebuilt: base spawns under the thumb, knob written straight from the pointer, no easing, deadzone 0.12
+- [x] Gothic fullscreen button top-right on every screen, with a short-screen fallback position
+- [x] Rotation and resize reflow instantly; 66/66 device configs pass; class screen fits at 28 viewports; clean build; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

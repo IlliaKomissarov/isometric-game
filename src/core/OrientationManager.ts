@@ -226,11 +226,12 @@ export class OrientationManager {
   }
 
   private recompute(instant = false): void {
-    // A hidden page has no rAF, so a spring there would leave the CSS numbers
-    // frozen while the body classes already say "landscape". Nothing is on
-    // screen to animate anyway: snap, and the page is correct the moment it
-    // comes back.
-    if (document.hidden) instant = true;
+    // INSTANT REFLOW (it.64): a rotation must land on the new layout in the
+    // same frame — a canvas easing toward its new size shows the old one
+    // stretched, and a HUD sliding to new anchors is a moving target for a
+    // thumb already reaching for it. The spring path is kept for deliberate
+    // slow changes; rotations, resizes and a hidden page all snap.
+    instant = true;
     const next = this.compute();
     const discrete =
       next.orientation !== this.target.orientation ||
@@ -320,6 +321,7 @@ export class OrientationManager {
       b.toggle('orient-landscape', s.orientation === 'landscape');
       b.toggle('input-touch', s.touch);
       b.toggle('has-pad', s.padH > 1);
+      b.toggle('short-screen', s.h < 420);
       for (const t of ['micro', 'compact', 'standard', 'tablet', 'desktop', 'huge']) b.toggle(`tier-${t}`, s.tier === t);
     }
   }

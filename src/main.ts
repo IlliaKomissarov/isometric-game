@@ -84,7 +84,8 @@ import { TitleScreen } from '@/ui/TitleScreen';
 import { LoadingScreen } from '@/ui/LoadingScreen';
 import { layout } from '@/core/OrientationManager';
 import { perf } from '@/core/PerformanceScaler';
-import { touchControls } from '@/ui/TouchControls';
+import { touchControls, fullscreenButton } from '@/ui/TouchControls';
+import { fit } from '@/ui/FitScaler';
 import { visuals } from '@/core/VisualSettings';
 import type { PlayerSave } from '@/persist/SaveGame';
 import { makeDraggable } from '@/ui/draggable';
@@ -233,6 +234,18 @@ async function boot(): Promise<void> {
   // snapping; the camera reads `app.screen`, so centring follows for free.
   layout.onReflow(() => app.resize());
   perf.attach(app); // The rolling frame budget owns the buffer resolution.
+  void fullscreenButton; // The corner control exists for every screen (it.64).
+  // CONTAIN-FIT (it.64): no window may be cropped on any viewport. Centred
+  // panels keep their translate; flex-centred ones scale on their own.
+  fit.add(document.querySelector('#class-select .cs-fit'), { max: 0.94, minScale: 0.28 });
+  fit.add(document.querySelector('#main-menu .mm-panel'), { max: 0.94, minScale: 0.45 });
+  fit.add(document.querySelector('#credits .modal-panel'), { max: 0.92, minScale: 0.4 });
+  fit.add(document.querySelector('#pause-menu .modal-panel'), { max: 0.9, minScale: 0.5 });
+  fit.add(document.querySelector('#death-menu .modal-panel'), { max: 0.9, minScale: 0.5 });
+  fit.add(document.querySelector('#exit-modal .am-box'), { max: 0.9, minScale: 0.5 });
+  fit.add(document.querySelector('#coop-panel .cp-frame'), { max: 0.94, minScale: 0.4 });
+  fit.add(document.querySelector('#loading-screen .ls-frame'), { max: 0.9, minScale: 0.5 });
+  fit.add(document.getElementById('settings-panel'), { max: 0.92, minScale: 0.45, base: 'translate(-50%, -50%)' });
 
   // CURSOR FIRST (it.25 freeze fix): the gothic pointer exists during the
   // loading screen and from the very first frame of every run.
@@ -336,6 +349,7 @@ async function boot(): Promise<void> {
     return new Promise((resolve) => {
       const overlay = document.getElementById('class-select')!;
       overlay.classList.add('show');
+      fit.schedule(); // Contain-fit the whole screen the moment it appears (it.64).
       const timers: number[] = [];
       const ac = new AbortController();
       const finish = (cls: ClassArchetype | null): void => {
@@ -523,6 +537,7 @@ async function boot(): Promise<void> {
     mainMenu.setContinue(latest ? { cls: latest.player.archetype, level: latest.player.level, floor: latest.pos && latest.floor > 0 ? latest.floor : 0 } : null);
     titleScreen.show();
     mainMenu.show();
+    fit.schedule(); // The stack was display:none until now — measure it (it.64).
     if (!introPlayed) {
       // THE OPENING (it.62): black, fog, embers, then the logo and the horn.
       introPlayed = true;

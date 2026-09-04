@@ -3379,7 +3379,14 @@
 
       /* Sub-menus rise in over the lowered scene. */
       @keyframes mm-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
-      #class-select.show > *, #settings-panel.open, #leaderboard.open, #credits.show .modal-panel, #coop-panel.show .cp-frame, #save-panel.open, #exit-modal.open .am-box { animation: mm-rise 0.2s ease-out both; }
+      /* THE 200 ms ENTRANCE (it.61) vs THE FIT SCALE (it.64): a keyframe that
+         ends on `transform: none` outranks an inline style, so a rise applied
+         to a scaled panel silently threw its scale away. Full-screen overlays
+         now slide as a WHOLE (their inner panel keeps its own transform), and
+         panels that carry their own centring transform fade instead. */
+      #class-select.show, #credits.show, #exit-modal.open, #coop-panel.show { animation: mm-rise 0.2s ease-out both; }
+      #settings-panel.open, #leaderboard.open, #save-panel.open { animation: mm-fade 0.2s ease-out both; }
+      @keyframes mm-fade { from { opacity: 0; } to { opacity: 1; } }
       #class-select { background: radial-gradient(ellipse at center, rgba(14, 11, 19, 0.7), rgba(5, 4, 8, 0.9)); }
       #class-select .cs-load { margin-top: 10px; font-size: 12px; letter-spacing: 0.18em; opacity: 0.8; }
       #class-select .cs-load:hover { opacity: 1; }
@@ -3760,7 +3767,21 @@
       }
       body.orient-portrait.has-pad #touch-controls .tc-left {
         left: calc(var(--sal) + 4px); bottom: calc(var(--sab) + 4px);
-        width: 46%; height: calc(var(--pad-h) - var(--sab) - 12px);
+        width: max(180px, 46%); height: calc(var(--pad-h) - var(--sab) - 12px);
+        display: flex; flex-direction: column; gap: 6px; align-items: center;
+        pointer-events: none;
+      }
+      /* In the pad the stick takes what the utility row above it leaves. */
+      body.orient-portrait.has-pad #touch-controls .tc-left .vj-zone {
+        position: relative; inset: auto; flex: 1 1 auto; width: 100%; min-height: 0;
+      }
+      /* Three 56 px draughts must fit one line inside the left half, or the
+         row wraps and squeezes the stick out of the slate. */
+      body.orient-portrait.has-pad #touch-controls .tc-left .tc-row-use { flex: 0 0 auto; pointer-events: auto; gap: 4px; flex-wrap: nowrap; }
+      /* The stick can never be larger than the space the row leaves it. */
+      body.orient-portrait.has-pad #touch-controls .tc-left .vj-base {
+        width: min(calc(148px * var(--hud-scale)), 100%, calc(var(--pad-h) - 108px));
+        height: min(calc(148px * var(--hud-scale)), 100%, calc(var(--pad-h) - 108px));
       }
       body.orient-portrait.has-pad #touch-controls .tc-right {
         right: calc(var(--sar) + 4px); bottom: calc(var(--sab) + 4px);
@@ -3778,8 +3799,8 @@
       /* The globes ride the dividing border between crypt and pad. */
       /* The globes straddle the dividing border, scaled to the strip the
          control cluster leaves them (see `orbScale`). */
-      body.orient-portrait.has-pad #orb-wrap { left: calc(var(--sal) + 4px); bottom: calc(var(--pad-h) - 10px); transform-origin: left bottom; transform: scale(var(--orb-scale)); }
-      body.orient-portrait.has-pad #orb2-wrap { left: calc(var(--sal) + 4px + 180px * var(--orb-scale)); bottom: calc(var(--pad-h) - 10px); transform-origin: left bottom; transform: scale(var(--orb-scale)); }
+      body.orient-portrait.has-pad #orb-wrap { left: calc(var(--sal) + 4px); bottom: calc(var(--pad-h) + 2px); transform-origin: left bottom; transform: scale(var(--orb-scale)); }
+      body.orient-portrait.has-pad #orb2-wrap { left: calc(var(--sal) + 4px + 180px * var(--orb-scale)); bottom: calc(var(--pad-h) + 2px); transform-origin: left bottom; transform: scale(var(--orb-scale)); }
       body.orient-portrait.has-pad #char-stats { left: auto; right: calc(var(--sar) + 8px); bottom: calc(var(--pad-h) + 6px); transform-origin: right bottom; transform: scale(calc(0.8 * var(--hud-scale))); }
       body.orient-portrait.has-pad #progress-hud { bottom: calc(var(--pad-h) + 44px); }
       body.orient-portrait.has-pad #depth-label { top: calc(var(--sat) + 4px); left: calc(var(--sal) + 8px); }
@@ -3902,8 +3923,7 @@
       /* ---- it.63: collisions the matrix caught ------------------------- */
       /* The cluster needs room for four 44 px targets in a row, or its rows
          wrap and the column grows out of the pad into the fight. */
-      body.orient-portrait.has-pad #touch-controls .tc-right { width: max(200px, 52%); }
-      body.orient-portrait.has-pad #touch-controls .tc-left { width: calc(100% - max(200px, 52%) - 10px); }
+      body.orient-portrait.has-pad #touch-controls .tc-right { width: calc(100% - max(180px, 46%) - 10px); }
       body.tier-micro.orient-portrait.has-pad #touch-controls .tc-right { width: max(100px, 54%); }
       body.tier-micro.orient-portrait.has-pad #touch-controls .tc-left { width: calc(100% - max(100px, 54%) - 8px); }
       /* Micro keeps its utility row a row (folding it into the column would
@@ -3938,8 +3958,228 @@
          screen drops the minimap it has no room for. */
       body.tier-micro.touch-controls-on #run-timer { display: none; }
       body.tier-micro.touch-controls-on #minimap { display: none; }
+      /* Under ~420 px of height, three rows of controls and a map cannot share
+         the screen. The map steps aside; M still summons it. */
+      body.touch-controls-on.orient-landscape.short-screen #minimap { display: none; }
       body.tier-micro.touch-controls-on #orb-wrap { left: calc(var(--app-w) / 2 - 84px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.42) !important; }
       body.tier-micro.touch-controls-on #orb2-wrap { left: calc(var(--app-w) / 2 + 2px) !important; top: 2px; bottom: auto !important; transform-origin: left top; transform: scale(0.42) !important; }
+
+      /* ===================================================================
+         IT.64 — VIEWPORT LOCK, CONTAIN-FIT PANELS, ARPG TOUCH CONTROLS,
+         THE FULLSCREEN CORNER
+         =================================================================== */
+
+      /* ---- 1. the document may never scroll ---------------------------- */
+      html, body {
+        position: fixed;
+        left: 0; top: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden !important;
+        overscroll-behavior: none;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* The simulated viewport keeps its own box (and stays the containing
+         block for fixed children) — it must not be overridden by the lock. */
+      body.sim-viewport { position: fixed; width: var(--app-w); height: var(--app-h); }
+      #app, #app canvas { overflow: hidden !important; touch-action: none; user-select: none; }
+      /* Text that a player may want to select or type into keeps that right. */
+      input, textarea { -webkit-user-select: text; user-select: text; touch-action: auto; }
+      /* Panels scroll INSIDE themselves; the document never does. */
+      #inv-panel, #skill-tree, #char-sheet, #bestiary, .town-panel, #leaderboard,
+      #settings-panel, #cheat-menu, #save-panel, #coop-panel .cp-frame, .cr-viewport,
+      .bs-list, .bs-detail, .set-controls, #class-select { overscroll-behavior: contain; }
+
+      /* ---- 2. contain-fit ---------------------------------------------- */
+      /* The class screen scales as ONE piece, so the cards, their text and
+         the buttons keep their proportions and simply become smaller. */
+      #class-select { overflow: hidden; }
+      #class-select .cs-fit {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        /* A DESIGN WIDTH, not the viewport's: the panel is laid out at the
+           size it was drawn for and then scaled to fit, which is what keeps
+           its proportions instead of reflowing into a smear. `max-content`
+           is wrong here — it refuses to wrap, so a one-line heading would
+           set the width and the scale would collapse. */
+        width: 1040px;
+        max-width: none;
+        transform-origin: center center;
+        will-change: transform;
+      }
+      /* Below a tablet the four cards fold into a grid before the scale is
+         applied, so they shrink far less than a single 1000 px row would. */
+      #class-cards { display: grid; grid-template-columns: repeat(4, auto); gap: 18px; }
+      body.tier-tablet #class-cards, body.orient-portrait.tier-desktop #class-cards { grid-template-columns: repeat(2, auto); gap: 14px; }
+      body.tier-standard #class-cards, body.tier-compact #class-cards { grid-template-columns: repeat(2, auto); gap: 12px; }
+      body.tier-micro #class-cards { grid-template-columns: repeat(2, auto); gap: 8px; }
+      /* The design width follows the column count. */
+      body.tier-tablet #class-select .cs-fit, body.orient-portrait.tier-desktop #class-select .cs-fit { width: 560px; }
+      body.tier-standard #class-select .cs-fit, body.tier-compact #class-select .cs-fit, body.tier-micro #class-select .cs-fit { width: 430px; }
+      body.tier-micro .class-card, body.tier-compact .class-card { width: 176px; padding: 10px 10px 8px; }
+      body.tier-micro .cc-preview, body.tier-compact .cc-preview { width: 68px; height: 82px; }
+      /* The action row wraps at every design width narrower than the desktop
+         one, so three 220 px buttons can never set the panel's width. */
+      #class-select .cs-actions { flex-wrap: wrap; justify-content: center; }
+      #class-select .cs-actions button { max-width: 100%; }
+      body.tier-micro #class-select .cs-actions, body.tier-compact #class-select .cs-actions,
+      body.tier-standard #class-select .cs-actions, body.tier-tablet #class-select .cs-actions,
+      body.orient-portrait.tier-desktop #class-select .cs-actions { margin-top: 12px; gap: 8px; }
+      body.tier-micro #class-select .cs-actions button, body.tier-compact #class-select .cs-actions button,
+      body.tier-standard #class-select .cs-actions button, body.tier-tablet #class-select .cs-actions button,
+      body.orient-portrait.tier-desktop #class-select .cs-actions button { width: 160px; }
+      /* A scaled panel must not also be clipped by a max-height meant for
+         the unscaled one. */
+      #class-select .cs-fit, #main-menu .mm-panel { max-height: none; overflow: visible; }
+
+      /* ---- 3. the ARPG touch controls ---------------------------------- */
+      .vj-zone { position: absolute; inset: 0; }
+      .vj-base {
+        position: absolute;
+        left: 50%; top: 50%;
+        width: calc(148px * var(--hud-scale)); height: calc(148px * var(--hud-scale));
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 50% 38%, rgba(58, 48, 34, 0.42) 0%, rgba(16, 12, 20, 0.5) 58%, rgba(8, 6, 11, 0.34) 100%);
+        border: 2px solid rgba(150, 118, 62, 0.55);
+        box-shadow:
+          inset 0 0 0 1px rgba(0, 0, 0, 0.8),
+          inset 0 0 26px rgba(0, 0, 0, 0.75),
+          inset 0 2px 0 rgba(255, 214, 140, 0.12),
+          0 3px 14px rgba(0, 0, 0, 0.65);
+        opacity: 0.42;
+        transition: opacity 0.14s ease;
+      }
+      .vj-base::after {
+        content: ''; position: absolute; inset: 13%;
+        border-radius: 50%;
+        border: 1px solid rgba(200, 165, 88, 0.22);
+      }
+      .vj-zone.held .vj-base { opacity: 1; border-color: rgba(200, 165, 88, 0.85); }
+      .vj-knob {
+        position: absolute; left: 50%; top: 50%;
+        width: calc(64px * var(--hud-scale)); height: calc(64px * var(--hud-scale));
+        margin: 0;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 50% 32%, #8a7448 0%, #4a3c26 42%, #221b2c 72%, #120e18 100%);
+        border: 2px solid #c8a558;
+        box-shadow:
+          inset 0 2px 6px rgba(255, 226, 160, 0.28),
+          inset 0 -3px 8px rgba(0, 0, 0, 0.75),
+          0 0 16px rgba(200, 165, 88, 0.4);
+      }
+      .vj-zone.held .vj-knob { box-shadow: inset 0 2px 6px rgba(255, 232, 175, 0.4), inset 0 -3px 8px rgba(0, 0, 0, 0.8), 0 0 26px rgba(255, 208, 112, 0.75); }
+
+      .tc-btn {
+        position: relative;
+        flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center;
+        min-width: 56px; min-height: 56px;
+        padding: 0; margin: 0;
+        border-radius: 50%;
+        /* Translucent slate under an embossed bronze ring. */
+        background:
+          radial-gradient(circle at 50% 30%, rgba(58, 50, 68, 0.86) 0%, rgba(26, 21, 34, 0.9) 52%, rgba(10, 8, 14, 0.92) 100%);
+        border: 2px solid #7a6238;
+        box-shadow:
+          inset 0 0 0 1px rgba(0, 0, 0, 0.9),
+          inset 0 2px 0 rgba(255, 214, 140, 0.16),
+          inset 0 -6px 14px rgba(0, 0, 0, 0.7),
+          0 2px 0 rgba(0, 0, 0, 0.85),
+          0 4px 14px rgba(0, 0, 0, 0.5);
+        color: #e6c88a;
+        font-family: 'Cinzel', 'Georgia', serif; font-weight: 700;
+        text-shadow: 0 2px 0 rgba(0, 0, 0, 0.9), 0 0 10px rgba(0, 0, 0, 0.8);
+        cursor: pointer;
+        transition: transform 0.06s ease, box-shadow 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+      }
+      .tc-btn::after {
+        content: ''; position: absolute; inset: 4px;
+        border-radius: 50%;
+        border: 1px solid rgba(200, 165, 88, 0.28);
+        pointer-events: none;
+      }
+      .tc-btn span { line-height: 1; pointer-events: none; }
+      .tc-btn.held {
+        transform: scale(0.94);
+        border-color: #ffd070;
+        color: #fff2c8;
+        box-shadow:
+          inset 0 0 0 1px rgba(0, 0, 0, 0.9),
+          inset 0 6px 16px rgba(0, 0, 0, 0.9),
+          0 0 24px rgba(255, 208, 112, 0.6);
+      }
+      .tc-skill { width: calc(64px * var(--hud-scale)); height: calc(64px * var(--hud-scale)); font-size: calc(21px * var(--hud-scale)); }
+      .tc-use { width: calc(58px * var(--hud-scale)); height: calc(58px * var(--hud-scale)); font-size: calc(19px * var(--hud-scale)); }
+      .tc-attack {
+        width: calc(104px * var(--hud-scale)); height: calc(104px * var(--hud-scale));
+        min-width: 80px; min-height: 80px;
+        font-size: calc(38px * var(--hud-scale));
+        border-color: #8a3a34;
+        background: radial-gradient(circle at 50% 30%, rgba(92, 40, 44, 0.92) 0%, rgba(46, 20, 26, 0.94) 55%, rgba(20, 10, 14, 0.95) 100%);
+        color: #ffc0ac;
+      }
+      .tc-attack::after { border-color: rgba(220, 120, 90, 0.35); }
+      .tc-attack.held { border-color: #ff9a70; box-shadow: inset 0 6px 16px rgba(0, 0, 0, 0.9), 0 0 32px rgba(255, 120, 80, 0.65); }
+      .tc-potion { border-color: #8a3442; color: #ff9aa2; }
+      .tc-potion::after { border-color: rgba(220, 90, 110, 0.3); }
+      .tc-mana { border-color: #34547e; color: #9cc8ff; }
+      .tc-mana::after { border-color: rgba(110, 160, 230, 0.3); }
+      .tc-row { gap: calc(11px * var(--hud-scale)); }
+      #touch-controls .tc-right { gap: calc(11px * var(--hud-scale)); }
+      body.orient-portrait.has-pad .tc-skill, body.orient-portrait.has-pad .tc-use { width: 56px; height: 56px; font-size: 19px; }
+      body.orient-portrait.has-pad .tc-attack { width: calc(88px * var(--hud-scale)); height: calc(88px * var(--hud-scale)); font-size: calc(32px * var(--hud-scale)); }
+      body.orient-portrait.has-pad .tc-row, body.orient-portrait.has-pad #touch-controls .tc-right { gap: 8px; }
+
+      /* ---- 4. the fullscreen corner ------------------------------------ */
+      #fullscreen-btn {
+        position: fixed;
+        top: calc(var(--sat) + 6px);
+        right: calc(var(--sar) + 6px);
+        z-index: 90;
+        width: 38px; height: 38px;
+        display: flex; align-items: center; justify-content: center;
+        padding: 0;
+        background: radial-gradient(circle at 50% 32%, rgba(44, 37, 52, 0.82) 0%, rgba(18, 14, 24, 0.88) 60%, rgba(10, 8, 14, 0.9) 100%);
+        border: 1px solid #5a4a30;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9), inset 0 2px 0 rgba(255, 214, 140, 0.12), 0 2px 10px rgba(0, 0, 0, 0.6);
+        cursor: pointer;
+        transition: border-color 0.14s, box-shadow 0.14s, transform 0.06s;
+      }
+      #fullscreen-btn i {
+        position: relative; display: block; width: 16px; height: 16px;
+      }
+      /* Four carved corner brackets — the universal "expand" mark. */
+      #fullscreen-btn i::before, #fullscreen-btn i::after {
+        content: ''; position: absolute; width: 6px; height: 6px; border: 2px solid #c8a558;
+      }
+      #fullscreen-btn i::before { left: 0; top: 0; border-right: none; border-bottom: none; box-shadow: 10px 10px 0 -2px #c8a558; }
+      #fullscreen-btn i::after { right: 0; top: 0; border-left: none; border-bottom: none; box-shadow: -10px 10px 0 -2px #c8a558; }
+      #fullscreen-btn:hover { border-color: #c8a558; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9), 0 0 14px rgba(200, 165, 88, 0.45); }
+      #fullscreen-btn:active { transform: translateY(1px); }
+      #fullscreen-btn.on i::before, #fullscreen-btn.on i::after { border-color: #8ee08a; box-shadow-color: #8ee08a; }
+      #fullscreen-btn.on { border-color: #6f9a5a; }
+      /* The map moves down so the corner control has the corner. */
+      #minimap { top: 50px; }
+      body.orient-portrait.has-pad #minimap { top: calc(var(--sat) + 50px); }
+      /* On a short screen the control cluster owns the whole right edge, so
+         the corner control moves under the depth label on the left. */
+      body.short-screen.touch-controls-on #fullscreen-btn {
+        right: auto; left: calc(var(--sal) + 6px); top: calc(var(--sat) + 28px);
+      }
+      body.tier-micro #fullscreen-btn { width: 32px; height: 32px; }
+      body.tier-micro #fullscreen-btn i { width: 13px; height: 13px; }
+      body.tier-micro #fullscreen-btn i::before { box-shadow: 8px 8px 0 -2px #c8a558; }
+      body.tier-micro #fullscreen-btn i::after { box-shadow: -8px 8px 0 -2px #c8a558; }
     </style>
   </head>
   <body>
@@ -4041,6 +4281,7 @@
 
     <!-- Class selection (it.32): shown before the descent begins. -->
     <div id="class-select">
+      <div class="cs-fit">
       <h1>CHOOSE YOUR DELVER</h1>
       <div class="cs-sub">Four souls stand at the crypt mouth. Only one goes down.</div>
       <div id="class-cards">
@@ -4077,6 +4318,7 @@
         <button class="menu-btn cs-back" data-cs-back>BACK</button>
         <button class="menu-btn cs-load" data-cs-load>LOAD A SAVED DELVER</button>
         <button class="menu-btn cs-confirm" data-cs-confirm disabled>CONFIRM</button>
+      </div>
       </div>
     </div>
 

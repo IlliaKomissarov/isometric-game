@@ -1,26 +1,29 @@
 /**
  * @module ui/VirtualJoystick
- * THE THUMB STICK (it.63): an analog pad driven by raw PointerEvents.
+ * THE THUMB STICK (it.63, rebuilt it.64): direct pointer tracking, no lag.
  *
- * One pointer owns the stick from `pointerdown` to `pointerup`, captured on
- * the element so a thumb that slides off the base keeps steering. Every other
- * pointer on the screen is untouched, which is what lets the right thumb cast
- * while the left one walks. `touch-action: none` on the element kills the
- * browser's scroll, double-tap-zoom and long-press gestures outright, so
- * there is no 300 ms tax on any input.
+ * The base SPAWNS UNDER THE THUMB on `pointerdown` — wherever inside its zone
+ * the finger lands becomes the centre — so the very first pixel of travel is
+ * already a heading. One captured pointer id owns the stick from down to up,
+ * and every other pointer on the glass is left alone, which is what lets the
+ * right thumb cast while the left one walks.
  *
- * The stick reports a SCREEN-space unit vector. The caller turns that into
- * the isometric world axes — the same mapping the keyboard uses.
+ * ZERO LATENCY is three things: `touch-action: none` on the element (no
+ * 300 ms tap arbitration, no scroll or double-tap-zoom to wait for), the
+ * knob written straight from the pointer's own coordinates inside the event
+ * (no rAF hop, no easing), and a heading published the instant it changes by
+ * more than a hair. There is no smoothing anywhere in the path.
  */
 
 export interface JoystickOptions {
-  /** Radius the knob may travel from the base's centre (CSS px). */
+  /** Travel from the base's centre, in CSS px, at which the heading is full. */
   radius?: number;
   /** Below this fraction of the radius the stick reads as centred. */
   deadzone?: number;
-  /** In floating mode the base jumps to wherever the thumb lands. */
-  floating?: boolean;
 }
+
+/** Headings closer than this are the same heading (dedupe, not smoothing). */
+const EPSILON = 0.02;
 
 export class VirtualJoystick {
   readonly root: HTMLElement;
@@ -30,20 +33,18 @@ export class VirtualJoystick {
   private originX = 0;
   private originY = 0;
   private radius: number;
-  private readonly deadzone: number;
-  private floating: boolean;
-  /** The current stick reading, screen space, magnitude 0..1. */
+  private deadzone: number;
+  /** The current heading, screen space, unit length (0,0 = centred). */
   x = 0;
   y = 0;
   private readonly abort = new AbortController();
 
-  /** Fired whenever the direction changes materially (and once on release). */
+  /** Fired the moment the heading changes (and once on release). */
   onChange: ((x: number, y: number) => void) | null = null;
 
   constructor(parent: HTMLElement, opts: JoystickOptions = {}) {
-    this.radius = opts.radius ?? 56;
-    this.deadzone = opts.deadzone ?? 0.18;
-    this.floating = opts.floating ?? false;
+    this.radius = opts.radius ?? 60;
+    this.deadzone = opts.deadzone ?? 0.12;
 
     this.root = document.createElement('div');
     this.root.className = 'vj-zone';
@@ -60,18 +61,16 @@ export class VirtualJoystick {
     this.root.addEventListener('pointermove', (e) => this.onMove(e), { signal });
     this.root.addEventListener('pointerup', (e) => this.onUp(e), { signal });
     this.root.addEventListener('pointercancel', (e) => this.onUp(e), { signal });
-    // A stray context menu on a long press would steal the gesture.
+    this.root.addEventListener('lostpointercapture', (e) => this.onUp(e), { signal });
     this.root.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
-  }
-
-  setFloating(floating: boolean): void {
-    this.floating = floating;
-    this.root.classList.toggle('floating', floating);
-    if (!floating) this.base.style.transform = '';
   }
 
   setRadius(r: number): void {
     this.radius = r;
+  }
+
+  setDeadzone(d: number): void {
+    this.deadzone = d;
   }
 
   get active(): boolean {
@@ -80,26 +79,21 @@ export class VirtualJoystick {
 
   private onDown(e: PointerEvent): void {
     if (this.pointerId !== null) return; // Another thumb already owns the stick.
+    e.preventDefault();
     this.pointerId = e.pointerId;
     try {
       this.root.setPointerCapture(e.pointerId);
     } catch {
-      /* a pointer that is already gone (or a synthetic one) cannot be captured */
+      /* a synthetic or already-released pointer cannot be captured */
     }
+    // THE BASE COMES TO THE THUMB: the touch point is the new centre.
+    const zone = this.root.getBoundingClientRect();
+    this.originX = e.clientX;
+    this.originY = e.clientY;
+    this.base.style.left = `${e.clientX - zone.left}px`;
+    this.base.style.top = `${e.clientY - zone.top}px`;
     this.root.classList.add('held');
-    const rect = this.base.getBoundingClientRect();
-    if (this.floating) {
-      // The base comes to the thumb, wherever inside the zone it landed.
-      const zone = this.root.getBoundingClientRect();
-      this.originX = e.clientX;
-      this.originY = e.clientY;
-      this.base.style.transform = `translate(${e.clientX - zone.left - rect.width / 2}px, ${e.clientY - zone.top - rect.height / 2}px)`;
-    } else {
-      this.originX = rect.left + rect.width / 2;
-      this.originY = rect.top + rect.height / 2;
-    }
-    e.preventDefault();
-    this.onMove(e);
+    this.knob.style.transform = 'translate(-50%, -50%)';
   }
 
   private onMove(e: PointerEvent): void {
@@ -108,13 +102,13 @@ export class VirtualJoystick {
     const dx = e.clientX - this.originX;
     const dy = e.clientY - this.originY;
     const dist = Math.hypot(dx, dy);
-    const clamped = Math.min(dist, this.radius);
-    const nx = dist > 0 ? (dx / dist) * clamped : 0;
-    const ny = dist > 0 ? (dy / dist) * clamped : 0;
-    this.knob.style.transform = `translate(${nx.toFixed(1)}px, ${ny.toFixed(1)}px)`;
-    const mag = clamped / this.radius;
-    if (mag < this.deadzone) this.set(0, 0);
-    else this.set(dx / (dist || 1), dy / (dist || 1));
+    const travel = Math.min(dist, this.radius);
+    const ux = dist > 0 ? dx / dist : 0;
+    const uy = dist > 0 ? dy / dist : 0;
+    // Written straight from the event — no interpolation, no deferred frame.
+    this.knob.style.transform = `translate(calc(-50% + ${(ux * travel).toFixed(1)}px), calc(-50% + ${(uy * travel).toFixed(1)}px))`;
+    if (travel / this.radius < this.deadzone) this.set(0, 0);
+    else this.set(ux, uy);
   }
 
   private onUp(e: PointerEvent): void {
@@ -126,25 +120,22 @@ export class VirtualJoystick {
       /* already released */
     }
     this.root.classList.remove('held');
-    this.knob.style.transform = '';
-    if (this.floating) this.base.style.transform = '';
+    this.knob.style.transform = 'translate(-50%, -50%)';
     this.set(0, 0);
   }
 
   private set(x: number, y: number): void {
-    // Only speak when the heading actually moved (or the stick centred).
-    const moved = Math.hypot(x - this.x, y - this.y) > 0.06 || (x === 0 && y === 0 && (this.x !== 0 || this.y !== 0));
+    const changed = Math.hypot(x - this.x, y - this.y) > EPSILON || (x === 0 && y === 0 && (this.x !== 0 || this.y !== 0));
     this.x = x;
     this.y = y;
-    if (moved) this.onChange?.(x, y);
+    if (changed) this.onChange?.(x, y);
   }
 
-  /** Release the stick without a pointer event (orientation flip, teardown). */
+  /** Release without a pointer event (a rotation, a modal, teardown). */
   reset(): void {
     this.pointerId = null;
     this.root.classList.remove('held');
-    this.knob.style.transform = '';
-    if (this.floating) this.base.style.transform = '';
+    this.knob.style.transform = 'translate(-50%, -50%)';
     this.set(0, 0);
   }
 

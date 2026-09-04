@@ -21,6 +21,16 @@
   concern: they live on the town's Hall of Records board, where the delver
   who set them stands. Six buttons now sit under the logo, balanced again.
 
+### The close mark: an X, dead centre
+- The first bake left the compass as it came: a four-pointed cross that read
+  as a plus, hung off to one side. Its red gem — the mark's true visual
+  centre — sits about nine pixels up and left of the bounding box's middle,
+  so centring on the box was always going to lean. The mark is now re-centred
+  on the GEM, mirrored onto itself both ways so its four unequal arms come
+  out the same length, then turned 45° into an X and cropped symmetrically
+  about that centre. The baked art measures zero margin on all four sides
+  with the gem at (47.5, 47.5) of 96 — square, centred, and unmistakably an X.
+
 ### Gothic close medallions
 - Every panel's plain `✕` is replaced by a carved medallion: a dark iron
   disc with an inset shadow and a bronze rim, the steel cross at its centre.

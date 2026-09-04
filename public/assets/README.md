@@ -49,8 +49,8 @@ Everything the game loads at runtime lives here, and ONLY what it loads:
 
 | File | Source (test-models) | Used by |
 | --- | --- | --- |
-| `ui/frames/close_cross.png` | `compass.png` (trimmed, bronze-graded, 96px) | the close medallion at rest |
-| `ui/frames/close_cross_hot.png` | `compass.png` (gold-graded under its own bloom) | the close medallion on hover |
+| `ui/frames/close_cross.png` | `compass.png` — re-centred on its gem, mirrored four-fold, turned 45° into an X, bronze-graded, 96px | the close medallion at rest |
+| `ui/frames/close_cross_hot.png` | the same X, gold-graded under its own bloom | the close medallion on hover |
 | `ui/frames/load_seal.png` | `compass.png` inside a drawn rune ring | the turning seal on the loading screen |
 | `ui/frames/filigree_band.png` | `Darinia/ornaments/ornament3.png`, repainted gold | loading screen top / bottom bands |
 | `ui/frames/filigree_corner.png` | `Darinia/ornaments/ornament2.png`, repainted gold | loading screen corner knots |

@@ -10,6 +10,7 @@
  * torch radius and never appear in unexplored darkness.
  */
 
+import { visuals } from '@/core/VisualSettings';
 import { Sprite, type Texture } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import type { Viewport } from '@/engine/Viewport';
@@ -349,6 +350,7 @@ export class Ambience {
    * reads as a wound, not confetti. Falls back to radial when no direction.
    */
   bloodSpray(x: number, y: number, dirX: number | undefined, dirY: number | undefined, count: number): void {
+    if (!visuals.gore) return;
     const hasDir = dirX !== undefined && dirY !== undefined && (dirX !== 0 || dirY !== 0);
     const baseAngle = hasDir ? Math.atan2(dirY!, dirX!) : 0;
     const REDS = [0x8e1f14, 0x6a150c, 0xa8281a, 0x4d0e08];

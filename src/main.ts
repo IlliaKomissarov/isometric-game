@@ -80,6 +80,8 @@ import { PARTY_COLORS, PARTY_COLOR_CSS, PARTY_MAX, type LinkState, type MemberIn
 import { CATCH_UP_STEPS, Lockstep } from '@/net/Lockstep';
 import { ChatUI } from '@/ui/Chat';
 import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
+import { TitleScreen } from '@/ui/TitleScreen';
+import { visuals } from '@/core/VisualSettings';
 import type { PlayerSave } from '@/persist/SaveGame';
 import { makeDraggable } from '@/ui/draggable';
 import { auditTownLayout } from '@/town/TownMap';
@@ -315,6 +317,7 @@ async function boot(): Promise<void> {
     return frames;
   };
 
+  let openSavePanel: (mode: 'load' | 'new') => void = () => {};
   // --- Class select (a modal over the menu, cancellable) --------------------
   const pickClass = async (): Promise<ClassArchetype | null> => {
     await spriteLib.ensure(VALID_CLASSES.map((c) => PREVIEW_IDLE[c]));
@@ -394,6 +397,16 @@ async function boot(): Promise<void> {
         },
         { signal: ac.signal },
       );
+      // LOAD A SAVED DELVER (it.61): the slot panel lives behind the class screen now.
+      overlay.querySelector('[data-cs-load]')?.addEventListener(
+        'click',
+        () => {
+          audio.sfx('uiClick');
+          finish(null);
+          openSavePanel('load');
+        },
+        { signal: ac.signal },
+      );
       window.addEventListener(
         'keydown',
         (e: KeyboardEvent) => {
@@ -436,12 +449,57 @@ async function boot(): Promise<void> {
     },
   });
 
+  // THE TITLE ATMOSPHERE (it.61): the Pixi scene under the menu; its own rAF.
+  const titleScreen = new TitleScreen(app);
+  titleScreen.onUndim = () => mainMenu.focusStack();
+  // HALL OF RECORDS from the title: the global ledgers, the last delver as "this delver".
+  const menuStats = new StatsManager();
+  const menuRecords = new LeaderboardUI(menuStats, () => {
+    const s = saves.latest();
+    return { cls: s?.player.archetype ?? lastHero ?? 'warrior', playtimeTicks: s?.playtimeTicks ?? 0, gold: s?.player.goldCollected ?? 0 };
+  });
+  // EXIT GAME: a browser tab cannot always be closed by a script — say so.
+  const exitModal = document.getElementById('exit-modal')!;
+  const closeExit = (): void => exitModal.classList.remove('open');
+  exitModal.querySelector('[data-exit-stay]')?.addEventListener('click', () => {
+    audio.sfx('uiBack');
+    closeExit();
+  });
+  exitModal.querySelector('[data-exit-go]')?.addEventListener('click', () => {
+    audio.sfx('uiConfirm');
+    run?.save();
+    window.close();
+    window.setTimeout(() => {
+      const note = exitModal.querySelector<HTMLElement>('.am-say');
+      if (note) note.textContent = 'This window was not opened by the game, so it cannot close itself — close the tab to leave. Your last save is kept.';
+    }, 300);
+  });
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.code === 'Escape' && exitModal.classList.contains('open')) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      audio.sfx('uiBack');
+      closeExit();
+    }
+  }, { capture: true });
+
+  openSavePanel = (mode) => savePanel.open(mode);
   const mainMenu = new MainMenuUI({
     // CO-OP MULTIPLAYER (it.59): the party lobby.
     coop: () => {
       mainMenu.hide();
       coopLobby.open(lastHero);
     },
+    records: () => {
+      menuStats.load();
+      menuRecords.open('dungeon');
+    },
+    exit: () => {
+      const note = exitModal.querySelector<HTMLElement>('.am-say');
+      if (note) note.textContent = 'The crypt keeps what you have won. Leave the dark for now?';
+      exitModal.classList.add('open');
+    },
+    spark: (x, y) => titleScreen.burst(x, y),
     // START GAME always opens the character selection (it.37 flow rule).
     play: () => void openClassSelect(),
     // CONTINUE resumes the most recent slot in town (it.39).
@@ -449,7 +507,6 @@ async function boot(): Promise<void> {
       const s = saves.latest();
       if (s) void beginRun(s.player.archetype, s.pos && s.floor > 0 ? s.floor : 0, { slot: s.slot, save: s });
     },
-    loadGame: () => savePanel.open('load'),
     settings: () => settings.open(),
   });
   mainMenu.setLastHero(lastHero);
@@ -457,7 +514,9 @@ async function boot(): Promise<void> {
   const showMainMenu = (): void => {
     document.body.classList.remove('in-run');
     audio.setMusic('menu');
-    mainMenu.setHasSave(!!saves.latest());
+    const latest = saves.latest();
+    mainMenu.setContinue(latest ? { cls: latest.player.archetype, level: latest.player.level, floor: latest.pos && latest.floor > 0 ? latest.floor : 0 } : null);
+    titleScreen.show();
     mainMenu.show();
     performance.mark('boot:menu'); // Boot-time telemetry (QA reads it).
   };
@@ -512,6 +571,7 @@ async function boot(): Promise<void> {
     if (starting) return;
     starting = true;
     mainMenu.hide();
+    titleScreen.hide(); // The run takes the stage.
     lastHero = cls;
     mainMenu.setLastHero(cls);
     try {
@@ -2574,7 +2634,7 @@ async function boot(): Promise<void> {
         if (klen > 0) world.camera.addKickDir(kdx / klen, kdy / klen, 6);
         else world.camera.addKick(5);
         hurtFlashTimer = 0.15; // A short pulse (it.49), max alpha 0.25 in the stylesheet.
-        vignetteEl?.classList.add('hurt');
+        if (visuals.flash) vignetteEl?.classList.add('hurt');
         updateOrb();
         tutorial.notify('hurt', 'You bleed. Their heavy blows are telegraphed — step away as they rear back.');
       }
@@ -4029,7 +4089,7 @@ async function boot(): Promise<void> {
   }
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby };
+    (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby, titleScreen, menuRecords, savePanel };
   }
 }
 

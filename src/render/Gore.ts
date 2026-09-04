@@ -8,6 +8,7 @@
  * and nothing reads back.
  */
 
+import { visuals } from '@/core/VisualSettings';
 import { Sprite, type Container } from 'pixi.js';
 import { spriteLib } from '@/render/SpriteLibrary';
 import { depthKey, worldToScreen } from '@/utils/iso';
@@ -55,11 +56,13 @@ export class GoreSystem {
 
   /** A few scattered drops around a hit. */
   drip(x: number, y: number, n = 1): void {
+    if (!visuals.gore) return;
     for (let i = 0; i < n; i++) this.splat(x + (Math.random() - 0.5) * 0.6, y + (Math.random() - 0.5) * 0.6, 0.3 + Math.random() * 0.2);
   }
 
   /** A kill: one big pool plus scattered spray in the blow's direction. */
   kill(x: number, y: number, dirX = 0, dirY = 0, big = false): void {
+    if (!visuals.gore) return;
     this.splat(x, y, big ? 1.8 : 1.15);
     const n = big ? 6 : 3;
     for (let i = 0; i < n; i++) {

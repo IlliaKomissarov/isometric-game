@@ -1,5 +1,89 @@
 # Development Log
 
+## 2026-09-04 (iteration 61) - The title rebuilt: animated atmosphere, gothic logo, menu categories
+
+### The atmosphere (`src/ui/TitleScreen.ts`, Pixi)
+- The title is no longer a CSS gradient with a 2D ember canvas. It is a Pixi
+  scene on the game's own renderer, three layers deep, every texture drawn
+  once on a canvas at construction (nothing to load):
+  * DEPTH — two seamless fog sheets (a wrap-around blob field baked to a
+    512 px tile) drifting sideways at different speeds and directions, each
+    breathing vertically on its own slow sine, screen-blended.
+  * LIGHT — brazier glows in the bottom corners with a hot core, flickering
+    on four stacked incommensurate sines so no two flames ever agree, a warm
+    wash rising off the floor, and a vignette whose weight pulses.
+  * MOTES — 110 embers rising from the corners (additive, warm, swaying,
+    breathing in scale) and 55 dark ash flakes falling and turning, each with
+    its own speed, lifetime and peak opacity, fading in and out at the ends
+    of its life. Halved when ambient particles are switched off.
+  * SPARKS — striking a menu button throws a gold burst at the cursor, which
+    arcs and falls under gravity.
+- The scene runs on its own rAF while the menu is up and is torn out the
+  moment a run takes the stage. It sizes off `app.screen`, so the fog,
+  backdrop, dimmer and vignette fill any viewport — verified by driving the
+  renderer to 1280x800, 1920x1080, 2560x1080 and 3840x1600.
+
+### The logo
+- "CRYPT OF THE HOLLOW KING" in Cinzel Decorative 900, filled with a
+  metallic gradient (highlight, gold, deep bronze, a second highlight,
+  shadow) clipped to the glyphs, carved with two stacked hard drop shadows
+  and a black halo. A second copy of the text sits on top as a gold outline
+  whose opacity breathes from 0.12 to 0.7, so the edges catch light. The
+  whole logo floats 4 px up and down on a 5.2 s cycle.
+
+### Menu categories
+- The stack is now CONTINUE · SINGLE PLAYER · CO-OP MULTIPLAYER · HALL OF
+  RECORDS · SETTINGS · CREDITS · EXIT GAME.
+  * CONTINUE carries a pill with the last delver's class, level and depth
+    ("WARRIOR · LVL 1 · THE TOWN"), and stands disabled and dim when nobody
+    has gone down yet.
+  * LOAD GAME left the title: loading a slot belongs to the class screen,
+    where LOAD A SAVED DELVER now sits beside BACK and CONFIRM.
+  * HALL OF RECORDS opens the two-tab leaderboard from the title, reading
+    the global ledgers with the last delver as "this delver".
+  * EXIT GAME asks first, saves, then tries to close the tab — and says
+    plainly that a tab the game did not open cannot close itself.
+- The stack is keyboard-walkable (up / down move focus, Enter strikes) and
+  focus returns to it whenever a sub-menu closes.
+
+### Typography, panels, buttons
+- Cinzel Decorative added to the font link for the logo; Cinzel for every
+  header and button, Crimson Pro for prose. Hard drop shadows throughout.
+- Buttons: muted bronze on dark iron with a carved inner shadow and a
+  diamond stud at each end. Hover lifts the text to gold, the border to
+  bronze-gold, and adds an outer glow (the studs light too). Active presses
+  the panel down 1 px and deepens the inset. A struck button flashes bright
+  gold and throws the spark burst.
+- SETTINGS is now tabbed — AUDIO (the four sliders and mute), VISUALS
+  (screen shake, blood & gore, hurt flash, ambient particles) and CONTROLS
+  (the full key reference, scrollable) — in a carved frame with gold
+  corners. The visual toggles are new (`src/core/VisualSettings.ts`),
+  persist to localStorage, and are read at the effect sites in Camera, Gore
+  and Ambience. They are render-side only, so a co-op party stays in
+  lockstep whatever each player switches off.
+- CREDITS is a reel: the list rolls upward through a masked window on a
+  48 s loop and pauses on hover.
+
+### Transitions
+- Every sub-menu (class select, settings, records, credits, co-op lobby,
+  save slots, exit) rises 14 px into place over 200 ms while the title
+  scene dims to half and the menu panel behind it dims and blurs. The scene
+  polls the DOM for the open panel, so no panel needed a new hook.
+- ESC closes any sub-menu and hands focus back to the stack.
+
+### Verified live
+- 1.39 ms per update+render at 1536x695 with the full particle load — about
+  25 times the 60 FPS budget of 16.7 ms.
+- Every button hovered (crisp tick, no bubbling), every sub-menu opened and
+  ESC-closed, focus returned to CONTINUE, records tabs both present,
+  credits rolling, exit prompt opening and closing.
+- No text clipping and no page overflow at 1280x800, 1920x1080, 2560x1080
+  or 3840x1600; the panel is 450 px tall so it fits every one.
+- A run started and the scene tore down (one child left on the stage); with
+  shake and gore off, `addShake`/`addKick` were ignored and a kill left no
+  gore; back at the title the CONTINUE pill had updated. Zero console
+  errors throughout; `npm run build` clean.
+
 ## 2026-09-03 (iteration 60) - Cross-network relay config, grace period & rejoin, lobby rebuilt, hover SFX
 
 ### NAT traversal — what is true in 2026

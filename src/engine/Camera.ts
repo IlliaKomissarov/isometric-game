@@ -8,6 +8,7 @@
  * viewport center. Exponential damping gives frame-rate-independent easing.
  */
 
+import { visuals } from '@/core/VisualSettings';
 import type { Application } from 'pixi.js';
 import { CAMERA_LERP, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/core/config';
 import { damp, vec2, type Vec2 } from '@/utils/Vec2';
@@ -84,12 +85,14 @@ export class Camera {
 
   /** DIRECTIONAL KICK (it.48): the view recoils along the blow's screen direction. */
   addKickDir(sx: number, sy: number, strength: number): void {
+    if (!visuals.shake) return;
     this.kickX += sx * strength;
     this.kickY += sy * strength * 0.6;
   }
 
   /** Punch the camera (render feedback for heavy hits/crits). */
   addKick(strength: number): void {
+    if (!visuals.shake) return;
     const angle = Math.random() * Math.PI * 2;
     this.kickX += Math.cos(angle) * strength;
     this.kickY += Math.sin(angle) * strength * 0.6;
@@ -101,6 +104,7 @@ export class Camera {
    * only stacked violence visibly trembles. Deliberately restrained.
    */
   addShake(amount: number): void {
+    if (!visuals.shake) return;
     this.trauma = Math.min(1, this.trauma + amount);
   }
 

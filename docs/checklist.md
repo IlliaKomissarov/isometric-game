@@ -482,6 +482,16 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Lobby rebuilt: code badge + copy feedback, four player cards (animated portraits, badges, ready, ping, crown), cross-fading selector
 - [x] Hover SFX replaced by a dry stone tick; `npm run build` clean; zero console errors
 
+## Iteration 61 - Title Rebuild: Animated Atmosphere, Gothic Logo, Menu Categories (2026-09-04)
+
+- [x] Pixi title scene: drifting fog sheets, flickering corner braziers + floor wash + pulsing vignette, rising embers / falling ash, spark bursts on click
+- [x] Embossed metallic Cinzel Decorative logo with a breathing gold edge and a 4 px float
+- [x] Stack reorganised: CONTINUE (class/level/depth pill) · SINGLE PLAYER · CO-OP · HALL OF RECORDS · SETTINGS · CREDITS · EXIT GAME; load moved to the class screen
+- [x] Tabbed settings (Audio / Visuals / Controls) with persistent shake, gore, flash and particle toggles read at the effect sites
+- [x] Carved panels, bronze-to-gold button states with stud accents, struck flash; scrolling credits reel; exit prompt
+- [x] 200 ms rise-in transitions with the scene dimmed; ESC closes any sub-menu and returns focus to the stack
+- [x] 1.39 ms/frame at full particle load; no clipping at 1280x800 / 1920x1080 / 2560x1080 / 3840x1600; zero console errors; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

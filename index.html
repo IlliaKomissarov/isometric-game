@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cinzel+Decorative:wght@700;900&family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -3342,6 +3342,84 @@
       #coop-lost h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 16px; letter-spacing: 0.28em; color: var(--frame-gold-hi); }
       #coop-lost .am-say { margin: 0 0 10px; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 14.5px; line-height: 1.45; color: var(--ink); }
       #coop-lost .cl-sub { margin: 0; font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.22em; color: #ffd070; animation: cw-pulse 1.4s ease-in-out infinite; }
+
+      /* ===================================================================
+         IT.61 — THE TITLE REBUILT: LOGO, STACK, TRANSITIONS, EXIT, CREDITS REEL
+         =================================================================== */
+      #main-menu { background: none; }
+      #main-menu .mm-panel { width: 460px; transition: filter 0.2s ease-out, opacity 0.2s ease-out; }
+      #main-menu.dim .mm-panel { filter: brightness(0.45) blur(1px); opacity: 0.6; pointer-events: none; }
+      #main-menu .mm-logo { position: relative; margin: 0 0 6px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-family: 'Cinzel Decorative', 'Cinzel', 'Georgia', serif; font-weight: 900; line-height: 1.05; letter-spacing: 0.16em; text-shadow: none; animation: mm-float 5.2s ease-in-out infinite; }
+      #main-menu .mm-logo span { position: relative; display: block; font-size: 44px; color: transparent; background: linear-gradient(180deg, #fff3cc 0%, #e6c26a 28%, #b3822e 50%, #f2d68a 62%, #7c5a22 80%, #d9b25e 100%); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 2px 0 #2a1c08) drop-shadow(0 4px 0 #120c04) drop-shadow(0 0 4px rgba(0, 0, 0, 0.95)); }
+      #main-menu .mm-logo span:last-child { font-size: 52px; letter-spacing: 0.2em; }
+      #main-menu .mm-logo span::after { content: attr(data-text); position: absolute; inset: 0; color: transparent; -webkit-text-stroke: 1px rgba(255, 224, 150, 0.9); text-shadow: 0 0 14px rgba(255, 200, 100, 0.7); animation: mm-edge 3.4s ease-in-out infinite; pointer-events: none; }
+      @keyframes mm-float { 0%, 100% { transform: translateY(-4px); } 50% { transform: translateY(4px); } }
+      @keyframes mm-edge { 0%, 100% { opacity: 0.12; } 50% { opacity: 0.7; } }
+      #main-menu .mm-tag { margin: 0 0 16px; font-size: 14.5px; color: #9a8f9e; text-shadow: 0 1px 2px #000; }
+      #main-menu .mm-rule { display: flex; align-items: center; justify-content: center; gap: 10px; width: 320px; height: auto; margin: 0 auto 18px; background: none; }
+      #main-menu .mm-rule i { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #b48a44 50%, transparent); }
+      #main-menu .mm-rule b { font-size: 12px; color: #b48a44; text-shadow: 0 0 8px rgba(200, 165, 88, 0.5); }
+      #main-menu .mm-stack { display: flex; flex-direction: column; gap: 9px; }
+      #main-menu .mm-btn { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; padding: 11px 18px; font-family: 'Cinzel', 'Georgia', serif; font-weight: 700; font-size: 15px; letter-spacing: 0.22em; color: #b8935a; background: linear-gradient(180deg, #1c1722 0%, #100c15 55%, #0b0810 100%); border: 1px solid #4a3d2c; box-shadow: inset 0 0 0 1px #07050a, inset 0 12px 18px rgba(0, 0, 0, 0.55), 0 2px 0 #000; cursor: pointer; text-shadow: 0 2px 0 #000, 0 0 4px rgba(0, 0, 0, 0.9); transition: color 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.06s; }
+      #main-menu .mm-btn::before, #main-menu .mm-btn::after { content: ''; position: absolute; top: 50%; width: 7px; height: 7px; transform: translateY(-50%) rotate(45deg); background: #4a3d2c; transition: background 0.12s, box-shadow 0.12s; }
+      #main-menu .mm-btn::before { left: -4px; }
+      #main-menu .mm-btn::after { right: -4px; }
+      #main-menu .mm-btn:hover, #main-menu .mm-btn:focus-visible { color: #ffd070; border-color: #c8a558; outline: none; box-shadow: inset 0 0 0 1px #07050a, inset 0 12px 18px rgba(0, 0, 0, 0.55), 0 0 18px rgba(200, 165, 88, 0.35), 0 0 2px rgba(255, 208, 112, 0.6), 0 2px 0 #000; }
+      #main-menu .mm-btn:hover::before, #main-menu .mm-btn:hover::after, #main-menu .mm-btn:focus-visible::before, #main-menu .mm-btn:focus-visible::after { background: #ffd070; box-shadow: 0 0 8px rgba(255, 208, 112, 0.8); }
+      #main-menu .mm-btn:active { transform: translateY(1px); box-shadow: inset 0 0 0 1px #07050a, inset 0 14px 20px rgba(0, 0, 0, 0.7), 0 0 10px rgba(200, 165, 88, 0.25); }
+      #main-menu .mm-btn.struck { animation: mm-flash 0.35s ease-out; }
+      @keyframes mm-flash { 0% { color: #fff6d0; box-shadow: inset 0 0 0 1px #07050a, 0 0 30px rgba(255, 220, 140, 0.9), 0 0 4px #ffe9a8; } 100% { color: #ffd070; } }
+      #main-menu .mm-btn:disabled, #main-menu .mm-btn.muted { color: #5d5148; border-color: #2e2820; cursor: default; }
+      #main-menu .mm-btn:disabled::before, #main-menu .mm-btn:disabled::after { background: #2e2820; }
+      #main-menu .mm-pill { padding: 2px 8px; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-weight: 500; font-size: 11px; letter-spacing: 0.04em; color: #c9b58a; background: rgba(0, 0, 0, 0.45); border: 1px solid #4a3d2c; white-space: nowrap; }
+      #main-menu .mm-btn:disabled .mm-pill { color: #5d5148; border-color: #2e2820; }
+      #main-menu .mm-foot { margin-top: 20px; font-size: 11.5px; color: #6a6058; }
+      @media (max-height: 760px) { #main-menu .mm-logo span { font-size: 36px; } #main-menu .mm-logo span:last-child { font-size: 42px; } #main-menu .mm-stack { gap: 6px; } #main-menu .mm-btn { padding: 8px 16px; font-size: 13.5px; } #main-menu .mm-tag { margin-bottom: 8px; } }
+      @media (max-width: 520px) { #main-menu .mm-panel { width: 92vw; } #main-menu .mm-logo span { font-size: 30px; } #main-menu .mm-logo span:last-child { font-size: 34px; } }
+
+      /* Sub-menus rise in over the lowered scene. */
+      @keyframes mm-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+      #class-select.show > *, #settings-panel.open, #leaderboard.open, #credits.show .modal-panel, #coop-panel.show .cp-frame, #save-panel.open, #exit-modal.open .am-box { animation: mm-rise 0.2s ease-out both; }
+      #class-select { background: radial-gradient(ellipse at center, rgba(14, 11, 19, 0.7), rgba(5, 4, 8, 0.9)); }
+      #class-select .cs-load { margin-top: 10px; font-size: 12px; letter-spacing: 0.18em; opacity: 0.8; }
+      #class-select .cs-load:hover { opacity: 1; }
+
+      /* Settings: carved frame, tabs. */
+      #settings-panel { position: fixed; padding: 18px 24px 14px; background: linear-gradient(180deg, #17131e 0%, #100c15 60%, #0c0910 100%); border: 1px solid #5a4a30; box-shadow: inset 0 0 0 3px #0a080d, inset 0 0 0 4px #7a6238, inset 0 0 40px rgba(0, 0, 0, 0.8), 0 24px 60px rgba(0, 0, 0, 0.9); }
+      #settings-panel .set-corner { position: absolute; width: 18px; height: 18px; border: 2px solid #c8a558; pointer-events: none; }
+      #settings-panel .set-corner.tl { top: 5px; left: 5px; border-right: none; border-bottom: none; }
+      #settings-panel .set-corner.tr { top: 5px; right: 5px; border-left: none; border-bottom: none; }
+      #settings-panel .set-corner.bl { bottom: 5px; left: 5px; border-right: none; border-top: none; }
+      #settings-panel .set-corner.br { bottom: 5px; right: 5px; border-left: none; border-top: none; }
+      #settings-panel .set-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 6px 0 12px; }
+      #settings-panel .set-tabs button { padding: 6px 4px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: #a89c80; background: #0d0a12; border: 1px solid #3b3145; cursor: pointer; }
+      #settings-panel .set-tabs button:hover { color: var(--ink); border-color: #7a6238; }
+      #settings-panel .set-tabs button.on { color: #ffd070; border-color: #c8a558; box-shadow: 0 0 10px rgba(200, 165, 88, 0.25); }
+      #settings-panel .set-toggle span { display: flex; flex-direction: column; gap: 1px; }
+      #settings-panel .set-toggle small { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
+      #settings-panel .set-toggle input { width: 16px; height: 16px; accent-color: #c8a558; }
+      #settings-panel .set-controls { max-height: 300px; overflow-y: auto; }
+
+      /* Exit prompt. */
+      #exit-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.5); z-index: 95; }
+      #exit-modal.open { display: flex; }
+      #exit-modal .am-box { width: 480px; padding: 22px 26px 18px; background: var(--panel-bg); border: 2px solid var(--frame-iron); box-shadow: inset 0 0 0 1px var(--frame-gold), inset 0 0 28px rgba(0, 0, 0, 0.7), 0 14px 44px rgba(0, 0, 0, 0.85); text-align: center; }
+      #exit-modal h3 { margin: 0 0 10px; font-family: var(--font-display); font-size: 17px; letter-spacing: 0.3em; color: var(--frame-gold-hi); }
+      #exit-modal .am-say { margin: 0 0 16px; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 15px; line-height: 1.45; color: var(--ink); }
+      #exit-modal .am-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      #exit-modal .am-choices button { display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; background: linear-gradient(180deg, #221b2c, #0f0c14); border: 1px solid var(--frame-iron); cursor: pointer; color: var(--ink); }
+      #exit-modal .am-choices button b { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.14em; color: #ffd070; }
+      #exit-modal .am-choices button span { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 12px; color: var(--ink-dim); }
+      #exit-modal .am-choices button:hover { border-color: var(--frame-gold); box-shadow: 0 0 12px rgba(200, 165, 88, 0.35); }
+
+      /* Credits: a rolling reel inside a carved window. */
+      #credits .modal-panel { width: 560px; box-shadow: inset 0 0 0 3px #0a080d, inset 0 0 0 4px #7a6238, inset 0 0 40px rgba(0, 0, 0, 0.8), 0 24px 60px rgba(0, 0, 0, 0.9); }
+      #credits .cr-viewport { position: relative; height: 320px; overflow: hidden; margin: 6px 0 12px; mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 88%, transparent 100%); -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12%, #000 88%, transparent 100%); }
+      #credits .cr-scroll { position: absolute; left: 0; right: 0; top: 100%; }
+      #credits .cr-scroll.rolling { animation: cr-roll 48s linear infinite; }
+      #credits .cr-viewport:hover .cr-scroll { animation-play-state: paused; }
+      @keyframes cr-roll { from { transform: translateY(0); } to { transform: translateY(calc(-100% - 320px)); } }
+      #credits .cr-list b { display: block; margin: 14px 0 4px; font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.24em; color: #c8a558; }
     </style>
   </head>
   <body>
@@ -3477,25 +3555,39 @@
       </div>
       <div class="cs-actions">
         <button class="menu-btn cs-back" data-cs-back>BACK</button>
+        <button class="menu-btn cs-load" data-cs-load>LOAD A SAVED DELVER</button>
         <button class="menu-btn cs-confirm" data-cs-confirm disabled>CONFIRM</button>
       </div>
     </div>
 
-    <!-- MAIN MENU (it.36): the title screen. -->
+    <!-- MAIN MENU (it.36, rebuilt it.61): the title screen over the Pixi atmosphere. -->
     <div id="main-menu">
-      <canvas id="mm-embers"></canvas>
-      <div class="mm-vignette"></div>
       <div class="mm-panel">
-        <h1>CRYPT OF THE<br />HOLLOW KING</h1>
-        <p class="mm-tag">twenty depths · four delvers · one crown of ash</p>
-        <div class="mm-rule"></div>
-        <button class="menu-btn" data-menu="continue" hidden>CONTINUE</button>
-        <button class="menu-btn" data-menu="play">START GAME</button>
-        <button class="menu-btn" data-menu="load">LOAD GAME</button>
-        <button class="menu-btn" data-menu="coop">CO-OP MULTIPLAYER</button>
-        <button class="menu-btn" data-menu="settings">SETTINGS</button>
-        <button class="menu-btn" data-menu="credits">CREDITS</button>
-        <div class="mm-foot">ESC pauses · the dark remembers your last delver</div>
+        <h1 class="mm-logo"><span data-text="CRYPT OF THE">CRYPT OF THE</span><span data-text="HOLLOW KING">HOLLOW KING</span></h1>
+        <p class="mm-tag">twenty depths &middot; four delvers &middot; one crown of ash</p>
+        <div class="mm-rule"><i></i><b>&#10013;</b><i></i></div>
+        <nav class="mm-stack">
+          <button class="mm-btn" data-menu="continue"><span>CONTINUE</span><small class="mm-pill" data-continue-pill>no delver yet</small></button>
+          <button class="mm-btn" data-menu="play"><span>SINGLE PLAYER</span></button>
+          <button class="mm-btn" data-menu="coop"><span>CO-OP MULTIPLAYER</span></button>
+          <button class="mm-btn" data-menu="records"><span>HALL OF RECORDS</span></button>
+          <button class="mm-btn" data-menu="settings"><span>SETTINGS</span></button>
+          <button class="mm-btn" data-menu="credits"><span>CREDITS</span></button>
+          <button class="mm-btn" data-menu="exit"><span>EXIT GAME</span></button>
+        </nav>
+        <div class="mm-foot">&uarr; &darr; walk the stack &middot; ESC steps back &middot; the dark remembers your last delver</div>
+      </div>
+    </div>
+
+    <!-- EXIT GAME (it.61) -->
+    <div id="exit-modal">
+      <div class="am-box">
+        <h3>LEAVE THE CRYPT</h3>
+        <p class="am-say">The crypt keeps what you have won. Leave the dark for now?</p>
+        <div class="am-choices am-two">
+          <button data-exit-go><b>LEAVE</b><span>close the game</span></button>
+          <button data-exit-stay><b>STAY</b><span>back to the title</span></button>
+        </div>
       </div>
     </div>
 
@@ -3530,7 +3622,7 @@
     <div id="credits" class="modal">
       <div class="modal-panel">
         <h2>CREDITS</h2>
-        <div class="cr-list">
+        <div class="cr-viewport"><div class="cr-scroll"><div class="cr-list">
           <b>DEVELOPER</b>
           Illia Komissarov &mdash; design, code, art direction. Built in a studio session with Claude Code.
           <b>ENGINE</b>
@@ -3548,7 +3640,9 @@
           <b>MUSIC</b>
           Whispers of the Abyss &middot; Shadowforge Convergence &middot; Eclipsed Desolation &middot;
           Cursed Citadel &middot; Dread March &middot; Veil of Eternal Nightfall.
-        </div>
+          <b>THANK YOU</b>
+          for going down into the dark.
+        </div></div></div>
         <button class="menu-btn" data-credits-close>CLOSE</button>
       </div>
     </div>

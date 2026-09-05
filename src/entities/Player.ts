@@ -646,10 +646,10 @@ export class Player extends Entity {
 
     // Skill economy (it.32): resource trickles back; timed buffs burn down.
     this.resource = Math.min(this.resourceMax, this.resource + this.resourceRegen * (1 + this.passiveBonus('regen')));
-    // HEALTH REGROWTH (it.78): "of Regrowth" lines heal a trickle every tick.
+    // HEALTH REGROWTH (it.78, a share of max life since it.82): "of Regrowth" lines heal a trickle every tick.
     if (this.hp > 0 && this.hp < this.hpMax) {
       const regrow = this.passiveBonus('hpRegen');
-      if (regrow > 0) this.hp = Math.min(this.hpMax, this.hp + regrow / 60);
+      if (regrow > 0) this.hp = Math.min(this.hpMax, this.hp + (this.hpMax * regrow) / 60);
     }
     if (this.dmgBuffTicks > 0) this.dmgBuffTicks--;
     for (const [k, v] of this.quaffCd) {

@@ -14,7 +14,8 @@
 import { audio } from '@/engine/AudioManager';
 import { AFFIXES, AFFIX_KEYS } from '@/items/affixes';
 import { RARITY_AFFIX_COUNT, RARITY_COLOR, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, WEAPON_FAMILY, WEAPON_TIMING, type ItemDef, type Rarity } from '@/items/catalog';
-import { ENCHANTS, STATUS_INFO, TRAIT_INFO, effectLine, type Effect } from '@/items/effects';
+import { ENCHANTS, STATUS_INFO, TRAIT_INFO, effectIcon, effectLine, type Effect } from '@/items/effects';
+import { weaponIconUrl } from '@/render/SpriteLibrary';
 import { itemDef } from '@/items/instance';
 import { DRAUGHTS, MATERIALS, SHAPES, TIERS } from '@/items/registry';
 import { QUAFF_COOLDOWN } from '@/systems/Inventory';
@@ -22,27 +23,37 @@ import { REINFORCE_CHANCE, TRANSMUTE_RECIPES, salvageYield } from '@/systems/Cra
 import { itemIconHtml } from './itemIcons';
 import { keepScroll } from './keepScroll';
 
-type Chapter = 'items' | 'arsenal' | 'statuses' | 'traits' | 'enchants' | 'forge' | 'belt' | 'merchants' | 'combat' | 'legend';
+export type Chapter = 'items' | 'arsenal' | 'statuses' | 'traits' | 'enchants' | 'forge' | 'log' | 'belt' | 'merchants' | 'combat' | 'legend';
 
 const CHAPTERS: Array<[Chapter, string]> = [
   ['items', 'ITEMS'],
   ['arsenal', 'ARSENAL'],
   ['statuses', 'STATUSES'],
   ['traits', 'TRAITS'],
-  ['enchants', 'ENCHANTS'],
-  ['forge', 'FORGE'],
+  ['enchants', 'RECIPES'],
+  ['forge', 'CRAFTING'],
+  ['log', 'CRAFT LOG'],
   ['belt', 'BELT'],
   ['merchants', 'TRADE'],
   ['combat', 'COMBAT'],
   ['legend', 'LEGEND'],
 ];
 
+function clock(tick: number): string {
+  const sec = Math.floor(tick / 60);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
 const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
 const icon = (id: string): string => {
   const d = itemDef(id);
   return d ? itemIconHtml(d) : '';
 };
-const fxLine = (e: Effect | null | undefined): string => (e ? effectLine(e) : '—');
+const fxLine = (e: Effect | null | undefined): string => (e ? `${fxIcon(e)}${effectLine(e)}` : '—');
+const fxIcon = (e: Effect): string => {
+  const n = effectIcon(e);
+  return n ? `<img class="cx-fx-icon" src="${weaponIconUrl(`raven${n}`)}" alt="">` : '';
+};
 
 export class CodexUI {
   private readonly panel: HTMLElement;
@@ -50,7 +61,11 @@ export class CodexUI {
   private chapter: Chapter = 'items';
   private readonly abort = new AbortController();
 
-  constructor(private readonly known: () => ReadonlySet<string>) {
+  constructor(
+    private readonly known: () => ReadonlySet<string>,
+    /** THE CRAFT LOG (it.82): what the forge did this run, newest first. */
+    private readonly craftLog: () => ReadonlyArray<{ tick: number; text: string; ok: boolean }> = () => [],
+  ) {
     this.panel = document.createElement('div');
     this.panel.id = 'codex';
     this.panel.className = 'town-panel';
@@ -113,7 +128,7 @@ export class CodexUI {
     const tabs = CHAPTERS.map(([id, label]) => `<button class="ds-btn" type="button" role="tab" data-chapter="${id}" aria-selected="${this.chapter === id}">${label}</button>`).join('');
     const body = this.body();
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>THE CODEX</h3><span class="tp-vendor">every rule of the crypt · H</span><button class="tp-close" data-close title="Close (H or ESC)"><i></i></button></div>
+      <div class="tp-head drag-handle"><h3>THE JOURNAL</h3><span class="tp-vendor">items · effects · recipes · crafting · H</span><button class="tp-close" data-close title="Close (H or ESC)"><i></i></button></div>
       <div class="tp-tabs codex-tabs" role="tablist">${tabs}</div>
       <div class="codex-body">${body}</div>`;
     const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
@@ -146,6 +161,8 @@ export class CodexUI {
         return this.enchants();
       case 'forge':
         return this.forge();
+      case 'log':
+        return this.log();
       case 'belt':
         return this.belt();
       case 'merchants':
@@ -166,7 +183,7 @@ export class CodexUI {
     }).join('');
     const affixes = AFFIX_KEYS.map((k) => {
       const a = AFFIXES[k];
-      return `<tr><td><b>${a.name}</b> <i>(${a.kind})</i></td><td>${a.line.replace('{v}', '<em>v</em>')}</td><td>${a.values.map((v) => (a.fmt === 'pct' ? `${Math.round(v * 100)}%` : v)).join(' · ')}${a.flat ? ' × power' : ''}</td></tr>`;
+      return `<tr><td><b>${a.name}</b> <i>(${a.kind})</i></td><td>${a.line.replace('{v}', '<em>v</em>')}</td><td>${a.values.map((v) => (a.fmt === 'pct' ? `${Math.round(v * 100)}%` : a.fmt === 'pctps' ? `${(v * 100).toFixed(1)}%` : v)).join(' · ')}${a.flat ? ' × power' : ''}</td></tr>`;
     }).join('');
     return `
       <section><h4>WHAT AN ITEM IS</h4>
@@ -208,7 +225,7 @@ export class CodexUI {
   private statuses(): string {
     const cards = (Object.keys(STATUS_INFO) as Array<keyof typeof STATUS_INFO>).map((k) => {
       const s = STATUS_INFO[k];
-      return `<div class="cx-card" style="--fx:${hex(s.color)}"><b>${s.name}</b><span class="cx-fx-line">${s.line(1, 1).replace('100% chance to ', 'On proc: ')}</span><p>${s.desc}</p><small>Shows as: ${s.visual}</small></div>`;
+      return `<div class="cx-card" style="--fx:${hex(s.color)}"><b><img class="cx-fx-icon" src="${weaponIconUrl(`raven${s.icon}`)}" alt="">${s.name}</b><span class="cx-fx-line">${s.line(1, 1).replace('100% chance to ', 'On proc: ')}</span><p>${s.desc}</p><small>Shows as: this icon above the foe's head while it runs, the name floating up when it lands, and the strip — ${s.visual}</small></div>`;
     }).join('');
     return `
       <section><h4>STATUS EFFECTS ON FOES</h4>
@@ -221,7 +238,7 @@ export class CodexUI {
   private traits(): string {
     const cards = (Object.keys(TRAIT_INFO) as Array<keyof typeof TRAIT_INFO>).map((k) => {
       const t = TRAIT_INFO[k];
-      return `<div class="cx-card cx-trait"><b>${t.name}</b><span class="cx-fx-line">${t.line(1)}</span><p>${t.desc}</p></div>`;
+      return `<div class="cx-card cx-trait"><b><img class="cx-fx-icon" src="${weaponIconUrl(`raven${t.icon}`)}" alt="">${t.name}</b><span class="cx-fx-line">${t.line(1)}</span><p>${t.desc}</p></div>`;
     }).join('');
     return `
       <section><h4>GRANTED TRAITS</h4>
@@ -259,6 +276,15 @@ export class CodexUI {
       <table class="cx-table"><thead><tr><th>To</th><th>Odds</th><th>Needs</th><th>On failure</th></tr></thead><tbody>${odds}</tbody></table>
       <p><b>ENCHANT</b> lays a learned recipe on a weapon. See ENCHANTS.</p>
       </section>`;
+  }
+
+  /** CRAFT LOG (it.82): every forge result this run. */
+  private log(): string {
+    const rows = this.craftLog();
+    const items = rows.length
+      ? rows.map((r) => `<li class="${r.ok ? '' : 'bad'}"><span>${clock(r.tick)}</span>${r.text}</li>`).join('')
+      : '<li class="cx-empty">Nothing forged yet this run. Bring steel to the weapon rack beside the campfire.</li>';
+    return `<section><h4>THE CRAFT LOG</h4><p>Every salvage, forge, transmutation, refinement, reinforcement and enchantment this run, newest first, with the run clock.</p><ul class="cx-log">${items}</ul></section>`;
   }
 
   private belt(): string {

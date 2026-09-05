@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 81, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 82, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -143,6 +143,16 @@ Items examined and left as they are, with reasons:
 | A status on a foe was a burst and nothing else | Medium (UX) | names, strips, gems above the head, body tint |
 | Two icon families and a generated one side by side | Low (art) | every item on the Raven pack |
 | The XP bar had no name | Low (UX) | HP / MANA / XP labels with glyphs |
+
+### Iteration 82 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The inventory cross died after any repaint while open | High (UX) | rewired on every paint; every window's cross in the harness |
+| The codex was not found | Medium (UX) | THE JOURNAL: bar label, H, buttons in the inventory, forge and shop, a hint |
+| Bulwark, regrowth and Strength life scaled with item power into absurdity | High (balance) | flat armor 0.6–3 × power; regrowth a share of life; Strength life flat |
+| Effects read as text only | Medium (UX) | icons on the card with plain sentences; icons above foes' heads |
+| The inventory looked different on every screen | Low (UI) | one restyle, cell size by tier |
 
 ## 4. Known issues and regression log
 

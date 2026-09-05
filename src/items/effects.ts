@@ -55,6 +55,8 @@ export interface Effect {
 export interface StatusInfo {
   name: string;
   color: number;
+  /** The Raven icon that stands for it: on the card, above the foe's head, in the journal. */
+  icon: number;
   adjective: string;
   /** The short card line. */
   line: (chance: number, power: number) => string;
@@ -68,6 +70,7 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
   bleed: {
     name: 'Bleed',
     color: 0xe04040,
+    icon: 677,
     adjective: 'Sanguine',
     line: (c, p) => `${pct(c)} chance to bleed: ${Math.round(60 * p)}% of the hit over 4 s`,
     desc: 'A physical wound. The foe loses 60% of the hit that opened it over 4 seconds, in 8 bites every half second. Bites ignore armor. A fresh or stronger bleed replaces a weaker one; it never stacks. Every foe bleeds, wardens included.',
@@ -76,6 +79,7 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
   poison: {
     name: 'Poison',
     color: 0x86c85a,
+    icon: 675,
     adjective: 'Venomous',
     line: (c, p) => `${pct(c)} chance to poison: ${Math.round(80 * p)}% of the hit over 6 s`,
     desc: 'A slow venom. The foe loses 80% of the hit over 6 seconds, in 12 bites every half second — the most total damage of any status, the slowest to pay out. Bites ignore armor. Refreshes, never stacks. The rogue’s class path and Poison Blade lay the same venom.',
@@ -84,6 +88,7 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
   burn: {
     name: 'Burn',
     color: 0xff9040,
+    icon: 693,
     adjective: 'Flaming',
     line: (c, p) => `${pct(c)} chance to burn: ${Math.round(50 * p)}% of the hit over 3 s`,
     desc: 'Fire clings. The foe loses 50% of the hit over 3 seconds, in 9 quick bites every third of a second — the fastest payout. Bites ignore armor. Refreshes, never stacks. The mage’s class path burns the same way.',
@@ -92,6 +97,7 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
   chill: {
     name: 'Chill',
     color: 0x9fd4f0,
+    icon: 694,
     adjective: 'Frozen',
     line: (c, p) => `${pct(c)} chance to chill: foes move at ${Math.round(55 / p)}% for 3 s`,
     desc: 'Frost in the legs. The foe walks at 55% of its pace for 3 seconds; its swings are untouched. A new chill refreshes the time and keeps the deeper slow. Wardens shrug it off.',
@@ -100,6 +106,7 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
   shock: {
     name: 'Shock',
     color: 0xa8c8ff,
+    icon: 1025,
     adjective: 'Storm',
     line: (c, p) => `${pct(c)} chance to shock: ${Math.round(45 * p)}% of the hit arcs to a second foe`,
     desc: 'Lightning leaps. The instant the hit lands, 45% of it strikes the nearest OTHER foe within 3 tiles, ignoring armor. Nothing lingers, nothing stacks; a lone foe takes no extra harm. Every foe conducts, wardens included.',
@@ -108,6 +115,7 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
   stun: {
     name: 'Stun',
     color: 0xffd070,
+    icon: 683,
     adjective: 'Crushing',
     line: (c, p) => `${pct(c)} chance to stun for ${(0.8 * p).toFixed(1)} s`,
     desc: 'The foe reels for 0.8 seconds: no walking, no swinging, its current attack cut short. A stun cannot be extended by another stun that would end sooner. Wardens take half the time, and none while they are mid-blow.',
@@ -117,22 +125,24 @@ export const STATUS_INFO: Record<StatusKind, StatusInfo> = {
 
 export interface TraitInfo {
   name: string;
+  /** The Raven icon that stands for it. */
+  icon: number;
   adjective: string;
   line: (power: number) => string;
   desc: string;
 }
 
 export const TRAIT_INFO: Record<TraitKey, TraitInfo> = {
-  lifeOnKill: { name: 'Reaping', adjective: 'Reaping', line: (p) => `A slain foe returns ${Math.round(4 * p)}% of your life`, desc: 'Every foe that dies to your weapon, your wounds over time or your arcs heals you for 4% of your maximum life (a stronger weapon reaps more). A crowd is a meal.' },
-  manaOnHit: { name: 'Siphon', adjective: 'Siphoning', line: (p) => `Every hit returns ${Math.round(3 * p)} resource`, desc: 'Every landed primary strike returns 3 points of mana or stamina. Fast weapons siphon more often; a caster with a scepter never runs dry.' },
-  cleave: { name: 'Cleave', adjective: 'Cleaving', line: (p) => `Every strike also cuts a second foe in reach for ${Math.round(50 * p)}%`, desc: 'After every landed primary strike the blade continues into the nearest other foe within reach plus half a tile, for 50% of the blow. It stacks with the ordinary sweep arc; procs do not roll on the cleave.' },
-  knockback: { name: 'Impact', adjective: 'Heavy', line: (p) => `Strikes throw foes ${Math.round(80 * p)}% further`, desc: 'Every hit throws the foe 80% further than the weapon family would. Room to breathe, and a thrown foe misses its swing.' },
-  swift: { name: 'Swiftness', adjective: 'Swift', line: (p) => `+${Math.round(8 * p)}% movement speed`, desc: 'You walk and run 8% faster while the weapon is held. It stacks with Fleet Foot and with a Draught of Haste.' },
-  guardian: { name: 'Guardian', adjective: 'Warding', line: (p) => `+${Math.round(12 * p)}% armor`, desc: 'Your total armor, every plate and passive included, counts 12% higher while the weapon is held.' },
-  fortune: { name: 'Fortune', adjective: 'Gilded', line: (p) => `+${Math.round(25 * p)}% gold from piles`, desc: 'Every pile of gold you scoop yields 25% more. Merchants and sales are unchanged.' },
-  seeker: { name: 'Seeker', adjective: 'Seeking', line: (p) => `Rarer finds: drop luck ×${(1 + 0.25 * p).toFixed(2)}`, desc: 'While anyone in the party holds a seeking weapon, every rarity above common weighs 25% more in the floor’s drop rolls. The best seeker in the party counts.' },
-  berserk: { name: 'Berserk', adjective: 'Wrathful', line: (p) => `+${Math.round(18 * p)}% damage while under 40% life`, desc: 'All your damage — strikes, skills, wounds over time — rises 18% while your life is under 40% of its maximum.' },
-  precise: { name: 'Precision', adjective: 'Keen', line: (p) => `Critical strikes deal ${(2 + 0.4 * p).toFixed(1)}× instead of 2×`, desc: 'A critical strike multiplies the blow by 2.4 instead of 2. Pairs with high-crit shapes (rapier, katana, warpick) and "of Precision" lines.' },
+  lifeOnKill: { name: 'Reaping', icon: 862, adjective: 'Reaping', line: (p) => `A slain foe returns ${Math.round(4 * p)}% of your life`, desc: 'Every foe that dies to your weapon, your wounds over time or your arcs heals you for 4% of your maximum life (a stronger weapon reaps more). A crowd is a meal.' },
+  manaOnHit: { name: 'Siphon', icon: 604, adjective: 'Siphoning', line: (p) => `Every hit returns ${Math.round(3 * p)} resource`, desc: 'Every landed primary strike returns 3 points of mana or stamina. Fast weapons siphon more often; a caster with a scepter never runs dry.' },
+  cleave: { name: 'Cleave', icon: 721, adjective: 'Cleaving', line: (p) => `Every strike also cuts a second foe in reach for ${Math.round(50 * p)}%`, desc: 'After every landed primary strike the blade continues into the nearest other foe within reach plus half a tile, for 50% of the blow. It stacks with the ordinary sweep arc; procs do not roll on the cleave.' },
+  knockback: { name: 'Impact', icon: 653, adjective: 'Heavy', line: (p) => `Strikes throw foes ${Math.round(80 * p)}% further`, desc: 'Every hit throws the foe 80% further than the weapon family would. Room to breathe, and a thrown foe misses its swing.' },
+  swift: { name: 'Swiftness', icon: 651, adjective: 'Swift', line: (p) => `+${Math.round(8 * p)}% movement speed`, desc: 'You walk and run 8% faster while the weapon is held. It stacks with Fleet Foot and with a Draught of Haste.' },
+  guardian: { name: 'Guardian', icon: 605, adjective: 'Warding', line: (p) => `+${Math.round(12 * p)}% armor`, desc: 'Your total armor, every plate and passive included, counts 12% higher while the weapon is held.' },
+  fortune: { name: 'Fortune', icon: 160, adjective: 'Gilded', line: (p) => `+${Math.round(25 * p)}% gold from piles`, desc: 'Every pile of gold you scoop yields 25% more. Merchants and sales are unchanged.' },
+  seeker: { name: 'Seeker', icon: 12, adjective: 'Seeking', line: (p) => `Rarer finds: drop luck ×${(1 + 0.25 * p).toFixed(2)}`, desc: 'While anyone in the party holds a seeking weapon, every rarity above common weighs 25% more in the floor’s drop rolls. The best seeker in the party counts.' },
+  berserk: { name: 'Berserk', icon: 657, adjective: 'Wrathful', line: (p) => `+${Math.round(18 * p)}% damage while under 40% life`, desc: 'All your damage — strikes, skills, wounds over time — rises 18% while your life is under 40% of its maximum.' },
+  precise: { name: 'Precision', icon: 670, adjective: 'Keen', line: (p) => `Critical strikes deal ${(2 + 0.4 * p).toFixed(1)}× instead of 2×`, desc: 'A critical strike multiplies the blow by 2.4 instead of 2. Pairs with high-crit shapes (rapier, katana, warpick) and "of Precision" lines.' },
 };
 
 function pct(c: number): string {
@@ -150,6 +160,23 @@ export function effectLine(e: Effect): string {
 export function effectDesc(e: Effect): string {
   if (e.proc) return STATUS_INFO[e.proc.status].desc;
   if (e.trait) return TRAIT_INFO[e.trait.key].desc;
+  return '';
+}
+
+/** The Raven icon number that stands for an effect. */
+export function effectIcon(e: Effect): number {
+  if (e.proc) return STATUS_INFO[e.proc.status].icon;
+  if (e.trait) return TRAIT_INFO[e.trait.key].icon;
+  return 0;
+}
+
+/** The plain sentence a card leads with: "This weapon applies Chill to enemies: …". */
+export function effectSentence(e: Effect): string {
+  if (e.proc) {
+    const s = STATUS_INFO[e.proc.status];
+    return `Applies ${s.name} to enemies (${Math.round(e.proc.chance * 100)}% of hits).`;
+  }
+  if (e.trait) return `Grants ${TRAIT_INFO[e.trait.key].name}.`;
   return '';
 }
 

@@ -505,6 +505,58 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(40);
     }
 
+    // ---- the cross after a repaint, the icons on the card, every window's cross (it.82) ----------
+    {
+      const p = g.player;
+      key('KeyI');
+      await wait(60);
+      p.addItem('potion_haste'); // A repaint while the window is open.
+      await wait(60);
+      document.querySelector<HTMLElement>('#inv-panel [data-close]')?.click();
+      await wait(60);
+      check('the inventory cross works after a repaint', !document.querySelector('#inv-panel.open'));
+      p.addItem('crystal_orbrod@L58R2U1Aint2.rgn3');
+      key('KeyI');
+      await wait(60);
+      const cell = document.querySelector<HTMLElement>('#inv-panel button[data-item^=crystal_orbrod]');
+      const r = cell?.getBoundingClientRect();
+      cell?.dispatchEvent(new MouseEvent('mouseenter', { clientX: (r?.left ?? 0) + 10, clientY: (r?.top ?? 0) + 10 }));
+      const tip = document.getElementById('inv-tooltip');
+      check('a weapon card shows its status icon and a plain sentence', !!tip?.querySelector('.tip-fx-icon') && /Applies Chill to enemies/.test(tip?.textContent ?? ''), tip?.textContent?.slice(0, 80));
+      cell?.dispatchEvent(new MouseEvent('mouseleave'));
+      key('KeyI');
+      await wait(40);
+      // Every window: open, click its cross, closed.
+      const probe = async (id: string, open: () => void): Promise<void> => {
+        open();
+        await wait(80);
+        const el = document.getElementById(id);
+        const x = el?.querySelector<HTMLElement>('[data-close], [data-close-x], .tp-close');
+        x?.click();
+        await wait(80);
+        const still = !!el && (el.classList.contains('open') || el.classList.contains('show'));
+        check(`${id} closes on its cross`, !!x && !still);
+        if (still) el?.classList.remove('open', 'show');
+      };
+      await probe('skill-tree', () => key('KeyK'));
+      await probe('char-sheet', () => key('KeyC'));
+      await probe('bestiary', () => key('KeyB'));
+      await probe('level-select', () => key('KeyL'));
+      await probe('settings-panel', () => key('KeyO'));
+      await probe('cheat-menu', () => key('F1'));
+      await probe('codex', () => key('KeyH'));
+      if (g.floor === 0) {
+        await probe('shop-panel', () => g.shopUI.open('armorer'));
+        await probe('stash-panel', () => g.stashUI.open());
+        await probe('craft-panel', () => g.craftUI.open('salvage'));
+      }
+      // The journal knows the craft log and the recipes.
+      g.codexUI.open('log');
+      await wait(40);
+      check('the journal has a craft log', !!document.querySelector('#codex .cx-log'));
+      g.codexUI.close();
+    }
+
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
     {
       g.player.addItem('soldier_blade');

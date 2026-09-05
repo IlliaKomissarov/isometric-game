@@ -1,5 +1,52 @@
 # Development Log
 
+## 2026-09-05 (iteration 82) - The inventory restyled, the cross that died, the journal, status icons, the balance pass
+
+### The cross
+- The inventory wired its close cross only when toggled; every repaint
+  while the window was open (a pickup, a belt change, a material) replaced
+  the heading and left a dead button. The cross is rewired on every paint
+  now, and the harness clicks the cross of every window after a repaint.
+
+### The inventory
+- One restyle for every screen (`8a6` in index.html): an obsidian plate
+  with a gold rule, the hero on a lit dais with a ground shadow, obsidian
+  tiles with rarity edges and a hover lift, the pack a framed field, the
+  belt and the pouch on their own strip, a JOURNAL button in the heading.
+  Cell size is one variable (`--inv-cell`) stepped by tier: 56 px on a
+  desk or tablet, a clamp on a portrait phone, 40 px on a landscape phone.
+- Landscape: the pack column is one wrapper (`.inv-pack-col`: heading,
+  filter bar, field) with `contain: size`, so it takes the height the
+  doll's column gives and scrolls the field inside it; the column is never
+  narrower than six cells plus its scrollbar (the sheet is shrink-to-fit
+  from its centre and used to settle on the 200 px minimum and overflow
+  sideways). A landscape phone keeps a 300 px doll column, draws the hero
+  at thumb size, drops the slot names and the belt note, and the pack
+  heading keeps clear of the close medallion. A short desk (the sheet sits
+  under the minimap) gets a 110 px dais instead of 150.
+
+### The journal
+- The codex is THE JOURNAL now: items · effects · recipes · crafting, on
+  H, the book on the bar (labelled Journal), a JOURNAL button in the
+  inventory, the forge and the shop, and a first-time hint on the first
+  pickup. RECIPES (every enchantment), CRAFTING (every rule) and a CRAFT
+  LOG (every forge result this run, newest first, on the run clock).
+
+### Status icons
+- Every status and trait has an icon from the pack. The card leads each
+  effect line with the icon and a plain sentence ("Applies Chill to
+  enemies (30% of hits).") before the numbers and the mechanics. Above a
+  foe's head the same icons sit on dark plates while the status runs,
+  rebuilt only when the set changes.
+
+### Balance
+- Bulwark lines were three plates: a T5 bulwark at iLvl 60 gave 1,490
+  armor against a 536-armor plate. Flat armor lines are now 0.6–3 × power
+  (a third to a half of a body piece). Regrowth is a share of max life a
+  second (0.3–1.8%), not a flat number × power (4 × 93 = 372 life a second
+  at iLvl 60). Strength's life is flat (3 a point), never × power (22 × 2
+  × 93 = 4,092 life from one band). The rest of the tables held.
+
 ## 2026-09-05 (iteration 81) - The codex, the borders, the filters, the marks on the foe, the labelled gauges
 
 ### The codex (`ui/Codex.ts`)

@@ -201,7 +201,7 @@ export class StatusSystem {
           changed = true;
         } else m.set(kind, left - 1);
       }
-      if (changed || m.size) foe.setStatuses([...m.keys()].map((k) => STATUS_INFO[k].color));
+      if (changed || m.size) foe.setStatuses([...m.keys()].map((k) => ({ color: STATUS_INFO[k].color, icon: STATUS_INFO[k].icon })));
       if (m.size === 0) {
         foe.setStatuses([]);
         this.marks.delete(id);

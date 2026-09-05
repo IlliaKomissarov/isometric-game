@@ -159,7 +159,7 @@ export class ShopUI {
     const left = this.tab === 'sale' ? sale || '<span class="tp-empty">Sold out — the counter restocks on the clock</span>' : buyback || '<span class="tp-empty">Nothing sold yet</span>';
     const restock = this.town.ticksToRestock(this.tickNow());
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>${vendor === 'alchemist' ? 'THE ALCHEMIST' : 'THE ARMORER'}</h3><span class="tp-vendor">${vendor === 'alchemist' ? 'draughts · scrolls' : 'arms · armor · materials'} · <i data-restock>${restock > 0 ? `restock in ${clock(restock)}` : 'restocking…'}</i></span><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
+      <div class="tp-head drag-handle"><h3>${vendor === 'alchemist' ? 'THE ALCHEMIST' : 'THE ARMORER'}</h3><span class="tp-vendor">${vendor === 'alchemist' ? 'draughts · scrolls' : 'arms · armor · materials'} · <i data-restock>${restock > 0 ? `restock in ${clock(restock)}` : 'restocking…'}</i></span><span class="tp-purse">◆ ${p.gold} gold</span><button class="ds-btn tp-journal" type="button" data-journal="merchants" title="The Journal (H)">JOURNAL</button><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
         <div class="tp-col">
           <div class="tp-tabs" role="tablist">
@@ -180,6 +180,10 @@ export class ShopUI {
     });
     wireFilterBar(this.panel.querySelector('#if-shop-buy') as HTMLElement, 'shop-buy', this.filterBuy, () => this.render());
     wireFilterBar(this.panel.querySelector('#if-shop-sell') as HTMLElement, 'shop-sell', this.filterSell, () => this.render());
+    this.panel.querySelector<HTMLButtonElement>('[data-journal]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      eventBus.emit('journal:open', { chapter: 'merchants' });
+    });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-shoptab]').forEach((b) => {
       b.addEventListener('click', () => {
         this.tab = b.dataset.shoptab === 'buyback' ? 'buyback' : 'sale';

@@ -18,7 +18,7 @@
  * `container.visible` (render-owned; see development_log 2026-08-31).
  */
 
-import { Graphics, Sprite, Text } from 'pixi.js';
+import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { COMBAT_SPEED, PLAYER_SPEED } from '@/core/config';
 import { eventBus } from '@/core/EventBus';
@@ -882,26 +882,48 @@ export class Enemy extends Entity {
   /** CHILL (it.80): while ticks remain the foe moves at `chillFactor`. */
   chillTicks = 0;
   chillFactor = 1;
-  private readonly statusMarks: Graphics;
+  private readonly statusMarks: Container;
   /** The status tint blended over the lighting (0 = none). */
   private statusTint = 0;
+  private marksKey = '';
 
-  /** Draw the active statuses as gems above the head and tint the body (it.81). */
-  setStatuses(colors: readonly number[]): void {
-    const g = this.statusMarks;
-    g.clear();
-    if (!colors.length) {
-      g.visible = false;
+  /**
+   * THE STATUS ICONS ABOVE THE HEAD (it.82): the same Raven icon the card
+   * shows, one per active status, over a dark plate; the body takes the
+   * first status's tint. Rebuilt only when the set changes.
+   */
+  setStatuses(marks: ReadonlyArray<{ color: number; icon: number }>): void {
+    const key = marks.map((m) => m.icon).join(',');
+    if (key === this.marksKey) return;
+    this.marksKey = key;
+    const c = this.statusMarks;
+    c.removeChildren();
+    if (!marks.length) {
+      c.visible = false;
       this.statusTint = 0;
       return;
     }
-    g.visible = true;
-    const w = colors.length * 9 - 3;
-    colors.forEach((c, i) => {
-      const x = -w / 2 + i * 9 + 3;
-      g.moveTo(x, -4).lineTo(x + 3.5, 0).lineTo(x, 4).lineTo(x - 3.5, 0).closePath().fill({ color: c }).stroke({ color: 0x0a0806, width: 1 });
+    c.visible = true;
+    const size = 14;
+    const gap = 3;
+    const w = marks.length * (size + gap) - gap;
+    marks.forEach((m, i) => {
+      const x = -w / 2 + i * (size + gap) + size / 2;
+      const plate = new Graphics().roundRect(x - size / 2 - 1, -size / 2 - 1, size + 2, size + 2, 3).fill({ color: 0x0a0806, alpha: 0.85 }).stroke({ color: m.color, width: 1 });
+      c.addChild(plate);
+      const name = `wicon_raven${m.icon}`;
+      if (spriteLib.loaded && spriteLib.hasSingle(name)) {
+        const spr = new Sprite(spriteLib.single(name));
+        spr.anchor.set(0.5);
+        spr.width = size;
+        spr.height = size;
+        spr.position.set(x, 0);
+        c.addChild(spr);
+      } else {
+        c.addChild(new Graphics().moveTo(x, -4).lineTo(x + 3.5, 0).lineTo(x, 4).lineTo(x - 3.5, 0).closePath().fill({ color: m.color }));
+      }
     });
-    this.statusTint = colors[0];
+    this.statusTint = marks[0].color;
   }
   /** SPAWN RISE (it.54): ticks left climbing out of the ground (sim; frozen until 0). */
   riseTicks = 0;
@@ -955,8 +977,8 @@ export class Enemy extends Entity {
     this.container.addChild(this.levelText);
     // STATUS MARKS (it.81): a row of coloured gems above the head while a
     // status runs — the foe wears its wounds where the eye already looks.
-    this.statusMarks = new Graphics();
-    this.statusMarks.position.set(0, -60);
+    this.statusMarks = new Container();
+    this.statusMarks.position.set(0, -62);
     this.statusMarks.visible = false;
     this.container.addChild(this.statusMarks);
 

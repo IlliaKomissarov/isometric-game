@@ -148,7 +148,7 @@ function derive(id: string): ItemDef | null {
   const weapon = base.slot === 'mainHand';
   const derivedBonus = foldAffixes(d.affixes, power);
   const bonus: NonNullable<ItemDef['bonus']> = { ...(base.bonus ?? {}) };
-  if (derivedBonus.hp) bonus.hp = (bonus.hp ?? 0) + Math.round(derivedBonus.hp * power);
+  if (derivedBonus.hp) bonus.hp = (bonus.hp ?? 0) + Math.round(derivedBonus.hp); // Flat (it.82): a level-60 band is not four heroes of life.
   if (derivedBonus.dmg) bonus.dmg = (bonus.dmg ?? 0) + derivedBonus.dmg;
   if (derivedBonus.armor) bonus.armor = (bonus.armor ?? 0) + Math.round(derivedBonus.armor * 10) / 10;
   if (derivedBonus.dodge) bonus.dodge = (bonus.dodge ?? 0) + derivedBonus.dodge;

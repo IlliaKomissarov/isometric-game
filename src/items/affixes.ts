@@ -37,8 +37,8 @@ export interface AffixDef {
   /** Tier 1–5 values. `flat` values are multiplied by the item's power scale. */
   values: [number, number, number, number, number];
   flat?: boolean;
-  /** How the value prints: attribute points, a percentage, a flat number, hp per second. */
-  fmt: 'pts' | 'pct' | 'flat' | 'ps';
+  /** How the value prints: attribute points, a percentage, a flat number, hp per second, a share of life a second. */
+  fmt: 'pts' | 'pct' | 'flat' | 'ps' | 'pctps';
 }
 
 export const AFFIXES: Record<AffixKey, AffixDef> = {
@@ -48,9 +48,11 @@ export const AFFIXES: Record<AffixKey, AffixDef> = {
   crt: { key: 'crt', kind: 'suffix', pool: 'secondary', name: 'of Precision', line: '+{v} Crit Chance', values: [0.02, 0.03, 0.045, 0.06, 0.08], fmt: 'pct' },
   asp: { key: 'asp', kind: 'suffix', pool: 'secondary', name: 'of Haste', line: '+{v} Attack Speed', values: [0.03, 0.05, 0.07, 0.1, 0.13], fmt: 'pct' },
   cdr: { key: 'cdr', kind: 'suffix', pool: 'secondary', name: 'of Focus', line: '{v} Cooldown Reduction', values: [0.03, 0.05, 0.07, 0.1, 0.13], fmt: 'pct' },
-  arm: { key: 'arm', kind: 'suffix', pool: 'defensive', name: 'of the Bulwark', line: '+{v} Armor', values: [2, 4, 7, 11, 16], flat: true, fmt: 'flat' },
+  // BALANCE (it.82): a bulwark line is a third to a half of a body piece at its level, never three plates.
+  arm: { key: 'arm', kind: 'suffix', pool: 'defensive', name: 'of the Bulwark', line: '+{v} Armor', values: [0.6, 1, 1.5, 2.2, 3], flat: true, fmt: 'flat' },
   res: { key: 'res', kind: 'suffix', pool: 'defensive', name: 'of Warding', line: '+{v} Resistance', values: [0.03, 0.05, 0.07, 0.1, 0.13], fmt: 'pct' },
-  rgn: { key: 'rgn', kind: 'suffix', pool: 'defensive', name: 'of Regrowth', line: '+{v} Health Regrowth', values: [0.5, 1, 1.6, 2.5, 4], flat: true, fmt: 'ps' },
+  // Regrowth is a share of max life a second (it.82): it scales with the hero, not the item.
+  rgn: { key: 'rgn', kind: 'suffix', pool: 'defensive', name: 'of Regrowth', line: '{v} of max life a second', values: [0.003, 0.005, 0.008, 0.012, 0.018], fmt: 'pctps' },
 };
 
 export const AFFIX_KEYS: readonly AffixKey[] = ['str', 'agi', 'int', 'crt', 'asp', 'cdr', 'arm', 'res', 'rgn'];
@@ -68,7 +70,7 @@ export function affixLine(roll: AffixRoll, power: number): string {
   const def = AFFIXES[roll.key];
   const v = affixValue(roll, power);
   const text =
-    def.fmt === 'pct' ? `${Math.round(v * 100)}%` : def.fmt === 'ps' ? `${(Math.round(v * 10) / 10).toFixed(1)} HP/s` : def.fmt === 'flat' ? String(Math.round(v * 10) / 10) : String(Math.round(v));
+    def.fmt === 'pct' ? `${Math.round(v * 100)}%` : def.fmt === 'pctps' ? `+${(v * 100).toFixed(1)}%` : def.fmt === 'ps' ? `${(Math.round(v * 10) / 10).toFixed(1)} HP/s` : def.fmt === 'flat' ? String(Math.round(v * 10) / 10) : String(Math.round(v));
   return `${def.line.replace('{v}', text)} · T${Math.max(1, Math.min(5, roll.tier))}`;
 }
 
@@ -101,7 +103,7 @@ export function foldAffixes(rolls: readonly AffixRoll[], power: number, into: De
       case 'str':
         into.str += v;
         into.dmg += v * 0.01;
-        into.hp += v * 2;
+        into.hp += v * 3; // Flat life, never scaled by the item's power (it.82).
         break;
       case 'agi':
         into.agi += v;

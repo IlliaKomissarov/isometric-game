@@ -3000,6 +3000,7 @@ async function boot(): Promise<void> {
         if (seat.player === player) {
           audio.sfx(['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '') ? 'rarePickup' : 'pickup');
           tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
+          tutorial.notify('journal', 'The JOURNAL (H, or the book on the bar) explains every item, effect and recipe.');
         } else if (chat) {
           chat.system(`${seat.name} picked up ${itemDef(itemId)?.name ?? itemId}.`);
         }
@@ -4043,7 +4044,16 @@ async function boot(): Promise<void> {
     const shopUI = new ShopUI(player, town, inputQueue, () => state.tick);
     const stashUI = new StashUI(player, town, inputQueue);
     const craftUI = new CampCraftingUI(player, inputQueue, () => deepestFloor);
-    const codexUI = new CodexUI(() => player.recipes); // THE CODEX (it.81): H.
+    // THE JOURNAL (it.81, it.82): H, the bar, and a button on every window that needs it.
+    const craftLog: Array<{ tick: number; text: string; ok: boolean }> = [];
+    const codexUI = new CodexUI(() => player.recipes, () => craftLog);
+    subs.push(
+      eventBus.on('journal:open', ({ chapter }) => codexUI.open(chapter as Parameters<CodexUI['open']>[0])),
+      eventBus.on('craft:result', ({ ok, text }) => {
+        craftLog.unshift({ tick: state.tick, text, ok });
+        if (craftLog.length > 60) craftLog.length = 60;
+      }),
+    );
     const skillTreeUI = new SkillTreeUI(player, inputQueue, () => !!world.town);
     // EVERY WINDOW FITS (it.65): the run's panels are built per run, so they
     // are registered here rather than at boot.

@@ -248,7 +248,7 @@ export class CampCraftingUI {
     if (this.tab === 'enchant') body = this.enchantBody();
     if (this.tab === 'recipes') body = this.recipesBody();
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>THE CAMP FORGE</h3><span class="tp-vendor">campfire · anvil</span><span class="tp-purse">◆ ${p.gold} gold</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
+      <div class="tp-head drag-handle"><h3>THE CAMP FORGE</h3><span class="tp-vendor">campfire · anvil</span><span class="tp-purse">◆ ${p.gold} gold</span><button class="ds-btn tp-journal" type="button" data-journal="forge" title="The Journal: every recipe and rule (H)">JOURNAL</button><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="craft-pouch">${this.pouch()}</div>
       <div class="tp-tabs craft-tabs" role="tablist">${tabs}</div>
       <div class="tp-cols craft-cols">${body}</div>
@@ -306,6 +306,7 @@ export class CampCraftingUI {
       })
       .join('');
     return `<div class="tp-col rb-col">
+      <div class="rb-note">The full rules, every enchantment with its words, and this run's craft log live in <b>THE JOURNAL</b> — <button class="ds-btn" type="button" data-journal="forge">OPEN THE JOURNAL</button></div>
       <h4>REINFORCEMENT · +5% to the base a level</h4><div class="rb-odds">${odds}</div>
       <div class="tp-meta">Materials and 35% of the item's worth + 12·n² gold, or gold alone at 2.5× the materials. From +8 a failure drops one level; the item never breaks.</div>
       <h4>TRANSMUTATION</h4>${trans}
@@ -324,6 +325,12 @@ export class CampCraftingUI {
     });
     const bar = this.panel.querySelector<HTMLElement>('#if-forge');
     if (bar) wireFilterBar(bar, 'forge', this.filter, () => this.render());
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-journal]').forEach((b) => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        eventBus.emit('journal:open', { chapter: b.dataset.journal || 'forge' });
+      });
+    });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-crafttab]').forEach((b) => {
       b.addEventListener('click', () => {
         this.tab = (b.dataset.crafttab as Tab) ?? 'salvage';

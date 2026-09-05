@@ -15,7 +15,8 @@
 import { ARCHETYPES, type Player } from '@/entities/Player';
 import { compareItems, soloRows, type CompareRow, type Verdict } from '@/items/compare';
 import { RARITY_COLOR, statLine, type ItemDef } from '@/items/catalog';
-import { effectDesc, effectLine } from '@/items/effects';
+import { effectDesc, effectIcon, effectLine, effectSentence, type Effect } from '@/items/effects';
+import { weaponIconUrl } from '@/render/SpriteLibrary';
 import { itemDef } from '@/items/instance';
 
 const SLOT_LABEL: Record<string, string> = {
@@ -79,11 +80,19 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
   let body: string;
   const cls = (l: string): string => (l.startsWith('Unique') ? 'uniq' : l.startsWith('Passive') ? 'pass' : l.startsWith('Enchant') ? 'ench' : /chance to|returns|Every strike|throw foes|movement speed|armor$|gold from|Rarer finds|under 40%|Critical strikes/.test(l) ? 'fx' : '');
   // EVERY EFFECT EXPLAINED (it.81): the short line, then the mechanics under it.
+  // STATUS ICONS ON THE CARD (it.82): the effect's icon, a plain sentence, the line, the mechanics.
+  const fxFor = (l: string): Effect | undefined => (def.effects ?? []).find((e) => l.endsWith(effectLine(e)));
   const detail = (l: string): string => {
-    const fx = (def.effects ?? []).find((e) => l.endsWith(effectLine(e)));
+    const fx = fxFor(l);
     return fx ? `<small>${effectDesc(fx)}</small>` : '';
   };
-  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${cls(l)}">${l}${detail(l)}</li>`).join('')}</ul>` : '';
+  const lead = (l: string): string => {
+    const fx = fxFor(l);
+    if (!fx) return l;
+    const n = effectIcon(fx);
+    return `${n ? `<img class="tip-fx-icon" src="${weaponIconUrl(`raven${n}`)}" alt="">` : ''}<b>${effectSentence(fx)}</b> ${l}`;
+  };
+  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${cls(l)}">${lead(l)}${detail(l)}</li>`).join('')}</ul>` : '';
   const descHtml = def.desc ? `<div class="tip-desc">${def.desc}</div>` : '';
   if (def.slot === 'consumable' || def.slot === 'material' || (opts.worn === undefined && !opts.self)) {
     body = `<div class="tip-stats">${statLine(def)}</div>`;

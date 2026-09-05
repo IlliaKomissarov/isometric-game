@@ -660,6 +660,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] One Raven icon family; labelled gauges
 - [x] Harness checks; device matrix; playthrough; clean build
 
+## Iteration 82 - The journal and the cross (2026-09-05)
+
+- [x] The inventory cross survives every repaint; every window's cross probed
+- [x] The inventory restyled for every tier and orientation (`--inv-cell`)
+- [x] THE JOURNAL: recipes, crafting, craft log, effects; buttons in the inventory, forge, shop; the hint
+- [x] Status and trait icons on the card (with plain sentences) and above foes' heads
+- [x] Balance: bulwark, regrowth and Strength life corrected
+- [x] Harness checks; device matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

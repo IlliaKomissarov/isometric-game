@@ -127,14 +127,19 @@ export class InventoryUI {
     }
     if (this.visible) this.cdTimer = window.setInterval(() => this.tickBelt(), 100);
     else this.beltPick = null;
-    if (this.visible) {
-      const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
-      closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
-      closeBtn?.addEventListener('click', () => {
-        audio.sfx('uiClick');
-        this.toggle();
-      });
-    }
+  }
+
+  /** The cross is rewired on EVERY repaint (it.82): a pickup or a belt change while the window was open used to leave a dead button. */
+  private wireClose(): void {
+    const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
+    if (!closeBtn || closeBtn.dataset.wired) return;
+    closeBtn.dataset.wired = '1';
+    closeBtn.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      audio.sfx('uiClick');
+      if (this.visible) this.toggle();
+    });
   }
 
   /** Run teardown: listeners, timers and DOM (it.36). */
@@ -233,7 +238,7 @@ export class InventoryUI {
       return `<span class="inv-mat${n ? '' : ' empty'}" title="${def.name}">${iconHtml(def)}<b>${n}</b></span>`;
     }).join('');
     this.panel.innerHTML = `
-      <h3 class="drag-handle">INVENTORY<button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></h3>
+      <h3 class="drag-handle">INVENTORY<span class="inv-head-tools"><button class="ds-btn inv-journal" type="button" data-journal title="The Journal: items, effects, recipes (H)">JOURNAL</button><button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></span></h3>
       <div class="inv-tabs" role="tablist">
         <button class="ds-btn" type="button" role="tab" data-tab="gear" aria-selected="${this.tab === 'gear'}">GEAR</button>
         <button class="ds-btn" type="button" role="tab" data-tab="pack" aria-selected="${this.tab === 'pack'}">PACK</button>
@@ -243,11 +248,11 @@ export class InventoryUI {
       <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts · ▾ to assign</span></div>${beltMenu}
       <div class="inv-pouch">${pouch}</div>
       <div class="inv-divider"></div>
-      <h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}${hidden ? ` · ${hidden} hidden` : ''}</span>
+      <div class="inv-pack-col"><h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}${hidden ? ` · ${hidden} hidden` : ''}</span>
         <button class="ds-btn inv-tidy" type="button" data-tidy title="Sort the pack itself: type, rarity, level, name">TIDY</button>
         <span class="inv-gold">◆ Gold: ${this.player.gold}</span></h4>
       ${filterBarHtml(this.filter)}
-      <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div>
+      <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div></div>
     `;
 
     this.panel.dataset.tab = this.tab;
@@ -338,7 +343,12 @@ export class InventoryUI {
         },
       );
     });
+    this.wireClose();
     wireFilterBar(this.panel, 'inventory', this.filter, () => this.render());
+    this.panel.querySelector<HTMLButtonElement>('[data-journal]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      eventBus.emit('journal:open', { chapter: 'items' });
+    });
     this.panel.querySelector<HTMLButtonElement>('[data-tidy]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       audio.sfx('uiConfirm');

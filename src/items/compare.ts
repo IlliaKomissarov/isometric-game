@@ -105,7 +105,7 @@ const ROWS: RowSpec[] = [
   { key: 'regen', label: 'Regen', print: pct },
   { key: 'cdr', label: 'Cooldowns', print: pct },
   { key: 'resist', label: 'Resist', print: pct },
-  { key: 'regrowth', label: 'Regrowth', print: (v) => `${fmt1(Math.round(v * 10) / 10)}/s` },
+  { key: 'regrowth', label: 'Regrowth', print: (v) => `${(v * 100).toFixed(1)}%/s` },
 ];
 
 /**

@@ -46,6 +46,8 @@ export interface GameEvents {
   'craft:result': { ok: boolean; text: string; itemId?: string };
   /** A reinforcement attempt resolved (it.78). */
   'craft:reinforced': { ok: boolean; level: number };
+  /** Open the Journal at a chapter (it.82): any panel may ask. */
+  'journal:open': { chapter: string };
   /** The belt or the known recipes changed (it.80). */
   'belt:changed': Record<string, never>;
   'recipes:changed': Record<string, never>;

@@ -4772,6 +4772,102 @@
    "w": 64,
    "h": 64,
    "nearest": true
+  },
+  "wicon_raven12": {
+   "file": "single_wicon_raven12.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven160": {
+   "file": "single_wicon_raven160.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven604": {
+   "file": "single_wicon_raven604.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven605": {
+   "file": "single_wicon_raven605.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven651": {
+   "file": "single_wicon_raven651.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven653": {
+   "file": "single_wicon_raven653.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven657": {
+   "file": "single_wicon_raven657.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven670": {
+   "file": "single_wicon_raven670.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven675": {
+   "file": "single_wicon_raven675.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven677": {
+   "file": "single_wicon_raven677.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven683": {
+   "file": "single_wicon_raven683.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven693": {
+   "file": "single_wicon_raven693.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven694": {
+   "file": "single_wicon_raven694.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven721": {
+   "file": "single_wicon_raven721.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven862": {
+   "file": "single_wicon_raven862.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1025": {
+   "file": "single_wicon_raven1025.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
   }
  }
 }

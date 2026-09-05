@@ -37,11 +37,11 @@ smaller agent can execute it without touching core architecture.
 
 | System | Owner modules | Skill doc |
 | --- | --- | --- |
-| Combat state machine & rolls | `systems/Combat.ts`, `entities/Entity.ts` (action fields) | `skills/diablo-combat-model.md` |
+| Combat state machine & rolls | `systems/Combat.ts`, `entities/Entity.ts` (action fields) | `skills/action-combat-model.md` |
 | Controls & command flow | `core/InputBindings.ts`, `core/InputQueue.ts` | `skills/hybrid-action-controls.md` |
 | Animation & feedback | `entities/Player.ts` / `Enemy.ts` syncRender, `engine/Ambience.ts` | `skills/animation-weight-and-impact.md` |
 | Lighting & fog | `engine/Lighting.ts` | `skills/tile-lightmap-and-cutaway.md` |
-| Projectiles | `systems/Projectiles.ts` (faction/kind model; rolls stay in Combat) | `skills/diablo-combat-model.md` |
+| Projectiles | `systems/Projectiles.ts` (faction/kind model; rolls stay in Combat) | `skills/action-combat-model.md` |
 | Items & paperdoll | `items/catalog.ts` (data + `overlayTextureFor` + WEAPON_TIMING), `entities/Player.ts` | — |
 | World lifecycle | `main.ts` buildWorld/destroyWorld (per-floor teardown contract) | — |
 | External sprites | `render/SpriteLibrary.ts` (atlas manifest, lazy `ensure()`, trim/orig slicing) | `skills/atlas-sprite-pipeline.md` |

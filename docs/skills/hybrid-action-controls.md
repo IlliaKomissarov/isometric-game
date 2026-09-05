@@ -1,4 +1,4 @@
-# Skill: Hybrid Action Controls (Diablo Mouse + Dark Alliance Buttons)
+# Skill: Hybrid Action Controls (classic ARPG Mouse + Dark Alliance Buttons)
 
 ## What & why
 Pure click-to-fight "feels terrible and unresponsive" (user verdict) because

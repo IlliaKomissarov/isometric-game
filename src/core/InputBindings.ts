@@ -3,7 +3,7 @@
  * Translates raw DOM events into deterministic InputQueue commands.
  *
  * This is the ONLY module that listens to mouse/keyboard. Hybrid scheme
- * (Diablo mouse + BG:DA action buttons):
+ * (classic ARPG mouse + BG:DA action buttons):
  *   - Left click on a visible enemy → ATTACK (locked target)
  *   - Left click on ground loot     → PICKUP
  *   - Left click on walkable ground → MOVE_TO (tile via camera unprojection)

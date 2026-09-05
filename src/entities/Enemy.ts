@@ -1,6 +1,6 @@
 /**
  * @module entities/Enemy
- * Enemy entities: three archetypes with Diablo-style animated combat.
+ * Enemy entities: three archetypes with classic-ARPG-style animated combat.
  *
  *   fallen — small, quick pack demon; cowardly: flees when badly hurt.
  *   zombie — slow, brutal, barely staggerable (short hit recovery).

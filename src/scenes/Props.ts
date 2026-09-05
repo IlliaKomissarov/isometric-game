@@ -1,11 +1,11 @@
 /**
  * @module scenes/Props
- * Functional prop placement — the it.16 CLUTTER PURGE (Diablo rule).
+ * Functional prop placement — the it.16 CLUTTER PURGE (classic ARPG rule).
  *
  * Every standing object here either HAS COLLISION or is flat ground paint:
  *  - Candelabra hearths stand on TILE_BLOCKED tiles (planned by
  *    `planHearths` BEFORE the scene/pathfinder build) — you cannot walk
- *    through them, exactly like Diablo's braziers.
+ *    through them, exactly like classic ARPG's braziers.
  *  - Cracked-tile decals and gold piles are FLAT floor paint (walkable
  *    ground detail, like D1's floor debris).
  * PURGED (walk-through standing clutter): rubble piles, broken columns,

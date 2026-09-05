@@ -10,7 +10,7 @@
  *   - dark-spell-chant     → the Hollow King's summoning
  * PUNCHY COMBAT SFX (swing/hit/crit/pickup/UI…) are SYNTHESIZED with the
  * Web Audio API in a crisp retro voice (noise bursts + square/triangle
- * envelopes — the Diablo 1 / GBA fidelity band), so no essential effect
+ * envelopes — the classic ARPG / GBA fidelity band), so no essential effect
  * can ever be a missing file.
  *
  * Browser autoplay policy: everything stays silent until `unlock()` fires

@@ -1,8 +1,8 @@
-# Skill: Diablo 1 Combat Model (Animated Actions, To-Hit, Hit Recovery)
+# Skill: classic ARPG Combat Model (Animated Actions, To-Hit, Hit Recovery)
 
 ## What & why
 The user's verdict on cooldown-timer combat: "it doesn't look like a combat
-system at all." What makes Diablo 1's melee feel real is that attacks are
+system at all." What makes classic ARPG's melee feel real is that attacks are
 **animated actions with commitment**, resolved probabilistically:
 
 1. **Windup → strike frame → recovery.** Damage happens at ONE frame of the

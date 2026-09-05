@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 74, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 75, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,6 +20,8 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 73-91 checks) | 0 failures | 10 sessions, seeds 1-10, all classes: 0 failures after fixes | OK |
+| Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync, snapshot join 3–5 s, seat reclaim, barrier watchdog | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
 
@@ -72,6 +74,15 @@ Items examined and left as they are, with reasons:
 - **Resolution cap.** `Math.min(devicePixelRatio, 2)` was already in place, with the scaler
   stepping down under load.
 - **Fixed-step decoupling.** The loop was already fixed-step with render interpolation.
+
+### Iteration 75 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Desktop inventory ran off a 639 px window and covered the system bar | Medium (UI) | hangs under the bar, scrolls inside the remaining height |
+| Thumb-stick base stayed where last touched; off-screen after rotation on 15 configs | Medium (touch) | base recentres on release |
+| Class screen heading clipped on short windows (flex centring overflow) | Medium (UI) | `margin: auto` centring, scroll from the top |
+| Same-value DOM writes every frame (clock, hint, boss bar, cooldown text) | Low (CPU) | write only on change |
 
 ## 4. Known issues and regression log
 

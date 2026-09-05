@@ -1,5 +1,60 @@
 # Development Log
 
+## 2026-09-05 (iteration 75) - The long QA session, the README with screenshots, the word
+
+### The QA harness (`src/dev/qa75.ts`)
+- A scripted playthrough over the public debug handles: a fresh hero in
+  town, every window opened / fitted / closed, the chart, the shop and the
+  stash, a click-attack on the nearest foe, kills and XP and loot and a
+  pickup, a skill cast and a draught, depths II-IV, the depth V arena and
+  its warden, the town portal both ways, a save and a reload, a death and a
+  rising, the coliseum in and out, every settings toggle, and the device
+  matrix in that state. The deep set adds equip / unequip, sell / buyback,
+  a gold pile, the thumb stick, and the title's credits, exit, lobby and
+  class screens plus CONTINUE. Every console error and unhandled rejection
+  is a finding.
+- Ten sessions (seeds 1-10, all four classes, six of them deep): the first
+  session found nine failures; after the fixes below, sessions 2-4 and 7,
+  9, 10 were clean and the rest exposed two more. 73-91 checks each.
+
+### Bugs found and fixed
+- The desktop inventory hung 46 px from the top with a ceiling of the
+  whole viewport: it ran 34 px off a 639 px window and covered the system
+  bar's first three buttons. It hangs under the bar and scrolls now.
+- The thumb stick's base spawned under the last touch and STAYED there —
+  after a rotation it could sit off the screen or over another control
+  (fifteen device configurations failed with the base off-screen). It
+  returns to the zone's centre on release.
+- The class screen on a short window: a flex column that centres a child
+  taller than itself clips the child's TOP — the heading vanished on a
+  639 px laptop window. `margin: auto` centres when there is room and
+  scrolls from the top when there is not.
+- Per-frame DOM writes (the run clock, the interact hint's markup, the
+  boss bar's readout, the hotbar's cooldown text) ran sixty times a second
+  with the same value; they write only on a change now.
+
+### Observations that were not bugs
+- A warp queued during a fade's tail is dropped by design (`transitioning`);
+  the harness waits the fade out. The death sheet ignores a click inside
+  350 ms of appearing (the ghost-click shield); the harness waits. Depth V
+  proper has no warden — the warden is in the arena behind the sealed
+  chamber.
+
+### The word
+- Every reference to the trademarked genre name in code, docs and the README is gone; the
+  combat-model note is `docs/skills/action-combat-model.md`.
+
+### The README
+- Rewritten with seven fresh screenshots (`docs/screenshots/`): the
+  title, the class screen, the town, a depth III fight, the inventory, the
+  co-op lobby, and a portrait phone. Badges, a gallery, a two-column
+  controls table, the stack, the architecture, the harnesses.
+
+### Measured
+- Idle depth III (35 foes): tick 0.21 ms. In combat: tick 0.62 ms
+  (foe AI 0.12, combat 0.09, separation 0.03, pathing 0.003), frame 2.8 ms
+  (renderer 1.4, ambience 0.36, foe sync 0.28, lighting 0.24).
+
 ## 2026-09-05 (iteration 74) - The audit: a camera leak, a spatial hash, culling, mipmaps, the grade, the documents
 
 ### What the audit found
@@ -1968,7 +2023,7 @@ Rogue for a Warrior run.
 - `?class=` test entry still drops straight onto floor 1.
 
 ### UI polish
-- Panels share the Diablo frame (double gold rule, dark violet ground),
+- Panels share the classic ARPG frame (double gold rule, dark violet ground),
   `:active` opacity 0.75 on every button, high-contrast serif labels,
   hover tooltips with gold values on shop / stash / inventory cells,
   Q - R row in the command reference, SAVE & EXIT in the pause menu.
@@ -2834,10 +2889,10 @@ glyph appearing at the delayed beat.
 
 ## 2026-09-01 (iteration 16) — Designer corrections: collision rule, purges, UI bar
 
-Reference: d07RiV/diabloweb (Devilution WASM port) — D1 conventions applied:
+Reference: the Devilution WASM web port — D1 conventions applied:
 bottom control-panel HUD, collision-bearing clutter, descending stairwells.
 
-### The Diablo collision rule + clutter purge
+### The classic ARPG collision rule + clutter purge
 - NEW INVARIANT: every standing prop HAS COLLISION or does not exist. Flat
   ground paint (cracks, gold, corpses, blood) stays walkable by design.
 - `TILE_BLOCKED` tile type: blocks movement/pathing, passes sight/light,
@@ -3444,14 +3499,14 @@ held-SPACE engagement with target ring, poise-enabled trades, zombie killed
 at ~13.5 s, player winning at 116/140; hint banner, waystone, wall lighting
 and shadows confirmed on screenshots; zero console errors; typecheck clean.
 
-## 2026-08-31 (iteration 5) — Milestone 4: Diablo-grade combat + dungeon depth
+## 2026-08-31 (iteration 5) — Milestone 4: classic-ARPG-grade combat + dungeon depth
 
 User feedback (verbatim): "it doesn't look like a combat system at all, need
 much more improvements" + "dungeon depth and enemies AND finally add animated
-fight system, make it as complex as in the original Diablo game."
+fight system, make it as complex as in the original classic ARPG game."
 
 ### Combat rewritten around the D1 action model
-See skills/diablo-combat-model.md for the full write-up. Headlines:
+See skills/action-combat-model.md for the full write-up. Headlines:
 - Attacks are animated WINDUP → strike-frame → RECOVERY actions on a shared
   `Entity.action` state machine; range re-checked at the strike frame makes
   telegraphed attacks dodgeable; move orders cancel windups.
@@ -3558,7 +3613,7 @@ controls on screen; keep closing checklist items.
 Root cause of the "wrongly darkened" bug: the fog OVERLAY model. A black
 diamond only covers its own tile's ground footprint, so any sprite taller
 than one tile (every wall, every unit) was darkened by the NEIGHBOR tile's
-fog diamond — lit walls rendered with black tops. Replaced with Diablo 1's
+fog diamond — lit walls rendered with black tops. Replaced with classic ARPG's
 model: per-tile light values applied as sprite tints (see
 skills/tile-lightmap-and-cutaway.md). Wins:
 - Objects are lit exactly once, regardless of height — bug class eliminated.
@@ -3592,9 +3647,9 @@ fully visible standing behind south walls.
 
 ### Art direction & HUD
 - Fonts: Cinzel (headers/labels) + IM Fell English (body) via Google Fonts,
-  with serif fallbacks. Chosen as the closest quality webfonts to Diablo's
+  with serif fallbacks. Chosen as the closest quality webfonts to classic ARPG's
   Exocet spirit.
-- Diablo-style health orb (CSS sphere with liquid fill + gloss + low-hp
+- classic-ARPG-style health orb (CSS sphere with liquid fill + gloss + low-hp
   pulse), COMMANDS panel listing every control with kbd chips and
   active-mode highlighting, blood-red death title, cinematic vignette.
 - Ambient ember motes: 40 additive-blend particles drifting up through the
@@ -3609,7 +3664,7 @@ typecheck clean.
 
 ## 2026-08-31 (later) — Milestone 2: melee combat + chase AI
 
-User decisions (via clarification round): Diablo 1 deliberate combat pacing;
+User decisions (via clarification round): classic ARPG deliberate combat pacing;
 art will arrive as sprite sheets + JSON atlases; combat/AI prioritized next.
 
 ### What shipped
@@ -3733,4 +3788,4 @@ canvas `wheel` listeners — test zoom by dispatching a `WheelEvent` via JS.
 
 - Default class archetype for solo testing (currently Warrior).
 - Asset format expectations (sprite sheets? per-frame PNGs? aseprite?).
-- Combat feel target: Diablo 1 deliberate pace vs. faster hack-and-slash.
+- Combat feel target: classic ARPG deliberate pace vs. faster hack-and-slash.

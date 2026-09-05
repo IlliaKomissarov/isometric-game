@@ -2,7 +2,7 @@
 
 ## Goal
 Deeper floors look different: church stone (floors 1–2) → catacombs bone/
-rust (3–4) → hellish basalt/ember (5+), like Diablo 1's tilesets.
+rust (3–4) → hellish basalt/ember (5+), like classic ARPG's tilesets.
 
 ## Files you may touch
 - `src/core/config.ts` — add `FLOOR_THEMES: ThemeDef[]` (floor tile colors,

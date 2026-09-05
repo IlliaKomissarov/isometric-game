@@ -1,9 +1,9 @@
 # Skill: Isometric (2:1 Dimetric) Projection & Exact Inverse Picking
 
 ## What & why
-Classic Diablo-style rendering is not true isometric (120° axes) but 2:1
+Classic classic-ARPG-style rendering is not true isometric (120° axes) but 2:1
 dimetric: tiles are diamonds twice as wide as tall. This is the projection
-used by the open-source Diablo web ports (d07RiV/diabloweb renders the
+used by the open-source classic ARPG web ports (the Devilution web port renders the
 original 64×32 tile assets) and by virtually all "isometric" 2D engines,
 because 2:1 slopes rasterize without jaggies.
 

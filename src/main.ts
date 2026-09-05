@@ -1097,6 +1097,8 @@ async function boot(): Promise<void> {
     };
     const vignetteEl = document.getElementById('vignette');
     let hurtFlashTimer = 0;
+    /** The interact hint's last markup (written only on change; it.75). */
+    let lastHintHtml = '';
     let bossGoneTimer = 0;
     /** LEVEL-UP PILLARS (it.48): golden light columns climbing off the hero. */
     const pillars: Array<{ sprite: Sprite; life: number }> = [];
@@ -2437,11 +2439,15 @@ async function boot(): Promise<void> {
           el.root.classList.add('cast');
         }
         lastSkillCd[i] = cd;
+        // WRITE ONLY ON CHANGE (it.75): these ran sixty times a second and a
+        // same-value write still dirties layout. Compare first.
         if (cd > 0) {
           el.root.classList.add('cooling');
-          el.cd.style.height = `${Math.min(100, Math.round((cd / def.cd) * 100))}%`;
-          el.num.textContent = `${Math.ceil(cd / 60)}`;
-        } else {
+          const h = `${Math.min(100, Math.round((cd / def.cd) * 100))}%`;
+          if (el.cd.style.height !== h) el.cd.style.height = h;
+          const n = `${Math.ceil(cd / 60)}`;
+          if (el.num.textContent !== n) el.num.textContent = n;
+        } else if (el.root.classList.contains('cooling')) {
           el.root.classList.remove('cooling');
           el.cd.style.height = '0%';
           el.num.textContent = '';
@@ -3697,7 +3703,10 @@ async function boot(): Promise<void> {
         const halo = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
         world.playerHalo.position.set(halo.x, halo.y - 22);
         world.playerHalo.alpha = 0.3 + Math.sin(timeSec * 3.1) * 0.05;
-        if (timerLabel) timerLabel.textContent = formatTime(activeTicks); // The active clock (it.54).
+        if (timerLabel) {
+          const t = formatTime(activeTicks); // The active clock (it.54).
+          if (timerLabel.textContent !== t) timerLabel.textContent = t;
+        }
 
         // Proximity prompt: an "E — OPEN" chip floats over a nearby chest —
         // or, in town, over the stall / stash / gate / portal (it.39).
@@ -3708,7 +3717,10 @@ async function boot(): Promise<void> {
           const p = world.camera.worldToCanvas(townPrompt.x, townPrompt.y, pickRingScratch);
           interactHint.style.left = `${Math.round(p.x)}px`;
           interactHint.style.top = `${Math.round(p.y - townPrompt.lift)}px`;
-          interactHint.innerHTML = townPrompt.html;
+          if (lastHintHtml !== townPrompt.html) {
+            lastHintHtml = townPrompt.html;
+            interactHint.innerHTML = townPrompt.html;
+          }
           interactHint.classList.remove('dim');
           interactHint.classList.add('show');
         } else if (
@@ -3716,7 +3728,10 @@ async function boot(): Promise<void> {
           nearChest &&
           world.lighting.isVisible(Math.floor(nearChest.x), Math.floor(nearChest.y))
         ) {
-          interactHint.innerHTML = '<kbd>E</kbd> OPEN';
+          if (lastHintHtml !== '<kbd>E</kbd> OPEN') {
+            lastHintHtml = '<kbd>E</kbd> OPEN';
+            interactHint.innerHTML = lastHintHtml;
+          }
           const p = world.camera.worldToCanvas(nearChest.x, nearChest.y, pickRingScratch);
           interactHint.style.left = `${Math.round(p.x)}px`;
           interactHint.style.top = `${Math.round(p.y - 64)}px`;
@@ -3861,7 +3876,10 @@ async function boot(): Promise<void> {
               const windowPx = (track ? track.clientWidth : 420) * 0.766;
               bossBarFill.style.width = `${Math.max(0, (Math.max(0, Math.min(100, pct)) / 100) * windowPx).toFixed(1)}px`;
             }
-            if (bossHpEl) bossHpEl.textContent = boss.action === 'transition' ? 'RISING' : `${Math.max(0, Math.ceil(boss.hp))} / ${boss.hpMax}`;
+            if (bossHpEl) {
+              const t = boss.action === 'transition' ? 'RISING' : `${Math.max(0, Math.ceil(boss.hp))} / ${boss.hpMax}`;
+              if (bossHpEl.textContent !== t) bossHpEl.textContent = t;
+            }
           }
         } else if (bossBar?.classList.contains('show')) {
           // The warden fell: the bar reads empty through the death beat, then fades.

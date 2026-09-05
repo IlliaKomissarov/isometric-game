@@ -4,7 +4,7 @@
  *
  * World space: continuous grid coordinates where 1 unit = 1 tile.
  * Screen space: pixels, +x right, +y down. The projection is the classic
- * Diablo-style diamond mapping (see /docs/skills/iso-projection.md):
+ * classic-ARPG-style diamond mapping (see /docs/skills/iso-projection.md):
  *
  *   screenX = (wx - wy) * TILE_W / 2
  *   screenY = (wx + wy) * TILE_H / 2

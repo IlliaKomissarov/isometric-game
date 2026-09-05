@@ -1,7 +1,7 @@
 # Skill: Two-Layer Fog of War with Bresenham Line of Sight
 
 ## What & why
-Classic ARPG fog (Diablo 1 model): three tile states — never seen (pitch
+Classic ARPG fog (classic ARPG model): three tile states — never seen (pitch
 black), explored-but-unseen (static shroud), currently visible. Visibility is
 radius-limited and blocked by walls, so rooms reveal only when actually
 entered/peeked.

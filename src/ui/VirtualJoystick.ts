@@ -121,6 +121,7 @@ export class VirtualJoystick {
     }
     this.root.classList.remove('held');
     this.knob.style.transform = 'translate(-50%, -50%)';
+    this.recentre();
     this.set(0, 0);
   }
 
@@ -131,11 +132,22 @@ export class VirtualJoystick {
     if (changed) this.onChange?.(x, y);
   }
 
+  /**
+   * THE BASE COMES HOME (it.75): it spawned under the last thumb and stayed
+   * there, so after a rotation or a resize it could sit off the screen or
+   * over another control. Released, it returns to the zone's centre.
+   */
+  private recentre(): void {
+    this.base.style.left = '';
+    this.base.style.top = '';
+  }
+
   /** Release without a pointer event (a rotation, a modal, teardown). */
   reset(): void {
     this.pointerId = null;
     this.root.classList.remove('held');
     this.knob.style.transform = 'translate(-50%, -50%)';
+    this.recentre();
     this.set(0, 0);
   }
 

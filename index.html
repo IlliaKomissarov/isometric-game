@@ -39,7 +39,7 @@
         cursor: default;
       }
 
-      /* ---- Bottom HUD bar (it.16): the Diablo-style control panel strip ---- */
+      /* ---- Bottom HUD bar (it.16): the classic-ARPG-style control panel strip ---- */
       #hud-bar {
         position: fixed;
         left: 0;
@@ -4590,6 +4590,27 @@
       body.orient-landscape.short-screen .bs-list, body.orient-landscape.short-screen .bs-detail { max-height: calc(var(--app-h) * 0.72); }
       body.orient-landscape.short-screen .bs-stage { height: 120px; }
       #bestiary .bs-head, #skill-tree .st-head, #char-sheet .cs-head { padding-right: 44px; }
+
+      /* The desktop inventory (it.75): it used to hang 46 px from the top —
+         over the system bar's first buttons — with a ceiling of the whole
+         viewport that ran it 34 px off a 639 px window. It hangs under the
+         bar now and scrolls inside whatever height is left. */
+      #inv-panel:not(.fit-centred) {
+        top: calc(var(--map-h) + var(--sb-size) + 36px);
+        max-height: calc(var(--app-h) - var(--map-h) - var(--sb-size) - 48px);
+      }
+      /* A wide but short window (a laptop at 100% with the browser's bars)
+         is judged 'tablet' by its short edge; held flat it still has the
+         width for four cards in a row, which is what keeps the class
+         screen from scrolling on a 1366x650 laptop. */
+      body.orient-landscape.tier-tablet #class-cards { grid-template-columns: repeat(4, auto); gap: 14px; }
+      body.orient-landscape.tier-tablet #class-select .cs-fit { width: 1040px; }
+      /* THE CLASS SCREEN ON A SHORT WINDOW (it.75): a flex column that
+         centres a child taller than itself clips the child's TOP (the
+         heading vanished on a 639 px laptop window). `margin: auto` centres
+         when there is room and scrolls from the top when there is not. */
+      #class-select { justify-content: flex-start; }
+      #class-select .cs-fit { margin: auto; }
 
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone

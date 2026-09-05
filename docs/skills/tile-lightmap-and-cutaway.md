@@ -3,7 +3,7 @@
 ## What & why
 Two rendering techniques from classic isometric ARPGs:
 
-1. **Tile lightmap** (Diablo 1's lighting model): every world sprite is
+1. **Tile lightmap** (classic ARPG's lighting model): every world sprite is
    multiplied by a per-tile light color instead of being covered by overlay
    darkness. Chosen after the overlay approach FAILED: a black fog diamond
    only covers its own tile's ground footprint, so tall sprites (walls, unit

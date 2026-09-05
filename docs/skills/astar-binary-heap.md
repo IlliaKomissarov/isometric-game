@@ -5,7 +5,7 @@ Textbook A* implementations allocate node objects and use array `sort()` or
 linear scans for the open set — fine for one search, ruinous when every click
 (and later, every chasing enemy every second) triggers a search. This skill
 is the production-grade variant used by pathfinding libraries (and by the
-Diablo web ports' movement code): flat typed arrays + an index-based binary
+classic ARPG web ports' movement code): flat typed arrays + an index-based binary
 min-heap + search stamps.
 
 ## Problem it solved

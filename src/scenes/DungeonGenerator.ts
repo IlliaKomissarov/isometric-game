@@ -18,7 +18,7 @@ export const TILE_FLOOR = 1;
 /**
  * Floor tile occupied by a SOLID prop (candelabra hearth): blocks movement
  * and pathing, does NOT block sight, renders as floor under the prop.
- * Diablo-rule (it.16): if you can't walk through it, it has collision.
+ * classic ARPG-rule (it.16): if you can't walk through it, it has collision.
  */
 export const TILE_BLOCKED = 2;
 

@@ -5,7 +5,7 @@
  * REPLACES the old sprite-overlay FogOfWar. The overlay approach darkened
  * tall sprites incorrectly (a lit wall's upper half was covered by the black
  * fog diamond of the hidden tile behind it). Instead, this system TINTS every
- * registered floor/wall sprite by its tile's light value — the Diablo 1
+ * registered floor/wall sprite by its tile's light value — the classic ARPG
  * model — which lights each object exactly once, no matter its height.
  *
  * Three visibility states per tile (unchanged semantics):

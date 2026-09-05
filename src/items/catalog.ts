@@ -27,7 +27,7 @@ export interface ItemDef {
   value?: number;
   /** Consumables (it.39): what using it does. Fractions of max. */
   use?: { heal?: number; resource?: number; portal?: boolean };
-  /** Weapon damage roll range (Diablo-style min–max, replaces bare fists). */
+  /** Weapon damage roll range (classic-ARPG-style min–max, replaces bare fists). */
   minDamage?: number;
   maxDamage?: number;
   /** Main-hand only: weapon family. Undefined = 'blade'. */
@@ -128,7 +128,7 @@ export const ITEMS: Record<string, ItemDef> = {
   warden_halberd: { id: 'warden_halberd', name: 'Warden Halberd', slot: 'mainHand', rarity: 'rare', weaponKind: 'polearm', range: 2.0, minDamage: 11, maxDamage: 19, color: 0xa8b0c0, icon: 'steel_halberd_0' },
   iron_katana: { id: 'iron_katana', name: 'Iron Katana', slot: 'mainHand', rarity: 'magic', weaponKind: 'katana', minDamage: 5, maxDamage: 9, color: 0xb0b8c8, icon: 'iron_katana_0' },
   falcon_edge: { id: 'falcon_edge', name: 'Falcon Edge', slot: 'mainHand', rarity: 'rare', weaponKind: 'katana', minDamage: 7, maxDamage: 12, color: 0xd8cfa0, icon: 'steel_falcon_0' },
-  // --- Consumables (it.39): the belt-less Diablo essentials ------------------
+  // --- Consumables (it.39): the belt-less classic ARPG essentials ------------------
   health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', art: 'health_potion', value: 30, use: { heal: 0.5 }, color: 0xc83030 },
   mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', art: 'mana_potion', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8 },
   scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'magic', art: 'scroll_town_portal', value: 80, use: { portal: true }, color: 0xd8c890 },

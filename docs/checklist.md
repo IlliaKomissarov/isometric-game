@@ -20,7 +20,7 @@
 
 ## Milestone 2 — Combat & Interaction ✅ core loop (2026-08-31)
 
-User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
+User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 
 - [x] Basic melee attack (click enemy → approach → auto-swing → damage) — `src/systems/Combat.ts`
 - [x] Enemy aggro + chase AI (LOS + radius aggro, throttled A*, 3 s give-up) — `src/entities/Enemy.ts`
@@ -29,14 +29,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Death/despawn flow through EnemyPool (single `entity:died` emission from Combat)
 - [x] `?seed=` URL param + `window.__game` dev handle + `loop.step(n)` deterministic test driver
 - [x] Swing lunge + player hit-flash + walk-bob animation feedback (2026-08-31 it.3)
-- [x] Enemy strikes back (8 dmg / 1.2 s) + Diablo-style health orb UI (2026-08-31 it.3)
+- [x] Enemy strikes back (8 dmg / 1.2 s) + classic-ARPG-style health orb UI (2026-08-31 it.3)
 - [x] Player death → epitaph → respawn at entrance (2026-08-31 it.3)
 - [x] Entity separation — enemies keep 0.55 tiles from the player (2026-08-31 it.3)
 - [ ] Screen-shake on heavy hits (deferred — needs camera-offset hook)
 
 ## Iteration 3 — Lighting, Cutaway & Art Direction ✅ (2026-08-31)
 
-- [x] Lighting rewritten as a tile lightmap (tint-based, Diablo 1 model) — fixes
+- [x] Lighting rewritten as a tile lightmap (tint-based, classic ARPG model) — fixes
       wrongly-darkened lit objects; warm/cool ramp + torch flicker + smooth glide
 - [x] Cutaway vision: walls occluding the player fade to 0.32 alpha and back
 - [x] Hidden-geometry silhouette leak fixed (`visible=false`, not black tint)
@@ -53,7 +53,7 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Equipment visuals: instant tinted paperdoll overlays on the model
 - [x] Item stat tooltip (folded into `ui/Inventory.ts`)
 - [x] Stats live in combat: weapon damage bonus + flat armor reduction
-- [ ] Diablo-style tetris grid + drag-and-drop (current: list backpack)
+- [ ] classic-ARPG-style tetris grid + drag-and-drop (current: list backpack)
 - [ ] Item drop BACK to the ground from inventory
 - [ ] Rarity affixes / randomized stats
 
@@ -66,7 +66,7 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Particle count 40→64, 35% ember-biased toward braziers
 - [ ] Enemy-enemy separation (they stack on each other when crowding)
 
-## Milestone 4 — Diablo Combat & Dungeon Depth ✅ (2026-08-31 it.5)
+## Milestone 4 — classic ARPG Combat & Dungeon Depth ✅ (2026-08-31 it.5)
 
 - [x] Animated attack actions: windup → strike frame → recovery on every entity
 - [x] To-hit rolls, weapon min–max damage, crits ×2, misses with whiff feedback
@@ -602,6 +602,13 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Mipmaps on filtered atlases; colour grade filter with a toggle and a quality gate
 - [x] Global unhandled-rejection / error handlers; vendor chunks
 - [x] `README.md` and `STATE_ARTIFACT.md`; clean build, zero console errors
+
+## Iteration 75 - The long QA session (2026-09-05)
+
+- [x] `src/dev/qa75.ts` scripted playthrough (73-91 checks) run ten times across seeds 1-10 and all four classes
+- [x] Fixed: desktop inventory off-screen and over the bar; stick base left where last touched; class screen heading clipped on short windows; per-frame same-value DOM writes
+- [x] The trademarked genre name removed everywhere; combat note renamed
+- [x] README rewritten with seven fresh screenshots; clean build
 
 ## Milestone 5 — Co-op Foundation
 

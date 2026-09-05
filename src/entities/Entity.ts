@@ -26,7 +26,7 @@ export abstract class Entity {
   hpMax = 100;
 
   /**
-   * Combat action state machine (Diablo 1 model):
+   * Combat action state machine (classic ARPG model):
    *   idle   — free to move/act.
    *   attack — playing a swing: windup → strike frame → recovery. Damage
    *            lands ONLY on the strike frame; interrupting cancels it.

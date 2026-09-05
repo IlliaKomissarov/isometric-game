@@ -25,7 +25,7 @@
 - **Gaps**: no attributes (STR/DEX/MAG/VIT) or stat points; level-up is a fixed formula; buffs are ad-hoc fields, not a status-effect list; skills are fixed per class (no skill points / ranks / passives); no consumables; `Player.serialize` is partial (no level/xp/gold/resource).
 
 ### 2.2 Combat, projectiles — `systems/Combat.ts`, `systems/Projectiles.ts`
-- **Have**: Diablo 1 action model (windup → strike frame → recover), to-hit / crit / max-roll display, poise + stunlock, knockback, weapon families with reach/timing, AoE cleave arc, faction-generalized projectiles with fog-gated targeting, god mode.
+- **Have**: classic ARPG action model (windup → strike frame → recover), to-hit / crit / max-roll display, poise + stunlock, knockback, weapon families with reach/timing, AoE cleave arc, faction-generalized projectiles with fog-gated targeting, god mode.
 - **Gaps**: no damage TYPES (physical/fire/cold/poison/arcane) or resistances; no armor class vs to-hit scaling (flat `toHit` constants); no block/parry with shields (offHand is armor-only); no elemental on-hit procs; enemies never lead shots; no threat/aggro table for multiple players.
 
 ### 2.3 Enemies — `entities/Enemy.ts`, `EnemyPool.ts`

@@ -1,6 +1,6 @@
 /**
  * @module systems/Combat
- * Diablo 1–model combat: animated attack actions, to-hit rolls, damage
+ * classic ARPG–model combat: animated attack actions, to-hit rolls, damage
  * ranges, crits, hit recovery (stun), knockback, and dodgeable strikes.
  *
  * THE MODEL (mirrors the original game's feel):

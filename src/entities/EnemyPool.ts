@@ -57,18 +57,61 @@ export class EnemyPool {
    * Pairwise separation so crowding enemies never stack on one tile.
    * O(n²) over live bodies (n ≤ ~16) — run once per tick after updates.
    */
+  /** Spatial hash buckets, reused every tick (it.74): one tile per cell. */
+  private readonly cells = new Map<number, Enemy[]>();
+  private readonly cellKeys: number[] = [];
+
+  /**
+   * SEPARATION BY SPATIAL HASH (it.74). The pairwise scan copied the active
+   * set into an array and tested every pair every tick — 780 pairs for a
+   * 40-foe floor, most of them rooms apart. Foes are hashed into one-tile
+   * cells; a foe only meets the foes in its own and the eight neighbouring
+   * cells, and a pair is resolved once (by id order). No allocation on the
+   * hot path: the bucket arrays are kept and emptied.
+   */
   separate(): void {
-    const list = [...this.active];
-    for (let i = 0; i < list.length; i++) {
-      const a = list[i];
+    const cells = this.cells;
+    for (const k of this.cellKeys) {
+      const bucket = cells.get(k);
+      if (bucket) bucket.length = 0;
+    }
+    this.cellKeys.length = 0;
+    for (const e of this.active) {
+      if (e.hp <= 0) continue;
+      const key = (Math.floor(e.pos.y) + 64) * 4096 + (Math.floor(e.pos.x) + 64);
+      let bucket = cells.get(key);
+      if (!bucket) {
+        bucket = [];
+        cells.set(key, bucket);
+      }
+      if (bucket.length === 0) this.cellKeys.push(key);
+      bucket.push(e);
+    }
+    for (const a of this.active) {
       if (a.hp <= 0) continue;
-      for (let j = i + 1; j < list.length; j++) {
-        const b = list[j];
-        if (b.hp <= 0) continue;
+      const cx = Math.floor(a.pos.x) + 64;
+      const cy = Math.floor(a.pos.y) + 64;
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let ox = -1; ox <= 1; ox++) {
+          const bucket = cells.get((cy + oy) * 4096 + (cx + ox));
+          if (!bucket) continue;
+          for (let j = 0; j < bucket.length; j++) {
+            const b = bucket[j];
+            if (b === a || b.id < a.id || b.hp <= 0) continue;
+            this.resolvePair(a, b);
+          }
+        }
+      }
+    }
+  }
+
+  private resolvePair(a: Enemy, b: Enemy): void {
+    {
+      {
         const dx = b.pos.x - a.pos.x;
         const dy = b.pos.y - a.pos.y;
         const dist = Math.hypot(dx, dy);
-        if (dist >= SEPARATION || dist < 1e-6) continue;
+        if (dist >= SEPARATION || dist < 1e-6) return;
         const push = (SEPARATION - dist) / 2;
         const nx = dx / dist;
         const ny = dy / dist;

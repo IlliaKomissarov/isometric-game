@@ -594,6 +594,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Barrier watchdog (`rs`), queued joins during a transition, thumbs blocked while transitioning
 - [x] VFX sprite pool; `PROTOCOL` 3; three-tab verification; clean build
 
+## Iteration 74 - The audit (2026-09-05)
+
+- [x] Camera wheel-listener leak across floors fixed (`Camera.destroy`)
+- [x] Enemy separation by spatial hash, no per-tick allocation
+- [x] Off-screen culling of static world sprites (`render/Culling.ts`), measured
+- [x] Mipmaps on filtered atlases; colour grade filter with a toggle and a quality gate
+- [x] Global unhandled-rejection / error handlers; vendor chunks
+- [x] `README.md` and `STATE_ARTIFACT.md`; clean build, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

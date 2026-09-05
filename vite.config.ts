@@ -68,6 +68,17 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
+    // VENDOR CHUNKS (it.74): the renderer and the transport change once a
+    // release; the game changes every deploy. Split, the browser keeps the
+    // 800 KB of Pixi cached across builds and fetches only the game.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          pixi: ['pixi.js'],
+          peer: ['peerjs'],
+        },
+      },
+    },
   },
   server: {
     port: 5173,

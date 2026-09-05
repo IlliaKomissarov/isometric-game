@@ -1,5 +1,43 @@
 # Development Log
 
+## 2026-09-05 (iteration 74) - The audit: a camera leak, a spatial hash, culling, mipmaps, the grade, the documents
+
+### What the audit found
+- Type safety was already clean (0 `any` in `src/`); run-scoped UIs already
+  used `AbortController`s; projectiles, damage numbers and burst particles
+  were already pooled; the resolution cap and the fixed-step loop were in
+  place. The real findings were narrower:
+- `Camera` added a `wheel` listener to the canvas in its constructor and
+  never removed it. A camera is built per floor, so every floor change kept
+  the previous camera — and through its closure the previous viewport and
+  scene graph — alive. `Camera.destroy()` now removes it; `destroyWorld`
+  calls it.
+- `EnemyPool.separate` copied the active set and tested every pair every
+  tick. It hashes foes into one-tile cells now and resolves each pair once.
+- Every world sprite reached the batcher every frame. `render/Culling.ts`
+  marks sprites outside the screen (plus a margin) `renderable = false`,
+  writing only on a change so Pixi's cached instruction set survives, and
+  never touches entities or `visible` (the lighting's flag). Measured on
+  depth II: 1,173 world sprites, 48% culled, `renderer.render` 0.14 → 0.08
+  ms; the walk costs 0.12 ms, so it is CPU-neutral on a desktop and a GPU
+  saving on phones.
+- Filtered atlases shimmered under the phone's 0.82x stage zoom: `linear`
+  sources get mipmaps; pixel-art stays `nearest`.
+- Unhandled rejections vanished: global handlers log with an `[unhandled]`
+  prefix.
+
+### Visual
+- A colour grade (`ColorMatrixFilter`: contrast +8%, saturation −6%) over
+  everything Pixi draws, off at the scaler's low rung, with a Settings
+  toggle. Shadow maps, PBR and anisotropy do not apply to a 2D sprite
+  renderer; bloom was not applied because the additive layer shares its
+  container with the damage numbers.
+
+### Build and documents
+- Rollup vendor chunks (`pixi`, `peer`). A root `README.md` (features,
+  stack, architecture, setup, controls) and `STATE_ARTIFACT.md` (scorecard,
+  component matrix, audit log, known issues, roadmap).
+
 ## 2026-09-05 (iteration 73) - Co-op: the leader is the authority, snapshot joins, seat reclaim
 
 ### What was there

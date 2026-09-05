@@ -15,7 +15,7 @@
  * in under the transition fade (lazy loading — see SpriteLibrary.ensure).
  */
 
-import { Application, Container, Graphics, Sprite, Text } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
@@ -94,7 +94,8 @@ import { touchControls, fullscreenButton } from '@/ui/TouchControls';
 import { StatusFrame } from '@/ui/StatusFrame';
 import { SystemBar } from '@/ui/SystemBar';
 import { fit } from '@/ui/FitScaler';
-import { visuals } from '@/core/VisualSettings';
+import { visuals, visualListeners } from '@/core/VisualSettings';
+import { cullWorld, type CullStats } from '@/render/Culling';
 import type { PlayerSave } from '@/persist/SaveGame';
 import { makeDraggable } from '@/ui/draggable';
 import { auditTownLayout } from '@/town/TownMap';
@@ -244,6 +245,35 @@ async function boot(): Promise<void> {
   // snapping; the camera reads `app.screen`, so centring follows for free.
   layout.onReflow(() => app.resize());
   perf.attach(app); // The rolling frame budget owns the buffer resolution.
+
+  // THE ERROR BOUNDARY (it.74): a rejected promise nobody awaited used to
+  // vanish into the console with no context. Both paths now log with a
+  // prefix a search can find, and never throw again from inside the handler.
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('[unhandled] promise rejected:', e.reason);
+    e.preventDefault();
+  });
+  window.addEventListener('error', (e) => {
+    console.error('[unhandled] error:', e.message, e.error);
+  });
+
+  // THE COLOUR GRADE (it.74): one full-screen pass — a little contrast, a
+  // little less saturation — over everything Pixi draws (the DOM HUD is
+  // untouched). One pass at 2x resolution is what a weak phone cannot
+  // spare, so it runs only at the scaler's top rung, and the player can
+  // switch it off.
+  const grade = new ColorMatrixFilter();
+  grade.contrast(0.08, true);
+  grade.saturate(-0.06, true);
+  const applyGrade = (): void => {
+    const on = visuals.grade && perf.quality !== 'low';
+    app.stage.filters = on ? [grade] : null;
+    app.stage.filterArea = on ? app.screen : undefined;
+  };
+  applyGrade();
+  perf.onQuality(() => applyGrade());
+  layout.onReflow(() => applyGrade());
+  visualListeners.add(applyGrade);
   void fullscreenButton; // The corner control exists for every screen (it.64).
   // CONTAIN-FIT (it.64): no window may be cropped on any viewport. Centred
   // panels keep their translate; flex-centred ones scale on their own.
@@ -2017,6 +2047,7 @@ async function boot(): Promise<void> {
       w.coliseum?.destroy();
       teleporterFx = null;
       w.input.destroy();
+      w.camera.destroy(); // The wheel listener went with the camera (it.74).
       w.projectiles.clear();
       w.vfx.clear();
       w.gore.clear();
@@ -3263,6 +3294,10 @@ async function boot(): Promise<void> {
     // never kill the rAF loop (that was a silent freeze). Report the first
     // few, keep running.
     let loopErrors = 0;
+    /** Culling state (a DEV switch: `__game.setCull(false)` to compare). */
+    let cullOn = true;
+    let cullStats: CullStats = { total: 0, culled: 0 };
+    const keepSet = new Set<Container>();
     const reportLoopError = (where: string, err: unknown): void => {
       loopErrors++;
       if (loopErrors <= 5) console.error(`[loop] ${where} threw (${loopErrors}):`, err);
@@ -3840,6 +3875,13 @@ async function boot(): Promise<void> {
         tutorial.update(cameraFocus.x, cameraFocus.y, frameDt);
         minimap.update(cameraFocus.x, cameraFocus.y, timeSec);
         world.camera.follow(cameraFocus, frameDt);
+        // OFF-SCREEN CULLING (it.74): only what the camera sees is handed
+        // to the batcher. Entities are kept whatever their place.
+        if (cullOn) {
+          keepSet.clear();
+          state.forEach((e) => keepSet.add(e.container));
+          cullStats = cullWorld(world.viewport, app.screen.width, app.screen.height, keepSet);
+        }
         app.renderer.render(app.stage);
       }
     }
@@ -4222,7 +4264,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 

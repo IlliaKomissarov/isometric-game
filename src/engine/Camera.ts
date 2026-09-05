@@ -30,19 +30,27 @@ export class Camera {
   private kickY = 0;
   private trauma = 0;
 
+  private readonly onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    const dir = Math.sign(e.deltaY);
+    this.targetZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.targetZoom - dir * ZOOM_STEP));
+  };
+
   constructor(
     private readonly app: Application,
     private readonly viewport: Viewport,
   ) {
-    app.canvas.addEventListener(
-      'wheel',
-      (e: WheelEvent) => {
-        e.preventDefault();
-        const dir = Math.sign(e.deltaY);
-        this.targetZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.targetZoom - dir * ZOOM_STEP));
-      },
-      { passive: false },
-    );
+    app.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+  }
+
+  /**
+   * THE LEAK (it.74): a camera is built per floor, and each one added a
+   * wheel listener to the canvas that outlived it — every floor change
+   * kept the previous camera, its viewport and the whole scene graph it
+   * closed over alive. The world's teardown calls this.
+   */
+  destroy(): void {
+    this.app.canvas.removeEventListener('wheel', this.onWheel);
   }
 
   /**

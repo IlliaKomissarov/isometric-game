@@ -408,6 +408,10 @@ export class SpriteLibrary {
   private slice(name: string, e: AtlasAnimEntry, base: Texture): void {
     if (this.anims.has(name)) return;
     base.source.scaleMode = e.nearest ? 'nearest' : 'linear';
+    // MIPMAPS (it.74): a filtered atlas drawn at 0.82x on a phone (the
+    // stage zoom bias) shimmered — minification without mip levels picks
+    // texels at random. Pixel-art atlases stay 'nearest' and mip-less.
+    if (!e.nearest) base.source.autoGenerateMipmaps = true;
     // Half-res atlases mount at resolution 0.5: every rectangle below is
     // then expressed in ORIGINAL pixels, exactly like the raw frames were.
     if (e.scale !== 1) base.source.resolution = e.scale;

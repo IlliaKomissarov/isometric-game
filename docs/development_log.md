@@ -1,5 +1,34 @@
 # Development Log
 
+## 2026-09-05 (iteration 76) - The item card: THIS beside YOURS
+
+### What shipped
+- `items/compare.ts`: pure arithmetic laying an item beside the piece worn
+  in its slot - damage (range shown, average for the delta), swings per
+  second from the family timing, reach, crit, stagger, armor (worn plus
+  bonus), max HP, damage %, dodge, regen. Rows appear when either side has
+  a value; a verdict counts the leans: UPGRADE, DOWNGRADE, TRADE-OFF, EQUAL.
+- `ui/itemTip.ts` builds the card for every list: the inventory pack (worn
+  piece on the doll shows its own numbers under a WORN column), the shop's
+  wares and the sell list, the stash both ways. A bare main hand compares
+  against the class's own weapon, because that is what the hero swings.
+  Consumables keep their one-line description.
+- Touch: a long press (380 ms) raises the card without acting; the tap that
+  follows is swallowed; the next touch anywhere folds it. A plain tap still
+  equips. The footer says "tap" on touch and "click" on a mouse.
+- The card sits above every window now (z 62). It had been UNDER the
+  inventory (z 20 versus the windows' 40 since it.71) - hovering a cell near
+  the panel's edge showed a card half-hidden behind the glass.
+- The card clamps to the layout's viewport (`--app-w/--app-h`) rather than
+  the document, so it also stays inside a simulated device box.
+
+### Verified
+- Soldier Blade over Rusty Sword: +4 damage, UPGRADE. Flanged Mace: +1.5
+  damage, -0.2/s, -2% crit, stagger gained, TRADE-OFF. Ring of Embers over
+  an empty slot. Dark Mail over Leather Jerkin: +2 armor. The shop card on
+  the armorer's mace. The phone box (412x915): the card inside the box, a
+  long press shows it without equipping, a tap equips. Device matrix 74/74.
+
 ## 2026-09-05 (iteration 75) - The long QA session, the README with screenshots, the word
 
 ### The QA harness (`src/dev/qa75.ts`)

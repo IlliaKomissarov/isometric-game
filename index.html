@@ -4612,6 +4612,26 @@
       #class-select { justify-content: flex-start; }
       #class-select .cs-fit { margin: auto; }
 
+      /* ---- 8a. THE ITEM CARD (it.76): THIS beside YOURS ----------------- */
+      #item-tip, #inv-tooltip { z-index: 62; min-width: 190px; max-width: min(320px, calc(var(--app-w, 100vw) - 16px)); padding: 9px 12px 8px; }
+      #item-tip .tip-slot b, #inv-tooltip .tip-slot b { color: var(--frame-gold, #c8a558); font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+      .tip-cmp { border-collapse: collapse; margin: 6px 0 2px; width: 100%; font-family: 'Crimson Pro', 'Georgia', serif; font-size: 12.5px; line-height: 1.25; }
+      .tip-cmp thead th { font-family: 'Cinzel', 'Georgia', serif; font-size: 9px; letter-spacing: 0.14em; color: #8a8072; text-align: right; padding: 0 0 3px 8px; border-bottom: 1px solid rgba(200, 165, 88, 0.28); font-weight: 600; }
+      .tip-cmp thead th:first-child { text-align: left; padding-left: 0; }
+      .tip-cmp tbody th { font-weight: 400; color: #a89c88; text-align: left; padding: 1px 6px 1px 0; white-space: nowrap; }
+      .tip-cmp tbody td { text-align: right; padding: 1px 0 1px 8px; white-space: nowrap; color: var(--ink, #e8dfc8); font-variant-numeric: tabular-nums; }
+      .tip-cmp tbody td.tip-a { font-weight: 600; }
+      .tip-cmp tbody td.tip-b { color: #8f8677; }
+      .tip-cmp tbody td.tip-d { font-family: 'Cinzel', 'Georgia', serif; font-size: 10.5px; min-width: 34px; }
+      .tip-cmp .tip-d.up, .tip-verdict.upgrade { color: #7fd67f; }
+      .tip-cmp .tip-d.down, .tip-verdict.downgrade { color: #e06a5a; }
+      .tip-verdict.tradeoff { color: #e8cf8a; }
+      .tip-verdict.equal { color: #8f8677; }
+      .tip-yours { font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 11.5px; color: #8f8677; margin-top: 3px; }
+      .tip-yours .tip-empty { color: #6f665a; }
+      .tip-verdict { font-family: 'Cinzel', 'Georgia', serif; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
+      body.input-touch #item-tip, body.input-touch #inv-tooltip { font-size: 13px; }
+
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone
          the pad and the stick zone sat OVER the lower half of every window,

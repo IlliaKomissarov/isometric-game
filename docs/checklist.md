@@ -610,6 +610,13 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The trademarked genre name removed everywhere; combat note renamed
 - [x] README rewritten with seven fresh screenshots; clean build
 
+## Iteration 76 - The item card (2026-09-05)
+
+- [x] `items/compare.ts`: item-versus-worn rows with signed deltas and a verdict
+- [x] One card for the inventory, the shop and the stash; worn pieces show their own numbers
+- [x] Long press on touch shows the card without acting; the card sits above every window
+- [x] Harness check (`qa75`: the card compares); device matrix 74/74; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

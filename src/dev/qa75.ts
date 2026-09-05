@@ -332,6 +332,23 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     check('coliseum back to town', await until(() => game() && game().floor === 0, 25000, 250));
     g = game();
 
+    // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
+    {
+      g.player.addItem('soldier_blade');
+      key('KeyI');
+      await wait(50);
+      const cell = document.querySelector<HTMLElement>('#inv-panel button[data-item=soldier_blade]');
+      const r = cell?.getBoundingClientRect();
+      cell?.dispatchEvent(new MouseEvent('mouseenter', { clientX: (r?.left ?? 0) + 10, clientY: (r?.top ?? 0) + 10 }));
+      const tip = document.getElementById('inv-tooltip');
+      const shown = !!tip && tip.classList.contains('show') && !!tip.querySelector('.tip-cmp');
+      check('item card compares to the worn piece', shown && !!tip?.querySelector('.tip-verdict'), tip?.innerText.slice(0, 80));
+      check('item card sits above the window', !!tip && parseInt(getComputedStyle(tip).zIndex, 10) > 40, tip ? getComputedStyle(tip).zIndex : 'none');
+      cell?.dispatchEvent(new MouseEvent('mouseleave'));
+      key('KeyI');
+      await wait(50);
+    }
+
     // ---- DEEP (it.75): gear, the economy, gold on the floor, the menus, touch --------------
     if (opts.deep) {
       // Gear: the starter kit carries a spare weapon in the pack.

@@ -14,7 +14,7 @@ import type { Player } from '@/entities/Player';
 import { ITEMS, type ItemDef } from '@/items/catalog';
 import { STASH_CAPACITY, type TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
-import { hideItemTip, wireItemTips } from './itemTip';
+import { hideItemTip, wireItemTips, wornFor } from './itemTip';
 
 const iconHtml = (def: ItemDef): string => itemIconHtml(def);
 
@@ -125,7 +125,7 @@ export class StashUI {
       });
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
     });
-    wireItemTips(this.panel, ITEMS, (def) => `Worth ${this.town.buyPrice(def)} gold`);
+    wireItemTips(this.panel, ITEMS, (def) => `Worth ${this.town.buyPrice(def)} gold`, (def) => wornFor(this.player, def));
   }
 
   destroy(): void {

@@ -13,7 +13,7 @@ import type { Player } from '@/entities/Player';
 import { ITEMS, type ItemDef } from '@/items/catalog';
 import type { TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
-import { hideItemTip, wireItemTips } from './itemTip';
+import { hideItemTip, wireItemTips, wornFor } from './itemTip';
 
 const iconHtml = (def: ItemDef): string => itemIconHtml(def);
 
@@ -136,7 +136,7 @@ export class ShopUI {
       b.addEventListener('click', () => this.queue.enqueue({ type: 'SELL', playerId: 0, backpackIndex: Number(b.dataset.sell) }));
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
     });
-    wireItemTips(this.panel, ITEMS, (def) => `Buy ${this.town.buyPrice(def)} · buyback ${this.town.sellPrice(def)} · sells for ${this.town.sellPrice(def)} gold`);
+    wireItemTips(this.panel, ITEMS, (def) => `Buy ${this.town.buyPrice(def)} · buyback ${this.town.sellPrice(def)} · sells for ${this.town.sellPrice(def)} gold`, (def) => wornFor(this.player, def));
   }
 
   destroy(): void {

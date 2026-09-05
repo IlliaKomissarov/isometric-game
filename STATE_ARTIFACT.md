@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 75, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 76, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -42,6 +42,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `engine/Camera` | app screen, layout `stageZoom` | world transform | destroyed with its world |
 | `core/OrientationManager` | layout viewport, touch detection, settings | CSS custom properties + body classes | the only source of layout truth |
 | `ui/FitScaler` | layout | panel scale, `--fit-scale` | legibility floors; scroll past them |
+| `items/compare` / `ui/itemTip` | catalog, player equipment | the item card for inventory, shop, stash | pure rows; the caller resolves "yours" |
 | `ui/TouchControls` / `SystemBar` / `StatusFrame` / `Minimap` | layout, queue, player | commands, HUD | act on pointerup for windows |
 | `core/PerformanceScaler` | rAF timing | buffer resolution, `quality`, particle budget, colour grade gate | hysteresis, 2 s cooldown |
 | `persist/SaveGame` | player, floors, stash, stats | slots 1–3, co-op slots 11–14 | versioned schema |
@@ -83,6 +84,13 @@ Items examined and left as they are, with reasons:
 | Thumb-stick base stayed where last touched; off-screen after rotation on 15 configs | Medium (touch) | base recentres on release |
 | Class screen heading clipped on short windows (flex centring overflow) | Medium (UI) | `margin: auto` centring, scroll from the top |
 | Same-value DOM writes every frame (clock, hint, boss bar, cooldown text) | Low (CPU) | write only on change |
+
+### Iteration 76 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Inventory tooltip rendered under the window (z 20 vs 40) | Medium (UI) | the item card sits at z 62 above every window |
+| No way to judge an item against the worn piece | Feature | `items/compare.ts` + the shared card: THIS / YOURS rows, deltas, verdict; long press on touch |
 
 ## 4. Known issues and regression log
 

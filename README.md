@@ -52,8 +52,9 @@
 
 - **An action RPG in the classic mould.** A 60 Hz simulation with wind-up, strike and recovery
   frames, to-hit rolls, crits, knockback, hit recovery and stagger. Melee, bows and wands. Four
-  classes with talent paths, synergies and passives. Loot in three rarities on a paperdoll. A
-  town with a shop, a stash and a coliseum. A warden every fifth depth, with phases.
+  classes with talent paths, synergies and passives. Loot in three rarities on a paperdoll, with
+  an item card that lays every piece beside what you wear and calls the verdict. A town with a
+  shop, a stash and a coliseum. A warden every fifth depth, with phases.
 - **Four-player co-op with no server.** WebRTC data channels brokered by PeerJS. Deterministic
   lockstep carries only intent; the Party Leader is the authority for every creature and hero,
   so screens never drift apart. Room codes, a lobby with portraits and latency, party chat, a

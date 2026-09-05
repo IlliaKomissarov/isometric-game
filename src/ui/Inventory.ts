@@ -5,8 +5,9 @@
  * EQUIP / UNEQUIP command and applied by systems/Inventory inside the tick
  * (see that module for the determinism rationale).
  *
- * Includes the item stat tooltip (closes the item-tooltip sub-task): a single
- * reused DOM node shown on row hover with name, slot, and stat lines.
+ * The item card (it.76): hovering a pack item lays its numbers beside the
+ * piece worn in that slot (see `ui/itemTip`); hovering a worn piece shows
+ * its own. A long press does the same on touch.
  */
 
 import { eventBus } from '@/core/EventBus';
@@ -14,10 +15,11 @@ import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
-import { ITEMS, RARITY_COLOR, itemValue, statLine, type ItemDef } from '@/items/catalog';
+import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
 
 import { fitItemIcons, itemIconHtml } from './itemIcons';
+import { attachItemCard, itemCardHtml, placeCard, wornFor } from './itemTip';
 import { uiAssetUrl } from '@/render/SpriteLibrary';
 
 /** Paperdoll layout (it.42): a body-shaped cross — head on top, hands beside the torso, ring and cloak below. */
@@ -30,14 +32,6 @@ const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: stri
   { slot: 'legs', label: 'LEGS', area: 'legs' },
   { slot: 'cloak', label: 'BACK', area: 'back' },
 ];
-
-const SLOT_LABEL: Record<string, string> = {
-  head: 'Head', torso: 'Body', legs: 'Legs', mainHand: 'Main Hand', offHand: 'Off Hand', cloak: 'Back', ring: 'Ring', consumable: 'Consumable',
-};
-
-function hex(color: number): string {
-  return `#${color.toString(16).padStart(6, '0')}`;
-}
 
 /** Cell content: the real pack icon, or a crisp generated pixel icon. */
 const iconHtml = (def: ItemDef): string => itemIconHtml(def, '', 'inv-pxicon');
@@ -158,7 +152,7 @@ export class InventoryUI {
     const filled = [...stacks.values()]
       .map(
         ({ def, count, firstIndex }) =>
-          `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}" title="${def.name}">
+          `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
              ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}
            </button>`,
       )
@@ -253,29 +247,38 @@ export class InventoryUI {
         }
         this.hideTooltip();
       });
-      btn.addEventListener('mouseenter', (e) => {
-        const def = btn.dataset.item ? ITEMS[btn.dataset.item] : undefined;
-        if (def) this.showTooltip(def, (e as MouseEvent).clientX, (e as MouseEvent).clientY);
-        audio.sfx('uiHover');
-      });
-      btn.addEventListener('mouseleave', () => this.hideTooltip());
+      const def = btn.dataset.item ? ITEMS[btn.dataset.item] : undefined;
+      if (!def) return;
+      const worn = btn.dataset.unequip !== undefined;
+      let hovered = false;
+      attachItemCard(
+        btn,
+        (x, y) => {
+          if (!hovered) audio.sfx('uiHover');
+          hovered = true;
+          this.showTooltip(def, x, y, worn);
+        },
+        () => {
+          hovered = false;
+          this.hideTooltip();
+        },
+      );
     });
+    // A touch anywhere outside a cell folds a long-pressed card (it.76).
+    this.panel.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' && !(e.target as HTMLElement).closest('button.inv-item')) this.hideTooltip();
+    }, { passive: true });
   }
 
-  private showTooltip(def: ItemDef, x: number, y: number): void {
-    this.tooltip.innerHTML = `
-      <div class="tip-name" style="color:${hex(RARITY_COLOR[def.rarity])}">${def.name}</div>
-      <div class="tip-slot">${def.rarity[0].toUpperCase() + def.rarity.slice(1)} · ${SLOT_LABEL[def.slot] ?? def.slot}</div>
-      <div class="tip-stats">${statLine(def)}</div>
-      <div class="tip-gold">◆ worth ${itemValue(def)} gold${def.slot === 'consumable' ? ' · click to use' : ''}</div>
-    `;
+  /** The card: a worn piece on its own, a pack item beside what is worn in its slot. */
+  private showTooltip(def: ItemDef, x: number, y: number, self: boolean): void {
+    const verb = document.body.classList.contains('input-touch') ? 'tap' : 'click';
+    const gold = `worth ${itemValue(def)} gold · ${verb} to ${def.slot === 'consumable' ? 'use' : self ? 'take off' : 'equip'}`;
+    this.tooltip.innerHTML = self
+      ? itemCardHtml(def, { goldLine: gold, self: true })
+      : itemCardHtml(def, { goldLine: gold, worn: def.slot === 'consumable' ? undefined : wornFor(this.player, def) });
     this.tooltip.classList.add('show');
-    const pad = 14;
-    const rect = this.tooltip.getBoundingClientRect();
-    const left = Math.min(x + pad, window.innerWidth - rect.width - 8);
-    const top = Math.min(y + pad, window.innerHeight - rect.height - 8);
-    this.tooltip.style.left = `${left}px`;
-    this.tooltip.style.top = `${top}px`;
+    placeCard(this.tooltip, x, y);
   }
 
   private hideTooltip(): void {

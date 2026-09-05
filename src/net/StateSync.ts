@@ -1,6 +1,7 @@
 /**
  * @module net/StateSync
- * HOST-AUTHORITATIVE STATE (it.73), layered over the lockstep.
+ * HOST-AUTHORITATIVE STATE (it.73, loot and tempo it.77), layered over the
+ * lockstep.
  *
  * The lockstep ships intent only, and four identical simulations stay
  * identical for as long as every peer executes every frame the same way.
@@ -9,9 +10,9 @@
  * `Math.random()` in a new feature forks a party for good. When that
  * happens, the SYMPTOM is a mob standing in a wall on one screen and biting
  * on another. So the Party Leader is the authority for everything that is
- * not a player's own intent: several times a second it samples every foe
- * near the party and every hero, sends only what CHANGED since the last
- * sample, and every other peer pulls its own copy toward the leader's.
+ * not a player's own intent: ten times a second it samples every foe near
+ * the party and every hero, sends only what CHANGED since the last sample,
+ * and every other peer pulls its own copy toward the leader's.
  *
  * WHAT GOES ON THE WIRE. A record per entity, numbers only, positions
  * quantised to 1/32 of a tile: `[id, x, y, hp, action, aiState]` for a
@@ -20,6 +21,13 @@
  * nothing — and a full keyframe goes out every few seconds (or on request)
  * so a peer that missed a packet, or joined from a snapshot, converges.
  *
+ * THE LOOT (it.77). A drop is rolled from a seeded stream, so peers in step
+ * lay the same item under the same uid; peers that drifted do not. Every
+ * drop and every pickup on the leader's floor rides the next sample
+ * (`[uid, itemId, x, y]` / `uid`), and a keyframe carries the whole floor:
+ * a peer lays what it lacks, replaces what differs, and sweeps what the
+ * leader no longer has. The uid counter never falls behind the leader's.
+ *
  * INTEREST. A foe farther than INTEREST_R tiles from every hero is idle in
  * the dark and outside every fog; it is not sampled. It cannot diverge in a
  * way anyone can see, and the moment a hero nears it, it is.
@@ -27,11 +35,12 @@
  * HOW A PEER CORRECTS. Never by teleporting a foe the player is watching.
  * A small error (under 3 tiles) is closed 35% per tick — a glide of a few
  * frames the eye reads as the creature's own motion; a large one snaps,
- * because it was already wrong. Health is set outright; a foe the leader
- * says is dead dies here through the combat system, so its loot and the
- * bestiary follow the same path a local kill would. Heroes are corrected
- * the same way (position, health, resource) — the leader's world is the
- * world.
+ * because it was already wrong. Health is set outright, and a visible drop
+ * of two points or more is shown as the number it was, so the pool every
+ * hero hits reads the same on every screen; a foe the leader says is dead
+ * dies here through the combat system, so its loot and the bestiary follow
+ * the same path a local kill would. Heroes are corrected the same way
+ * (position, health, resource) — the leader's world is the world.
  */
 
 import type { Enemy } from '@/entities/Enemy';
@@ -42,8 +51,8 @@ import type { NetMsg, PeerNet } from './PeerNet';
 const Q = 32;
 /** Foes farther than this from every hero are not sampled. */
 const INTEREST_R = 18;
-/** Ticks between samples (12 = five packets a second at 60 Hz). */
-const SYNC_EVERY = 12;
+/** Ticks between samples (6 = ten packets a second at 60 Hz; deltas only, so a still floor costs nothing). */
+const SYNC_EVERY = 6;
 /** Ticks between full keyframes (four seconds). */
 const KEY_EVERY = 240;
 /** A peer asks for a keyframe at most this often. */
@@ -53,6 +62,8 @@ const SNAP_AT = 3;
 const HERO_SNAP_AT = 1.5;
 /** Share of the remaining error closed per tick while gliding. */
 const PULL = 0.35;
+/** A health correction this large (a visible foe) is shown as a number. */
+const SHOW_HP_DROP = 2;
 
 const ACTIONS = ['idle', 'attack', 'hit', 'dead', 'transition'] as const;
 const AI_STATES = ['idle', 'chase', 'flee'] as const;
@@ -61,6 +72,8 @@ const AI_STATES = ['idle', 'chase', 'flee'] as const;
 export type EnemyRec = [number, number, number, number, number, number];
 /** `[slot, x, y, hp, resource]` */
 export type HeroRec = [number, number, number, number, number];
+/** `[uid, itemId, x, y]` — a fallen item on the leader's floor. */
+export type LootRec = [number, string, number, number];
 
 export interface StatePacket {
   k: number;
@@ -74,6 +87,19 @@ export interface StatePacket {
    * lets it bury the ghost.
    */
   a?: number[];
+  /** Items that fell since the last sample. */
+  l?: LootRec[];
+  /** Items that left the floor since the last sample. */
+  lp?: number[];
+  /** Keyframes only: the whole floor's loot and the next uid. */
+  lf?: { n: number; i: LootRec[] };
+}
+
+export interface GroundRec {
+  uid: number;
+  itemId: string;
+  x: number;
+  y: number;
 }
 
 /** What the sync needs from the run, without knowing the run. */
@@ -86,6 +112,16 @@ export interface SyncWorld {
   heroBySlot(slot: number): Player | null;
   /** The leader says this foe is dead: kill it the proper way. */
   kill(enemy: Enemy): void;
+  /** The floor's loot, as the leader lays it. */
+  loot: {
+    snapshot(): { next: number; items: GroundRec[] };
+    getItem(uid: number): GroundRec | null;
+    place(uid: number, itemId: string, x: number, y: number): void;
+    remove(uid: number): void;
+    bumpUid(next: number): void;
+  };
+  /** A visible health correction, shown as the number it was. */
+  hpText(enemy: Enemy, delta: number): void;
 }
 
 export function encodeEnemy(e: Enemy): EnemyRec {
@@ -103,6 +139,8 @@ export function encodeHero(slot: number, p: Player): HeroRec {
   return [slot, Math.round(p.pos.x * Q), Math.round(p.pos.y * Q), Math.max(0, Math.round(p.hp)), Math.max(0, Math.round(p.resource))];
 }
 
+const encodeLoot = (g: GroundRec): LootRec => [g.uid, g.itemId, Math.round(g.x * Q), Math.round(g.y * Q)];
+
 /** Every foe on the floor, unfiltered — what a world snapshot carries. */
 export function encodeAllEnemies(world: SyncWorld): EnemyRec[] {
   return world.enemies().map(encodeEnemy);
@@ -112,6 +150,8 @@ export class HostStateSync {
   private readonly lastEnemy = new Map<number, string>();
   private readonly lastHero = new Map<number, string>();
   private forceFull = true;
+  private dropped: LootRec[] = [];
+  private taken: number[] = [];
   private readonly off: () => void;
 
   constructor(
@@ -127,7 +167,19 @@ export class HostStateSync {
   reset(): void {
     this.lastEnemy.clear();
     this.lastHero.clear();
+    this.dropped = [];
+    this.taken = [];
     this.forceFull = true;
+  }
+
+  /** An item fell on the leader's floor. */
+  lootDropped(uid: number, itemId: string, x: number, y: number): void {
+    this.dropped.push([uid, itemId, Math.round(x * Q), Math.round(y * Q)]);
+  }
+
+  /** An item left the leader's floor. */
+  lootTaken(uid: number): void {
+    this.taken.push(uid);
   }
 
   /** Once per executed tick, after the systems ran. */
@@ -153,9 +205,18 @@ export class HostStateSync {
       this.lastHero.set(slot, key);
       h.push(rec);
     }
-    if (!full && e.length === 0 && h.length === 0) return;
+    const l = this.dropped.length ? this.dropped : undefined;
+    const lp = this.taken.length ? this.taken : undefined;
+    this.dropped = [];
+    this.taken = [];
+    if (!full && e.length === 0 && h.length === 0 && !l && !lp) return;
     const a = full ? this.world.enemies().filter((f) => f.action !== 'dead').map((f) => f.id) : undefined;
-    this.net.broadcast({ t: 'st', k: tick, e, h, full, a });
+    let lf: StatePacket['lf'];
+    if (full) {
+      const snap = this.world.loot.snapshot();
+      lf = { n: snap.next, i: snap.items.map(encodeLoot) };
+    }
+    this.net.broadcast({ t: 'st', k: tick, e, h, full, a, l, lp, lf });
   }
 
   private near(foe: Enemy, heroes: Array<{ slot: number; player: Player }>): boolean {
@@ -176,6 +237,9 @@ interface Pull {
   y: number;
 }
 
+const isLootRec = (r: unknown): r is LootRec =>
+  Array.isArray(r) && r.length >= 4 && typeof r[0] === 'number' && typeof r[1] === 'string' && typeof r[2] === 'number' && typeof r[3] === 'number';
+
 export class ClientStateSync {
   private packet: StatePacket | null = null;
   private readonly pulls = new Map<number, Pull>();
@@ -186,6 +250,8 @@ export class ClientStateSync {
   private readonly off: () => void;
   /** Corrections applied since the run began (the party HUD's diagnostics). */
   corrections = 0;
+  /** Loot corrections (an item laid, replaced or swept) since the run began. */
+  lootCorrections = 0;
 
   constructor(
     private readonly net: PeerNet,
@@ -193,15 +259,25 @@ export class ClientStateSync {
   ) {
     this.off = net.onMessage((m: NetMsg) => {
       if (m.t !== 'st' || !Array.isArray(m.e) || !Array.isArray(m.h)) return;
+      const l = Array.isArray(m.l) ? m.l.filter(isLootRec) : [];
+      const lp = Array.isArray(m.lp) ? m.lp.filter((n): n is number => typeof n === 'number') : [];
       // A later packet supersedes an unapplied earlier one — except that a
-      // delta cannot replace an unapplied keyframe.
+      // delta cannot replace an unapplied keyframe, and loot events always
+      // accumulate (each is a fact, not a sample).
       if (this.packet && this.packet.full && !m.full) {
         this.packet.e.push(...m.e);
         this.packet.h.push(...m.h);
+        this.packet.l!.push(...l);
+        this.packet.lp!.push(...lp);
         this.packet.k = m.k;
         return;
       }
-      this.packet = { k: m.k, e: m.e, h: m.h, full: !!m.full, a: Array.isArray(m.a) ? m.a : undefined };
+      if (this.packet) {
+        l.unshift(...(this.packet.l ?? []));
+        lp.unshift(...(this.packet.lp ?? []));
+      }
+      const lf = m.lf && typeof m.lf === 'object' && Array.isArray(m.lf.i) ? { n: Number(m.lf.n) || 0, i: m.lf.i.filter(isLootRec) } : undefined;
+      this.packet = { k: m.k, e: m.e, h: m.h, full: !!m.full, a: Array.isArray(m.a) ? m.a : undefined, l, lp, lf };
     });
   }
 
@@ -271,6 +347,8 @@ export class ClientStateSync {
       }
       if (e.action === 'dead') continue;
       if (Math.abs(e.hp - hp) >= 1) {
+        const drop = Math.round(e.hp - hp);
+        if (drop >= SHOW_HP_DROP) this.world.hpText(e, drop);
         e.hp = hp;
         this.corrections++;
       }
@@ -315,6 +393,7 @@ export class ClientStateSync {
         this.corrections++;
       }
     }
+    this.absorbLoot(p);
     this.unknown = unknown;
     // The leader names foes this sim does not have: ask for a keyframe (the
     // delta stream cannot introduce a foe, only a snapshot join or a full
@@ -322,6 +401,43 @@ export class ClientStateSync {
     if (this.unknown > 2 && tick - this.lastAsk >= ASK_EVERY) {
       this.lastAsk = tick;
       this.net.send({ t: 'sf' });
+    }
+  }
+
+  /** The leader's ground: lay what fell, sweep what was taken, reconcile the floor on a keyframe. */
+  private absorbLoot(p: StatePacket): void {
+    const loot = this.world.loot;
+    // The same item under the same uid stays unless it lies more than a
+    // quarter tile from where the leader saw it fall (a foe that died a
+    // stride apart on two screens).
+    const same = (cur: GroundRec | null, itemId: string, x: number, y: number): boolean =>
+      !!cur && cur.itemId === itemId && Math.hypot(cur.x - x, cur.y - y) < 0.25;
+    for (const [uid, itemId, qx, qy] of p.l ?? []) {
+      if (same(loot.getItem(uid), itemId, qx / Q, qy / Q)) continue;
+      loot.remove(uid);
+      loot.place(uid, itemId, qx / Q, qy / Q);
+      this.lootCorrections++;
+    }
+    for (const uid of p.lp ?? []) {
+      if (!loot.getItem(uid)) continue;
+      loot.remove(uid);
+      this.lootCorrections++;
+    }
+    if (p.full && p.lf) {
+      const keep = new Map<number, LootRec>();
+      for (const rec of p.lf.i) keep.set(rec[0], rec);
+      for (const it of loot.snapshot().items) {
+        if (keep.has(it.uid)) continue;
+        loot.remove(it.uid);
+        this.lootCorrections++;
+      }
+      for (const [uid, itemId, qx, qy] of keep.values()) {
+        if (same(loot.getItem(uid), itemId, qx / Q, qy / Q)) continue;
+        loot.remove(uid);
+        loot.place(uid, itemId, qx / Q, qy / Q);
+        this.lootCorrections++;
+      }
+      loot.bumpUid(p.lf.n);
     }
   }
 

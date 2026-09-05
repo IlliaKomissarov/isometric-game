@@ -32,7 +32,7 @@ import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import type { InputCommand } from '@/core/InputQueue';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { FloorMemory, PlayerSave, StashState } from '@/persist/SaveGame';
-import type { EnemyRec, HeroRec } from './StateSync';
+import type { EnemyRec, HeroRec, LootRec } from './StateSync';
 
 export const PARTY_MAX = 4;
 /** Bump when the wire format changes — mismatched builds refuse each other politely. */
@@ -46,6 +46,8 @@ const PEER_PREFIX = 'crypt-hollow-king-';
 const DIRECT_TIMEOUT_MS = 8000;
 const RELAY_TIMEOUT_MS = 15000;
 const HEARTBEAT_MS = 2000;
+/** A seat whose link answered inside this window is LIVE and cannot be reclaimed over its holder (it.77). */
+const RECLAIM_QUIET_MS = 6000;
 /** Silence before a link reads RECONNECTING (the seat is kept). */
 export const GRACE_MS = 10000;
 /** Silence before a link is given up on. */
@@ -144,7 +146,7 @@ export type NetMsg =
   | { t: 'hb'; at: number }
   | { t: 'hba'; at: number }
   /** Host → all: the authoritative sample (it.73). */
-  | { t: 'st'; k: number; e: EnemyRec[]; h: HeroRec[]; full: boolean; a?: number[] }
+  | { t: 'st'; k: number; e: EnemyRec[]; h: HeroRec[]; full: boolean; a?: number[]; l?: LootRec[]; lp?: number[]; lf?: { n: number; i: LootRec[] } }
   /** Client → host: send a full keyframe. */
   | { t: 'sf' }
   /** Client → host: the frames since `from` (a barrier that never resumed here). */
@@ -657,7 +659,16 @@ export class PeerNet {
         // has already fallen silent or is still closing — a tab that reloads
         // knocks again before the leader has noticed it left. The room code
         // is the party's secret; the seat number is the claimant's own memory.
-        const back = raw.rejoin ? this.members.find((m) => m.slot === raw.rejoin!.slot && m.online) : undefined;
+        // NEVER OVER A LIVING SEAT (it.77): a claim names a seat whose holder
+        // is still answering heartbeats (a stale claim, or a second tab of
+        // the same browser) takes a fresh seat instead of evicting the holder.
+        // A reloading tab's old link closes or falls silent first, so a true
+        // return still lands in its own seat.
+        const claimed = raw.rejoin ? this.members.find((m) => m.slot === raw.rejoin!.slot && m.online) : undefined;
+        const holder = claimed ? this.links.find((l) => l.slot === claimed.slot) : undefined;
+        const holderLive = !!holder && claimed?.link === 'ok' && performance.now() - holder.lastSeen < RECLAIM_QUIET_MS;
+        const back = holderLive ? undefined : claimed;
+        if (claimed && holderLive) this.system(`${name} knocked with ${claimed.name}'s seat number; ${claimed.name} is still here.`);
         if (back) {
           slot = back.slot;
           this.dropLink(slot);

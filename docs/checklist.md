@@ -617,6 +617,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Long press on touch shows the card without acting; the card sits above every window
 - [x] Harness check (`qa75`: the card compares); device matrix 74/74; clean build
 
+## Iteration 77 - Loot on the leader's word (2026-09-05)
+
+- [x] Loot drops and pickups ride the state sync; keyframes carry the floor's loot; peers lay / replace / sweep
+- [x] Samples every 6 ticks; visible health corrections show their number
+- [x] A living seat cannot be reclaimed over its holder (stale claim / second tab)
+- [x] Lobby portraits: one union box for every frame, `uiIdleFrame` pacing (no more shaking)
+- [x] Ground inspection: the item card over a fallen item
+- [x] Four-tab session verified; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -62,3 +62,31 @@ Far kill: `dealDamage` on H, the foe dies on J within a keyframe. Reclaim:
 navigate J away, host shows `reconnecting`, REJOIN puts J back in its seat
 in about 5 s. Keep every script under about 35 s of polling (the CDP limit
 is 45 s) and never poll from a tab hidden for more than five minutes.
+
+## Loot on the leader's word (it.77)
+
+Drops are rolled from a seeded stream, so peers in step agree; peers that
+drifted do not. The host sync collects every `item:dropped` and
+`item:pickedUp` (with its uid) and ships them on the next sample as `l`
+(`[uid, itemId, qx, qy]`) and `lp` (`uid`); a keyframe adds `lf` (`{n, i}`:
+the next uid and the whole floor). The client lays what it lacks
+(`LootSystem.place`, quiet - no chip, no glint), replaces an item that
+differs in id or lies more than a quarter tile off, sweeps what the leader
+no longer has (`remove`), and bumps its uid counter (`bumpUid`). Sample
+period is 6 ticks. A health correction of two points or more on a visible
+foe is shown as a damage number (`SyncWorld.hpText`).
+
+Seat reclaim (it.77): a `hello` naming a seat whose holder's link answered
+inside `RECLAIM_QUIET_MS` (6 s) takes a fresh seat instead; the lobby says
+who knocked with whose number. Same-origin tabs share the remembered seat in
+`iso-arpg-last-party`, which is how the four-tab QA found it.
+
+Four-tab QA (it.77): create in tab H, join three tabs with the code
+(click `[data-join]` in each; poll the host's `net.members` from a separate
+short call - never a 20 s wait inside a batch), READY all, START, WARP to
+depth I. Fingerprint every tab with the same snippet (foes as
+`[id, x*32, y*32, hp, action]`, `loot.snapshot()`, heroes). Divergence
+probes: `dealDamage` on H only, `loot.dropForced` on H only, `dropForced`
+on a joiner only (swept at the keyframe), a foe warped on a joiner inside
+the interest radius (pulled back), all four seats `ATTACK` one foe.
+

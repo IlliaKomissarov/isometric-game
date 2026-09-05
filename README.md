@@ -56,9 +56,9 @@
   an item card that lays every piece beside what you wear and calls the verdict. A town with a
   shop, a stash and a coliseum. A warden every fifth depth, with phases.
 - **Four-player co-op with no server.** WebRTC data channels brokered by PeerJS. Deterministic
-  lockstep carries only intent; the Party Leader is the authority for every creature and hero,
-  so screens never drift apart. Room codes, a lobby with portraits and latency, party chat, a
-  shared stash.
+  lockstep carries only intent; the Party Leader is the authority for every creature, hero and
+  fallen item, ten times a second, so screens never drift apart. Room codes, a lobby with
+  portraits and latency, party chat, a shared stash.
 - **Join and rejoin any time.** A dropped player is back in the same seat with one tap. A new
   player joins a delve in progress from a 3 KB world snapshot and is live in a few seconds.
   Portals move the whole party at once.

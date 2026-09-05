@@ -46,6 +46,10 @@ export class InputBindings {
   private readonly attackHeld = new Set<string>();
   private readonly worldScratch = vec2();
   private readonly abort = new AbortController();
+  /** GROUND INSPECTION (it.77): the cursor rests on a fallen item (uid) or on nothing (null). Mouse only. */
+  onHoverItem: ((uid: number | null, clientX: number, clientY: number) => void) | null = null;
+  private lastHoverAt = 0;
+  private hoverUid: number | null = null;
   /** CO-OP (it.59): when true, pointer aim is streamed as AIM commands (throttled). */
   aimSync = false;
   private lastAimSent = 0;
@@ -99,11 +103,28 @@ export class InputBindings {
       { signal },
     );
     canvas.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
+    canvas.addEventListener(
+      'pointerleave',
+      (e: PointerEvent) => {
+        if (this.hoverUid !== null) this.onHoverItem?.(null, e.clientX, e.clientY);
+        this.hoverUid = null;
+      },
+      { signal },
+    );
     // AIM SYNC (it.59): the cursor's world point rides the command stream so
     // every peer resolves this hero's swings and casts toward the same spot.
     canvas.addEventListener(
       'pointermove',
       (e: PointerEvent) => {
+        if (this.onHoverItem && e.pointerType !== 'touch') {
+          const t = performance.now();
+          if (t - this.lastHoverAt > 50) {
+            this.lastHoverAt = t;
+            const uid = this.pickItem(e.offsetX, e.offsetY);
+            if (uid !== null || this.hoverUid !== null) this.onHoverItem(uid, e.clientX, e.clientY);
+            this.hoverUid = uid;
+          }
+        }
         if (!this.aimSync) return;
         const now = performance.now();
         if (now - this.lastAimSent < 90) return;

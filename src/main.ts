@@ -50,6 +50,7 @@ import { ProjectileSystem } from '@/systems/Projectiles';
 import { StateSyncSystem } from '@/systems/StateSync';
 import { audio } from '@/engine/AudioManager';
 import { InventoryUI } from '@/ui/Inventory';
+import { hideItemTip, showItemTip, wornFor } from '@/ui/itemTip';
 import { LevelSelectUI } from '@/ui/LevelSelect';
 import { SettingsUI } from '@/ui/Settings';
 import { MinimapUI } from '@/ui/Minimap';
@@ -346,6 +347,15 @@ async function boot(): Promise<void> {
     if (!spriteLib.loaded || !spriteLib.hasAnim(PREVIEW_IDLE[cls])) return [];
     const anim = spriteLib.anim(PREVIEW_IDLE[cls]);
     const out: HTMLCanvasElement[] = [];
+    // ONE BOX FOR EVERY FRAME (it.77): each frame used to be trimmed to its
+    // own pixels and re-centred in the portrait, so a breathing body whose
+    // silhouette grew a pixel jumped across the frame — the rogue and the
+    // mage shook. The union box keeps the feet planted and the scale fixed.
+    const raws: HTMLCanvasElement[] = [];
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
     for (let f = 0; f < anim.frameCount; f++) {
       const spr = new Sprite(anim.frames[6][f]); // Facing S.
       const raw = app.renderer.extract.canvas({ target: spr, resolution: 1 }) as HTMLCanvasElement;
@@ -353,12 +363,8 @@ async function boot(): Promise<void> {
       const ctx = raw.getContext('2d');
       if (!ctx) continue;
       const img = ctx.getImageData(0, 0, raw.width, raw.height);
-      let minX = raw.width;
-      let minY = raw.height;
-      let maxX = 0;
-      let maxY = 0;
-      for (let y = 0; y < raw.height; y += 2) {
-        for (let x = 0; x < raw.width; x += 2) {
+      for (let y = 0; y < raw.height; y++) {
+        for (let x = 0; x < raw.width; x++) {
           if (img.data[(y * raw.width + x) * 4 + 3] > 20) {
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
@@ -367,16 +373,21 @@ async function boot(): Promise<void> {
           }
         }
       }
-      if (maxX <= minX || maxY <= minY) continue;
+      raws.push(raw);
+    }
+    if (!(maxX > minX && maxY > minY)) return [];
+    const sw = maxX - minX + 1;
+    const sh = maxY - minY + 1;
+    const scale = Math.min(96 / sw, 108 / sh);
+    const dw = Math.round(sw * scale);
+    const dh = Math.round(sh * scale);
+    for (const raw of raws) {
       const c = document.createElement('canvas');
       c.width = 96;
       c.height = 116;
       const cctx = c.getContext('2d')!;
       cctx.imageSmoothingEnabled = false;
-      const sw = maxX - minX;
-      const sh = maxY - minY;
-      const scale = Math.min(96 / sw, 108 / sh);
-      cctx.drawImage(raw, minX, minY, sw, sh, (96 - sw * scale) / 2, 116 - sh * scale - 4, sw * scale, sh * scale);
+      cctx.drawImage(raw, minX, minY, sw, sh, Math.round((96 - dw) / 2), 116 - dh - 4, dw, dh);
       out.push(c);
     }
     // Ping-pong short idles so the preview breathes instead of snapping.
@@ -1988,6 +1999,17 @@ async function boot(): Promise<void> {
       };
       const input = new InputBindings(app.canvas, camera, inputQueue, localSlot, scene.isWalkable, pickEnemy, pickItem, pickChest);
       input.aimSync = !!coop; // The cursor rides the command stream (it.59).
+      // GROUND INSPECTION (it.77): the cursor resting on a fallen item raises
+      // the item card, laid beside what the hero wears in that slot.
+      input.onHoverItem = (uid, x, y) => {
+        const item = uid === null ? null : loot.getItem(uid);
+        const def = item ? ITEMS[item.itemId] : undefined;
+        if (!def) {
+          hideItemTip();
+          return;
+        }
+        showItemTip(def, x, y, 'on the ground · click to claim', def.slot === 'consumable' ? undefined : wornFor(player, def));
+      };
 
       lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
       if (memory?.explored) lighting.unpackExplored(base64ToBytes(memory.explored));
@@ -2049,6 +2071,7 @@ async function boot(): Promise<void> {
       w.coliseum?.destroy();
       teleporterFx = null;
       w.input.destroy();
+      hideItemTip(); // No card outlives its floor (it.77).
       w.camera.destroy(); // The wheel listener went with the camera (it.74).
       w.projectiles.clear();
       w.vfx.clear();
@@ -4128,6 +4151,21 @@ async function boot(): Promise<void> {
         // The leader's word is the death: through the combat system, so the
         // loot, the ledger and the bestiary follow the same path as a local kill.
         kill: (e) => world.combat.dealDamage({ sourceId: player.id, targetId: e.id, amount: Math.max(1, e.hp) + 1 }),
+        // THE FLOOR'S LOOT (it.77): the leader's ground is the ground.
+        loot: {
+          snapshot: () => world.loot.snapshot(),
+          getItem: (uid) => world.loot.getItem(uid),
+          place: (uid, itemId, x, y) => {
+            const def = ITEMS[itemId];
+            if (def) world.loot.place(uid, def, x, y);
+          },
+          remove: (uid) => world.loot.remove(uid),
+          bumpUid: (n) => world.loot.bumpUid(n),
+        },
+        // A health correction the player can see is shown as the number it was.
+        hpText: (e, delta) => {
+          if (e.container.visible) world.dmgText.show(e.pos.x, e.pos.y - 0.9, String(delta), 'enemy');
+        },
       };
       if (net.isHost) {
         // What a late joiner replays (it.60): the seed, the opening roster and stash, every frame since.
@@ -4167,6 +4205,11 @@ async function boot(): Promise<void> {
           };
         };
         hostSync = new HostStateSync(net, syncWorld);
+        // Every drop and every pickup on the leader's floor rides the next sample (it.77).
+        subs.push(
+          eventBus.on('item:dropped', ({ uid, itemId, x, y }) => hostSync?.lootDropped(uid, itemId, x, y)),
+          eventBus.on('item:pickedUp', ({ uid }) => hostSync?.lootTaken(uid)),
+        );
       } else {
         clientSync = new ClientStateSync(net, syncWorld);
       }

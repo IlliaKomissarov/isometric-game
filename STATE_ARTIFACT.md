@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 76, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 77, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -22,7 +22,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
 | Scripted playthrough (`src/dev/qa75.ts`, 73-91 checks) | 0 failures | 10 sessions, seeds 1-10, all classes: 0 failures after fixes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
-| Co-op | 4 seats, no desync | leader-authoritative sync, snapshot join 3–5 s, seat reclaim, barrier watchdog | OK |
+| Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
 
 ## 2. Component relationship matrix
@@ -32,7 +32,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `core/GameLoop` | Worker clock, `Lockstep.canStep` gate | every system's `update`, the render callback | one frame authority; Pixi ticker stopped |
 | `core/InputBindings` / `InputQueue` | DOM, `SceneManager.isWalkable` | commands drained once per tick | the only path from DOM to sim |
 | `net/Lockstep` | `PeerNet` | merged frames per tick, barrier | intent only; history + snapshot frames |
-| `net/StateSync` | `PeerNet`, entity table | corrections on peers | leader is the authority; host never corrects itself |
+| `net/StateSync` | `PeerNet`, entity table, `LootSystem` | corrections on peers (foes, heroes, loot) | leader is the authority; host never corrects itself |
 | `net/PeerNet` | PeerJS, TURN settings | lobby, frames, snapshots, heartbeat | shape-checks every inbound message |
 | `systems/Combat` | seeded RNG, seats, movement | damage events, deaths, XP | sole hp mutator (state sync is the one override) |
 | `systems/Skills` / `SkillTree` | player, combat RNG | casts, buffs, cooldowns | learn/unlock via commands only |
@@ -92,11 +92,21 @@ Items examined and left as they are, with reasons:
 | Inventory tooltip rendered under the window (z 20 vs 40) | Medium (UI) | the item card sits at z 62 above every window |
 | No way to judge an item against the worn piece | Feature | `items/compare.ts` + the shared card: THIS / YOURS rows, deltas, verdict; long press on touch |
 
+### Iteration 77 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Loot was outside the authority: a drifted peer laid a different item, or none | High (co-op) | drops / pickups ride the sample, keyframes carry the floor's loot; peers lay, replace, sweep |
+| A stale seat claim evicted a live player | High (co-op) | a seat whose link answered inside 6 s is never reclaimed over its holder |
+| Lobby portraits shook (per-frame trim + 7 fps counter) | Medium (UI) | one union box for every frame; `uiIdleFrame` pacing |
+| No inspection of ground loot | Feature | the item card over a fallen item |
+
 ## 4. Known issues and regression log
 
 | Issue | Status | Notes |
 | --- | --- | --- |
 | Foes summoned mid-floor after a snapshot join are unknown to the joiner until they die | Open | the alive list buries ghosts; a keyframe cannot create a foe |
+| A foe's attack / cast animation is local to each peer | Accepted | the sample carries the action but peers do not force it; health and position are the leader's |
 | Joining during a Coliseum wave uses history replay (slower) | Open | the trial's wave state is not in the snapshot |
 | Floating-point drift between peers over long sessions | Mitigated | the leader's corrections bound it; no hash alarm yet |
 | Culling is CPU-neutral on desktop (0.12 ms walk vs 0.05 ms saved) | Accepted | the win is GPU vertices on phones; can be disabled with `__game.setCull(false)` |

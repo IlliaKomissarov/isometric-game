@@ -39,7 +39,7 @@ export interface GameEvents {
   /** The player walked into pickup range of their targeted ground item. */
   'item:pickupArrived': { uid: number; playerId: number };
   /** An item left the ground and entered an inventory. */
-  'item:pickedUp': { itemId: string };
+  'item:pickedUp': { uid: number; itemId: string };
   /** Backpack or equipment changed — UI should re-render. */
   'inventory:changed': Record<string, never>;
   /** Simulation tick completed (deterministic hook for state sync). */

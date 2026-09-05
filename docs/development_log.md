@@ -1,5 +1,57 @@
 # Development Log
 
+## 2026-09-05 (iteration 77) - Loot on the leader's word, a living seat, the lobby's breath, the ground card
+
+### Multiplayer
+- THE LOOT RIDES THE SYNC. A drop is rolled from a seeded stream, so peers
+  in step lay the same item under the same uid - and peers that drifted do
+  not: a foe that died a stride apart on two screens, or a stream advanced
+  by a divergent roll, left different items on different floors. Every
+  drop and every pickup on the leader's floor now rides the next state
+  sample (`l` / `lp`), and every keyframe carries the whole floor (`lf`):
+  a peer lays what it lacks, replaces what differs (item or more than a
+  quarter tile of position), sweeps what the leader no longer has, and
+  never hands out a uid the leader has used. `LootSystem.place / remove /
+  bumpUid`; `item:pickedUp` names the uid.
+- TEN SAMPLES A SECOND. The leader samples every six ticks instead of
+  twelve; the packets are deltas, so a still floor still costs nothing.
+- A VISIBLE HEALTH CORRECTION SHOWS ITS NUMBER. When the leader's reading
+  takes two or more points off a foe the player can see, the difference
+  floats up as a damage number, so the pool every hero hits reads the same
+  on every screen.
+- NEVER OVER A LIVING SEAT. The leader handed a seat to anyone who named
+  it, even while its holder was alive and answering heartbeats - a stale
+  claim (or a second tab of the same browser, which shares the remembered
+  seat number) evicted a live player. A claim on a seat whose link answered
+  inside six seconds takes a fresh seat instead, with a lobby line saying
+  so. A reloading tab's old link closes first, so a true return still lands
+  in its own seat.
+
+### The lobby's portraits
+- The rogue and the mage shook on the co-op class screen. Every idle frame
+  was trimmed to its own pixels and re-centred in the portrait, so a body
+  whose silhouette grew a pixel jumped across the frame; the lobby also
+  stepped frames on a 7 fps counter. One union box for all frames now (the
+  feet stay planted, the scale is fixed) and the lobby breathes on
+  `uiIdleFrame` like the inventory and the status plate.
+
+### The ground card
+- The cursor resting on a fallen item raises the item card (THIS beside
+  YOURS, the verdict, "on the ground - click to claim"). Mouse only; the
+  card folds when the cursor leaves the item or the floor changes.
+
+### Verified (four tabs, one machine, the public broker)
+- Four seats filled; the seat-guard line fired when the third joiner
+  carried the first's seat number. Depth I: 13 foes, four heroes, identical
+  positions and health on all four tabs. A leader-only kill: dead on every
+  peer within a sample. Two leader-only drops: laid on every peer under the
+  same uids. A peer-only item: swept at the keyframe. A peer whose loot
+  stream was advanced rolled a different item under the leader's uid: the
+  leader's item replaced it. Three heroes striking one foe through the
+  stream: one shared pool, one death, one drop, on every tab.
+- Portraits: the bottom edge of every frame's silhouette is identical for
+  all four classes (only the true breathing motion remains).
+
 ## 2026-09-05 (iteration 76) - The item card: THIS beside YOURS
 
 ### What shipped

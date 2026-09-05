@@ -17,6 +17,7 @@
  */
 
 import { audio } from '@/engine/AudioManager';
+import { uiIdleFrame } from '@/render/animUtil';
 import {
   type HistoryPayload,
   type MemberInfo,
@@ -97,7 +98,8 @@ function lastPartyInfo(): { code: string; slot: number } | null {
 function lastParty(): string | null {
   return lastPartyInfo()?.code ?? null;
 }
-const PORTRAIT_FPS = 7;
+// Portraits breathe at the UI's idle pace (`uiIdleFrame`, it.72/77): a
+// time-based, ping-ponged, slow cycle, never a frame counter.
 
 export class CoopLobbyUI {
   private readonly root: HTMLElement;
@@ -109,10 +111,8 @@ export class CoopLobbyUI {
   private offNet: Array<() => void> = [];
   private started = false;
   /** Every animated portrait on screen: canvas + its frames. */
-  private readonly portraits = new Map<HTMLCanvasElement, { frames: HTMLCanvasElement[]; cls: ClassArchetype }>();
+  private readonly portraits = new Map<HTMLCanvasElement, { frames: HTMLCanvasElement[]; cls: ClassArchetype; shown?: number }>();
   private raf = 0;
-  private lastFrameAt = 0;
-  private frameIndex = 0;
   private copyTimer = 0;
 
   constructor(private readonly hooks: CoopLobbyHooks) {
@@ -316,10 +316,12 @@ export class CoopLobbyUI {
         this.raf = 0;
         return;
       }
-      if (now - this.lastFrameAt > 1000 / PORTRAIT_FPS) {
-        this.lastFrameAt = now;
-        this.frameIndex++;
-        for (const [canvas, p] of this.portraits) if (canvas.isConnected) this.drawPortrait(canvas, p.frames, this.frameIndex);
+      for (const [canvas, p] of this.portraits) {
+        if (!canvas.isConnected || !p.frames.length) continue;
+        const i = uiIdleFrame(p.frames.length, now / 1000);
+        if (i === p.shown) continue;
+        p.shown = i;
+        this.drawPortrait(canvas, p.frames, i);
       }
       this.raf = requestAnimationFrame(tick);
     };
@@ -340,8 +342,9 @@ export class CoopLobbyUI {
     } catch {
       frames = [];
     }
-    this.portraits.set(canvas, { frames, cls });
-    this.drawPortrait(canvas, frames, this.frameIndex);
+    const shown = frames.length ? uiIdleFrame(frames.length, performance.now() / 1000) : -1;
+    this.portraits.set(canvas, { frames, cls, shown });
+    this.drawPortrait(canvas, frames, Math.max(0, shown));
     // Cross-fade on a class switch.
     canvas.classList.remove('swap');
     void canvas.offsetWidth;

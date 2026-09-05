@@ -90,7 +90,34 @@ export class LootSystem {
     this.spawnAs(this.nextUid++, def, x, y);
   }
 
-  private spawnAs(uid: number, def: ItemDef, x: number, y: number): void {
+  /**
+   * THE LEADER'S WORD (it.77): lay an item under a given uid. A matching
+   * item already there is left alone; a different one under that uid is
+   * replaced. Quiet — no tutorial chip, no glint — the local kill (if this
+   * sim saw it) already announced the drop.
+   */
+  place(uid: number, def: ItemDef, x: number, y: number): void {
+    const cur = this.items.get(uid);
+    if (cur && cur.itemId === def.id) return;
+    if (cur) this.remove(uid);
+    this.spawnAs(uid, def, x, y, true);
+    if (uid >= this.nextUid) this.nextUid = uid + 1;
+  }
+
+  /** Take an item off the floor without a pickup (the leader says it is gone). */
+  remove(uid: number): void {
+    const item = this.items.get(uid);
+    if (!item) return;
+    this.items.delete(uid);
+    item.root.destroy({ children: true });
+  }
+
+  /** Never hand out a uid the leader has already used. */
+  bumpUid(next: number): void {
+    this.nextUid = Math.max(this.nextUid, next);
+  }
+
+  private spawnAs(uid: number, def: ItemDef, x: number, y: number, quiet = false): void {
     const root = new Container();
 
     const glow = new Sprite(assets.get('glow'));
@@ -127,7 +154,7 @@ export class LootSystem {
     this.viewport.objectLayer.addChild(root);
 
     this.items.set(uid, { uid, itemId: def.id, x, y, root, glyph });
-    eventBus.emit('item:dropped', { uid, itemId: def.id, x, y });
+    if (!quiet) eventBus.emit('item:dropped', { uid, itemId: def.id, x, y });
   }
 
   getItem(uid: number): GroundItem | null {
@@ -154,7 +181,7 @@ export class LootSystem {
     if (!item) return null;
     this.items.delete(uid);
     item.root.destroy({ children: true });
-    eventBus.emit('item:pickedUp', { itemId: item.itemId });
+    eventBus.emit('item:pickedUp', { uid, itemId: item.itemId });
     return item.itemId;
   }
 

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 82, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 83, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -153,6 +153,17 @@ Items examined and left as they are, with reasons:
 | Bulwark, regrowth and Strength life scaled with item power into absurdity | High (balance) | flat armor 0.6–3 × power; regrowth a share of life; Strength life flat |
 | Effects read as text only | Medium (UX) | icons on the card with plain sentences; icons above foes' heads |
 | The inventory looked different on every screen | Low (UI) | one restyle, cell size by tier |
+
+### Iteration 83 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The command sheet covered the system-bar column and the portal button | Medium (UX) | moved bottom-left, height-capped, chat steps above it |
+| The journal had no road from the command list or the pause sheet | Low (UX) | H in the list; JOURNAL on the pause sheet (the phone's H) |
+| The journal's to-hit, Strength life and "flat × power" claims were wrong | Medium (docs) | audited against the code; worked example calls the forge's functions; harness compares |
+| ARSENAL listed shapes only, with a wrong pace | Medium (docs) | THE CATALOGUE: every base, every tier, staves, uniques, armor, jewels, find box, forge badges |
+| iPhone: pinch zoom stuck, bounce, callout sheet, text boost, 100vh under the toolbar | High (mobile) | touch guards module, glass CSS, `--app-h` everywhere, 100dvh fallback, web-app metas |
+| The bar's row width was computed for seven entries | Low (layout) | eight |
 
 ## 4. Known issues and regression log
 

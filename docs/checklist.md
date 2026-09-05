@@ -669,6 +669,16 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Balance: bulwark, regrowth and Strength life corrected
 - [x] Harness checks; device matrix; playthrough; clean build
 
+## Iteration 83 - The journal everywhere, the catalogue, the glass (2026-09-06)
+
+- [x] Journal (H) in the command sheet and on the pause sheet (phone and desk)
+- [x] The command sheet moved bottom-left; covers nothing, never leaves the screen
+- [x] Journal audited against the code (to-hit 80%, Strength 3 life, armor-only power scaling) and deepened
+- [x] THE CATALOGUE: every shape × tier, staves, uniques, armor, jewels; find box; forge badges
+- [x] The craft ledger: every forge and counter operation checked to the coin
+- [x] The glass: pinch, bounce, callout, text boost, 100vh, inputs (iOS Safari, Telegram)
+- [x] Device matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

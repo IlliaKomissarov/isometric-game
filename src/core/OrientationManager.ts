@@ -278,7 +278,8 @@ export class OrientationManager {
     // handset takes 36 px targets: seven 44s do not fit beside a plate.
     const barSize = tier === 'micro' ? 36 : tier === 'tablet' || tier === 'desktop' || tier === 'huge' ? 48 : 44;
     const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 ? 'grid4' : 'row';
-    const barW = barForm === 'row' ? 7 * barSize + 6 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
+    // Eight entries since it.82 (the journal joined).
+    const barW = barForm === 'row' ? 8 * barSize + 7 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
 
     // THE CHART (it.67): 4:3, per tier. A micro handset has no room for it.
     // 96 px on the browser-bars landscape (it.69): 112 reached into the fight's middle band.

@@ -15,6 +15,7 @@
  * in under the transition fade (lazy loading — see SpriteLibrary.ensure).
  */
 
+import { installTouchGuards } from '@/core/touchGuards';
 import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
@@ -334,6 +335,7 @@ async function boot(): Promise<void> {
   // AUDIO UNLOCK (browser autoplay policy): the first gesture builds the
   // Web Audio graph; the wanted music bed (menu) starts the moment it does.
   audio.setMusic('menu');
+  installTouchGuards(); // THE GLASS RULES (it.83): no pinch zoom, no bounce, no callout on a phone.
   const unlockAudio = (): void => audio.unlock();
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
@@ -4046,7 +4048,7 @@ async function boot(): Promise<void> {
     const craftUI = new CampCraftingUI(player, inputQueue, () => deepestFloor);
     // THE JOURNAL (it.81, it.82): H, the bar, and a button on every window that needs it.
     const craftLog: Array<{ tick: number; text: string; ok: boolean }> = [];
-    const codexUI = new CodexUI(() => player.recipes, () => craftLog);
+    const codexUI = new CodexUI(() => player.recipes, () => craftLog, () => deepestFloor);
     subs.push(
       eventBus.on('journal:open', ({ chapter }) => codexUI.open(chapter as Parameters<CodexUI['open']>[0])),
       eventBus.on('craft:result', ({ ok, text }) => {
@@ -4229,6 +4231,7 @@ async function boot(): Promise<void> {
       respawn: () => respawnPlayer(),
       canPause: () => !transitioning && !victoryShown,
       cheats: () => cheatMenu.toggle(), // The pause sheet is the phone's F1 (it.67).
+      journal: () => codexUI.open(), // The pause sheet is the phone's H (it.83).
     });
 
     // A closing tab keeps its progress (it.60): the co-op hero is what the next join restores.
@@ -4450,7 +4453,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, crafting, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 

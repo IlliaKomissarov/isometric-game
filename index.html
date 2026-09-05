@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Hollow King" />
+    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+    <meta name="theme-color" content="#07070a" />
     <title>Crypt of the Hollow King</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -801,7 +807,7 @@
         left: 22px;
         top: 52px;
         width: 252px;
-        max-height: calc(100vh - 120px);
+        max-height: calc(var(--app-h, 100vh) - 120px);
         display: none;
         flex-direction: column;
         padding: 12px 14px 10px;
@@ -2446,7 +2452,7 @@
       .bs-scale { margin-top: 10px; font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11.5px; color: #7d7466; }
       .bs-empty { font-family: 'Crimson Pro', serif; font-style: italic; color: var(--ink-dim); padding: 30px 10px; text-align: center; }
       /* Cheat menu: frame, spacing, scroll. */
-      #cheat-menu { width: 300px; max-height: calc(100vh - 100px); border: 2px solid var(--frame-iron); box-shadow: inset 0 0 0 1px #6a3a5a, inset 0 0 30px rgba(0, 0, 0, 0.75), 0 0 0 1px #000, 0 10px 40px rgba(0, 0, 0, 0.9); }
+      #cheat-menu { width: 300px; max-height: calc(var(--app-h, 100vh) - 100px); border: 2px solid var(--frame-iron); box-shadow: inset 0 0 0 1px #6a3a5a, inset 0 0 30px rgba(0, 0, 0, 0.75), 0 0 0 1px #000, 0 10px 40px rgba(0, 0, 0, 0.9); }
       #cheat-menu .cheat-powers { gap: 6px; }
       #cheat-menu .cheat-powers button { padding: 7px 6px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       #cheat-menu .cheat-tabs { flex-wrap: wrap; gap: 4px; }
@@ -2667,7 +2673,7 @@
       #levelup-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       #levelup-banner small { display: block; margin-top: 6px; font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.34em; color: #f4ecd8; text-shadow: 0 1px 3px #000; }
       /* Inventory: never taller than the screen; the pack scrolls. */
-      #inv-panel { max-height: calc(100vh - 20px); overflow-y: auto; box-sizing: border-box; }
+      #inv-panel { max-height: calc(var(--app-h, 100vh) - 20px); overflow-y: auto; box-sizing: border-box; }
       #inv-panel .inv-scroll { max-height: 232px; }
       /* Typography polish: crisp faces with a high-contrast shadow on every readable line. */
       .st-text b, .st-text em, .tp-row .tp-name, .tp-row .tp-gold, .bs-row-name, .bs-row-meta, .bs-stat span, .bs-stat b, .cs-row, #char-stats, #depth-label, #controls .row span, #controls .row kbd, .skill-tip b, .skill-tip span, #item-tip, #inv-tooltip, .inv-slot-label, .sb-key, .inv-belt-note, .inv-count, .inv-gold {
@@ -2687,8 +2693,8 @@
       #inv-panel .inv-pack-grid .rarity-magic { --rar: #6f8fdf; border-color: #6f8fdf; box-shadow: inset 0 0 0 1px #000, 0 0 9px rgba(111, 143, 223, 0.5); }
       #inv-panel .inv-pack-grid .rarity-rare { --rar: #e8b84c; border-color: #e8b84c; box-shadow: inset 0 0 0 1px #000, 0 0 11px rgba(232, 184, 76, 0.55); }
       #inv-panel .inv-pack-grid .rarity-legendary { --rar: #ff8c3a; border-color: #ff8c3a; box-shadow: inset 0 0 0 1px #000, 0 0 13px rgba(255, 140, 58, 0.6); }
-      #inv-panel { max-height: calc(100vh - 66px); }
-      #inv-panel .inv-scroll { max-height: max(140px, calc(100vh - 545px)); overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
+      #inv-panel { max-height: calc(var(--app-h, 100vh) - 66px); }
+      #inv-panel .inv-scroll { max-height: max(140px, calc(var(--app-h, 100vh) - 545px)); overflow-y: auto; padding-right: 6px; scrollbar-gutter: stable; }
       #inv-panel .inv-scroll::-webkit-scrollbar { width: 9px; }
       #inv-panel .inv-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #6a5a3a, #3b3244); border: 1px solid #000; }
             #char-stats { left: 356px; bottom: 44px; }
@@ -2935,7 +2941,7 @@
 
       /* The HUD chat (lower-left, above the hotbar's shadow). */
       /* Above the orbs, below the party HUD: the left column, never over the hero. */
-      #chat { position: fixed; left: 14px; bottom: 226px; width: 300px; max-height: calc(100vh - 420px); display: flex; flex-direction: column; z-index: 30; font-family: 'Crimson Pro', serif; pointer-events: auto; transition: opacity 0.4s ease; }
+      #chat { position: fixed; left: 14px; bottom: 226px; width: 300px; max-height: calc(var(--app-h, 100vh) - 420px); display: flex; flex-direction: column; z-index: 30; font-family: 'Crimson Pro', serif; pointer-events: auto; transition: opacity 0.4s ease; }
       #chat.idle:not(.typing):not(:hover) { opacity: 0.55; }
       #chat .chat-head { display: flex; align-items: center; justify-content: space-between; padding: 3px 8px; background: rgba(10, 8, 14, 0.85); border: 1px solid var(--frame-iron); border-bottom: none; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.2em; color: var(--ink-dim); }
       #chat .chat-toggle { min-width: 18px; padding: 0 4px; font-family: 'Cinzel', serif; font-size: 10px; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
@@ -4946,6 +4952,71 @@
       .cx-fx-line .cx-fx-icon { width: 14px; height: 14px; vertical-align: -3px; margin-right: 3px; }
       body.input-touch #inv-panel .inv-belt-pick { width: 30px; }
 
+      /* ---- 8a7. THE COMMAND SHEET AND THE GLASS (it.83) ------------------
+         The command sheet lived in the bottom-right corner, under the
+         desktop's system-bar column and the town-portal button: expanded,
+         it covered the skull and the fullscreen button and clipped the
+         portal. It moves to the bottom-LEFT, the one corner a desktop
+         leaves empty (the plate is top-left, the belt is centred), and it
+         never grows past the screen. */
+      body:not(.input-touch) #controls {
+        left: calc(12px + var(--sal) + var(--hud-inset, 0px)); right: auto;
+        top: auto; bottom: calc(var(--sab) + 0px);
+        max-height: calc(var(--app-h) - 16px); overflow-y: auto; overscroll-behavior: contain;
+        scrollbar-width: thin;
+      }
+      body:not(.input-touch) #controls.collapsed { overflow: hidden; }
+      /* The co-op chat sits above the sheet when the sheet is open. */
+      body:not(.input-touch):has(#controls:not(.collapsed)) #chat { bottom: 296px; }
+      /* THE GLASS (it.83): the phone browsers' own gestures, refused in CSS
+         where CSS can. Safari's callout sheet on a long-pressed image, the
+         drag ghost, the text-size boost it applies in landscape, the tap
+         flash, and the 16 px input floor under which Safari zooms the page
+         on focus. */
+      html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      body { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+      img, canvas, .inv-cell, .tp-row, .ds-btn, .ds-icon-btn, .menu-btn, kbd { -webkit-touch-callout: none; -webkit-user-drag: none; user-select: none; -webkit-user-select: none; }
+      input, textarea { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+      body.input-touch input, body.input-touch textarea, body.input-touch select { font-size: 16px; }
+      /* The document itself is pinned on a touch layout: iOS bounces a
+         static body even when nothing overflows. */
+      body.input-touch:not(.sim-viewport) { position: fixed; inset: 0; width: 100%; height: 100%; }
+      /* Until the layout writes its numbers, the dynamic viewport units
+         (Safari 15.4+, Chrome 108+) keep a phone's toolbar out of the box. */
+      @supports (height: 100dvh) {
+        :root { --app-h: 100dvh; --stage-h: 100dvh; }
+      }
+      /* A notch on the side (a phone held sideways): the corners step in by
+         the safe inset. The top-left corner already does. */
+      body.input-touch.orient-landscape #hud-tr { right: calc(var(--sar) + 8px + var(--hud-inset, 0px)); }
+      body.input-touch.orient-landscape #boss-bar { left: calc(50% + (var(--sal) - var(--sar)) / 2); }
+
+      /* THE JOURNAL'S CATALOGUE (it.83): the find box, the family headings,
+         the tier lists, the reach badges, the numbered steps. */
+      #codex .codex-body h5 { margin: 14px 0 4px; font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; letter-spacing: 0.2em; color: var(--frame-gold-hi, #e8cf8a); }
+      #codex .cx-fam { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding-bottom: 4px; border-bottom: 1px solid rgba(200, 165, 88, 0.25); }
+      #codex .cx-fam small { font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 12px; letter-spacing: 0; text-transform: none; color: var(--ink-dim, #8f8677); }
+      #codex .cx-findbox { display: block; margin: 8px 0 4px; }
+      #codex .cx-find { width: 100%; box-sizing: border-box; padding: 8px 10px; font-family: 'Crimson Pro', 'Georgia', serif; font-size: 14px; color: var(--ink, #e8dfc8); background: #0d0a12; border: 1px solid var(--frame-iron, #4a4150); outline: none; }
+      #codex .cx-find:focus { border-color: var(--frame-gold, #c8a558); }
+      #codex .cx-tiers { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
+      #codex .cx-tiers li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12.5px; padding: 3px 6px; border-left: 2px solid rgba(200, 165, 88, 0.15); }
+      #codex .cx-tiers li.cx-known { border-left-color: #7fd67f; }
+      #codex .cx-tiers li > span { color: var(--ink-dim, #8f8677); font-style: italic; }
+      #codex .cx-badge { font-family: 'Cinzel', 'Georgia', serif; font-style: normal; font-size: 8.5px; letter-spacing: 0.14em; padding: 2px 6px; border: 1px solid #4a4150; color: #a89c80; white-space: nowrap; }
+      #codex .cx-badge-reach { border-color: #3f7f3f; color: #9fe09f; }
+      #codex .cx-badge-unique { border-color: #8a6a2a; color: #ffd070; }
+      #codex .cx-shape-head .cx-badge { margin-left: auto; }
+      #codex .cx-unique .cx-shape-head b { text-shadow: 0 0 8px rgba(255, 208, 112, 0.35); }
+      #codex .cx-steps { margin: 6px 0 10px; padding-left: 22px; }
+      #codex .cx-steps li { margin: 4px 0; }
+      #codex .cx-goto { padding: 1px 6px; font-family: 'Cinzel', 'Georgia', serif; font-size: 9.5px; letter-spacing: 0.14em; color: #ffd070; background: none; border: 1px solid #6a5a3a; cursor: pointer; vertical-align: 1px; }
+      #codex .cx-goto:hover { border-color: var(--frame-gold, #c8a558); background: rgba(200, 165, 88, 0.1); }
+      #codex .cx-dim { color: var(--ink-dim, #8f8677); font-style: italic; }
+      #codex .cx-wear td:first-child { white-space: nowrap; }
+      #codex .cx-wear img { width: 22px; height: 22px; vertical-align: middle; image-rendering: pixelated; }
+      #codex .cx-group[hidden], #codex [data-find][hidden] { display: none; }
+
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone
          the pad and the stick zone sat OVER the lower half of every window,
@@ -5079,6 +5150,7 @@
       <div class="row"><span>Skill Tree</span><kbd>K</kbd></div>
       <div class="row"><span>Character</span><kbd>C</kbd></div>
       <div class="row"><span>Bestiary</span><kbd>B</kbd></div>
+      <div class="row"><span>Journal</span><kbd>H</kbd></div>
       <div class="row"><span>Town Portal</span><kbd>T</kbd></div>
       <div class="row"><span>Map</span><kbd>M</kbd></div>
       <div class="row"><span>Depths</span><kbd>L</kbd></div>
@@ -5198,6 +5270,7 @@
         <p class="modal-sub">the crypt holds its breath</p>
         <button class="menu-btn" data-act="resume">RESUME</button>
         <button class="menu-btn" data-act="settings">SETTINGS &amp; CONTROLS</button>
+        <button class="menu-btn" data-act="journal">THE JOURNAL<span class="mm-sub">items · effects · recipes · crafting · H on a keyboard</span></button>
         <button class="menu-btn" data-act="restart">RESTART RUN</button>
         <button class="menu-btn" data-act="class">CHANGE CLASS</button>
         <button class="menu-btn" data-act="saveExit">SAVE &amp; EXIT<span class="mm-sub">progress is also saved in town</span></button>

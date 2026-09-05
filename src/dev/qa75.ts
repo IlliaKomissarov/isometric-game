@@ -477,7 +477,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(80);
       check('the codex opens on H', !!document.querySelector('#codex.open .codex-body'));
       check('the codex fits the screen', inside(document.getElementById('codex')));
-      for (const ch of ['arsenal', 'statuses', 'enchants', 'forge', 'legend']) {
+      for (const ch of ['catalogue', 'statuses', 'enchants', 'forge', 'legend', 'merchants', 'combat']) {
         g.codexUI.open(ch);
         await wait(30);
         check(`the codex chapter ${ch} renders`, (document.querySelector('#codex .codex-body')?.textContent?.length ?? 0) > 200);
@@ -555,6 +555,159 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(40);
       check('the journal has a craft log', !!document.querySelector('#codex .cx-log'));
       g.codexUI.close();
+    }
+
+    // ---- THE CRAFT LEDGER (it.83): every forge and counter operation, to the coin ----------------
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      const p = g.player;
+      const { itemDef } = await import('@/items/instance');
+      const { itemValue } = await import('@/items/catalog');
+      const { salvageYield, forgeCost, rerollCost, reinforceCost, enchantCost, goldOnlyCost, TRANSMUTE_RECIPES } = await import('@/systems/Crafting');
+      const { ilvlForDepth } = await import('@/items/instance');
+      const { SELL_RATIO } = await import('@/systems/Town');
+      const mat = (k: string): number => p.materials.get(k) ?? 0;
+      const snap = (): Record<string, number> => ({ gold: p.gold, iron_scrap: mat('iron_scrap'), arcane_dust: mat('arcane_dust'), essence: mat('essence'), alloy_shard: mat('alloy_shard'), catalyst: mat('catalyst') });
+      const delta = (a: Record<string, number>, b: Record<string, number>): Record<string, number> => Object.fromEntries(Object.keys(a).map((k) => [k, b[k] - a[k]]));
+      const paid = (d: Record<string, number>, cost: Record<string, number | undefined>): boolean => Object.entries(d).every(([k, v]) => v === -(cost[k] ?? 0));
+      const goldBefore = p.gold;
+      p.gold = 20000;
+      p.addMaterial('iron_scrap', 60);
+      p.addMaterial('arcane_dust', 30);
+      p.addMaterial('essence', 20);
+      p.addMaterial('alloy_shard', 6);
+      p.addMaterial('catalyst', 2);
+      // SALVAGE: a rare level-12 helm pays exactly its table.
+      p.addItem('iron_helm@L12R2U0Aint2.arm2');
+      let idx = p.backpack.findIndex((id: string) => id.startsWith('iron_helm'));
+      const helm = itemDef(p.backpack[idx])!;
+      const expectSalvage = salvageYield(helm)!;
+      let before = snap();
+      g.queue.enqueue({ type: 'SALVAGE', playerId: 0, backpackIndex: idx });
+      g.loop.step(3);
+      let d = delta(before, snap());
+      check('salvage pays exactly the table', Object.entries(expectSalvage).every(([k, n]) => d[k] === n) && d.gold === 0 && !p.backpack.some((id: string) => id.startsWith('iron_helm')), JSON.stringify(d));
+      // TRANSMUTE ×2: ten scraps for two dust.
+      const rc = TRANSMUTE_RECIPES.find((r) => r.id === 'scrap_dust')!;
+      before = snap();
+      g.queue.enqueue({ type: 'TRANSMUTE', playerId: 0, recipe: 'scrap_dust', times: 2 });
+      g.loop.step(3);
+      d = delta(before, snap());
+      check('transmute twice takes and gives exactly', d.iron_scrap === -2 * rc.take && d.arcane_dust === 2 * rc.give, JSON.stringify(d));
+      // FORGE: the blueprint rolls at the deepest depth's level and costs the forge's own price.
+      const deepest = Math.max(1, g.deepestFloor ?? 1);
+      const lvl = ilvlForDepth(deepest);
+      const base = itemDef('steel_blade')!;
+      const expectForge = forgeCost(base, lvl);
+      before = snap();
+      const packBefore = p.backpack.length;
+      g.queue.enqueue({ type: 'FORGE', playerId: 0, base: 'steel_blade' });
+      g.loop.step(3);
+      d = delta(before, snap());
+      const forged = p.backpack[p.backpack.length - 1] ?? '';
+      const forgedDef = itemDef(forged);
+      check('forge charges its own price', p.backpack.length === packBefore + 1 && paid(d, expectForge), JSON.stringify({ d, expectForge }));
+      check('a forged piece rolls at the deepest level (−1..+2), uncommon or better', !!forgedDef && (forgedDef.ilvl ?? 0) >= lvl - 1 && (forgedDef.ilvl ?? 0) <= lvl + 2 && forgedDef.rarity !== 'common', `${forged} · lvl ${lvl}`);
+      // REFINE: one line changes, the others stay, the price is the table's.
+      p.addItem('gilded_rapier@L30R2U0Aagi2.crt1.arm1');
+      idx = p.backpack.findIndex((id: string) => id.startsWith('gilded_rapier'));
+      const saberDef = itemDef(p.backpack[idx])!;
+      const expectReroll = rerollCost(saberDef, 1)!;
+      const linesBefore = (saberDef.affixes ?? []).map((a: { key: string; tier: number }) => `${a.key}${a.tier}`);
+      before = snap();
+      g.queue.enqueue({ type: 'REROLL', playerId: 0, backpackIndex: idx, affixIndex: 1 });
+      g.loop.step(3);
+      d = delta(before, snap());
+      const linesAfter = (itemDef(p.backpack[idx])!.affixes ?? []).map((a: { key: string; tier: number }) => `${a.key}${a.tier}`);
+      check('refine charges essence and a fifth of the worth', paid(d, expectReroll), JSON.stringify({ d, expectReroll }));
+      check('refine keeps the other lines and the count', linesAfter.length === linesBefore.length && linesAfter[0] === linesBefore[0] && linesAfter[2] === linesBefore[2], `${linesBefore} → ${linesAfter}`);
+      // REINFORCE +1 with materials, then +2 with gold alone.
+      const r1 = reinforceCost(itemDef(p.backpack[idx])!)!;
+      before = snap();
+      g.queue.enqueue({ type: 'REINFORCE', playerId: 0, backpackIndex: idx });
+      g.loop.step(3);
+      d = delta(before, snap());
+      check('reinforce +1 charges the table', p.backpack[idx].includes('U1') && paid(d, r1.cost), JSON.stringify({ d, cost: r1.cost }));
+      const r2 = reinforceCost(itemDef(p.backpack[idx])!)!;
+      before = snap();
+      g.queue.enqueue({ type: 'REINFORCE', playerId: 0, backpackIndex: idx, payGold: true });
+      g.loop.step(3);
+      d = delta(before, snap());
+      check('reinforce in gold alone charges the materials two and a half times', p.backpack[idx].includes('U2') && d.gold === -goldOnlyCost(r2.cost) && d.iron_scrap === 0 && d.arcane_dust === 0, JSON.stringify({ d, gold: goldOnlyCost(r2.cost) }));
+      // ENCHANT: the recipe's essence and dust and 30% of the worth.
+      p.addItem('recipe_frost');
+      g.queue.enqueue({ type: 'USE_ITEM', playerId: 0, backpackIndex: p.backpack.indexOf('recipe_frost') });
+      g.loop.step(2);
+      idx = p.backpack.findIndex((id: string) => id.startsWith('gilded_rapier'));
+      const expectEnchant = enchantCost(itemDef(p.backpack[idx])!, 'frost')!;
+      before = snap();
+      g.queue.enqueue({ type: 'ENCHANT', playerId: 0, backpackIndex: idx, key: 'frost' });
+      g.loop.step(3);
+      d = delta(before, snap());
+      check('enchant charges the recipe and a third of the worth', p.backpack[idx].includes('Efrost') && paid(d, expectEnchant), JSON.stringify({ d, expectEnchant }));
+      // THE COUNTER: sell at a quarter, buy back at the same, buy at the full worth.
+      g.shopUI.open('armorer');
+      await wait(60);
+      idx = p.backpack.findIndex((id: string) => id.startsWith('gilded_rapier'));
+      const sold = p.backpack[idx];
+      const worth = itemValue(itemDef(sold)!);
+      before = snap();
+      g.queue.enqueue({ type: 'SELL', playerId: 0, backpackIndex: idx });
+      g.loop.step(2);
+      d = delta(before, snap());
+      check('a sale pays a quarter of the worth', d.gold === Math.max(1, Math.round(worth * SELL_RATIO)) && !p.backpack.includes(sold), `${d.gold} of ${worth}`);
+      before = snap();
+      g.queue.enqueue({ type: 'BUYBACK', playerId: 0, index: 0 });
+      g.loop.step(2);
+      d = delta(before, snap());
+      check('buyback costs exactly what was paid', d.gold === -Math.max(1, Math.round(worth * SELL_RATIO)) && p.backpack.includes(sold), String(d.gold));
+      const stockId = g.townSystem.stock[0];
+      const stockWorth = itemValue(itemDef(stockId)!);
+      before = snap();
+      g.queue.enqueue({ type: 'BUY', playerId: 0, index: 0, vendor: 'armorer' });
+      g.loop.step(2);
+      d = delta(before, snap());
+      check('a purchase costs the full worth and lands in the pack', d.gold === -stockWorth && p.backpack.includes(stockId), `${d.gold} of ${stockWorth}`);
+      g.shopUI.close();
+      // THE RESTOCK: a warden's fall turns the counter over on the next arrival in town.
+      const serial = g.townSystem.restockSerial;
+      g.townSystem.markBossCleared();
+      g.townSystem.restockIfDue(1, deepest, g.state.tick);
+      check('the counter restocks after a warden falls', g.townSystem.restockSerial === serial + 1, `${serial} → ${g.townSystem.restockSerial}`);
+      // THE STASH: gold in, gold out.
+      before = snap();
+      g.queue.enqueue({ type: 'STASH_GOLD', playerId: 0, amount: 500 });
+      g.loop.step(2);
+      d = delta(before, snap());
+      check('the stash takes gold', d.gold === -500 && g.townSystem.stash.gold === 500, String(g.townSystem.stash.gold));
+      g.queue.enqueue({ type: 'STASH_GOLD', playerId: 0, amount: -500 });
+      g.loop.step(2);
+      check('the stash gives gold back', p.gold === before.gold && g.townSystem.stash.gold === 0, String(p.gold));
+      // The journal's worked example uses the forge's own numbers.
+      g.codexUI.open('forge');
+      await wait(60);
+      const sample = { id: 's', name: 's', slot: 'mainHand', rarity: 'rare', color: 0, ilvl: 12, upgrade: 0, affixes: [{ key: 'str', tier: 1 }] };
+      const example = document.querySelector('#codex .codex-body')?.textContent ?? '';
+      check('the journal quotes the forge\'s own reinforcement price', example.includes(`${goldOnlyCost(reinforceCost(sample as never)!.cost)} gold`), example.slice(example.indexOf('A worked example'), example.indexOf('A worked example') + 120));
+      g.codexUI.open('catalogue');
+      await wait(60);
+      const cards = document.querySelectorAll('#codex .cx-shape').length;
+      check('the catalogue lists every shape and unique', cards >= 37 + 22 + 3, String(cards));
+      const findBox = document.querySelector<HTMLInputElement>('#codex .cx-find');
+      if (findBox) {
+        findBox.value = 'poison';
+        findBox.dispatchEvent(new Event('input'));
+        await wait(30);
+        const shown = [...document.querySelectorAll<HTMLElement>('#codex [data-find]')].filter((e) => !e.hidden).length;
+        check('the catalogue search narrows the cards', shown > 0 && shown < cards, String(shown));
+      }
+      g.codexUI.close();
+      p.gold = goldBefore;
     }
 
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------

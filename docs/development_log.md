@@ -1,5 +1,75 @@
 # Development Log
 
+## 2026-09-06 (iteration 83) - The journal everywhere, the command sheet's corner, the catalogue, the craft ledger, the glass
+
+### The journal on every road
+- H in the command sheet's list; a JOURNAL button on the pause sheet
+  (Escape, or the pause button on a phone) beside SETTINGS - the phone's H,
+  next to the book on the bar and the JOURNAL buttons in the inventory,
+  forge and shop.
+
+### The command sheet
+- It lived bottom-right, under the desktop's system-bar column and the
+  town-portal button: expanded, it covered the skull and the fullscreen
+  button and clipped the portal. It moves to the bottom-left (the one
+  corner a desktop leaves empty), never grows past the screen (it scrolls
+  inside `--app-h`), and the co-op chat steps above it while it is open.
+
+### The journal, audited and deepened
+- Three claims were wrong against the code and are fixed: a strike lands
+  80% of the time (the book said 85), Strength gives 3 life a point (it
+  said 2, the it.82 balance), and only armor lines scale with the level's
+  power (regrowth is a share of life). Every chapter is generated from the
+  engine's own tables; CRAFTING now carries a worked example that calls
+  the forge's own cost functions (`reinforceCost`, `goldOnlyCost`,
+  `rerollCost`, `enchantCost`, `forgeCost`, `salvageYield`) on a rare
+  level-12 blade, and the harness reads the price out of the page and
+  compares it with the function.
+- ARSENAL is THE CATALOGUE: every base the crypt drops or the forge makes
+  - 37 shapes in three tiers with each tier's own line, the three staves,
+  the 22 uniques with both innates, every plate and jewel by slot with its
+  band, armor and built-in bonus - with a find box (name, family, effect)
+  and a badge on what the forge knows at the deepest depth reached. The
+  old chapter listed shapes only, with a family pace that ignored the
+  combat pace and the recovery trim; the pace shown now is the profile's.
+- STATUSES carries the wound table (share, span, bites) and each mark's
+  time from `DOT_TABLE` / `MARK_TICKS` (exported now). RECIPES, CRAFTING,
+  BELT and TRADE carry numbered how-to steps; TRADE covers the stash (24
+  pieces, gold); COMBAT covers dodge, stagger thresholds, knockback, XP;
+  chapters link to each other.
+
+### The craft ledger (tests)
+- A new qa75 block spends to the coin: salvage against `salvageYield`,
+  transmute ×2, forge (its price and the deepest level, uncommon or
+  better), refine (essence + 20%, the other lines untouched), reinforce +1
+  in materials and +2 in gold alone (`goldOnlyCost`), enchant (the
+  recipe's essence and dust + 30%), sell at a quarter, buyback at the
+  same, buy at the full worth, the restock after a warden, the stash's
+  gold both ways, and the catalogue's count and search.
+
+### The glass (iPhone 13 Pro, Safari and Telegram's browser)
+- `src/core/touchGuards.ts`: mobile Safari ignores `user-scalable=no` and
+  zooms the page on any two-finger gesture (a thumb on the stick and a
+  thumb on STRIKE is a pinch), and the page stays zoomed with every HUD
+  corner off the glass. Safari's `gesturestart/change/end` are cancelled,
+  every multi-touch `touchmove` is cancelled, a one-finger move is allowed
+  only when something between the finger and the body can scroll that
+  way (no rubber-banding), the context menu and the double-tap zoom are
+  refused on a touch layout.
+- CSS: `-webkit-text-size-adjust: 100%` (Safari boosts text in
+  landscape), `-webkit-touch-callout: none` on images and buttons (the
+  long-press inspect gesture opened iOS's Save Image sheet), no drag
+  ghosts, 16 px inputs on touch (Safari zooms into smaller ones), the
+  body pinned (`position: fixed`) on a touch layout, `100dvh` as the
+  fallback for `--app-h` before the layout writes it, and every `100vh`
+  in a window's max-height replaced by `var(--app-h)` (on iOS 100vh is the
+  toolbar-hidden height, so a window sized by it ran under the toolbar).
+- Head: `apple-mobile-web-app-capable`, black-translucent status bar,
+  `interactive-widget=resizes-content`, `theme-color`, no phone-number
+  detection.
+- The system bar's row width says eight entries (the journal joined in
+  it.82; the plate's room was computed for seven).
+
 ## 2026-09-05 (iteration 82) - The inventory restyled, the cross that died, the journal, status icons, the balance pass
 
 ### The cross

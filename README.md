@@ -59,8 +59,9 @@
   enchantments learned from scrolls. A camp forge to salvage, forge, transmute, refine,
   enchant and reinforce to +15, with a recipe book. An assignable draught belt with cooldowns.
   Merchants with a buyback counter and a restock clock. THE JOURNAL (H, the book on the bar,
-  a button in every window) with every recipe, every crafting rule, a craft log and every
-  status and trait, each with its icon; the same icons lead the card's effect lines and hang
+  the pause sheet, a button in every window) with a catalogue of every base in every tier,
+  every recipe, every crafting rule with a worked example, a craft log and every status and
+  trait, each with its icon; the same icons lead the card's effect lines and hang
   above a foe's head while the status runs. Filters and sorting on every list, coloured
   borders on every special piece.
   A warden every fifth depth, with phases.

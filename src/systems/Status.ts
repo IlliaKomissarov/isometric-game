@@ -38,9 +38,9 @@ export interface StatusDeps {
 
 const LABEL: Record<StatusKind, string> = { bleed: 'BLEEDING', poison: 'POISONED', burn: 'BURNING', chill: 'CHILLED', shock: 'SHOCKED', stun: 'STUNNED' };
 /** How long each mark stays above the head (DoTs follow their own clock). */
-const MARK_TICKS: Record<StatusKind, number> = { bleed: 240, poison: 360, burn: 180, chill: 180, shock: 30, stun: 48 };
+export const MARK_TICKS: Record<StatusKind, number> = { bleed: 240, poison: 360, burn: 180, chill: 180, shock: 30, stun: 48 };
 
-const DOT_TABLE: Record<'bleed' | 'poison' | 'burn', { share: number; ticks: number; period: number }> = {
+export const DOT_TABLE: Record<'bleed' | 'poison' | 'burn', { share: number; ticks: number; period: number }> = {
   bleed: { share: 0.6, ticks: 240, period: 30 },
   poison: { share: 0.8, ticks: 360, period: 30 },
   burn: { share: 0.5, ticks: 180, period: 20 },

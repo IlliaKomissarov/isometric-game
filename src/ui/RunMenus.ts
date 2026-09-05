@@ -27,6 +27,8 @@ export interface RunMenuHooks {
   canPause: () => boolean;
   /** THE FORBIDDEN ARTS (it.67): the cheat menu, reachable without an F1 key. */
   cheats: () => void;
+  /** THE JOURNAL (it.83): the phone's H. */
+  journal?: () => void;
 }
 
 /**
@@ -98,6 +100,10 @@ export class RunMenusUI {
               audio.sfx('uiClick');
               this.resume();
               this.hooks.cheats();
+            } else if (act === 'journal') {
+              audio.sfx('uiClick');
+              this.resume();
+              this.hooks.journal?.();
             }
           },
           { signal },

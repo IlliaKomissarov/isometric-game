@@ -77,8 +77,9 @@ import { CharacterSheetUI } from '@/ui/CharacterSheet';
 import { BestiaryUI } from '@/ui/Bestiary';
 import { GoreSystem } from '@/render/Gore';
 import { hasLineOfSight } from '@/utils/los';
-import { PARTY_COLORS, PARTY_COLOR_CSS, PARTY_MAX, type LinkState, type MemberInfo } from '@/net/PeerNet';
+import { PARTY_COLORS, PARTY_COLOR_CSS, PARTY_MAX, type LinkState, type MemberInfo, type SnapshotPayload } from '@/net/PeerNet';
 import { CATCH_UP_STEPS, Lockstep } from '@/net/Lockstep';
+import { ClientStateSync, HostStateSync, encodeAllEnemies, type SyncWorld } from '@/net/StateSync';
 import { ChatUI } from '@/ui/Chat';
 import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
 import { TitleScreen } from '@/ui/TitleScreen';
@@ -161,6 +162,8 @@ interface World {
   } | null;
   /** Roster spawn indexes killed on this floor (FloorMemory). */
   killed: Set<number>;
+  /** The entity id counter when this floor's foes were spawned (it.73). */
+  idBase: number;
   coliseum: ColiseumState | null;
   /** THE VICTORY TELEPORTER (it.57): rises at the heart of the depth XX arena once the King is dust. */
   victoryPortal: { x: number; y: number } | null;
@@ -600,7 +603,8 @@ async function boot(): Promise<void> {
     start: (cfg) => {
       const me = cfg.members.find((m) => m.slot === cfg.localSlot);
       if (!me) return;
-      void beginRun(me.cls, 0, { slot: COOP_SLOT[me.cls], save: saves.read(COOP_SLOT[me.cls]) ?? undefined, coop: cfg });
+      // A snapshot join (it.73) lands on the floor the party is on, not in town.
+      void beginRun(me.cls, cfg.snapshot ? cfg.snapshot.floor : 0, { slot: COOP_SLOT[me.cls], save: saves.read(COOP_SLOT[me.cls]) ?? undefined, coop: cfg });
     },
     closed: () => showMainMenu(),
   });
@@ -714,7 +718,7 @@ async function boot(): Promise<void> {
     // THE VIRTUAL CONTROLS (it.63): live for this run, silent behind a modal.
     touchControls.attach(inputQueue, {
       blocked: () =>
-        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #cheat-menu.open, #level-select.open, #minimap.expanded, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open'),
+        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #cheat-menu.open, #level-select.open, #minimap.expanded, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open') || transitioning,
     });
     // A rotation must never leave a thumb "held" on the old layout.
     subsOnLayout.push(layout.onChange(() => touchControls.releaseAll()));
@@ -729,12 +733,23 @@ async function boot(): Promise<void> {
     inputQueue.stamp = localSlot;
     // The roster the WORLD starts from: a mid-run joiner (it.60) replays the
     // party's original start and joins by a JOIN frame like everyone else saw.
-    const roster: MemberInfo[] = coop ? (coop.history ? coop.history.members : coop.members) : [{ slot: 0, name: 'You', cls: chosenClass, ready: true, hero: null, online: true }];
+    const roster: MemberInfo[] = coop
+      ? coop.history
+        ? coop.history.members
+        : coop.snapshot
+          ? coop.snapshot.members
+          : coop.members
+      : [{ slot: 0, name: 'You', cls: chosenClass, ready: true, hero: null, online: true }];
     const seatCount = coop ? PARTY_MAX : 1;
     /** The Party Leader's seat: the only hero whose feet open stairs, gates and portals. */
     let leaderSlot = 0;
     const lockstep = net ? new Lockstep(net, localSlot, coop!.members.filter((m) => m.online).map((m) => m.slot)) : null;
     if (lockstep && coop?.history) lockstep.loadHistory(coop.history);
+    /** THE AUTHORITY (it.73): the leader samples, everyone else corrects. */
+    let hostSync: HostStateSync | null = null;
+    let clientSync: ClientStateSync | null = null;
+    /** A snapshot joiner builds its floor's foes from the leader's id counter. */
+    let pendingIdBase: number | null = coop?.snapshot ? coop.snapshot.idBase : null;
     /** The party's opening stash (what a late joiner replays from). */
     const startStash: StashState = coop ? { items: [...coop.stash.items], gold: coop.stash.gold } : { items: [], gold: 0 };
     const chat = coop ? new ChatUI({ send: (text) => net?.chat(text) }) : null;
@@ -745,9 +760,9 @@ async function boot(): Promise<void> {
     const seedParam = new URLSearchParams(location.search).get('seed');
     const baseSeed = coop ? coop.seed : loaded ? loaded.seed : seedParam !== null ? Number(seedParam) >>> 0 : (Date.now() ^ 0x9e3779b9) >>> 0;
     /** Per-floor memory (it.39): rebuilt floors look the way they were left. A party starts with none — the crypt must match on every peer. */
-    const floors: Record<number, FloorMemory> = coop ? {} : loaded ? { ...loaded.floors } : {};
+    const floors: Record<number, FloorMemory> = coop ? (coop.snapshot ? { ...coop.snapshot.floors } : {}) : loaded ? { ...loaded.floors } : {};
     const memKey = (f: number, arena: boolean): number => (arena ? 1000 + f : f);
-    let deepestFloor = coop ? 0 : (loaded?.deepestFloor ?? 0);
+    let deepestFloor = coop ? (coop.snapshot?.deepest ?? 0) : (loaded?.deepestFloor ?? 0);
     // RECORDS (it.54): the dungeon and arena ledgers — global, merged with the slot's copy.
     const stats = new StatsManager();
     stats.load();
@@ -865,7 +880,11 @@ async function boot(): Promise<void> {
      * player whose LEAVE is somewhere in the replay.
      */
     let pendingLocal: Seat | null = null;
-    if (coop?.history) {
+    // A RECLAIMED SEAT (it.73): the snapshot already holds our seat (the
+    // leader kept it through the grace window) — our hero is in the world,
+    // no JOIN frame is coming, and there is nothing to wait for.
+    const seatedAlready = !!coop?.snapshot && roster.some((m) => m.slot === localSlot);
+    if ((coop?.history || coop?.snapshot) && !seatedAlready) {
       const p = new Player(chosenClass);
       const sheet = coop.hero ?? loaded?.player ?? null;
       if (sheet) applyHeroSave(p, sheet);
@@ -1705,6 +1724,14 @@ async function boot(): Promise<void> {
         }
       };
 
+      // THE ID BASE (it.73): the pool registers every foe it can hold right
+      // here, so this is the counter a snapshot joiner must start from — set
+      // before the pool exists, and read before it exists.
+      if (pendingIdBase !== null) {
+        state.nextId = pendingIdBase;
+        pendingIdBase = null;
+      }
+      const idBase = state.nextId;
       const enemies = new EnemyPool(
         viewport,
         {
@@ -1976,6 +2003,7 @@ async function boot(): Promise<void> {
         unsubscribe,
         town: townState,
         killed,
+        idBase,
         coliseum: coliseumState,
         victoryPortal: null,
       };
@@ -2000,7 +2028,7 @@ async function boot(): Promise<void> {
     };
 
     await preloadFloor(floor, floor === 0 ? 'hub' : 'normal');
-    let world = buildWorld(floor, floor === 0 ? 'hub' : loaded?.arena && isBossFloor(floor) ? 'arena' : 'normal');
+    let world = buildWorld(floor, floor === 0 ? 'hub' : (coop?.snapshot?.arena || loaded?.arena) && isBossFloor(floor) ? 'arena' : 'normal');
     // A rotation re-biases the camera for its new box, and a slipping frame
     // rate thins the embers — both per run, because the world is per run.
     subsOnLayout.push(layout.onReflow((s) => world.camera.setLayoutZoom(s.stageZoom)));
@@ -2024,14 +2052,34 @@ async function boot(): Promise<void> {
     };
 
     /** Write the save slot (it.39): the sheet, bags, stash, floor memories. */
+    /** A hero's sheet as the save keeps it — and as a world snapshot ships it (it.73). */
+    const heroSheet = (p: Player): PlayerSave => {
+      const equipped: SaveGame['player']['equipped'] = [];
+      for (const s of ['head', 'torso', 'legs', 'mainHand', 'offHand', 'cloak', 'ring'] as const) {
+        const itemId = p.getEquipped(s);
+        if (itemId) equipped.push({ slot: s, itemId });
+      }
+      return {
+        archetype: p.archetype,
+        level: p.level,
+        xp: p.xp,
+        gold: p.gold,
+        hp: p.hp,
+        hpMax: p.hpMax,
+        resource: p.resource,
+        backpack: [...p.backpack],
+        equipped,
+        skillPoints: p.skillPoints,
+        unlocked: [...p.unlockedSkills],
+        loadout: [...p.loadout],
+        passives: [...p.passives],
+        bestiary: Object.fromEntries([...p.bestiary].map(([k, v]) => [k, { ...v }])),
+        goldCollected: p.goldCollected,
+      };
+    };
     const saveNow = (): boolean => {
       if (!alive) return false;
       if (!world.town) captureFloor();
-      const equipped: SaveGame['player']['equipped'] = [];
-      for (const s of ['head', 'torso', 'legs', 'mainHand', 'offHand', 'cloak', 'ring'] as const) {
-        const itemId = player.getEquipped(s);
-        if (itemId) equipped.push({ slot: s, itemId });
-      }
       const save: SaveGame = {
         version: 3,
         slot,
@@ -2044,23 +2092,7 @@ async function boot(): Promise<void> {
         arena: world.isArena,
         deepestFloor,
         playtimeTicks: playtimeBase + state.tick,
-        player: {
-          archetype: player.archetype,
-          level: player.level,
-          xp: player.xp,
-          gold: player.gold,
-          hp: player.hp,
-          hpMax: player.hpMax,
-          resource: player.resource,
-          backpack: [...player.backpack],
-          equipped,
-          skillPoints: player.skillPoints,
-          unlocked: [...player.unlockedSkills],
-          loadout: [...player.loadout],
-          passives: [...player.passives],
-          bestiary: Object.fromEntries([...player.bestiary].map(([k, v]) => [k, { ...v }])),
-          goldCollected: player.goldCollected,
-        },
+        player: heroSheet(player),
         stats: stats.snapshot(),
         activeTicks,
         // CO-OP (it.59): the party's stash is the LEADER's; a joiner keeps its own slot's stash.
@@ -3358,6 +3390,10 @@ async function boot(): Promise<void> {
         for (const sk of skillSystems) sk?.update();
         if (++sheetClock % 60 === 0) charSheetUI.tick();
         world.projectiles.update(dt);
+        // THE AUTHORITY (it.73): the leader samples what changed; every
+        // other peer pulls its copy toward the leader's.
+        hostSync?.sample(tick);
+        clientSync?.apply(tick);
         state.forEach((entity) => entity.update(dt));
         world.enemies.separate();
         // FROST-TOUCHED AURAS (it.53): a chilled hero inside three tiles of a frost champion.
@@ -4003,6 +4039,8 @@ async function boot(): Promise<void> {
       loop.keepAliveHidden = true; // An alt-tabbed peer must never freeze the party.
       lockstep.onResume = () => {
         transitioning = false; // The same tick on every peer.
+        hostSync?.reset();
+        clientSync?.reset();
         floorFade?.classList.remove('show', 'loading');
         inputQueue.clear();
       };
@@ -4010,11 +4048,67 @@ async function boot(): Promise<void> {
         const seat = party[slot];
         if (seat && seat.link !== 'reconnecting') seat.link = lagging ? 'lagging' : 'ok';
       };
+      const syncWorld: SyncWorld = {
+        enemies: () => {
+          const out: Enemy[] = [];
+          state.forEach((e) => {
+            if (e instanceof Enemy) out.push(e);
+          });
+          return out;
+        },
+        heroes: () => liveSeats().map((s) => ({ slot: s.slot, player: s.player })),
+        enemyById: (id) => {
+          const e = state.getEntity(id);
+          return e instanceof Enemy ? e : null;
+        },
+        heroBySlot: (slot) => {
+          const s = party[slot];
+          return s && !s.gone && !s.pending ? s.player : null;
+        },
+        // The leader's word is the death: through the combat system, so the
+        // loot, the ledger and the bestiary follow the same path as a local kill.
+        kill: (e) => world.combat.dealDamage({ sourceId: player.id, targetId: e.id, amount: Math.max(1, e.hp) + 1 }),
+      };
       if (net.isHost) {
         // What a late joiner replays (it.60): the seed, the opening roster and stash, every frame since.
         const base = net.historyProvider;
         net.historyProvider = () => ({ ...(base ? base() : { upto: -1, frames: [] }), seed: baseSeed, members: roster.map((m) => ({ ...m })), stash: { items: [...startStash.items], gold: startStash.gold } });
         net.onJoin = (m) => lockstep.addMember(m.slot, { type: 'JOIN', playerId: m.slot, name: m.name, cls: m.cls, hero: m.hero });
+        // THE WORLD AS IT STANDS (it.73): what a joiner gets instead of the
+        // history. Null while a floor is being raised (the joiner waits a
+        // heartbeat); the Coliseum's waves are not in a snapshot yet, so a
+        // joiner during the trial replays the history instead.
+        net.snapshotProvider = () => {
+          if (transitioning) return null;
+          if (world.coliseum) return undefined;
+          captureFloor();
+          const seated = liveSeats();
+          return {
+            seed: baseSeed,
+            tick: state.tick,
+            floor,
+            arena: world.isArena,
+            members: net.members
+              .filter((m) => m.online && seated.some((s) => s.slot === m.slot))
+              .map((m) => ({ ...m, hero: heroSheet(seated.find((s) => s.slot === m.slot)!.player) })),
+            stash: { items: [...town.stash.items], gold: town.stash.gold },
+            floors: { ...floors },
+            seats: seated.map((s) => ({ slot: s.slot, x: s.player.pos.x, y: s.player.pos.y, hp: s.player.hp, res: s.player.resource, dead: s.player.action === 'dead' })),
+            enemies: encodeAllEnemies(syncWorld),
+            loot: world.loot.snapshot(),
+            rng: { combat: world.combat.rngState, loot: world.loot.rngState, chests: world.chests.rngState },
+            bossSeen: world.bossSeen,
+            idBase: world.idBase,
+            floorStartTick,
+            deepest: deepestFloor,
+            townVisits,
+            portalReturn,
+            frames: lockstep.resyncFor(state.tick),
+          };
+        };
+        hostSync = new HostStateSync(net, syncWorld);
+      } else {
+        clientSync = new ClientStateSync(net, syncWorld);
       }
       subs.push(
         net.onLink((slot, state) => {
@@ -4059,12 +4153,50 @@ async function boot(): Promise<void> {
       });
       chat.system(net.isHost ? `Party ${net.code} in the crypt. You are the Party Leader.` : `Party ${net.code} in the crypt. ${party[leaderSlot]?.name ?? 'The leader'} leads.${net.path === 'relay' ? ' (through the relay)' : ''}`);
       if (coop?.history) chat.system('Catching up with the delve so far — you step in the moment the party’s present is reached.');
+      else if (coop?.snapshot) chat.system('You step into the delve as it stands — the leader’s world is yours.');
       chat.system('ENTER to chat · the leader opens stairs, gates and portals · the fallen rise after 10 s.');
     }
     minimap.party = coop ? () => liveSeats().filter((s) => s.player !== player).map((s) => ({ x: s.player.pos.x, y: s.player.pos.y, color: s.colorCss, dead: s.player.action === 'dead' })) : null;
 
     if (!world.town) audio.setMusic('dungeon');
     audio.playIntroSting();
+    /**
+     * A SNAPSHOT JOIN (it.73): the floor was rebuilt from the leader's seed
+     * and memory; now the live things — where everyone stands, their health,
+     * the loot, the random streams, the tick — take the leader's values, and
+     * the lockstep continues from the leader's frames.
+     */
+    const applySnapshot = (s: SnapshotPayload): void => {
+      loop.seek(s.tick + 1);
+      state.tick = s.tick;
+      simTick = s.tick;
+      floorStartTick = s.floorStartTick;
+      townVisits = s.townVisits;
+      portalReturn = s.portalReturn;
+      world.bossSeen = s.bossSeen;
+      for (const seat of s.seats) {
+        const sp = party[seat.slot];
+        if (!sp || sp.gone || sp.pending) continue;
+        sp.player.warpTo(seat.x, seat.y);
+        sp.player.hp = seat.hp;
+        sp.player.resource = seat.res;
+      }
+      for (const rec of s.enemies) {
+        const e = state.getEntity(rec[0]);
+        if (!(e instanceof Enemy)) continue;
+        e.warpTo(rec[1] / 32, rec[2] / 32);
+        e.hp = rec[3];
+      }
+      world.loot.restore(s.loot);
+      world.combat.rngState = s.rng.combat;
+      world.loot.rngState = s.rng.loot;
+      world.chests.rngState = s.rng.chests;
+      lockstep?.loadSnapshot(s);
+      updateOrb();
+      updateProgressHud();
+    };
+    if (coop?.snapshot) applySnapshot(coop.snapshot);
+
     loop.start();
 
     // Dev-only debug handle for console inspection and automated testing.
@@ -4106,6 +4238,8 @@ async function boot(): Promise<void> {
         // CO-OP TEARDOWN (it.59): tell the party, close the wire, drop every handle.
         if (net?.isHost) net.broadcast({ t: 'end', reason: 'The Party Leader has left the crypt.' });
         loop.gate = null;
+        hostSync?.destroy();
+        clientSync?.destroy();
         lockstep?.destroy();
         net?.destroy();
         chat?.destroy();

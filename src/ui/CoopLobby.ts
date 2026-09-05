@@ -27,6 +27,7 @@ import {
   probeIce,
   sanitizeName,
   saveRelaySettings,
+  type SnapshotPayload,
 } from '@/net/PeerNet';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { PlayerSave, StashState } from '@/persist/SaveGame';
@@ -39,6 +40,8 @@ export interface CoopStart {
   stash: StashState;
   /** Joining a delve in progress (it.60): the party's start and every frame since. */
   history?: HistoryPayload;
+  /** Joining a delve in progress (it.73): the world as it stands, no replay. */
+  snapshot?: SnapshotPayload;
   /** The local hero's sheet (the seat a mid-run joiner brings). */
   hero: PlayerSave | null;
 }
@@ -67,6 +70,33 @@ const CLASSES: Array<{ id: ClassArchetype; name: string; blurb: string; glyph: s
 const GLYPH: Record<ClassArchetype, string> = { warrior: '⚔', mage: '✦', ranger: '➶', rogue: '☽' };
 
 const NICK_KEY = 'iso-arpg-nick';
+/** THE LAST PARTY (it.73): the room code is remembered so a dropped player is one tap from home. */
+const LAST_PARTY_KEY = 'iso-arpg-last-party';
+const LAST_PARTY_TTL_MS = 12 * 60 * 60 * 1000;
+
+function rememberParty(code: string, slot: number): void {
+  try {
+    localStorage.setItem(LAST_PARTY_KEY, JSON.stringify({ code, slot, at: Date.now() }));
+  } catch {
+    /* ignore */
+  }
+}
+
+function lastPartyInfo(): { code: string; slot: number } | null {
+  try {
+    const raw = localStorage.getItem(LAST_PARTY_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { code?: string; slot?: number; at?: number };
+    if (typeof v.code !== 'string' || typeof v.at !== 'number' || Date.now() - v.at > LAST_PARTY_TTL_MS) return null;
+    return { code: v.code, slot: typeof v.slot === 'number' ? v.slot : -1 };
+  } catch {
+    return null;
+  }
+}
+
+function lastParty(): string | null {
+  return lastPartyInfo()?.code ?? null;
+}
 const PORTRAIT_FPS = 7;
 
 export class CoopLobbyUI {
@@ -108,6 +138,7 @@ export class CoopLobbyUI {
               <button class="cp-btn primary" data-create>CREATE PARTY</button>
               <div class="cp-or"><i></i><span>or</span><i></i></div>
               <div class="cp-join"><input type="text" data-code maxlength="7" placeholder="KNG-482" spellcheck="false" autocomplete="off" /><button class="cp-btn" data-join>JOIN PARTY</button></div>
+              <button class="cp-btn cp-rejoin" data-rejoin hidden>REJOIN LAST PARTY</button>
               <details class="cp-relay" data-relay>
                 <summary>NETWORK RELAY <em>optional · mobile hotspots, carrier NAT</em></summary>
                 <p class="cp-relay-help">Two home connections meet directly. A phone hotspot or a strict ISP needs a TURN relay: paste the credentials of any free TURN account (Metered, ExpressTURN, Cloudflare Calls, your own coturn). They stay in this browser only.</p>
@@ -186,6 +217,16 @@ export class CoopLobbyUI {
     q('[data-turn-test]').addEventListener('click', () => void this.testNetwork(), { signal });
     q('[data-create]').addEventListener('click', () => void this.create(), { signal });
     q('[data-join]').addEventListener('click', () => void this.join(), { signal });
+    q('[data-rejoin]').addEventListener(
+      'click',
+      () => {
+        const code = lastParty();
+        if (!code) return;
+        q<HTMLInputElement>('[data-code]').value = code;
+        void this.join();
+      },
+      { signal },
+    );
     q<HTMLInputElement>('[data-code]').addEventListener(
       'keydown',
       (e) => {
@@ -402,7 +443,19 @@ export class CoopLobbyUI {
     const relayOnly = this.root.querySelector<HTMLInputElement>('[data-relay-only]')?.checked ?? false;
     this.status(`Knocking on ${code}…${relayOnly ? ' (relay only)' : ''}`, false);
     try {
-      const net = await PeerNet.join(code, this.nick, this.cls, this.hooks.heroFor(this.cls), { relayOnly });
+      // Coming back to the party we left (it.73): name the seat we held, so
+      // the leader hands it back if it is still ours (inside the grace window).
+      const last = lastPartyInfo();
+      const rejoin = last && last.code === code && last.slot > 0 ? { slot: last.slot, lastTick: -1 } : undefined;
+      let net: PeerNet;
+      try {
+        net = await PeerNet.join(code, this.nick, this.cls, this.hooks.heroFor(this.cls), { relayOnly, rejoin });
+      } catch (err) {
+        // The seat is gone (the grace window closed): take a fresh one.
+        if (!rejoin || !(err instanceof Error) || !/seat/i.test(err.message)) throw err;
+        this.status('Your old seat was given up — taking a fresh one…', false);
+        net = await PeerNet.join(code, this.nick, this.cls, this.hooks.heroFor(this.cls), { relayOnly });
+      }
       this.attach(net);
       this.status(net.phase === 'run' ? 'The party is in the crypt — catching up with the delve…' : 'You are in. Pick a class and READY up.', false);
     } catch (err) {
@@ -436,12 +489,19 @@ export class CoopLobbyUI {
         this.launch({ net, seed: h.seed, members: net.members, localSlot: net.localSlot, stash: h.stash, history: h, hero: this.hooks.heroFor(this.cls) });
       }),
     );
+    this.offNet.push(
+      net.onSnapshot((s) => {
+        // A delve in progress (it.73): the world as it stands — no replay.
+        this.launch({ net, seed: s.seed, members: net.members, localSlot: net.localSlot, stash: s.stash, snapshot: s, hero: this.hooks.heroFor(this.cls) });
+      }),
+    );
     net.onHostLost((reason) => {
       if (this.started) return; // The run owns the net now.
       this.detachNet();
       this.showStage('setup');
       this.status(reason, true);
     });
+    rememberParty(net.code, net.localSlot);
     this.root.querySelector<HTMLElement>('[data-codeout]')!.textContent = net.code;
     this.root.querySelector<HTMLElement>('[data-path]')!.textContent = net.isHost ? 'you are the Party Leader' : net.path === 'relay' ? 'connected through the relay' : 'connected directly';
     this.root.querySelector<HTMLElement>('[data-start]')!.hidden = !net.isHost;
@@ -592,6 +652,16 @@ export class CoopLobbyUI {
 
   private showStage(stage: 'setup' | 'party'): void {
     this.root.querySelectorAll<HTMLElement>('[data-stage]').forEach((el) => (el.hidden = el.dataset.stage !== stage));
+    if (stage === 'setup') {
+      const code = lastParty();
+      const btn = this.root.querySelector<HTMLElement>('[data-rejoin]');
+      const input = this.root.querySelector<HTMLInputElement>('[data-code]');
+      if (btn) {
+        btn.hidden = !code;
+        btn.textContent = code ? `REJOIN LAST PARTY · ${code}` : 'REJOIN LAST PARTY';
+      }
+      if (input && code && !input.value) input.value = code;
+    }
   }
 
   private status(text: string, error: boolean): void {

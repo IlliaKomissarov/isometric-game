@@ -56,6 +56,12 @@ export class GameLoop {
     return this._tick;
   }
 
+  /** A SNAPSHOT JOIN (it.73): the sim continues from the leader's tick, not from zero. */
+  seek(tick: number): void {
+    this._tick = tick;
+    this.accumulator = 0;
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;

@@ -31,11 +31,12 @@
 import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
 import type { InputCommand } from '@/core/InputQueue';
 import type { ClassArchetype } from '@/network/Serialization';
-import type { PlayerSave, StashState } from '@/persist/SaveGame';
+import type { FloorMemory, PlayerSave, StashState } from '@/persist/SaveGame';
+import type { EnemyRec, HeroRec } from './StateSync';
 
 export const PARTY_MAX = 4;
 /** Bump when the wire format changes — mismatched builds refuse each other politely. */
-export const PROTOCOL = 2;
+export const PROTOCOL = 3;
 /** Slot colours: gold (leader), sky, rose, moss. */
 export const PARTY_COLORS: readonly number[] = [0xffd070, 0x7fc8ff, 0xff6f8a, 0x8ee08a];
 export const PARTY_COLOR_CSS: readonly string[] = ['#ffd070', '#7fc8ff', '#ff6f8a', '#8ee08a'];
@@ -88,6 +89,39 @@ export interface ResyncPayload {
   resumed: number[];
 }
 
+/**
+ * A WORLD SNAPSHOT (it.73): what a player joining a delve in progress
+ * receives instead of the whole command history. The floor is rebuilt from
+ * the seed and its memory (what a save restores); the live things a save
+ * does not keep — where every foe and hero stands, their health, the loot
+ * on the ground, the exact point of every random stream — ride along, and
+ * the frames from the snapshot's tick to the leader's present follow.
+ */
+export interface SnapshotPayload {
+  seed: number;
+  /** The tick the world below was taken at (the leader's last executed). */
+  tick: number;
+  floor: number;
+  arena: boolean;
+  /** The seats standing in the world right now, sheets current. */
+  members: MemberInfo[];
+  stash: StashState;
+  floors: Record<number, FloorMemory>;
+  seats: Array<{ slot: number; x: number; y: number; hp: number; res: number; dead: boolean }>;
+  enemies: EnemyRec[];
+  loot: { next: number; items: Array<{ uid: number; itemId: string; x: number; y: number }> };
+  rng: { combat: number; loot: number; chests: number };
+  bossSeen: boolean;
+  /** The entity id counter when this floor was built (foes get the same ids). */
+  idBase: number;
+  floorStartTick: number;
+  deepest: number;
+  townVisits: number;
+  portalReturn: { floor: number; arena: boolean; x: number; y: number } | null;
+  /** The frames from `tick` to the leader's present. */
+  frames: ResyncPayload;
+}
+
 export type NetMsg =
   | { t: 'hello'; proto: number; name: string; cls: ClassArchetype; hero: PlayerSave | null; rejoin?: { slot: number; lastTick: number } }
   | { t: 'welcome'; slot: number; code: string; phase: 'lobby' | 'run' }
@@ -108,7 +142,15 @@ export type NetMsg =
   | { t: 'pings'; p: Record<number, number> }
   | { t: 'end'; reason: string }
   | { t: 'hb'; at: number }
-  | { t: 'hba'; at: number };
+  | { t: 'hba'; at: number }
+  /** Host → all: the authoritative sample (it.73). */
+  | { t: 'st'; k: number; e: EnemyRec[]; h: HeroRec[]; full: boolean; a?: number[] }
+  /** Client → host: send a full keyframe. */
+  | { t: 'sf' }
+  /** Client → host: the frames since `from` (a barrier that never resumed here). */
+  | { t: 'rs'; from: number }
+  /** Host → a joiner: the world snapshot, in pieces. */
+  | { t: 'snap'; i: number; n: number; s: string };
 
 export type NetHandler = (msg: NetMsg, fromSlot: number) => void;
 
@@ -239,6 +281,13 @@ interface Link {
 export interface JoinOptions {
   /** Skip the direct attempt: TURN only (also the automatic fallback). */
   relayOnly?: boolean;
+  /**
+   * RECLAIM A SEAT (it.73): a player coming back through the lobby names
+   * the seat they held; if the leader still has it in its grace window the
+   * seat, the hero and the entity are theirs again — no fresh seat, no
+   * doubled name in the roster.
+   */
+  rejoin?: { slot: number; lastTick: number };
 }
 
 // --- The transport --------------------------------------------------------------
@@ -265,6 +314,12 @@ export class PeerNet {
   lastTickProvider: (() => number) | null = null;
   /** Host: a new seat joined mid-run — inject the JOIN (wired by the run). */
   onJoin: ((m: MemberInfo) => void) | null = null;
+  /**
+   * Host: the world right now, for a joiner (it.73). `null` means "not this
+   * instant" (a floor is being raised) and the joiner waits a beat;
+   * `undefined` means "no snapshot for this world" and the history goes.
+   */
+  snapshotProvider: (() => SnapshotPayload | null | undefined) | null = null;
 
   private peer: Peer | null = null;
   private readonly links: Link[] = [];
@@ -273,6 +328,19 @@ export class PeerNet {
   private readonly linkHandlers = new Set<(slot: number, state: LinkState) => void>();
   private lostHandler: ((reason: string) => void) | null = null;
   private readonly historyHandlers = new Set<(h: HistoryPayload) => void>();
+  private readonly snapshotHandlers = new Set<(s: SnapshotPayload) => void>();
+  private readonly snapParts = new Map<number, string>();
+  /** Host: joiners waiting for a snapshot the run could not take yet. */
+  private readonly pendingJoins: Array<{ conn: DataConnection; member: MemberInfo; join: boolean }> = [];
+  /**
+   * THE RECENT FRAMES (it.73). A joiner's run is built for a second or two
+   * after its snapshot lands, and the leader keeps broadcasting the whole
+   * time; the lobby's own handler received those frames and dropped them,
+   * the joiner's table had a hole, and its gate never opened again. Every
+   * frame and resume a client hears is kept here (the last thirty seconds),
+   * and a lockstep that comes to life reads them first.
+   */
+  private readonly recent: NetMsg[] = [];
   private heartbeat = 0;
   private destroyed = false;
   /** Client: when the host last said anything (frames, chat, heartbeats). */
@@ -310,7 +378,7 @@ export class PeerNet {
     const attempt = async (relay: boolean, timeoutMs: number): Promise<void> => {
       net.relayOnly = relay;
       await net.openPeer(undefined, relay);
-      await net.dial(timeoutMs, undefined);
+      await net.dial(timeoutMs, opts.rejoin);
       net.path = relay ? 'relay' : 'direct';
     };
     try {
@@ -548,6 +616,9 @@ export class PeerNet {
     this.rosterHandlers.clear();
     this.linkHandlers.clear();
     this.historyHandlers.clear();
+    this.snapshotHandlers.clear();
+    this.pendingJoins.length = 0;
+    this.recent.length = 0;
     this.lostHandler = null;
   }
 
@@ -582,8 +653,11 @@ export class PeerNet {
         if (raw.proto !== PROTOCOL) return refuse('Your game build does not match the leader’s. Reload and try again.');
         if (!VALID_CLASSES.includes(raw.cls)) return refuse('Unknown class.');
         const name = sanitizeName(String(raw.name ?? ''));
-        // A seat coming back inside its grace window keeps everything.
-        const back = raw.rejoin ? this.members.find((m) => m.slot === raw.rejoin!.slot && m.online && m.link === 'reconnecting') : undefined;
+        // A seat coming back keeps everything (it.73): whether its old link
+        // has already fallen silent or is still closing — a tab that reloads
+        // knocks again before the leader has noticed it left. The room code
+        // is the party's secret; the seat number is the claimant's own memory.
+        const back = raw.rejoin ? this.members.find((m) => m.slot === raw.rejoin!.slot && m.online) : undefined;
         if (back) {
           slot = back.slot;
           this.dropLink(slot);
@@ -591,10 +665,14 @@ export class PeerNet {
           back.link = 'ok';
           back.name = name;
           conn.send({ t: 'welcome', slot, code: this.code, phase: this.phase } satisfies NetMsg);
+          // The roster BEFORE the world (it.73): the lobby launches the run
+          // from the snapshot and looks its own seat up in the roster — a
+          // roster that arrived after the snapshot left it with no seat.
+          this.broadcastLobby();
           const last = raw.rejoin!.lastTick;
           if (this.phase === 'run') {
             if (last >= 0 && this.resyncProvider) conn.send({ t: 'resync', p: this.resyncProvider(last) } satisfies NetMsg);
-            else this.sendHistory(conn);
+            else if (!this.sendJoinState(conn)) this.pendingJoins.push({ conn, member: back, join: false });
           }
           this.setLink(slot, 'ok');
           this.system(`${back.name} is back.`);
@@ -612,10 +690,13 @@ export class PeerNet {
         conn.send({ t: 'welcome', slot, code: this.code, phase: this.phase } satisfies NetMsg);
         this.broadcastLobby();
         if (this.phase === 'run') {
-          // Mid-run: the whole story so far, then a JOIN in the next frame.
-          this.sendHistory(conn);
-          this.onJoin?.(member);
-          this.system(`${member.name} joins the delve.`);
+          // Mid-run (it.73): the world as it stands, then a JOIN in the next
+          // frame. If a floor is being raised this instant, the joiner waits
+          // for the next heartbeat and gets the new floor instead.
+          if (this.sendJoinState(conn)) {
+            this.onJoin?.(member);
+            this.system(`${member.name} joins the delve.`);
+          } else this.pendingJoins.push({ conn, member, join: true });
         } else {
           this.system(`${member.name} joined the party.`);
         }
@@ -683,6 +764,46 @@ export class PeerNet {
   private freeSlot(): number | null {
     for (let s = 1; s < PARTY_MAX; s++) if (!this.members.some((m) => m.slot === s && m.online)) return s;
     return null;
+  }
+
+  /**
+   * What a joiner gets (it.73): the snapshot when the run can take one, the
+   * history when it cannot. False = not now (the caller queues the joiner).
+   */
+  private sendJoinState(conn: DataConnection): boolean {
+    if (this.snapshotProvider) {
+      const snap = this.snapshotProvider();
+      if (snap === null) return false;
+      if (snap) {
+        const text = JSON.stringify(snap);
+        const n = Math.max(1, Math.ceil(text.length / CHUNK));
+        for (let i = 0; i < n; i++) conn.send({ t: 'snap', i, n, s: text.slice(i * CHUNK, (i + 1) * CHUNK) } satisfies NetMsg);
+        return true;
+      }
+    }
+    this.sendHistory(conn);
+    return true;
+  }
+
+  private flushPendingJoins(): void {
+    for (let i = this.pendingJoins.length - 1; i >= 0; i--) {
+      const pj = this.pendingJoins[i];
+      if (!pj.conn.open) {
+        this.pendingJoins.splice(i, 1);
+        continue;
+      }
+      if (!this.sendJoinState(pj.conn)) continue;
+      this.pendingJoins.splice(i, 1);
+      if (pj.join) {
+        this.onJoin?.(pj.member);
+        this.system(`${pj.member.name} joins the delve.`);
+      }
+    }
+  }
+
+  onSnapshot(fn: (s: SnapshotPayload) => void): () => void {
+    this.snapshotHandlers.add(fn);
+    return () => this.snapshotHandlers.delete(fn);
   }
 
   private sendHistory(conn: DataConnection): void {
@@ -840,6 +961,11 @@ export class PeerNet {
         case 'set':
           this.setMember(fromSlot, { cls: msg.cls, ready: msg.ready, hero: msg.hero });
           return;
+        case 'rs':
+          // A barrier that never resumed on that peer (it.73): hand it the
+          // frames and the resumed ticks since where it stands.
+          if (this.resyncProvider && Number.isInteger(msg.from)) this.sendTo(fromSlot, { t: 'resync', p: this.resyncProvider(msg.from) });
+          return;
         default:
           break;
       }
@@ -875,6 +1001,22 @@ export class PeerNet {
           }
           return;
         }
+        case 'snap': {
+          this.snapParts.set(msg.i, msg.s);
+          if (this.snapParts.size === msg.n) {
+            let text = '';
+            for (let i = 0; i < msg.n; i++) text += this.snapParts.get(i) ?? '';
+            this.snapParts.clear();
+            try {
+              const snap = JSON.parse(text) as SnapshotPayload;
+              this.phase = 'run';
+              for (const fn of this.snapshotHandlers) fn(snap);
+            } catch (err) {
+              console.error('[net] snapshot unreadable:', err);
+            }
+          }
+          return;
+        }
         case 'start':
           this.phase = 'run'; // From here a dropped channel is re-dialled, not mourned.
           break;
@@ -888,7 +1030,16 @@ export class PeerNet {
     this.dispatch(msg, fromSlot);
   }
 
+  /** Client: the frames and resumes heard lately, oldest first. */
+  recentFrames(): readonly NetMsg[] {
+    return this.recent;
+  }
+
   private dispatch(msg: NetMsg, fromSlot: number): void {
+    if (!this.isHost && (msg.t === 'fr' || msg.t === 'res')) {
+      this.recent.push(msg);
+      if (this.recent.length > 2400) this.recent.splice(0, this.recent.length - 2400);
+    }
     for (const fn of this.handlers) {
       try {
         fn(msg, fromSlot);
@@ -932,6 +1083,7 @@ export class PeerNet {
         for (const m of this.members) pings[m.slot] = m.ping ?? 0;
         if (this.phase === 'run') this.broadcast({ t: 'pings', p: pings });
         else this.broadcastLobby();
+        this.flushPendingJoins();
         for (const m of [...this.members]) {
           if (m.slot === 0 || !m.online) continue;
           const l = this.links.find((x) => x.slot === m.slot);

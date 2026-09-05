@@ -24,7 +24,7 @@ import type { InputCommand } from '@/core/InputQueue';
 import { state } from '@/core/StateManager';
 import type { Entity } from '@/entities/Entity';
 import type { Player } from '@/entities/Player';
-import { mulberry32, randInt } from '@/utils/rng';
+import { mulberry32, randInt, type Rng } from '@/utils/rng';
 import { canStandAt, type WalkableFn } from './Collision';
 import type { MovementSystem } from './Movement';
 
@@ -87,8 +87,16 @@ interface SwingState {
 }
 
 export class CombatSystem {
-  private readonly rand: () => number;
+  private readonly rand: Rng;
   private readonly swings: SwingState[] = [];
+
+  /** The stream's position (a world snapshot carries it; it.73). */
+  get rngState(): number {
+    return this.rand.state;
+  }
+  set rngState(v: number) {
+    this.rand.state = v;
+  }
 
   /** Wired by main after ProjectileSystem exists (avoids a construction cycle). */
   fireProjectile: ((opts: import('./Projectiles').ProjectileSpawn) => void) | null = null;

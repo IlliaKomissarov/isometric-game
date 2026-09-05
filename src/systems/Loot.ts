@@ -14,12 +14,12 @@ import { eventBus } from '@/core/EventBus';
 import type { Camera } from '@/engine/Camera';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
-import { RARITY_COLOR, rollChestItem, rollDrop, rollRareItem, type ItemDef } from '@/items/catalog';
+import { RARITY_COLOR, rollChestItem, rollDrop, rollRareItem, type ItemDef, ITEMS } from '@/items/catalog';
 import { spriteLib } from '@/render/SpriteLibrary';
 import { itemIconTexture } from '@/ui/itemIcons';
 import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
-import { mulberry32 } from '@/utils/rng';
+import { mulberry32, type Rng } from '@/utils/rng';
 
 export interface GroundItem {
   uid: number;
@@ -36,7 +36,31 @@ interface GroundItemView extends GroundItem {
 export class LootSystem {
   private readonly items = new Map<number, GroundItemView>();
   private nextUid = 1;
-  private readonly rand: () => number;
+  private readonly rand: Rng;
+
+  /** The stream's position (a world snapshot carries it; it.73). */
+  get rngState(): number {
+    return this.rand.state;
+  }
+  set rngState(v: number) {
+    this.rand.state = v;
+  }
+
+  /** Everything on the floor, with the uid counter — a snapshot join re-lays it. */
+  snapshot(): { next: number; items: GroundItem[] } {
+    return { next: this.nextUid, items: [...this.items.values()].map(({ uid, itemId, x, y }) => ({ uid, itemId, x, y })) };
+  }
+
+  /** Re-lay a snapshot's ground items with the SAME uids, so a pickup command names the same thing here. */
+  restore(s: { next: number; items: GroundItem[] }): void {
+    for (const it of this.items.values()) it.root.destroy({ children: true });
+    this.items.clear();
+    for (const it of s.items) {
+      const def = ITEMS[it.itemId];
+      if (def) this.spawnAs(it.uid, def, it.x, it.y);
+    }
+    this.nextUid = Math.max(s.next, this.nextUid);
+  }
   private readonly scratch = vec2();
 
   constructor(
@@ -63,7 +87,10 @@ export class LootSystem {
   }
 
   spawn(def: ItemDef, x: number, y: number): void {
-    const uid = this.nextUid++;
+    this.spawnAs(this.nextUid++, def, x, y);
+  }
+
+  private spawnAs(uid: number, def: ItemDef, x: number, y: number): void {
     const root = new Container();
 
     const glow = new Sprite(assets.get('glow'));

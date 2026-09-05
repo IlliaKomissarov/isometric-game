@@ -22,6 +22,19 @@ export class StateManager {
   private readonly entities = new Map<number, Entity>();
   private nextEntityId = 1;
 
+  /**
+   * THE ID COUNTER (it.73). Entity ids are the one thing a command may name
+   * across the wire (a target), so a peer joining from a snapshot must hand
+   * out the SAME ids for the floor's foes the leader did: it sets the
+   * counter to where the leader's stood when that floor was built.
+   */
+  get nextId(): number {
+    return this.nextEntityId;
+  }
+  set nextId(v: number) {
+    this.nextEntityId = Math.max(this.nextEntityId, v);
+  }
+
   /** Register an entity and assign its deterministic id. */
   register(entity: Entity): number {
     const id = this.nextEntityId++;

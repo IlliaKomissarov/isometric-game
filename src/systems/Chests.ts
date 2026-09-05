@@ -20,7 +20,7 @@ import { spriteLib } from '@/render/SpriteLibrary';
 import type { DungeonMap } from '@/scenes/DungeonGenerator';
 import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
-import { mulberry32 } from '@/utils/rng';
+import { mulberry32, type Rng } from '@/utils/rng';
 import type { LootSystem } from './Loot';
 
 export interface Chest {
@@ -46,7 +46,15 @@ const DROPS_PER_CHEST_MAX = 3;
 export class ChestSystem {
   private readonly chests = new Map<number, ChestView>();
   private nextId = 1;
-  private readonly rand: () => number;
+  private readonly rand: Rng;
+
+  /** The stream's position (a world snapshot carries it; it.73). */
+  get rngState(): number {
+    return this.rand.state;
+  }
+  set rngState(v: number) {
+    this.rand.state = v;
+  }
   private readonly scratch = vec2();
 
   constructor(

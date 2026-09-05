@@ -84,6 +84,8 @@ interface Item {
 const NOOP: VfxHandle = { stop: () => {}, moveTo: () => {} };
 
 export class VfxSystem {
+  /** Retired sprites, reused (it.73): a boss fight used to allocate and free hundreds a minute. */
+  private readonly free: Sprite[] = [];
   private items: Item[] = [];
   private readonly scratch = vec2();
 
@@ -100,8 +102,11 @@ export class VfxSystem {
   play(anim: VfxAnim, x: number, y: number, opts: VfxOpts = {}): VfxHandle {
     if (!this.has(anim)) return NOOP;
     const frames = spriteLib.anim(anim as AnimName).frames[0];
-    const sprite = new Sprite(frames[0]);
+    const sprite = this.free.pop() ?? new Sprite();
+    sprite.texture = frames[0];
     sprite.anchor.set(0.5);
+    sprite.tint = 0xffffff;
+    sprite.visible = true;
     const scale = opts.scale ?? 1;
     sprite.scale.set(scale, opts.flat ? scale * 0.5 : scale);
     if (opts.tint !== undefined) sprite.tint = opts.tint;
@@ -155,7 +160,10 @@ export class VfxSystem {
         else it.done = true;
       }
       if (it.done) {
-        it.sprite.destroy();
+        it.sprite.removeFromParent();
+        it.sprite.visible = false;
+        if (this.free.length < 160) this.free.push(it.sprite);
+        else it.sprite.destroy();
         continue;
       }
       it.sprite.texture = it.frames[frame];
@@ -174,5 +182,7 @@ export class VfxSystem {
   clear(): void {
     for (const it of this.items) it.sprite.destroy();
     this.items = [];
+    for (const sp of this.free) sp.destroy();
+    this.free.length = 0;
   }
 }

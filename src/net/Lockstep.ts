@@ -31,7 +31,10 @@
  */
 
 import type { InputCommand } from '@/core/InputQueue';
-import type { HistoryPayload, NetMsg, PeerNet, ResyncPayload } from './PeerNet';
+import type { HistoryPayload, NetMsg, PeerNet, ResyncPayload, SnapshotPayload } from './PeerNet';
+
+/** A barrier this peer has held for this long asks the leader what happened. */
+const BARRIER_ASK_MS = 8000;
 
 /** Ticks of input delay (100 ms at 60 Hz) — hides typical WebRTC latency. */
 export const INPUT_DELAY = 6;
@@ -69,6 +72,8 @@ export class Lockstep {
   private resumedTick = -1;
   private readonly off: () => void;
   private lastLagCheck = 0;
+  private barrierSince = 0;
+  private lastAsk = 0;
 
   constructor(
     private readonly net: PeerNet,
@@ -78,6 +83,9 @@ export class Lockstep {
     this.waitingOn = new Set(slots);
     for (let k = 0; k < INPUT_DELAY; k++) this.frames.set(k, []);
     this.off = net.onMessage((msg, from) => this.onMessage(msg, from));
+    // The frames the transport heard before this existed (it.73): a joiner
+    // is built while the leader keeps broadcasting.
+    if (!net.isHost) for (const m of net.recentFrames()) this.onMessage(m, 0);
     if (net.isHost) {
       net.historyProvider = () => this.historyPayload();
       net.resyncProvider = (from) => this.resyncPayload(from);
@@ -114,6 +122,26 @@ export class Lockstep {
     for (const [k, cmds] of h.frames) this.frames.set(k, cmds);
     this.replayUpto = h.upto;
     this.lastSubmitted = h.upto + INPUT_DELAY; // Nothing of ours is wanted before we are live.
+  }
+
+  /**
+   * Client: continue from a world snapshot (it.73). The frames from the
+   * snapshot's tick to the leader's present come inside it; live frames
+   * follow on the wire (buffered by the transport until this exists).
+   */
+  loadSnapshot(s: SnapshotPayload): void {
+    // The table is NOT cleared: the live frames that arrived while the world
+    // was being built are already in it, and they are the ones the resync
+    // inside the snapshot stops short of.
+    this.executed = s.tick;
+    this.replayUpto = -1;
+    this.lastSubmitted = s.tick + INPUT_DELAY;
+    this.applyResync(s.frames);
+  }
+
+  /** Leader: the frames since `from` (a snapshot carries them). */
+  resyncFor(from: number): ResyncPayload {
+    return this.resyncPayload(from);
   }
 
   /** Still replaying the past (or far behind the leader)? */
@@ -186,7 +214,17 @@ export class Lockstep {
       this.net.pulse();
       if (this.net.isHost) this.checkLag();
     }
-    if (this.barrierTick !== null && k >= this.barrierTick) return this.noteStall(false);
+    if (this.barrierTick !== null && k >= this.barrierTick) {
+      // THE WATCHDOG (it.73): a joiner whose `res` was lost, or that reported
+      // ready to a leader that had already moved on, used to hold its
+      // loading screen forever. After a while it asks for the frames since
+      // where it stands; the answer carries the resumed ticks.
+      if (!this.net.isHost && !this.solo && now - this.barrierSince > BARRIER_ASK_MS && now - this.lastAsk > BARRIER_ASK_MS) {
+        this.lastAsk = now;
+        this.net.send({ t: 'rs', from: this.executed });
+      }
+      return this.noteStall(false);
+    }
     if (this.solo) return this.noteStall(true);
     return this.noteStall(this.frames.has(k));
   }
@@ -244,6 +282,7 @@ export class Lockstep {
     if (this.solo) return;
     this.barrierTick = k;
     this.barrierReady.clear();
+    this.barrierSince = performance.now();
   }
 
   get inBarrier(): boolean {

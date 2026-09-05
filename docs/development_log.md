@@ -1,5 +1,51 @@
 # Development Log
 
+## 2026-09-05 (iteration 73) - Co-op: the leader is the authority, snapshot joins, seat reclaim
+
+### What was there
+- Deterministic lockstep over PeerJS (it.59), with grace/rejoin, history
+  replay for late joiners and a warp barrier (it.60). Mid-run joining
+  already existed as a replay of every frame since the start, which on a
+  long delve meant a minute behind a CATCHING UP veil, and a desync (any
+  fork of the two simulations) had no cure but the next floor.
+
+### Host-authoritative state (`net/StateSync.ts`)
+- The Party Leader samples foes near the party and every hero five times a
+  second and sends only what changed; keyframes every four seconds carry
+  the floor's alive list. Peers glide their copies to the leader's
+  positions, set health, kill what the leader killed (through the combat
+  system) and bury foes that died out of interest range. Measured: a foe
+  warped 3 tiles and wounded on a joiner returned to the leader's position
+  and health within one keyframe; a kill 29 tiles from the party reached
+  the joiner in 2 s; an idle party costs about 100 B/s.
+
+### Snapshot joins
+- A joiner gets the world as it stands (2.6 KB on depth I) and is live in
+  3-5 s at the leader's tick, with the same entity ids, positions, health,
+  loot and RNG positions. Three bugs found live: the enemy pool registers
+  its foes at construction (the id base is captured there now); the lobby's
+  handler swallowed the frames broadcast while the joiner built its world
+  (the transport keeps the last thirty seconds and a new lockstep reads
+  them); `loadSnapshot` cleared those frames (it no longer clears).
+- A player who drops comes back to the SAME seat: the lobby remembers
+  `{code, slot}`, REJOIN LAST PARTY is one tap, the host hands the seat back
+  whether its old link has fallen silent or not, and the roster goes out
+  before the snapshot so the lobby finds its seat. Verified: tab reloaded
+  on depth I, host showed RECONNECTING, rejoin seated slot 1 again in 5 s,
+  no duplicate seat, leader not lagging.
+
+### Transitions
+- A barrier held over 8 s asks the leader for the frames and resumed ticks
+  since where the peer stands (`rs`); a joiner arriving while a floor is
+  being raised is queued and served on the next heartbeat; the thumb
+  controls are blocked during a transition. Three peers went depth I to
+  depth II to town together in about 2 s each, positions identical.
+
+### Performance
+- Delta packets, interest radius, a 30 s frame ring, a VFX sprite pool
+  (damage numbers and projectiles were already pooled).
+- `PROTOCOL` 3. `npm run build` clean; no console errors in any tab.
+
 ## 2026-09-05 (iteration 72) - The previews breathe
 
 - The status plate's portrait, the inventory paperdoll and the class cards

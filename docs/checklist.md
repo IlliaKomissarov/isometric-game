@@ -586,6 +586,14 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 
 - [x] Portrait, paperdoll and class-card idles are time-based ping-pong at two-thirds world pace (`uiIdleFrame`)
 
+## Iteration 73 - Co-op authority, snapshot joins, seat reclaim (2026-09-05)
+
+- [x] `net/StateSync.ts`: leader samples foes and heroes, delta packets, interest radius, keyframes with alive list; peers glide/snap/kill to match
+- [x] Snapshot joins: world payload (seed, tick, floors, seats, foes, loot, RNG states, id base, frames), live in 3-5 s with matching ids
+- [x] Seat reclaim: remembered `{code, slot}`, REJOIN LAST PARTY, host hands the seat back, roster before snapshot
+- [x] Barrier watchdog (`rs`), queued joins during a transition, thumbs blocked while transitioning
+- [x] VFX sprite pool; `PROTOCOL` 3; three-tab verification; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

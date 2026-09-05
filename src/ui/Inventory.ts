@@ -12,6 +12,7 @@
 import { eventBus } from '@/core/EventBus';
 import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
+import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
 import { ITEMS, RARITY_COLOR, itemValue, statLine, type ItemDef } from '@/items/catalog';
 import type { EquipmentSlot } from '@/network/Serialization';
@@ -219,15 +220,19 @@ export class InventoryUI {
       previewHost.appendChild(target);
       if (ctx) {
         ctx.imageSmoothingEnabled = false;
-        let f = 0;
+        // Time-based, ping-ponged, slow (it.72): the paperdoll breathes at
+        // the UI's idle pace instead of flashing through uneven frames.
+        let shown = -1;
         const draw = (): void => {
-          const frame = frames[f % frames.length];
+          const i = uiIdleFrame(frames.length, performance.now() / 1000);
+          if (i === shown) return;
+          shown = i;
+          const frame = frames[i];
           ctx.clearRect(0, 0, target.width, target.height);
           ctx.drawImage(frame, (target.width - frame.width) / 2, target.height - frame.height);
-          f++;
         };
         draw();
-        this.previewTimer = window.setInterval(draw, 170);
+        this.previewTimer = window.setInterval(draw, 50);
       }
     }
 

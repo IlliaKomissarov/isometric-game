@@ -86,6 +86,7 @@ import { LoadingScreen } from '@/ui/LoadingScreen';
 import { layout } from '@/core/OrientationManager';
 import { perf } from '@/core/PerformanceScaler';
 import { haptics } from '@/core/Haptics';
+import { uiIdleFrame } from '@/render/animUtil';
 /** The screen layout, reachable inside `buildWorld`, where `layout` names a town plan. */
 const screenLayout = layout;
 import { touchControls, fullscreenButton } from '@/ui/TouchControls';
@@ -404,14 +405,16 @@ async function boot(): Promise<void> {
         const frames = classPreviewFrames(cls);
         if (frames.length > 0) {
           const cctx = cv.getContext('2d')!;
-          let fi = 0;
+          let shown = -1;
           const draw = (): void => {
+            const i = uiIdleFrame(frames.length, performance.now() / 1000);
+            if (i === shown) return;
+            shown = i;
             cctx.clearRect(0, 0, cv!.width, cv!.height);
-            cctx.drawImage(frames[fi % frames.length], 0, 0);
-            fi++;
+            cctx.drawImage(frames[i], 0, 0);
           };
           draw();
-          timers.push(window.setInterval(draw, 220));
+          timers.push(window.setInterval(draw, 50)); // Slow, time-based, ping-ponged (it.72).
         }
         card.addEventListener('mouseenter', () => audio.sfx('uiHover'), { signal: ac.signal });
         card.addEventListener(

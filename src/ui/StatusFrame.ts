@@ -25,6 +25,7 @@
  */
 
 import type { Player } from '@/entities/Player';
+import { uiIdleFrame } from '@/render/animUtil';
 
 /** How much of the remaining gap a gauge closes per frame. */
 const FILL_LERP = 0.22;
@@ -51,8 +52,7 @@ export class StatusFrame {
   private readonly hp: Gauge;
   private readonly res: Gauge;
   private raf = 0;
-  private frameIndex = 0;
-  private portraitTimer = 0;
+  private frameIndex = -1;
 
   constructor(
     private readonly player: Player,
@@ -189,12 +189,13 @@ export class StatusFrame {
     this.drawPortrait();
   }
 
-  /** The portrait breathes: the class's idle cycle at roughly 8 fps. */
+  /** The portrait breathes at the UI's idle pace (see `uiIdleFrame`). */
   private drawPortrait(): void {
     const frames = this.getFrames();
     if (!frames.length) return;
-    if (++this.portraitTimer % 7 !== 0) return;
-    this.frameIndex = (this.frameIndex + 1) % frames.length;
+    const next = uiIdleFrame(frames.length, performance.now() / 1000);
+    if (next === this.frameIndex) return;
+    this.frameIndex = next;
     const src = frames[this.frameIndex];
     const ctx = this.portrait.getContext('2d');
     if (!ctx || !src.width) return;

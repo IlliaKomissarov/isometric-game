@@ -582,6 +582,10 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 
 - [x] Windows stack above the touch layer; the layer hides while any window is open; scrollers get touch-action pan-y
 
+## Iteration 72 - The previews breathe (2026-09-05)
+
+- [x] Portrait, paperdoll and class-card idles are time-based ping-pong at two-thirds world pace (`uiIdleFrame`)
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -38,3 +38,15 @@ export function idleFrame(frameCount: number, t: number, phase: number): number 
   const fps = frameCount >= 12 ? 7 : 5;
   return Math.floor(t * fps + phase) % frameCount;
 }
+
+/**
+ * THE UI'S IDLE (it.72): a portrait, a paperdoll or a class card breathes
+ * at two-thirds of the world's pace. Three previews used to step their
+ * frames on a fixed timer, forward, wrapping — the mage's and the rogue's
+ * four uneven frames flashed at 5-8 fps. Time-based and ping-ponged, like
+ * the creatures in the crypt, and slower still, because a preview is
+ * looked AT rather than glanced at.
+ */
+export function uiIdleFrame(frameCount: number, tSeconds: number): number {
+  return idleFrame(frameCount, tSeconds * 0.66, 0);
+}

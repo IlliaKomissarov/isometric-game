@@ -1,5 +1,16 @@
 # Development Log
 
+## 2026-09-05 (iteration 72) - The previews breathe
+
+- The status plate's portrait, the inventory paperdoll and the class cards
+  each stepped their idle frames on a fixed timer, forward, wrapping: the
+  mage's and the rogue's four uneven frames flashed at 6-8 fps. All three
+  now read `uiIdleFrame` — the world's time-based, ping-ponged idle at
+  two-thirds pace (a 4-frame idle is a ~4.5 s breath, 0 1 2 3 2 1) — and
+  repaint only when the frame changes.
+- Verified: 1.33 frame changes per second in the UI against 2.17 in the
+  world; portrait and paperdoll render for a rogue; zero console errors.
+
 ## 2026-09-05 (iteration 71) - Windows above the thumbs
 
 - The inventory was z-index 10 under the touch layer at 24. On a phone the

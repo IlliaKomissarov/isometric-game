@@ -578,6 +578,10 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 
 - [x] Touch close marks: solid disc + bold cross on every window; cheat sheet gets a CLOSE button and ESC
 
+## Iteration 71 - Windows above the thumbs (2026-09-05)
+
+- [x] Windows stack above the touch layer; the layer hides while any window is open; scrollers get touch-action pan-y
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -4591,6 +4591,22 @@
       body.orient-landscape.short-screen .bs-stage { height: 120px; }
       #bestiary .bs-head, #skill-tree .st-head, #char-sheet .cs-head { padding-right: 44px; }
 
+      /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
+      /* The inventory was z-index 10 under a touch layer at 24: on a phone
+         the pad and the stick zone sat OVER the lower half of every window,
+         swallowing the taps and the scroll (the controls were "blocked", so
+         they did nothing — and neither did the window). Every window now
+         stacks above the controls, and while any window or sheet is open
+         the controls are hidden outright, so nothing can intercept. */
+      #inv-panel, #skill-tree, #char-sheet, #bestiary, #cheat-menu, #level-select, .town-panel, #leaderboard, #settings-panel, #save-panel { z-index: 40; }
+      body:has(#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #cheat-menu.open, #level-select.open, #save-panel.open, #minimap.expanded, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open) #touch-controls {
+        visibility: hidden;
+      }
+      /* The pack scrolls inside the tab it lives in, sized to the screen. */
+      body.orient-portrait #inv-panel.open .inv-scroll { max-height: calc(var(--app-h) * 0.5); }
+      body.orient-landscape #inv-panel.open .inv-scroll { max-height: calc(var(--app-h) * 0.62); }
+      #inv-panel .inv-scroll, #inv-panel, #skill-tree, #char-sheet, #bestiary, .bs-list, .bs-detail, #cheat-menu, .cheat-items, .town-panel, #leaderboard, #settings-panel, #level-select { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+
       /* ---- 9. THE CLOSE MARK ------------------------------------------ */
       /* A CROSS YOU CANNOT MISS (it.70). The gold medallion reads on a
          desktop; on a phone it vanished into the frame. Touch screens get

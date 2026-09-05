@@ -1,5 +1,19 @@
 # Development Log
 
+## 2026-09-05 (iteration 71) - Windows above the thumbs
+
+- The inventory was z-index 10 under the touch layer at 24. On a phone the
+  pad and the stick zone sat over the lower half of every window and
+  swallowed its taps and its scroll: the controls were "blocked", so they
+  did nothing — and neither did the window. Windows now stack at 40, and
+  while any window or sheet is open the touch layer is `visibility: hidden`
+  (a `body:has(...)` rule over the same list `blocked()` uses), so nothing
+  can intercept. Scrollers carry `touch-action: pan-y`; the pack's list is
+  sized to the screen in both orientations.
+- Verified at 412x780: the touch layer hides while the inventory is open,
+  the pack grid is the element under the finger, the cross closes; matrix
+  74/74; zero console errors.
+
 ## 2026-09-05 (iteration 70) - A cross you cannot miss
 
 - The Forbidden Arts' close mark was the it.62 gold medallion — a thin X

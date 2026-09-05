@@ -4682,6 +4682,23 @@
       .tip-affixes li.pass { color: #ff7fa0; }
       button.ds-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+      /* ---- 8a3. HEADINGS THAT STAY, SETTINGS ABOVE THE TITLE (it.79) ---- */
+      /* The settings sheet opens from the title menu (z 85): it must sit above it. */
+      #settings-panel.open { z-index: 96; }
+      /* A sheet that scrolls keeps its heading — and its close cross — pinned
+         at the top. The shadow copies paint the strip above and the padding
+         columns beside the heading so nothing scrolls through the gaps. */
+      #inv-panel > h3.drag-handle, .town-panel > .tp-head, #skill-tree > .st-head, #char-sheet > .cs-head, #bestiary > .bs-head,
+      #cheat-menu > .cheat-head, #level-select > h3.lvl-head, #settings-panel > h3.set-head, #leaderboard > .tp-head {
+        position: sticky; top: 0; z-index: 6;
+        background: rgba(12, 10, 15, 0.97);
+        box-shadow: 0 -24px 0 0 rgba(12, 10, 15, 0.97), -26px 0 0 0 rgba(12, 10, 15, 0.97), 26px 0 0 0 rgba(12, 10, 15, 0.97), 0 1px 0 0 rgba(200, 165, 88, 0.18);
+      }
+      #settings-panel > h3.set-head, #level-select > h3.lvl-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-right: 2px; }
+      #settings-panel > h3.set-head .tp-close, #level-select > h3.lvl-head .tp-close { position: static; margin-left: auto; }
+      /* Touch: the cross is a thumb target, the sheet never hides it under the tray. */
+      body.input-touch #settings-panel > h3.set-head .tp-close, body.input-touch #level-select > h3.lvl-head .tp-close { width: 44px; height: 44px; }
+
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone
          the pad and the stick zone sat OVER the lower half of every window,

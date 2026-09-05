@@ -14,6 +14,7 @@
  */
 
 import { audio } from '@/engine/AudioManager';
+import { keepScroll } from './keepScroll';
 
 export interface CheatItemInfo {
   id: string;
@@ -143,7 +144,12 @@ export class CheatMenuUI {
     }
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const items = this.hooks.items().filter((it) => tabOf(it) === this.tab);
     const tabs = (Object.keys(TAB_LABEL) as ArsenalTab[])
       .map(

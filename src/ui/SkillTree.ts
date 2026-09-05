@@ -36,6 +36,7 @@ import {
   tierLevel,
 } from '@/systems/SkillTree';
 import type { ClassArchetype } from '@/network/Serialization';
+import { keepScroll } from './keepScroll';
 
 const CLASS_TITLE: Record<ClassArchetype, string> = { warrior: 'WARRIOR', mage: 'MAGE', ranger: 'RANGER', rogue: 'ROGUE' };
 
@@ -122,7 +123,12 @@ export class SkillTreeUI {
     audio.sfx('invClose');
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const p = this.player;
     const own = p.archetype;
     const order = [own, ...CLASS_ORDER.filter((c) => c !== own)];

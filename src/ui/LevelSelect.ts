@@ -10,6 +10,7 @@
 
 import { MAX_DEPTH } from '@/core/config';
 import { audio } from '@/engine/AudioManager';
+import { keepScroll } from './keepScroll';
 
 const STORAGE_KEY = 'iso-arpg-max-depth';
 const ROMAN = [
@@ -81,7 +82,12 @@ export class LevelSelectUI {
     audio.sfx(this.visible ? 'mapOpen' : 'mapClose');
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const rows = Array.from({ length: this.maxDepth }, (_, i) => {
       const floor = i + 1;
       const hint =
@@ -92,7 +98,8 @@ export class LevelSelectUI {
                 <span class="lvl-hint">${hint}</span>
               </button>`;
     }).join('');
-    this.panel.innerHTML = `<h3>DESCEND TO…</h3><div class="lvl-scroll">${rows}</div><div class="lvl-tip">Reach new depths to unlock them</div>`;
+    this.panel.innerHTML = `<h3 class="lvl-head">DESCEND TO…<button class="tp-close" data-close-x title="Close (L or ESC)"><i></i></button></h3><div class="lvl-scroll">${rows}</div><div class="lvl-tip">Reach new depths to unlock them</div>`;
+    this.panel.querySelector('[data-close-x]')?.addEventListener('click', () => this.toggle());
     this.panel.querySelectorAll<HTMLButtonElement>('.lvl-row').forEach((btn) => {
       btn.addEventListener('mouseenter', () => audio.sfx('uiHover'));
       btn.addEventListener('click', () => {

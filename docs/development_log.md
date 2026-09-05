@@ -1,5 +1,33 @@
 # Development Log
 
+## 2026-09-05 (iteration 79) - Sheets that keep their heading, scroll that stays put, settings above the title
+
+### The bugs
+- SETTINGS from the title could not be closed: the sheet opened at z 40
+  (the it.71 windows rule) under the title menu at z 85, so every click on
+  its CLOSE landed on the menu behind it - the first test click started a
+  run by hitting CONTINUE. `#settings-panel.open` now sits at z 96.
+- On a phone, a sheet taller than the screen scrolls as a whole, and its
+  heading - with the close cross - scrolled away. Every sheet's heading is
+  `position: sticky` now (inventory, skill tree, character, bestiary,
+  depths, settings, the three town panels, the ledger, the Forbidden
+  Arts), with shadow copies painting the strip above and the padding
+  columns beside it so nothing scrolls through the gaps. Settings and
+  Depths gained a close cross in the heading (their only close sat at the
+  bottom of the sheet).
+- Spending a skill point on a phone snapped the tree back to the top:
+  every panel repaints with `innerHTML` on a sim change, which discards
+  every scroll offset inside it. `ui/keepScroll.ts` wraps the repaint of
+  ten panels: it notes every scrolled element by a structural path,
+  repaints, and restores the offsets (once more after layout).
+
+### Verified (landscape phone box 915x412, touch)
+- Ten sheets opened, scrolled to the bottom, close cross inside the sheet
+  and hit-testable in all ten (five of them scroll as a whole: inventory,
+  character, armorer, forge, Forbidden Arts). The skill tree's column
+  region kept its 900 px offset across a spend. Settings on the title:
+  z 96, CLOSE hit-tests, closes. Device matrix 74/74.
+
 ## 2026-09-05 (iteration 78) - Items reborn: the Raven registry, instances and affixes, the camp forge, the economy
 
 ### The Raven registry (`src/items/registry.ts`)

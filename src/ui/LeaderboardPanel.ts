@@ -9,6 +9,7 @@
 
 import { audio } from '@/engine/AudioManager';
 import { ARENA_LENGTHS, clockFromTicks, type ArenaLength, type StatsManager } from '@/systems/StatsManager';
+import { keepScroll } from './keepScroll';
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX'];
 const CLASS_NAME: Record<string, string> = { warrior: 'Warrior', mage: 'Mage', ranger: 'Ranger', rogue: 'Rogue' };
@@ -75,7 +76,12 @@ export class LeaderboardUI {
     else this.open();
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     try {
       this.renderInner();
     } catch (err) {

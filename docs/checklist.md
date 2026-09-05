@@ -635,6 +635,13 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Merchants: value formula, 25% sell, fifteen-deep buyback, thirty-minute / warden restock, the clock
 - [x] Harness checks; device matrix 74/74; clean build
 
+## Iteration 79 - Sheets that keep their heading (2026-09-05)
+
+- [x] Settings sheet above the title menu (z 96)
+- [x] Sticky headings with the close cross on every scrolling sheet; Settings and Depths gained a cross
+- [x] `ui/keepScroll.ts`: ten panels keep their scroll across a repaint (the skill tree on a phone)
+- [x] Ten-sheet phone-box probe; device matrix 74/74; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

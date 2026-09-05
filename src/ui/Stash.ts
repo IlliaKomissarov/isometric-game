@@ -16,6 +16,7 @@ import { type ItemDef } from '@/items/catalog';
 import { STASH_CAPACITY, type TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
+import { keepScroll } from './keepScroll';
 
 const iconHtml = (def: ItemDef): string => itemIconHtml(def);
 
@@ -77,7 +78,12 @@ export class StashUI {
     audio.sfx('invClose');
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const p = this.player;
     const s = this.town.stash;
     const row = (def: ItemDef, attr: string, i: number): string =>

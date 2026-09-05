@@ -19,6 +19,7 @@ import { MATERIAL_ORDER } from '@/items/registry';
 import { canAfford, forgeCost, knownBlueprints, rerollCost, reinforceCost, salvageYield, TRANSMUTE_RECIPES, type Cost } from '@/systems/Crafting';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
+import { keepScroll } from './keepScroll';
 
 type Tab = 'salvage' | 'forge' | 'transmute' | 'refine' | 'reinforce';
 
@@ -150,7 +151,12 @@ export class CampCraftingUI {
     return rows || '<span class="tp-empty">Nothing in the pack for this</span>';
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const p = this.player;
     const tabs = TABS.map(([id, label]) => `<button class="ds-btn" type="button" role="tab" data-crafttab="${id}" aria-selected="${this.tab === id}">${label}</button>`).join('');
     let body = '';

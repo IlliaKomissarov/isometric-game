@@ -23,6 +23,7 @@ import type { EquipmentSlot } from '@/network/Serialization';
 import { fitItemIcons, itemIconHtml } from './itemIcons';
 import { attachItemCard, itemCardHtml, placeCard, wornFor } from './itemTip';
 import { uiAssetUrl } from '@/render/SpriteLibrary';
+import { keepScroll } from './keepScroll';
 
 /** Paperdoll layout (it.42): a body-shaped cross — head on top, hands beside the torso, ring and cloak below. */
 const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: string }> = [
@@ -120,7 +121,12 @@ export class InventoryUI {
     this.statsBar.remove();
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     // Equipment: one labeled cell per slot (grid of 3×2).
     const equipmentCells = SLOT_ORDER.map(({ slot, label, area }) => {
       const itemId = this.player.getEquipped(slot);

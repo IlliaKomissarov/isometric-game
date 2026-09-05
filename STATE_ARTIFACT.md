@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 78, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 79, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -111,6 +111,14 @@ Items examined and left as they are, with reasons:
 | Thirty static items, no levels, no affixes, no crafting | Feature | the Raven registry (160 bases), instances in the id, affixes, uniques, the camp forge, the economy |
 | Flat armor and linear foe scaling could not meet an exponential item curve | High (balance) | foes, hero HP and armor share the 1.08 curve; armor is a share weighed by the attacker's tier |
 | Level-ups added a flat +4 HP; a load trusted the saved max | Low | both go through `baseHpMax()` |
+
+### Iteration 79 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Settings opened under the title menu (z 40 vs 85): CLOSE unreachable | High (UI) | `#settings-panel.open { z-index: 96 }` |
+| A phone sheet scrolled its heading and close cross away | High (touch) | sticky headings on every sheet; a cross on Settings and Depths |
+| Repaints discarded scroll offsets (spending a skill point snapped to the top) | Medium (touch) | `ui/keepScroll.ts` around ten panels' repaints |
 
 ## 4. Known issues and regression log
 

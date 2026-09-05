@@ -17,6 +17,7 @@ import { itemDef } from '@/items/instance';
 import type { TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
+import { keepScroll } from './keepScroll';
 
 const iconHtml = (def: ItemDef): string => itemIconHtml(def);
 
@@ -122,7 +123,12 @@ export class ShopUI {
     return `<button class="tp-row rarity-${def.rarity}${poor ? ' poor' : ''}${extraClass}" ${attr}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}${meta(def)}</span><span class="tp-gold">${gold}</span></button>`;
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const p = this.player;
     const vendor = this.vendor;
     const table = vendor === 'alchemist' ? this.town.stockAlch : this.town.stock;

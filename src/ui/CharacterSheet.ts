@@ -10,6 +10,7 @@ import { eventBus } from '@/core/EventBus';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
 import { PASSIVE_BY_ID, SKILL_BY_ID } from '@/systems/SkillTree';
+import { keepScroll } from './keepScroll';
 
 export class CharacterSheetUI {
   private readonly panel: HTMLElement;
@@ -68,7 +69,12 @@ export class CharacterSheetUI {
     if (this.visible) this.render();
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const p = this.player;
     const prof = p.weaponProfile;
     const mult = p.damageMult;

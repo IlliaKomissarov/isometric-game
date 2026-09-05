@@ -15,6 +15,7 @@ import { audio } from '@/engine/AudioManager';
 import { setVisual, visuals } from '@/core/VisualSettings';
 import { toggleFullscreen } from '@/ui/TouchControls';
 import { getControlsMode, layout, type ControlsMode } from '@/core/OrientationManager';
+import { keepScroll } from './keepScroll';
 
 type Tab = 'audio' | 'visuals' | 'controls';
 
@@ -72,7 +73,12 @@ export class SettingsUI {
     this.panel.querySelectorAll<HTMLElement>('[data-pane]').forEach((p) => (p.hidden = p.dataset.pane !== tab));
   }
 
+  /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
+    keepScroll(this.panel, () => this.paint());
+  }
+
+  private paint(): void {
     const s = audio.settings;
     const slider = (id: string, label: string, value: number): string => `
       <label class="set-row">
@@ -106,7 +112,7 @@ export class SettingsUI {
     ];
     this.panel.innerHTML = `
       <div class="set-corner tl"></div><div class="set-corner tr"></div><div class="set-corner bl"></div><div class="set-corner br"></div>
-      <h3>SETTINGS</h3>
+      <h3 class="set-head">SETTINGS<button class="tp-close" data-close-x title="Close (O or ESC)"><i></i></button></h3>
       <div class="set-tabs">
         <button type="button" data-tab="audio" class="on">AUDIO</button>
         <button type="button" data-tab="visuals">VISUALS</button>
@@ -149,6 +155,10 @@ export class SettingsUI {
       <div class="set-tip">O or ESC closes · settings persist</div>
     `;
     this.panel.querySelector('[data-close]')?.addEventListener('click', () => this.close());
+    this.panel.querySelector('[data-close-x]')?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      this.close();
+    });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => {
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
       b.addEventListener('click', () => {

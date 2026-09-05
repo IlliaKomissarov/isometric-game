@@ -116,7 +116,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     check('starts in town', g.floor === 0 && !!g.town);
     check('first skill on slot 1', !!g.player.loadout[0], JSON.stringify(g.player.loadout));
     check('status plate present', !!document.getElementById('status-frame'));
-    check('system bar has 7 entries', document.querySelectorAll('#system-bar .ds-icon-btn').length === 7);
+    check('system bar has 8 entries', document.querySelectorAll('#system-bar .ds-icon-btn').length === 8); // The codex joined (it.81).
     check('chart present', !!document.getElementById('minimap'));
 
     // ---- every window opens, fits, closes -----------------------------------
@@ -467,6 +467,42 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           check('a chill slows the foe', foe2.chillTicks > 0 && foe2.chillFactor < 1, `${foe2.chillTicks} ${foe2.chillFactor}`);
         }
       } else check('a foe stands to test statuses', false, 'no foe');
+    }
+
+    // ---- the codex, the filters, the borders, the gauge labels (it.81) -----------------------
+    {
+      const p = g.player;
+      check('the gauges are labelled', [...document.querySelectorAll('#status-frame .ds-bar-label')].map((l: Element) => l.textContent?.trim()).join('|').includes('HP') && !!document.querySelector('#status-frame .sf-xp .ds-bar-label'));
+      key('KeyH');
+      await wait(80);
+      check('the codex opens on H', !!document.querySelector('#codex.open .codex-body'));
+      check('the codex fits the screen', inside(document.getElementById('codex')));
+      for (const ch of ['arsenal', 'statuses', 'enchants', 'forge', 'legend']) {
+        g.codexUI.open(ch);
+        await wait(30);
+        check(`the codex chapter ${ch} renders`, (document.querySelector('#codex .codex-body')?.textContent?.length ?? 0) > 200);
+      }
+      key('KeyH');
+      await wait(50);
+      check('the codex closes on H', !document.querySelector('#codex.open'));
+      p.addItem('steel_saber@L4R2U0Astr1.crt1Eflame');
+      p.addItem('crystal_kris@L60R3U2Aagi3.crt2');
+      key('KeyI');
+      await wait(60);
+      check('special pieces wear an effect border', !!document.querySelector('#inv-panel .inv-item.fx-ench') && !!document.querySelector('#inv-panel .inv-item.fx-proc'));
+      const chip = document.querySelector<HTMLButtonElement>('#inv-panel .if-chip[data-if-filter=weapon]');
+      chip?.click();
+      await wait(60);
+      const shown = [...document.querySelectorAll('#inv-panel .inv-pack-grid .inv-item')];
+      check('the ARMS filter shows only weapons', shown.length > 0 && shown.every((c) => !c.classList.contains('inv-use')), String(shown.length));
+      document.querySelector<HTMLButtonElement>('#inv-panel .if-chip[data-if-filter=all]')?.click();
+      await wait(40);
+      const before = [...p.backpack];
+      g.queue.enqueue({ type: 'SORT_PACK', playerId: 0 });
+      g.loop.step(2);
+      check('TIDY reorders the pack deterministically', p.backpack.length === before.length && p.backpack.join() !== before.join() && [...p.backpack].sort().join() === [...before].sort().join());
+      key('KeyI');
+      await wait(40);
     }
 
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------

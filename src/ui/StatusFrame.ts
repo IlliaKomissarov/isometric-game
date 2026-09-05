@@ -65,9 +65,10 @@ export class StatusFrame {
     this.root.innerHTML =
       '<div class="sf-port"><canvas width="64" height="64"></canvas><b class="sf-lvl">1</b></div>' +
       '<div class="sf-gauges">' +
-      '<div class="ds-bar sf-hp"><i class="ds-ghost"></i><i class="ds-fill"></i><i class="ds-gloss"></i><span class="ds-bar-text">0</span></div>' +
-      '<div class="ds-bar sf-res"><i class="ds-ghost"></i><i class="ds-fill"></i><i class="ds-gloss"></i><span class="ds-bar-text">0</span></div>' +
-      '<div class="ds-bar sf-xp"><i class="ds-fill"></i><i class="ds-gloss"></i><span class="ds-bar-text">XP</span></div>' +
+      // EVERY GAUGE SAYS WHAT IT IS (it.81): a label and a glyph at its left edge.
+      '<div class="ds-bar sf-hp" title="Life"><i class="ds-ghost"></i><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">&#10084;</span>HP</b><span class="ds-bar-text">0</span></div>' +
+      `<div class="ds-bar sf-res" title="${player.resourceName === 'MANA' ? 'Mana' : 'Stamina'}"><i class="ds-ghost"></i><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">${player.resourceName === 'MANA' ? '&#9672;' : '&#9889;'}</span>${player.resourceName === 'MANA' ? 'MANA' : 'STAMINA'}</b><span class="ds-bar-text">0</span></div>` +
+      '<div class="ds-bar sf-xp" title="Experience to the next level"><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">&#9733;</span>XP</b><span class="ds-bar-text">XP</span></div>' +
       '</div>' +
       '<div class="sf-purse"><span class="sf-coin">&#9670;</span><b>0</b></div>';
     StatusFrame.stack().appendChild(this.root);

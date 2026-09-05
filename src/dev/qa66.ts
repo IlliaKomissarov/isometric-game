@@ -126,7 +126,7 @@ export function runMatrix(detail = false): { tested: number; failed: number; fai
     // Every system target is present on every screen (it.66): no tier may
     // hide the bag, the talents, the hero, the bestiary, the menu or fullscreen.
     const sysCount = [...document.querySelectorAll<HTMLElement>('#system-bar .ds-icon-btn')].filter(visible).length;
-    if (sysCount !== 7) fails.push(`sysbar ${sysCount}/7`);
+    if (sysCount !== 8) fails.push(`sysbar ${sysCount}/8`); // Eight since the codex (it.81).
     // The plate must stay legible: its scale floor is 0.55 (micro) and its
     // real width at least 128 px.
     const plate = document.getElementById('status-frame');

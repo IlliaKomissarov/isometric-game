@@ -65,6 +65,7 @@ import { StatusSystem } from '@/systems/Status';
 import { QUAFF_COOLDOWN, quaffCategory } from '@/systems/Inventory';
 import { decodeItemId } from '@/items/instance';
 import { CampCraftingUI } from '@/ui/CampCrafting';
+import { CodexUI } from '@/ui/Codex';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
 import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
@@ -1766,6 +1767,10 @@ async function boot(): Promise<void> {
         enemiesNear: (x, y, r) => (combat.enemiesNear?.(x, y, r) ?? []) as Enemy[],
         combat: () => combat,
         burst: (x, y, c, n) => ambience.burst(x, y, c, n),
+        text: (x, y, m, st) => dmgText.show(x, y, m, st),
+        vfx: (anim, x, y, opts) => {
+          vfx.play(anim, x, y, opts);
+        },
       });
       combat.status = status;
       const projectiles = new ProjectileSystem(viewport, scene.isWalkable, seatPlayers, findEnemyAt);
@@ -4038,12 +4043,13 @@ async function boot(): Promise<void> {
     const shopUI = new ShopUI(player, town, inputQueue, () => state.tick);
     const stashUI = new StashUI(player, town, inputQueue);
     const craftUI = new CampCraftingUI(player, inputQueue, () => deepestFloor);
+    const codexUI = new CodexUI(() => player.recipes); // THE CODEX (it.81): H.
     const skillTreeUI = new SkillTreeUI(player, inputQueue, () => !!world.town);
     // EVERY WINDOW FITS (it.65): the run's panels are built per run, so they
     // are registered here rather than at boot.
     // By id (it.66): the hero sheet and the bestiary are built a few lines
     // below this, and a registration by element silently dropped them.
-    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'leaderboard', 'level-select']) {
+    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'codex', 'leaderboard', 'level-select']) {
       fit.addById(id, { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
@@ -4434,7 +4440,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, crafting, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, crafting, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -4464,6 +4470,7 @@ async function boot(): Promise<void> {
         shopUI.destroy();
         stashUI.destroy();
         craftUI.destroy();
+        codexUI.destroy();
         statsUI.destroy();
         hudBuffs.remove();
         headBuffs.remove();

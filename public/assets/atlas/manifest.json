@@ -4556,6 +4556,222 @@
    "w": 64,
    "h": 64,
    "nearest": true
+  },
+  "wicon_raven61": {
+   "file": "single_wicon_raven61.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven69": {
+   "file": "single_wicon_raven69.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven266": {
+   "file": "single_wicon_raven266.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven309": {
+   "file": "single_wicon_raven309.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1442": {
+   "file": "single_wicon_raven1442.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1450": {
+   "file": "single_wicon_raven1450.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1462": {
+   "file": "single_wicon_raven1462.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1467": {
+   "file": "single_wicon_raven1467.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1470": {
+   "file": "single_wicon_raven1470.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1472": {
+   "file": "single_wicon_raven1472.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1474": {
+   "file": "single_wicon_raven1474.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1479": {
+   "file": "single_wicon_raven1479.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1480": {
+   "file": "single_wicon_raven1480.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1483": {
+   "file": "single_wicon_raven1483.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1484": {
+   "file": "single_wicon_raven1484.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1491": {
+   "file": "single_wicon_raven1491.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1494": {
+   "file": "single_wicon_raven1494.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1508": {
+   "file": "single_wicon_raven1508.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1510": {
+   "file": "single_wicon_raven1510.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1511": {
+   "file": "single_wicon_raven1511.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1683": {
+   "file": "single_wicon_raven1683.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1720": {
+   "file": "single_wicon_raven1720.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1817": {
+   "file": "single_wicon_raven1817.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1845": {
+   "file": "single_wicon_raven1845.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1847": {
+   "file": "single_wicon_raven1847.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1848": {
+   "file": "single_wicon_raven1848.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1850": {
+   "file": "single_wicon_raven1850.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1859": {
+   "file": "single_wicon_raven1859.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1906": {
+   "file": "single_wicon_raven1906.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1917": {
+   "file": "single_wicon_raven1917.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1938": {
+   "file": "single_wicon_raven1938.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven1977": {
+   "file": "single_wicon_raven1977.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven2078": {
+   "file": "single_wicon_raven2078.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven2087": {
+   "file": "single_wicon_raven2087.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven2115": {
+   "file": "single_wicon_raven2115.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
+  },
+  "wicon_raven2123": {
+   "file": "single_wicon_raven2123.png",
+   "w": 64,
+   "h": 64,
+   "nearest": true
   }
  }
 }

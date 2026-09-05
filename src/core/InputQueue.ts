@@ -59,6 +59,8 @@ export type InputCommand =
   | { type: 'ENCHANT'; playerId: number; backpackIndex: number; key: string }
   /** THE BELT (it.80): which draught rides Q (slot 0) and R (slot 1). */
   | { type: 'SET_BELT'; playerId: number; slot: number; item: string | null }
+  /** TIDY THE PACK (it.81): a deterministic order by type, rarity, level, name. */
+  | { type: 'SORT_PACK'; playerId: number }
   /** CO-OP (it.59): where this player is aiming (world point) — swings and casts follow it on every peer. */
   | { type: 'AIM'; playerId: number; x: number; y: number }
   /** CO-OP (it.59): a floor change decided by the PARTY LEADER (solo: always honoured). */

@@ -15,6 +15,7 @@
 import { ARCHETYPES, type Player } from '@/entities/Player';
 import { compareItems, soloRows, type CompareRow, type Verdict } from '@/items/compare';
 import { RARITY_COLOR, statLine, type ItemDef } from '@/items/catalog';
+import { effectDesc, effectLine } from '@/items/effects';
 import { itemDef } from '@/items/instance';
 
 const SLOT_LABEL: Record<string, string> = {
@@ -77,13 +78,19 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
     `<div class="tip-slot">${cap(def.rarity)} · ${SLOT_LABEL[def.slot] ?? def.slot}${def.ilvl ? ` · iLvl ${def.ilvl}` : ''}${opts.self ? ' · <b>worn</b>' : ''}</div>`;
   let body: string;
   const cls = (l: string): string => (l.startsWith('Unique') ? 'uniq' : l.startsWith('Passive') ? 'pass' : l.startsWith('Enchant') ? 'ench' : /chance to|returns|Every strike|throw foes|movement speed|armor$|gold from|Rarer finds|under 40%|Critical strikes/.test(l) ? 'fx' : '');
-  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${cls(l)}">${l}</li>`).join('')}</ul>` : '';
+  // EVERY EFFECT EXPLAINED (it.81): the short line, then the mechanics under it.
+  const detail = (l: string): string => {
+    const fx = (def.effects ?? []).find((e) => l.endsWith(effectLine(e)));
+    return fx ? `<small>${effectDesc(fx)}</small>` : '';
+  };
+  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${cls(l)}">${l}${detail(l)}</li>`).join('')}</ul>` : '';
+  const descHtml = def.desc ? `<div class="tip-desc">${def.desc}</div>` : '';
   if (def.slot === 'consumable' || def.slot === 'material' || (opts.worn === undefined && !opts.self)) {
     body = `<div class="tip-stats">${statLine(def)}</div>`;
   } else if (opts.self) {
     const rows = soloRows(def);
     body = rows.length
-      ? `<table class="tip-cmp tip-solo"><thead><tr><th></th><th>WORN</th></tr></thead><tbody>${rowsHtml(rows, false)}</tbody></table>${affixHtml}`
+      ? `<table class="tip-cmp tip-solo"><thead><tr><th></th><th>WORN</th></tr></thead><tbody>${rowsHtml(rows, false)}</tbody></table>${affixHtml}${descHtml}`
       : `<div class="tip-stats">${statLine(def)}</div>`;
   } else {
     const worn = opts.worn ?? null;
@@ -94,6 +101,7 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
     body =
       `<table class="tip-cmp"><thead><tr><th></th><th>THIS</th><th>YOURS</th><th></th></tr></thead><tbody>${rowsHtml(cmp.rows, true)}</tbody></table>` +
       affixHtml +
+      descHtml +
       `<div class="tip-yours">vs ${yours}</div>` +
       `<div class="tip-verdict ${cmp.verdict}">${VERDICT_TEXT[cmp.verdict]}</div>`;
   }

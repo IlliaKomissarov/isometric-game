@@ -128,6 +128,14 @@ export interface EnemyTypeDef {
  */
 /** EXTENDED BOSS DEATH (it.43): seven seconds of collapse, pulse and disintegration. */
 export const BOSS_DEATH_TICKS = 420;
+
+/** Blend two 0xRRGGBB colours (it.81: the status tint over the lighting). */
+function mixColors(a: number, b: number, t: number): number {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  const r = Math.round(ar + (br - ar) * t), g = Math.round(ag + (bg - ag) * t), bl = Math.round(ab + (bb - ab) * t);
+  return (r << 16) | (g << 8) | bl;
+}
 export const MOB_HEIGHT = 56;
 export const BOSS_HEIGHT = 128;
 
@@ -874,6 +882,27 @@ export class Enemy extends Entity {
   /** CHILL (it.80): while ticks remain the foe moves at `chillFactor`. */
   chillTicks = 0;
   chillFactor = 1;
+  private readonly statusMarks: Graphics;
+  /** The status tint blended over the lighting (0 = none). */
+  private statusTint = 0;
+
+  /** Draw the active statuses as gems above the head and tint the body (it.81). */
+  setStatuses(colors: readonly number[]): void {
+    const g = this.statusMarks;
+    g.clear();
+    if (!colors.length) {
+      g.visible = false;
+      this.statusTint = 0;
+      return;
+    }
+    g.visible = true;
+    const w = colors.length * 9 - 3;
+    colors.forEach((c, i) => {
+      const x = -w / 2 + i * 9 + 3;
+      g.moveTo(x, -4).lineTo(x + 3.5, 0).lineTo(x, 4).lineTo(x - 3.5, 0).closePath().fill({ color: c }).stroke({ color: 0x0a0806, width: 1 });
+    });
+    this.statusTint = colors[0];
+  }
   /** SPAWN RISE (it.54): ticks left climbing out of the ground (sim; frozen until 0). */
   riseTicks = 0;
   private riseTotal = 30;
@@ -924,6 +953,12 @@ export class Enemy extends Entity {
     this.levelText.position.set(18, -49);
     this.levelText.visible = false;
     this.container.addChild(this.levelText);
+    // STATUS MARKS (it.81): a row of coloured gems above the head while a
+    // status runs — the foe wears its wounds where the eye already looks.
+    this.statusMarks = new Graphics();
+    this.statusMarks.position.set(0, -60);
+    this.statusMarks.visible = false;
+    this.container.addChild(this.statusMarks);
 
     // ELITE NAMEPLATE + AURA (it.53): the title above the bar, the ring at the feet.
     this.titleText = new Text({
@@ -1224,6 +1259,7 @@ export class Enemy extends Entity {
    * both still sink into the torch falloff.
    */
   setLightTint(tint: number): void {
+    if (this.statusTint) tint = mixColors(tint, this.statusTint, 0.4);
     if (this.flashTicks > 0) return;
     const identity = this.usesSprite() ? this.def.sprite!.tint : 0xffffff;
     this.body.tint = identity === 0xffffff ? tint : multiplyColors(tint, identity);

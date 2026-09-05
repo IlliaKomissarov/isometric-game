@@ -17,6 +17,7 @@ import { itemDef } from '@/items/instance';
 import type { TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
+import { effectClass, filterBarHtml, loadFilter, orderIndexes, wireFilterBar, type FilterState } from './itemFilter';
 import { keepScroll } from './keepScroll';
 
 const iconHtml = (def: ItemDef): string => itemIconHtml(def);
@@ -45,6 +46,9 @@ export class ShopUI {
   /** The left column's tab (it.78). */
   private tab: 'sale' | 'buyback' = 'sale';
   private clockTimer = 0;
+  /** FILTERS (it.81): the counter's and the pack's, remembered. */
+  private readonly filterBuy: FilterState = loadFilter('shop-buy');
+  private readonly filterSell: FilterState = loadFilter('shop-sell');
 
   constructor(
     private readonly player: Player,
@@ -120,7 +124,7 @@ export class ShopUI {
   }
 
   private row(def: ItemDef, attr: string, i: number, gold: string, poor: boolean, extraClass = ''): string {
-    return `<button class="tp-row rarity-${def.rarity}${poor ? ' poor' : ''}${extraClass}" ${attr}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}${meta(def)}</span><span class="tp-gold">${gold}</span></button>`;
+    return `<button class="tp-row rarity-${def.rarity}${poor ? ' poor' : ''}${extraClass} ${effectClass(def)}" ${attr}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}${meta(def)}</span><span class="tp-gold">${gold}</span></button>`;
   }
 
   /** Repaint without losing where the player had scrolled (it.79). */
@@ -132,25 +136,22 @@ export class ShopUI {
     const p = this.player;
     const vendor = this.vendor;
     const table = vendor === 'alchemist' ? this.town.stockAlch : this.town.stock;
-    const sale = table
-      .map((id, i) => {
-        const def = itemDef(id);
-        if (!def) return '';
+    const tableDefs = table.map((id) => itemDef(id));
+    const sale = orderIndexes(tableDefs, this.filterBuy)
+      .map((i) => {
+        const def = tableDefs[i]!;
         const price = this.town.buyPrice(def);
         return this.row(def, 'data-buy', i, `${price}◆`, p.gold < price);
       })
       .join('');
-    const pack = p.backpack
-      .map((id, i) => {
-        const def = itemDef(id);
-        if (!def) return '';
-        return this.row(def, 'data-sell', i, `+${this.town.sellPrice(def)}◆`, false);
-      })
+    const packDefs = p.backpack.map((id) => itemDef(id));
+    const pack = orderIndexes(packDefs, this.filterSell)
+      .map((i) => this.row(packDefs[i]!, 'data-sell', i, `+${this.town.sellPrice(packDefs[i]!)}◆`, false))
       .join('');
-    const buyback = this.town.buyback
-      .map((id, i) => {
-        const def = itemDef(id);
-        if (!def) return '';
+    const bbDefs = this.town.buyback.map((id) => itemDef(id));
+    const buyback = orderIndexes(bbDefs, this.filterBuy)
+      .map((i) => {
+        const def = bbDefs[i]!;
         const price = this.town.sellPrice(def);
         return this.row(def, 'data-buyback', i, `${price}◆`, p.gold < price, ' tp-buyback');
       })
@@ -165,9 +166,10 @@ export class ShopUI {
             <button class="ds-btn" type="button" role="tab" data-shoptab="sale" aria-selected="${this.tab === 'sale'}">FOR SALE</button>
             <button class="ds-btn" type="button" role="tab" data-shoptab="buyback" aria-selected="${this.tab === 'buyback'}">BUYBACK · ${this.town.buyback.length}</button>
           </div>
+          ${filterBarHtml(this.filterBuy, { id: 'if-shop-buy' })}
           <div class="tp-list">${left}</div>
         </div>
-        <div class="tp-col"><h4>YOUR PACK · sell for a quarter</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing to sell</span>'}</div></div>
+        <div class="tp-col"><h4>YOUR PACK · sell for a quarter</h4>${filterBarHtml(this.filterSell, { id: 'if-shop-sell' })}<div class="tp-list">${pack || '<span class="tp-empty">Nothing to sell</span>'}</div></div>
       </div>
       <div class="tp-note">Click an item to buy or sell · the last fifteen sold wait under BUYBACK · ESC closes</div>`;
     const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
@@ -176,6 +178,8 @@ export class ShopUI {
       audio.sfx('uiClick');
       this.close();
     });
+    wireFilterBar(this.panel.querySelector('#if-shop-buy') as HTMLElement, 'shop-buy', this.filterBuy, () => this.render());
+    wireFilterBar(this.panel.querySelector('#if-shop-sell') as HTMLElement, 'shop-sell', this.filterSell, () => this.render());
     this.panel.querySelectorAll<HTMLButtonElement>('[data-shoptab]').forEach((b) => {
       b.addEventListener('click', () => {
         this.tab = b.dataset.shoptab === 'buyback' ? 'buyback' : 'sale';

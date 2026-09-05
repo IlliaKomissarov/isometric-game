@@ -121,6 +121,26 @@ export class InventorySystem {
           else this.hooks.refuse?.('none left');
           break;
         }
+        case 'SORT_PACK': {
+          // Deterministic on every peer: type, then rarity, then level and reinforcement, then name, then the id.
+          const rank: Record<string, number> = { mainHand: 0, offHand: 1, head: 2, torso: 3, legs: 4, cloak: 5, ring: 6, consumable: 7, material: 8 };
+          const rar = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+          this.player.backpack.sort((a, b) => {
+            const da = itemDef(a);
+            const db = itemDef(b);
+            if (!da || !db) return a < b ? -1 : a > b ? 1 : 0;
+            return (
+              (rank[da.slot] ?? 9) - (rank[db.slot] ?? 9) ||
+              rar.indexOf(db.rarity) - rar.indexOf(da.rarity) ||
+              (db.ilvl ?? 0) - (da.ilvl ?? 0) ||
+              (db.upgrade ?? 0) - (da.upgrade ?? 0) ||
+              (da.name < db.name ? -1 : da.name > db.name ? 1 : 0) ||
+              (a < b ? -1 : a > b ? 1 : 0)
+            );
+          });
+          eventBus.emit('inventory:changed', {});
+          break;
+        }
         case 'SET_BELT': {
           const slot = cmd.slot === 1 ? 1 : 0;
           const base = cmd.item ? decodeItemId(cmd.item)?.base ?? null : null;

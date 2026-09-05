@@ -1,5 +1,56 @@
 # Development Log
 
+## 2026-09-05 (iteration 81) - The codex, the borders, the filters, the marks on the foe, the labelled gauges
+
+### The codex (`ui/Codex.ts`)
+- A book on the system bar (and H) with ten chapters generated from the
+  same tables the engine reads: ITEMS (instances, item level, the 1.08
+  curve, the rarity table, every affix with its five tiers, the
+  attribute conversions, uniques, materials), ARSENAL (every family's
+  timing, every tier's band, every shape with its role and its three
+  innates), STATUSES (full mechanics and how each shows on a foe), TRAITS,
+  ENCHANTS (every recipe: effect, words, where found, cost; LEARNED
+  marked), FORGE (salvage by rarity, transmutation, forging, refining, the
+  reinforcement table with what each level needs and what a failure
+  does), BELT (every draught with its cooldown), TRADE (the economy),
+  COMBAT (to-hit, damage, the armor formula, the curves, the wardens'
+  rules) and LEGEND (the borders and the filters).
+- Every effect, enchantment, draught, material and weapon shape carries
+  its own words (`desc`) - the card shows the mechanics under each effect
+  line and the item's description under its numbers.
+
+### Borders and filters
+- Special pieces wear a second edge everywhere they are drawn: ember for
+  a status proc, sea-green for a trait, rose for an enchantment, gold for
+  a legendary unique - and a corner gem in the inventory.
+- `ui/itemFilter.ts`: seven filter chips (ALL, ARMS, ARMOR, JEWELS,
+  DRAUGHTS, SCROLLS, SPECIAL) and six orders (as found, level, rarity,
+  type, name, value) on the inventory pack, both merchant columns, both
+  stash columns and every forge list, remembered per panel. Rows keep
+  their original index so every command still names the right item. TIDY
+  (`SORT_PACK`, a command) reorders the pack itself deterministically.
+
+### The marks on the foe
+- A status now shows three ways: its name floats up on the first
+  application, a strip plays (blood, a tinted burst, a frost splash, a
+  ring for the arc, a whirl for the stun), and a row of coloured gems
+  sits above the foe's head while it runs, with the body tinted 40%
+  toward the status's colour under the lighting.
+
+### One icon family
+- Every classic relic, draught and ring moved to the Raven pack, so the
+  inventory is one style throughout; 250 icons referenced, 36 more copied.
+
+### The gauges
+- HP, MANA / STAMINA and XP are labelled on the plate, with a glyph each.
+
+### Verified
+- Labels "HP", "MANA", "XP"; the codex button; the inventory's borders
+  (ench, proc, trait, unique) and gems; the chips and the level order;
+  every icon a Raven single. Codex chapters render and fit. Statuses show
+  their marks on depth III. Device matrix and the scripted playthrough
+  below.
+
 ## 2026-09-05 (iteration 80) - The arsenal: weapons that do things, the belt, the recipe book
 
 ### Weapon identity (`items/registry.ts`, `items/effects.ts`)

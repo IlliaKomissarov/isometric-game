@@ -104,6 +104,8 @@ export interface ItemDef {
   passive?: string;
   /** Material stacks: how many this id carries. */
   count?: number;
+  /** The item's own words (the card, the codex): what it is for. */
+  desc?: string;
 }
 
 /**
@@ -169,47 +171,48 @@ export const RARITY_COLOR: Record<Rarity, number> = {
 
 /** The classic catalog: the crypt's own relics, the draughts, the starter kit. */
 export const ITEMS: Record<string, ItemDef> = {
-  rusty_sword: { id: 'rusty_sword', name: 'Rusty Sword', slot: 'mainHand', rarity: 'common', art: 'rusty_sword', minDamage: 3, maxDamage: 7, color: 0x9a8f80, icon: 'bronze_sword_0' },
-  soldier_blade: { id: 'soldier_blade', name: 'Soldier Blade', slot: 'mainHand', rarity: 'uncommon', art: 'soldier_blade', minDamage: 6, maxDamage: 12, color: 0x8fa8d8, icon: 'iron_sword_0' },
-  doombringer: { id: 'doombringer', name: 'Doombringer', slot: 'mainHand', rarity: 'rare', art: 'doombringer', minDamage: 11, maxDamage: 20, color: 0xd8763c, icon: 'steel_large_0' },
-  short_bow: { id: 'short_bow', name: 'Short Bow', slot: 'mainHand', rarity: 'common', art: 'short_bow', weaponKind: 'bow', range: 6, minDamage: 4, maxDamage: 8, color: 0x8a6f4d },
-  hunters_bow: { id: 'hunters_bow', name: "Hunter's Bow", slot: 'mainHand', rarity: 'uncommon', art: 'hunters_bow', weaponKind: 'bow', range: 6.5, minDamage: 6, maxDamage: 11, color: 0x6f9a5a },
-  emberwand: { id: 'emberwand', name: 'Emberwand', slot: 'mainHand', rarity: 'rare', art: 'emberwand', weaponKind: 'wand', range: 5.5, minDamage: 9, maxDamage: 15, color: 0xe0803a, icon: 'stick_0' },
-  plank_shield: { id: 'plank_shield', name: 'Plank Shield', slot: 'offHand', rarity: 'common', art: 'plank_shield', armor: 2, color: 0x8a6f4d },
-  tower_aegis: { id: 'tower_aegis', name: 'Tower Aegis', slot: 'offHand', rarity: 'uncommon', art: 'tower_aegis', armor: 4, color: 0x6f8fd0 },
-  iron_cap: { id: 'iron_cap', name: 'Iron Cap', slot: 'head', rarity: 'common', art: 'iron_cap', armor: 1, color: 0x9aa0a8 },
-  crown_of_embers: { id: 'crown_of_embers', name: 'Crown of Embers', slot: 'head', rarity: 'rare', art: 'crown_of_embers', armor: 3, color: 0xe09040 },
-  leather_jerkin: { id: 'leather_jerkin', name: 'Leather Jerkin', slot: 'torso', rarity: 'common', art: 'leather_jerkin', armor: 2, color: 0x8a6a48 },
-  dark_mail: { id: 'dark_mail', name: 'Dark Mail', slot: 'torso', rarity: 'uncommon', art: 'dark_mail', armor: 4, color: 0x5a6a9a },
-  worn_boots: { id: 'worn_boots', name: 'Worn Boots', slot: 'legs', rarity: 'common', armor: 1, color: 0x7a6650 },
-  shadow_cloak: { id: 'shadow_cloak', name: 'Shadow Cloak', slot: 'cloak', rarity: 'uncommon', armor: 1, color: 0x6a5a9a },
-  // --- The expanded arsenal (oubliette icon pack) ---------------------------
-  war_axe: { id: 'war_axe', name: 'War Axe', slot: 'mainHand', rarity: 'common', art: 'war_axe', weaponKind: 'axe', minDamage: 5, maxDamage: 11, color: 0x9a8874, icon: 'iron_axe_0' },
-  gravecleaver: { id: 'gravecleaver', name: 'Gravecleaver', slot: 'mainHand', rarity: 'rare', art: 'gravecleaver', weaponKind: 'axe', minDamage: 13, maxDamage: 24, color: 0xc06a48, icon: 'iron_baxe_0' },
-  flanged_mace: { id: 'flanged_mace', name: 'Flanged Mace', slot: 'mainHand', rarity: 'common', weaponKind: 'mace', minDamage: 4, maxDamage: 9, color: 0x8a8a94, icon: 'mace_0' },
-  skullcrusher: { id: 'skullcrusher', name: 'Skullcrusher', slot: 'mainHand', rarity: 'uncommon', weaponKind: 'mace', minDamage: 7, maxDamage: 13, color: 0x7a86a8, icon: 'mace_big_0' },
-  dawnhammer: { id: 'dawnhammer', name: 'Dawnhammer', slot: 'mainHand', rarity: 'rare', weaponKind: 'mace', minDamage: 10, maxDamage: 18, color: 0xd8b45c, icon: 'steel_ghammer_0' },
-  reaper_scythe: { id: 'reaper_scythe', name: "Reaper's Scythe", slot: 'mainHand', rarity: 'uncommon', weaponKind: 'polearm', minDamage: 8, maxDamage: 14, color: 0x86a08a, icon: 'iron_scythe_0' },
-  warden_halberd: { id: 'warden_halberd', name: 'Warden Halberd', slot: 'mainHand', rarity: 'rare', weaponKind: 'polearm', range: 2.0, minDamage: 11, maxDamage: 19, color: 0xa8b0c0, icon: 'steel_halberd_0' },
-  iron_katana: { id: 'iron_katana', name: 'Iron Katana', slot: 'mainHand', rarity: 'uncommon', weaponKind: 'katana', minDamage: 5, maxDamage: 9, color: 0xb0b8c8, icon: 'iron_katana_0' },
-  falcon_edge: { id: 'falcon_edge', name: 'Falcon Edge', slot: 'mainHand', rarity: 'rare', weaponKind: 'katana', minDamage: 7, maxDamage: 12, color: 0xd8cfa0, icon: 'steel_falcon_0' },
-  // --- Consumables (it.39): the belt-less classic ARPG essentials ------------------
-  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', art: 'health_potion', value: 30, use: { heal: 0.5 }, color: 0xc83030 },
-  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', art: 'mana_potion', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8 },
-  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'uncommon', art: 'scroll_town_portal', value: 80, use: { portal: true }, color: 0xd8c890 },
-  elixir: { id: 'elixir', name: 'Violet Elixir', slot: 'consumable', rarity: 'uncommon', art: 'elixir', value: 65, use: { heal: 0.35, resource: 0.5 }, color: 0x9a5ad8 },
+  // ONE ICON FAMILY (it.81): every relic wears a Raven icon like the registry, one quality throughout.
+  rusty_sword: { id: 'rusty_sword', name: 'Rusty Sword', slot: 'mainHand', rarity: 'common', minDamage: 3, maxDamage: 7, color: 0x9a8f80, icon: 'raven1442', desc: 'The blade every delver starts with. Rust and a good grip.' },
+  soldier_blade: { id: 'soldier_blade', name: 'Soldier Blade', slot: 'mainHand', rarity: 'uncommon', minDamage: 6, maxDamage: 12, color: 0x8fa8d8, icon: 'raven1450', desc: 'Issue steel from the old garrison, still true.' },
+  doombringer: { id: 'doombringer', name: 'Doombringer', slot: 'mainHand', rarity: 'rare', minDamage: 11, maxDamage: 20, color: 0xd8763c, icon: 'raven1683', desc: 'A blade with a name and a history nobody finished telling.' },
+  short_bow: { id: 'short_bow', name: 'Short Bow', slot: 'mainHand', rarity: 'common', weaponKind: 'bow', range: 6, minDamage: 4, maxDamage: 8, color: 0x8a6f4d, icon: 'raven1483', desc: 'A hunting bow: quick to draw, honest at six tiles.' },
+  hunters_bow: { id: 'hunters_bow', name: "Hunter's Bow", slot: 'mainHand', rarity: 'uncommon', weaponKind: 'bow', range: 6.5, minDamage: 6, maxDamage: 11, color: 0x6f9a5a, icon: 'raven1484', desc: 'Yew and sinew, half a tile more reach than the short bow.' },
+  emberwand: { id: 'emberwand', name: 'Emberwand', slot: 'mainHand', rarity: 'rare', weaponKind: 'wand', range: 5.5, minDamage: 9, maxDamage: 15, color: 0xe0803a, icon: 'raven1491', desc: 'Warm to the touch. A caster’s early treasure.' },
+  plank_shield: { id: 'plank_shield', name: 'Plank Shield', slot: 'offHand', rarity: 'common', armor: 2, color: 0x8a6f4d, icon: 'raven2115', desc: 'Two boards and a strap. It stops a bite.' },
+  tower_aegis: { id: 'tower_aegis', name: 'Tower Aegis', slot: 'offHand', rarity: 'uncommon', armor: 4, color: 0x6f8fd0, icon: 'raven2123', desc: 'A tall shield from the watch. Twice the plank.' },
+  iron_cap: { id: 'iron_cap', name: 'Iron Cap', slot: 'head', rarity: 'common', armor: 1, color: 0x9aa0a8, icon: 'raven1906', desc: 'A plain cap. Better than hair.' },
+  crown_of_embers: { id: 'crown_of_embers', name: 'Crown of Embers', slot: 'head', rarity: 'rare', armor: 3, color: 0xe09040, icon: 'raven1917', desc: 'It never cools.' },
+  leather_jerkin: { id: 'leather_jerkin', name: 'Leather Jerkin', slot: 'torso', rarity: 'common', armor: 2, color: 0x8a6a48, icon: 'raven1817', desc: 'Boiled leather. The first coat of every delver.' },
+  dark_mail: { id: 'dark_mail', name: 'Dark Mail', slot: 'torso', rarity: 'uncommon', armor: 4, color: 0x5a6a9a, icon: 'raven1859', desc: 'Blackened rings that do not catch the torchlight.' },
+  worn_boots: { id: 'worn_boots', name: 'Worn Boots', slot: 'legs', rarity: 'common', armor: 1, color: 0x7a6650, icon: 'raven1938', desc: 'They have walked further than you have.' },
+  shadow_cloak: { id: 'shadow_cloak', name: 'Shadow Cloak', slot: 'cloak', rarity: 'uncommon', armor: 1, color: 0x6a5a9a, icon: 'raven1977', desc: 'Dyed for the dark.' },
+  // --- The expanded arsenal --------------------------------------------------
+  war_axe: { id: 'war_axe', name: 'War Axe', slot: 'mainHand', rarity: 'common', weaponKind: 'axe', minDamage: 5, maxDamage: 11, color: 0x9a8874, icon: 'raven1462', desc: 'Heavy, slow, and the widest swing of the starter arms.' },
+  gravecleaver: { id: 'gravecleaver', name: 'Gravecleaver', slot: 'mainHand', rarity: 'rare', weaponKind: 'axe', minDamage: 13, maxDamage: 24, color: 0xc06a48, icon: 'raven1467', desc: 'An executioner’s axe that outlived its executioner.' },
+  flanged_mace: { id: 'flanged_mace', name: 'Flanged Mace', slot: 'mainHand', rarity: 'common', weaponKind: 'mace', minDamage: 4, maxDamage: 9, color: 0x8a8a94, icon: 'raven1470', desc: 'Every mace staggers what it hits. This one is cheap.' },
+  skullcrusher: { id: 'skullcrusher', name: 'Skullcrusher', slot: 'mainHand', rarity: 'uncommon', weaponKind: 'mace', minDamage: 7, maxDamage: 13, color: 0x7a86a8, icon: 'raven1472', desc: 'Named by its first owner. Earned by its second.' },
+  dawnhammer: { id: 'dawnhammer', name: 'Dawnhammer', slot: 'mainHand', rarity: 'rare', weaponKind: 'mace', minDamage: 10, maxDamage: 18, color: 0xd8b45c, icon: 'raven1474', desc: 'A temple hammer, gilded, that still staggers like any mace.' },
+  reaper_scythe: { id: 'reaper_scythe', name: "Reaper's Scythe", slot: 'mainHand', rarity: 'uncommon', weaponKind: 'polearm', minDamage: 8, maxDamage: 14, color: 0x86a08a, icon: 'raven1479', desc: 'A farm tool with a battlefield reach.' },
+  warden_halberd: { id: 'warden_halberd', name: 'Warden Halberd', slot: 'mainHand', rarity: 'rare', weaponKind: 'polearm', range: 2.0, minDamage: 11, maxDamage: 19, color: 0xa8b0c0, icon: 'raven1480', desc: 'Two full tiles of reach: strike before they close.' },
+  iron_katana: { id: 'iron_katana', name: 'Iron Katana', slot: 'mainHand', rarity: 'uncommon', weaponKind: 'katana', minDamage: 5, maxDamage: 9, color: 0xb0b8c8, icon: 'raven1508', desc: 'Fast steel with an 18% crit — the katana’s pace.' },
+  falcon_edge: { id: 'falcon_edge', name: 'Falcon Edge', slot: 'mainHand', rarity: 'rare', weaponKind: 'katana', minDamage: 7, maxDamage: 12, color: 0xd8cfa0, icon: 'raven1510', desc: 'Light as a wing, and as quick.' },
+  // --- Consumables (it.39): the belt's staples ------------------------------------
+  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', icon: 'raven266', value: 30, use: { heal: 0.5 }, color: 0xc83030, desc: 'Half your life back, on a five-second cooldown shared with every healing draught.' },
+  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', icon: 'raven69', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8, desc: 'Six tenths of your mana or stamina, on a two-second cooldown.' },
+  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'uncommon', icon: 'raven309', value: 80, use: { portal: true }, color: 0xd8c890, desc: 'A rift home and back. The rite on T is free; the scroll is for collectors.' },
+  elixir: { id: 'elixir', name: 'Violet Elixir', slot: 'consumable', rarity: 'uncommon', icon: 'raven61', value: 65, use: { heal: 0.35, resource: 0.5 }, color: 0x9a5ad8, desc: 'A third of your life and half your resource in one swallow. Counts as a healing draught.' },
   // ---- Starter kit (it.42): every class leaves town armed and clothed ----
-  apprentice_wand: { id: 'apprentice_wand', name: 'Apprentice Wand', slot: 'mainHand', rarity: 'common', weaponKind: 'wand', range: 5, minDamage: 3, maxDamage: 6, color: 0xb08a5a, icon: 'stick_0' },
-  worn_katana: { id: 'worn_katana', name: 'Worn Katana', slot: 'mainHand', rarity: 'common', weaponKind: 'katana', minDamage: 3, maxDamage: 6, color: 0x9aa0a8, icon: 'iron_katana_0' },
-  cloth_robe: { id: 'cloth_robe', name: 'Cloth Robe', slot: 'torso', rarity: 'common', art: 'cloth_robe', armor: 1, color: 0x6a5a9a },
-  // ---- Rings (it.42): worn bonuses in the new ring slot ----
-  copper_ring: { id: 'copper_ring', name: 'Copper Ring', slot: 'ring', rarity: 'common', bonus: { hp: 8 }, color: 0xb87a48 },
-  ring_of_embers: { id: 'ring_of_embers', name: 'Ring of Embers', slot: 'ring', rarity: 'uncommon', bonus: { dmg: 0.08 }, color: 0xe0803a },
-  wardens_signet: { id: 'wardens_signet', name: "Warden's Signet", slot: 'ring', rarity: 'rare', bonus: { armor: 2, dodge: 0.05 }, color: 0x9fb4e8 },
-  hollow_seal: { id: 'hollow_seal', name: 'Seal of the Hollow King', slot: 'ring', rarity: 'legendary', bonus: { dmg: 0.15, hp: 20, regen: 0.2 }, color: 0xffb347 },
+  apprentice_wand: { id: 'apprentice_wand', name: 'Apprentice Wand', slot: 'mainHand', rarity: 'common', weaponKind: 'wand', range: 5, minDamage: 3, maxDamage: 6, color: 0xb08a5a, icon: 'raven1494', desc: 'The first wand. It points; the arcana does the rest.' },
+  worn_katana: { id: 'worn_katana', name: 'Worn Katana', slot: 'mainHand', rarity: 'common', weaponKind: 'katana', minDamage: 3, maxDamage: 6, color: 0x9aa0a8, icon: 'raven1511', desc: 'Nicked, quick, and the rogue’s first friend.' },
+  cloth_robe: { id: 'cloth_robe', name: 'Cloth Robe', slot: 'torso', rarity: 'common', armor: 1, color: 0x6a5a9a, icon: 'raven2087', desc: 'Warm, at least.' },
+  // ---- Rings (it.42): worn bonuses in the ring slot ----
+  copper_ring: { id: 'copper_ring', name: 'Copper Ring', slot: 'ring', rarity: 'common', bonus: { hp: 8 }, color: 0xb87a48, icon: 'raven1845', desc: 'A little life in a cheap band.' },
+  ring_of_embers: { id: 'ring_of_embers', name: 'Ring of Embers', slot: 'ring', rarity: 'uncommon', bonus: { dmg: 0.08 }, color: 0xe0803a, icon: 'raven1847', desc: 'Eight percent harder, every blow.' },
+  wardens_signet: { id: 'wardens_signet', name: "Warden's Signet", slot: 'ring', rarity: 'rare', bonus: { armor: 2, dodge: 0.05 }, color: 0x9fb4e8, icon: 'raven1848', desc: 'Taken from a keeper of the deep. Armor and a sidestep.' },
+  hollow_seal: { id: 'hollow_seal', name: 'Seal of the Hollow King', slot: 'ring', rarity: 'legendary', bonus: { dmg: 0.15, hp: 20, regen: 0.2 }, color: 0xffb347, icon: 'raven1850', desc: 'The king’s own seal. Damage, life and a quicker breath.' },
   // ---- Legendary trophies (it.42): boss-only rolls ----
-  kingsbane: { id: 'kingsbane', name: 'Kingsbane', slot: 'mainHand', rarity: 'legendary', minDamage: 16, maxDamage: 28, color: 0xffb347, icon: 'steel_large_0', bonus: { dmg: 0.1 } },
-  crown_of_the_hollow: { id: 'crown_of_the_hollow', name: 'Crown of the Hollow', slot: 'head', rarity: 'legendary', art: 'crown_of_the_hollow', armor: 5, bonus: { hp: 15, dodge: 0.04 }, color: 0xffb347 },
+  kingsbane: { id: 'kingsbane', name: 'Kingsbane', slot: 'mainHand', rarity: 'legendary', minDamage: 16, maxDamage: 28, color: 0xffb347, icon: 'raven1720', bonus: { dmg: 0.1 }, desc: 'Forged for one throat.' },
+  crown_of_the_hollow: { id: 'crown_of_the_hollow', name: 'Crown of the Hollow', slot: 'head', rarity: 'legendary', armor: 5, bonus: { hp: 15, dodge: 0.04 }, color: 0xffb347, icon: 'raven2078', desc: 'Heavier than it looks. Lighter than it should be.' },
 };
 
 /** Chance an enemy drops anything at all. */
@@ -241,6 +244,7 @@ export function statLine(def: ItemDef): string {
   if (def.use?.stone) parts.push(`Stone skin for ${Math.round(def.use.stone / 60)} s`);
   if (def.use?.might) parts.push(`Might for ${Math.round(def.use.might / 60)} s`);
   if (def.use?.recipe) parts.push('Read to learn the enchantment');
+  if (def.desc && def.slot !== 'mainHand' && !def.ilvl) parts.push(def.desc);
   if (def.affixLines?.length) parts.push(...def.affixLines);
   return parts.join(' · ') || 'No Bonuses';
 }

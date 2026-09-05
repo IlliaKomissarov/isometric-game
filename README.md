@@ -58,7 +58,8 @@
   bleed, poison, burn, chill, shock and stun on hit, or a granted trait, and twelve forge
   enchantments learned from scrolls. A camp forge to salvage, forge, transmute, refine,
   enchant and reinforce to +15, with a recipe book. An assignable draught belt with cooldowns.
-  Merchants with a buyback counter and a restock clock.
+  Merchants with a buyback counter and a restock clock. A codex (H) that explains every rule,
+  filters and sorting on every list, and coloured borders on every special piece.
   A warden every fifth depth, with phases.
 - **Four-player co-op with no server.** WebRTC data channels brokered by PeerJS. Deterministic
   lockstep carries only intent; the Party Leader is the authority for every creature, hero and
@@ -132,7 +133,7 @@ await import('/src/dev/qa75.ts'); await __qa75({ seed: 3, cls: 'mage', deep: tru
 | Interact / loot | E |
 | Skills | 1 2 3 4 |
 | Potion / mana | Q / R |
-| Inventory · talents · hero · bestiary | I · K · C · B |
+| Inventory · talents · hero · bestiary · codex | I · K · C · B · H |
 | Map · depths · town portal | M · L · T |
 | Settings · pause | O · Esc |
 | Zoom | Mouse wheel |

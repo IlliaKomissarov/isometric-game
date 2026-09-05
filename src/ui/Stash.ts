@@ -16,6 +16,7 @@ import { type ItemDef } from '@/items/catalog';
 import { STASH_CAPACITY, type TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
+import { effectClass, filterBarHtml, loadFilter, orderIndexes, wireFilterBar, type FilterState } from './itemFilter';
 import { keepScroll } from './keepScroll';
 
 const iconHtml = (def: ItemDef): string => itemIconHtml(def);
@@ -25,6 +26,9 @@ export class StashUI {
   private visible = false;
   private readonly offs: Array<() => void> = [];
   private readonly abort = new AbortController();
+  /** FILTERS (it.81): the pack's and the chest's, remembered. */
+  private readonly filterPack: FilterState = loadFilter('stash-pack');
+  private readonly filterBox: FilterState = loadFilter('stash-box');
 
   constructor(
     private readonly player: Player,
@@ -87,24 +91,20 @@ export class StashUI {
     const p = this.player;
     const s = this.town.stash;
     const row = (def: ItemDef, attr: string, i: number): string =>
-      `<button class="tp-row rarity-${def.rarity}" ${attr}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}</span><span class="tp-arrow">${attr === 'data-put' ? '→' : '←'}</span></button>`;
-    const pack = p.backpack
-      .map((id, i) => {
-        const def = itemDef(id);
-        return def ? row(def, 'data-put', i) : '';
-      })
+      `<button class="tp-row rarity-${def.rarity} ${effectClass(def)}" ${attr}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}${def.ilvl ? `<span class="tp-meta">iLvl ${def.ilvl}${def.upgrade ? ` · +${def.upgrade}` : ''}</span>` : ''}</span><span class="tp-arrow">${attr === 'data-put' ? '→' : '←'}</span></button>`;
+    const packDefs = p.backpack.map((id) => itemDef(id));
+    const pack = orderIndexes(packDefs, this.filterPack)
+      .map((i) => row(packDefs[i]!, 'data-put', i))
       .join('');
-    const stash = s.items
-      .map((id, i) => {
-        const def = itemDef(id);
-        return def ? row(def, 'data-take', i) : '';
-      })
+    const boxDefs = s.items.map((id) => itemDef(id));
+    const stash = orderIndexes(boxDefs, this.filterBox)
+      .map((i) => row(boxDefs[i]!, 'data-take', i))
       .join('');
     this.panel.innerHTML = `
       <div class="tp-head drag-handle"><h3>THE STASH</h3><span class="tp-purse">◆ ${p.gold} carried · ◆ ${s.gold} stashed</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
-        <div class="tp-col"><h4>YOUR PACK · ${p.backpack.length}</h4><div class="tp-list">${pack || '<span class="tp-empty">Nothing carried</span>'}</div></div>
-        <div class="tp-col"><h4>STASH · ${s.items.length}/${STASH_CAPACITY}</h4><div class="tp-list">${stash || '<span class="tp-empty">Empty</span>'}</div></div>
+        <div class="tp-col"><h4>YOUR PACK · ${p.backpack.length}</h4>${filterBarHtml(this.filterPack, { id: 'if-stash-pack' })}<div class="tp-list">${pack || '<span class="tp-empty">Nothing carried</span>'}</div></div>
+        <div class="tp-col"><h4>STASH · ${s.items.length}/${STASH_CAPACITY}</h4>${filterBarHtml(this.filterBox, { id: 'if-stash-box' })}<div class="tp-list">${stash || '<span class="tp-empty">Empty</span>'}</div></div>
       </div>
       <div class="tp-goldrow">
         <button data-gold="100">DEPOSIT 100</button><button data-gold="all">DEPOSIT ALL</button>
@@ -117,6 +117,8 @@ export class StashUI {
       audio.sfx('uiClick');
       this.close();
     });
+    wireFilterBar(this.panel.querySelector('#if-stash-pack') as HTMLElement, 'stash-pack', this.filterPack, () => this.render());
+    wireFilterBar(this.panel.querySelector('#if-stash-box') as HTMLElement, 'stash-box', this.filterBox, () => this.render());
     this.panel.querySelectorAll<HTMLButtonElement>('[data-put]').forEach((b) => {
       b.addEventListener('click', () => {
         this.queue.enqueue({ type: 'STASH_PUT', playerId: 0, backpackIndex: Number(b.dataset.put) });

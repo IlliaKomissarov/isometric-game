@@ -651,6 +651,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The belt: Q / R assignable, cooldowns, new draughts, hotbar and thumb faces
 - [x] Weapon rack as the forge prop; desktop bar column; harness checks; matrix 74/74
 
+## Iteration 81 - The codex and the borders (2026-09-05)
+
+- [x] `ui/Codex.ts`: ten chapters from the engine's tables; H and the bar
+- [x] Descriptions on every effect, enchantment, draught, material and shape; detail lines on the card
+- [x] Effect borders and gems; `ui/itemFilter.ts` chips and orders on every list; TIDY
+- [x] Status marks, tints, names and strips on foes
+- [x] One Raven icon family; labelled gauges
+- [x] Harness checks; device matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

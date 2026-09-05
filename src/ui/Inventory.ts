@@ -23,6 +23,7 @@ import type { EquipmentSlot } from '@/network/Serialization';
 
 import { fitItemIcons, itemIconHtml } from './itemIcons';
 import { attachItemCard, itemCardHtml, placeCard, wornFor } from './itemTip';
+import { effectClass, filterBarHtml, loadFilter, orderIndexes, wireFilterBar, type FilterState } from './itemFilter';
 import { uiAssetUrl } from '@/render/SpriteLibrary';
 import { keepScroll } from './keepScroll';
 
@@ -39,6 +40,12 @@ const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: stri
 
 /** Cell content: the real pack icon, or a crisp generated pixel icon. */
 const iconHtml = (def: ItemDef): string => itemIconHtml(def, '', 'inv-pxicon');
+
+/** THE EFFECT GEM (it.81): a corner diamond in the border's colour on every special piece. */
+const fxGem = (def: ItemDef): string => {
+  const c = effectClass(def);
+  return c ? `<i class="inv-fx ${c}"></i>` : '';
+};
 
 /** THE LEVEL ON THE CELL (it.80): gear wears its item level in the corner, and its reinforcement. */
 const lvlBadge = (def: ItemDef): string => (def.ilvl && def.slot !== 'consumable' && def.slot !== 'material' ? `<span class="inv-lvl">${def.ilvl}${def.upgrade ? `<b>+${def.upgrade}</b>` : ''}</span>` : '');
@@ -60,6 +67,8 @@ export class InventoryUI {
   private readonly abort = new AbortController();
   /** THE BELT CHOOSER (it.80): which key is picking a draught (null = closed). */
   private beltPick: number | null = null;
+  /** THE PACK'S FILTER AND ORDER (it.81), remembered between runs. */
+  private readonly filter: FilterState = loadFilter('inventory');
   private cdTimer: number | null = null;
   private readonly offChanged: () => void;
   private readonly offMaterials: () => void;
@@ -152,7 +161,7 @@ export class InventoryUI {
       const itemId = this.player.getEquipped(slot);
       const def = itemId ? itemDef(itemId) : undefined;
       const cell = def
-        ? `<button class="inv-cell inv-item rarity-${def.rarity}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}${lvlBadge(def)}</button>`
+        ? `<button class="inv-cell inv-item rarity-${def.rarity} ${effectClass(def)}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}${lvlBadge(def)}${fxGem(def)}</button>`
         : `<div class="inv-cell inv-cell-empty inv-cell-framed" data-slot="${slot}" style="background-image:url(${uiAssetUrl(`slots/${slot}.png`)})"></div>`;
       return `<div class="inv-slot-wrap" style="grid-area:${area}"><span class="inv-slot-label">${label}</span>${cell}</div>`;
     }).join('');
@@ -199,16 +208,21 @@ export class InventoryUI {
     });
     // THE PACK GRID (it.50): a fixed 6×8 field of slots (more rows when the
     // haul outgrows it), every empty slot drawn, the whole field scrolling.
-    const filled = [...stacks.values()]
+    // FILTERED AND ORDERED (it.81): the chips and the sort menu decide what shows and in what order;
+    // every cell keeps its backpack index, so the commands still name the right item.
+    const stackList = [...stacks.values()];
+    const shown = orderIndexes(stackList.map((s) => s.def), this.filter).map((i) => stackList[i]);
+    const filled = shown
       .map(
         ({ def, count, firstIndex }) =>
-          `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
-             ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}${lvlBadge(def)}
+          `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''} ${effectClass(def)}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
+             ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}${lvlBadge(def)}${fxGem(def)}
            </button>`,
       )
       .join('');
-    const slotCount = Math.max(PACK_SLOTS, Math.ceil(stacks.size / PACK_COLS) * PACK_COLS);
-    const empties = Array.from({ length: Math.max(0, slotCount - stacks.size) }, () => '<div class="inv-cell inv-cell-empty inv-pack-empty"></div>').join('');
+    const hidden = stackList.length - shown.length;
+    const slotCount = Math.max(PACK_SLOTS, Math.ceil(shown.length / PACK_COLS) * PACK_COLS);
+    const empties = Array.from({ length: Math.max(0, slotCount - shown.length) }, () => '<div class="inv-cell inv-cell-empty inv-pack-empty"></div>').join('');
     const backpackCells = filled + empties;
 
     // THE POUCH (it.78): crafting materials, never a pack slot each.
@@ -229,8 +243,10 @@ export class InventoryUI {
       <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts · ▾ to assign</span></div>${beltMenu}
       <div class="inv-pouch">${pouch}</div>
       <div class="inv-divider"></div>
-      <h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}</span>
+      <h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}${hidden ? ` · ${hidden} hidden` : ''}</span>
+        <button class="ds-btn inv-tidy" type="button" data-tidy title="Sort the pack itself: type, rarity, level, name">TIDY</button>
         <span class="inv-gold">◆ Gold: ${this.player.gold}</span></h4>
+      ${filterBarHtml(this.filter)}
       <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div>
     `;
 
@@ -321,6 +337,12 @@ export class InventoryUI {
           this.hideTooltip();
         },
       );
+    });
+    wireFilterBar(this.panel, 'inventory', this.filter, () => this.render());
+    this.panel.querySelector<HTMLButtonElement>('[data-tidy]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      audio.sfx('uiConfirm');
+      this.queue.enqueue({ type: 'SORT_PACK', playerId: this.playerId });
     });
     this.panel.querySelectorAll<HTMLButtonElement>('[data-beltpick]').forEach((b) => {
       b.addEventListener('click', (e) => {

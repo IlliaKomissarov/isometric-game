@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 80, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 81, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -46,7 +46,8 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `items/instance` / `affixes` / `registry` | catalog, the Raven icons | every derived item definition (`itemDef`), rolls | ids stay strings; stats derive, never store |
 | `systems/Crafting` / `ui/CampCrafting` | player pouch, `craft` RNG | salvage, forge, transmute, refine, reinforce | commands only; the panel reads |
 | `systems/Town` | `itemDef`, `rollGear`, tick | stock, buyback, restock clock | rolls seeded by (seed, serial) |
-| `systems/Status` / `items/effects` | combat, enemy pool | statuses on foes; traits read by the player | pure wounds through `dealDamage`; never a second hp mutator |
+| `systems/Status` / `items/effects` | combat, enemy pool | statuses on foes; traits read by the player; marks and tints | pure wounds through `dealDamage`; never a second hp mutator |
+| `ui/Codex` / `ui/itemFilter` | every item table | the book; chips, orders and borders on every list | generated from the tables; rows keep their index |
 | `ui/TouchControls` / `SystemBar` / `StatusFrame` / `Minimap` | layout, queue, player | commands, HUD | act on pointerup for windows |
 | `core/PerformanceScaler` | rAF timing | buffer resolution, `quality`, particle budget, colour grade gate | hysteresis, 2 s cooldown |
 | `persist/SaveGame` | player, floors, stash, stats | slots 1–3, co-op slots 11–14 | versioned schema |
@@ -131,6 +132,17 @@ Items examined and left as they are, with reasons:
 | Crafting rules lived only in code | Medium (UX) | the forge's RECIPES book |
 | The anvil prop was a pack icon | Low (art) | the town's weapon rack |
 | Desktop bar under the chart could crowd the corner | Low (UI) | a right-edge column; the inventory rises |
+
+### Iteration 81 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| No in-game explanation of items, statuses, recipes or crafting | High (UX) | the codex, ten chapters, generated from the tables |
+| Special pieces looked like plain ones | Medium (UX) | effect borders and gems everywhere an item is drawn |
+| No sorting or filtering on any list | Medium (UX) | `ui/itemFilter.ts` on inventory, shop, stash, forge; TIDY |
+| A status on a foe was a burst and nothing else | Medium (UX) | names, strips, gems above the head, body tint |
+| Two icon families and a generated one side by side | Low (art) | every item on the Raven pack |
+| The XP bar had no name | Low (UX) | HP / MANA / XP labels with glyphs |
 
 ## 4. Known issues and regression log
 

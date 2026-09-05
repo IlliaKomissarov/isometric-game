@@ -31,7 +31,14 @@ export interface StatusDeps {
   enemiesNear: (x: number, y: number, r: number) => Enemy[];
   combat: () => CombatSystem;
   burst: (x: number, y: number, color: number, n: number) => void;
+  /** THE VISUALS (it.81): a floating name and an effect strip on the foe. */
+  text?: (x: number, y: number, msg: string, style: 'crit' | 'miss') => void;
+  vfx?: (anim: 'vfx_burst' | 'vfx_ring' | 'vfx_splash' | 'vfx_whirl' | 'vfx_bloodburst', x: number, y: number, opts: { scale?: number; tint?: number; lift?: number; fps?: number; flat?: boolean }) => void;
 }
+
+const LABEL: Record<StatusKind, string> = { bleed: 'BLEEDING', poison: 'POISONED', burn: 'BURNING', chill: 'CHILLED', shock: 'SHOCKED', stun: 'STUNNED' };
+/** How long each mark stays above the head (DoTs follow their own clock). */
+const MARK_TICKS: Record<StatusKind, number> = { bleed: 240, poison: 360, burn: 180, chill: 180, shock: 30, stun: 48 };
 
 const DOT_TABLE: Record<'bleed' | 'poison' | 'burn', { share: number; ticks: number; period: number }> = {
   bleed: { share: 0.6, ticks: 240, period: 30 },
@@ -41,12 +48,50 @@ const DOT_TABLE: Record<'bleed' | 'poison' | 'burn', { share: number; ticks: num
 
 export class StatusSystem {
   private readonly dots = new Map<number, Map<StatusKind, Dot>>();
+  /** foe id → status → ticks the mark stays (it.81). */
+  private readonly marks = new Map<number, Map<StatusKind, number>>();
+
+  /** Show the status on the foe: the name floats up, the strip plays, the mark appears. */
+  private show(foe: Enemy, kind: StatusKind, power = 1): void {
+    let m = this.marks.get(foe.id);
+    if (!m) {
+      m = new Map();
+      this.marks.set(foe.id, m);
+    }
+    const fresh = !m.has(kind);
+    m.set(kind, Math.max(m.get(kind) ?? 0, Math.round(MARK_TICKS[kind] * (kind === 'stun' || kind === 'chill' ? power : 1))));
+    const color = STATUS_INFO[kind].color;
+    if (fresh) this.deps.text?.(foe.pos.x, foe.pos.y - 1.5, LABEL[kind], 'miss');
+    const v = this.deps.vfx;
+    if (!v) return;
+    switch (kind) {
+      case 'bleed':
+        v('vfx_bloodburst', foe.pos.x, foe.pos.y, { scale: 0.8, lift: 14, fps: 26 });
+        break;
+      case 'poison':
+        v('vfx_burst', foe.pos.x, foe.pos.y, { scale: 0.9, lift: 16, fps: 20, tint: color });
+        break;
+      case 'burn':
+        v('vfx_burst', foe.pos.x, foe.pos.y, { scale: 1, lift: 18, fps: 24, tint: color });
+        break;
+      case 'chill':
+        v('vfx_splash', foe.pos.x, foe.pos.y, { scale: 1.1, lift: 8, fps: 16, tint: color });
+        break;
+      case 'shock':
+        v('vfx_ring', foe.pos.x, foe.pos.y, { scale: 0.9, flat: true, fps: 26, tint: color });
+        break;
+      case 'stun':
+        v('vfx_whirl', foe.pos.x, foe.pos.y, { scale: 0.8, lift: 30, fps: 22, tint: color });
+        break;
+    }
+  }
 
   constructor(private readonly deps: StatusDeps) {}
 
   /** A new floor: nothing carries over. */
   clear(): void {
     this.dots.clear();
+    this.marks.clear();
   }
 
   /** Active statuses on a foe (for the HUD and the bestiary). */
@@ -66,6 +111,8 @@ export class StatusSystem {
     // A stronger or fresher wound replaces a weaker one; never stacks.
     if (cur && cur.bite > bite && cur.ticksLeft > ticks / 2) return;
     m.set(kind, { ticksLeft: ticks, nextBite: period, period, bite: Math.max(1, Math.round(bite)), sourceId });
+    const foe = this.deps.enemyById(foeId);
+    if (foe) this.show(foe, kind);
   }
 
   /** A weapon proc landed: apply the status scaled by the hit that carried it. */
@@ -80,7 +127,6 @@ export class StatusSystem {
         const t = DOT_TABLE[proc.status];
         const bites = t.ticks / t.period;
         this.dot(foe.id, proc.status, t.ticks, t.period, (hitAmount * t.share * p) / bites, sourceId);
-        this.deps.burst(foe.pos.x, foe.pos.y, STATUS_INFO[proc.status].color, 6);
         break;
       }
       case 'chill':
@@ -88,6 +134,7 @@ export class StatusSystem {
         foe.chillTicks = Math.max(foe.chillTicks, 180);
         foe.chillFactor = Math.min(foe.chillFactor, 0.55 / p);
         this.deps.burst(foe.pos.x, foe.pos.y, STATUS_INFO.chill.color, 8);
+        this.show(foe, 'chill');
         break;
       case 'shock': {
         let best: Enemy | null = null;
@@ -101,9 +148,11 @@ export class StatusSystem {
           }
         }
         this.deps.burst(foe.pos.x, foe.pos.y, STATUS_INFO.shock.color, 8);
+        this.show(foe, 'shock');
         if (best) {
           this.deps.combat().dealDamage({ sourceId, targetId: best.id, amount: Math.max(1, Math.round(hitAmount * 0.45 * p)), pure: true });
           this.deps.burst(best.pos.x, best.pos.y, STATUS_INFO.shock.color, 10);
+          this.show(best, 'shock');
         }
         break;
       }
@@ -112,6 +161,7 @@ export class StatusSystem {
         foe.action = 'hit';
         foe.actionTicks = Math.max(foe.actionTicks, Math.round(48 * p * (boss ? 0.5 : 1)));
         this.deps.burst(foe.pos.x, foe.pos.y, STATUS_INFO.stun.color, 6);
+        this.show(foe, 'stun', boss ? 0.5 : p);
         break;
     }
   }
@@ -135,6 +185,27 @@ export class StatusSystem {
         if (dot.ticksLeft <= 0) m.delete(kind);
       }
       if (m.size === 0) this.dots.delete(id);
+    }
+    // THE MARKS (it.81): count down, then redraw the gems and the tint.
+    for (const [id, m] of this.marks) {
+      const foe = this.deps.enemyById(id);
+      if (!foe || foe.hp <= 0 || foe.action === 'dead') {
+        foe?.setStatuses([]);
+        this.marks.delete(id);
+        continue;
+      }
+      let changed = false;
+      for (const [kind, left] of m) {
+        if (left <= 1) {
+          m.delete(kind);
+          changed = true;
+        } else m.set(kind, left - 1);
+      }
+      if (changed || m.size) foe.setStatuses([...m.keys()].map((k) => STATUS_INFO[k].color));
+      if (m.size === 0) {
+        foe.setStatuses([]);
+        this.marks.delete(id);
+      }
     }
   }
 }

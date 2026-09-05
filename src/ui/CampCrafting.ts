@@ -21,6 +21,7 @@ import { ENCHANTS, effectLine } from '@/items/effects';
 import { RARITY_ORDER } from '@/items/catalog';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
+import { effectClass, filterBarHtml, loadFilter, orderIndexes, wireFilterBar, type FilterState } from './itemFilter';
 import { keepScroll } from './keepScroll';
 
 type Tab = 'salvage' | 'forge' | 'transmute' | 'refine' | 'reinforce' | 'enchant' | 'recipes';
@@ -44,6 +45,8 @@ export class CampCraftingUI {
   /** The pack item under the anvil (by id, so a re-render keeps it). */
   private picked: string | null = null;
   private log = 'Bring steel to the anvil.';
+  /** FILTERS (it.81): the forge's, remembered. */
+  private readonly filter: FilterState = loadFilter('forge');
   private logOk = true;
   private readonly offs: Array<() => void> = [];
   private readonly abort = new AbortController();
@@ -145,15 +148,19 @@ export class CampCraftingUI {
   }
 
   private packRows(filter: (def: ItemDef) => boolean, action: string, trailing: (def: ItemDef, i: number) => string): string {
-    const rows = this.player.backpack
-      .map((id, i) => {
-        const def = itemDef(id);
-        if (!def || !filter(def)) return '';
+    const defs = this.player.backpack.map((id) => {
+      const d = itemDef(id);
+      return d && filter(d) ? d : undefined;
+    });
+    const rows = orderIndexes(defs, this.filter)
+      .map((i) => {
+        const def = defs[i]!;
+        const id = this.player.backpack[i];
         const on = this.picked === id ? ' on' : '';
-        return `<button class="tp-row rarity-${def.rarity}${on}" ${action}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}<span class="tp-meta">${def.ilvl ? `iLvl ${def.ilvl} · ` : ''}${def.rarity}</span></span>${trailing(def, i)}</button>`;
+        return `<button class="tp-row rarity-${def.rarity}${on} ${effectClass(def)}" ${action}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}<span class="tp-meta">${def.ilvl ? `iLvl ${def.ilvl} · ` : ''}${def.rarity}</span></span>${trailing(def, i)}</button>`;
       })
       .join('');
-    return rows || '<span class="tp-empty">Nothing in the pack for this</span>';
+    return `${filterBarHtml(this.filter, { id: 'if-forge' })}${rows || '<span class="tp-empty">Nothing in the pack for this</span>'}`;
   }
 
   /** Repaint without losing where the player had scrolled (it.79). */
@@ -175,14 +182,16 @@ export class CampCraftingUI {
         break;
       case 'forge': {
         const ilvl = ilvlForDepth(Math.max(1, this.deepestFloor()));
-        const rows = knownBlueprints(this.deepestFloor())
+        const bps = knownBlueprints(this.deepestFloor());
+        const rows = orderIndexes(bps, { ...this.filter, sort: this.filter.sort === 'default' ? 'type' : this.filter.sort })
+          .map((i) => bps[i])
           .map((b) => {
             const cost = forgeCost(b, ilvl);
             const poor = !canAfford(p, cost);
             return `<button class="tp-row rarity-uncommon${poor ? ' poor' : ''}" data-forge="${b.id}" data-tip="${b.id}">${iconHtml(b)}<span class="tp-name">${b.name}<span class="tp-meta">${b.slot === 'mainHand' ? b.weaponKind ?? 'blade' : b.slot} · rolls at iLvl ${ilvl}</span></span><span class="tp-gold">${this.costHtml(cost)}</span></button>`;
           })
           .join('');
-        body = `<div class="tp-col"><h4>BLUEPRINTS · ${rows ? knownBlueprints(this.deepestFloor()).length : 0} known · uncommon or better</h4><div class="tp-list">${rows || '<span class="tp-empty">Delve deeper to learn blueprints</span>'}</div></div>`;
+        body = `<div class="tp-col"><h4>BLUEPRINTS · ${bps.length} known · uncommon or better</h4><div class="tp-list">${filterBarHtml(this.filter, { id: 'if-forge' })}${rows || '<span class="tp-empty">Delve deeper to learn blueprints</span>'}</div></div>`;
         break;
       }
       case 'transmute': {
@@ -313,6 +322,8 @@ export class CampCraftingUI {
       audio.sfx('uiClick');
       this.close();
     });
+    const bar = this.panel.querySelector<HTMLElement>('#if-forge');
+    if (bar) wireFilterBar(bar, 'forge', this.filter, () => this.render());
     this.panel.querySelectorAll<HTMLButtonElement>('[data-crafttab]').forEach((b) => {
       b.addEventListener('click', () => {
         this.tab = (b.dataset.crafttab as Tab) ?? 'salvage';

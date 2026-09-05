@@ -27,10 +27,12 @@ type Band = [number, number];
 const proc = (status: NonNullable<Effect['proc']>['status'], chance: number, power = 1): Effect => ({ proc: { status, chance, power } });
 const trait = (key: NonNullable<Effect['trait']>['key'], power = 1): Effect => ({ trait: { key, power } });
 
-interface Shape {
+export interface Shape {
   key: string;
   name: string;
   kind: WeaponKind;
+  /** The shape's own words: its role. */
+  desc: string;
   /** Icon in the steel set; gilded is +80, crystal is +160 (the pack repeats the layout). */
   icon: number;
   dmg: [number, number];
@@ -45,57 +47,57 @@ interface Shape {
 }
 
 /** The tier names by family: wood-and-string weapons say ashwood, not steel. */
-const TIERS: Array<{ key: string; name: string; wood: string; offset: number; band: Band; mult: number; color: number }> = [
+export const TIERS: Array<{ key: string; name: string; wood: string; offset: number; band: Band; mult: number; color: number }> = [
   { key: 'steel', name: 'Steel', wood: 'Ashwood', offset: 0, band: [1, 38], mult: 1, color: 0xb8c0cc },
   { key: 'gilded', name: 'Gilded', wood: 'Gilded', offset: 80, band: [25, 70], mult: 1.12, color: 0xe8b84c },
   { key: 'crystal', name: 'Crystal', wood: 'Crystal', offset: 160, band: [55, 100], mult: 1.25, color: 0x7fc8ff },
 ];
 
-const SHAPES: Shape[] = [
+export const SHAPES: Shape[] = [
   // ---- Blades: the all-rounders ---------------------------------------------
-  { key: 'shortsword', name: 'Shortsword', kind: 'blade', icon: 1443, dmg: [3, 6], speed: 1.06, innates: [null, trait('swift'), proc('shock', 0.2)] },
-  { key: 'blade', name: 'Blade', kind: 'blade', icon: 1447, dmg: [3, 7], innates: [null, trait('fortune'), proc('bleed', 0.25)] },
-  { key: 'longsword', name: 'Longsword', kind: 'blade', icon: 1448, dmg: [4, 7], crit: 0.02, innates: [null, trait('precise'), proc('burn', 0.25)] },
-  { key: 'saber', name: 'Saber', kind: 'blade', icon: 1454, dmg: [3, 7], crit: 0.04, innates: [proc('bleed', 0.15), proc('bleed', 0.25), proc('bleed', 0.35, 1.3)] },
-  { key: 'claymore', name: 'Claymore', kind: 'blade', icon: 1449, dmg: [5, 9], speed: 0.9, innates: [trait('knockback', 0.6), trait('knockback'), trait('cleave')] },
-  { key: 'greatsword', name: 'Greatsword', kind: 'blade', icon: 1517, dmg: [6, 10], speed: 0.85, innates: [trait('cleave', 0.7), trait('cleave'), trait('cleave', 1.4)] },
-  { key: 'rapier', name: 'Rapier', kind: 'blade', icon: 1505, dmg: [3, 6], speed: 1.12, crit: 0.06, innates: [trait('precise', 0.6), trait('precise'), trait('precise', 1.5)] },
-  { key: 'falchion', name: 'Falchion', kind: 'blade', icon: 1520, dmg: [4, 8], innates: [null, trait('berserk'), proc('stun', 0.15)] },
+  { key: 'shortsword', desc: "Quick, light steel for a fresh delver: a touch faster than the family, forgiving in a crowd.", name: 'Shortsword', kind: 'blade', icon: 1443, dmg: [3, 6], speed: 1.06, innates: [null, trait('swift'), proc('shock', 0.2)] },
+  { key: 'blade', desc: "The plain sword. Nothing special about it except that it does everything.", name: 'Blade', kind: 'blade', icon: 1447, dmg: [3, 7], innates: [null, trait('fortune'), proc('bleed', 0.25)] },
+  { key: 'longsword', desc: "A longer edge with a longer reach on the crit: the duelist’s blade.", name: 'Longsword', kind: 'blade', icon: 1448, dmg: [4, 7], crit: 0.02, innates: [null, trait('precise'), proc('burn', 0.25)] },
+  { key: 'saber', desc: "Curved to cut rather than chop; its crit runs high and it opens wounds that keep bleeding.", name: 'Saber', kind: 'blade', icon: 1454, dmg: [3, 7], crit: 0.04, innates: [proc('bleed', 0.15), proc('bleed', 0.25), proc('bleed', 0.35, 1.3)] },
+  { key: 'claymore', desc: "Two hands of steel. Slower, heavier, and it throws what it hits.", name: 'Claymore', kind: 'blade', icon: 1449, dmg: [5, 9], speed: 0.9, innates: [trait('knockback', 0.6), trait('knockback'), trait('cleave')] },
+  { key: 'greatsword', desc: "The slowest blade and the widest: every swing cuts a second foe.", name: 'Greatsword', kind: 'blade', icon: 1517, dmg: [6, 10], speed: 0.85, innates: [trait('cleave', 0.7), trait('cleave'), trait('cleave', 1.4)] },
+  { key: 'rapier', desc: "A needle of a sword: the fastest blade, the highest crit, and it makes those crits count.", name: 'Rapier', kind: 'blade', icon: 1505, dmg: [3, 6], speed: 1.12, crit: 0.06, innates: [trait('precise', 0.6), trait('precise'), trait('precise', 1.5)] },
+  { key: 'falchion', desc: "A broad chopping sword that fights better wounded and, in crystal, stuns.", name: 'Falchion', kind: 'blade', icon: 1520, dmg: [4, 8], innates: [null, trait('berserk'), proc('stun', 0.15)] },
   // ---- Fast steel: katanas, dirks, scimitars ---------------------------------
-  { key: 'dirk', name: 'Dirk', kind: 'katana', icon: 1441, dmg: [2, 5], speed: 1.15, innates: [proc('bleed', 0.2), proc('bleed', 0.3), proc('poison', 0.3)] },
-  { key: 'kris', name: 'Kris', kind: 'katana', icon: 1444, dmg: [2, 4], speed: 1.25, innates: [proc('poison', 0.25), proc('poison', 0.35), proc('poison', 0.45, 1.3)] },
-  { key: 'katana', name: 'Katana', kind: 'katana', icon: 1453, dmg: [3, 6], innates: [null, trait('precise'), proc('bleed', 0.3)] },
-  { key: 'scimitar', name: 'Scimitar', kind: 'katana', icon: 1509, dmg: [3, 7], innates: [null, trait('swift'), proc('burn', 0.3)] },
-  { key: 'twinblade', name: 'Twinblade', kind: 'katana', icon: 1519, dmg: [3, 6], speed: 1.05, innates: [trait('cleave', 0.6), trait('cleave'), trait('cleave', 1.3)] },
+  { key: 'dirk', desc: "A long knife that bleeds and, in crystal, poisons. Fast enough to proc constantly.", name: 'Dirk', kind: 'katana', icon: 1441, dmg: [2, 5], speed: 1.15, innates: [proc('bleed', 0.2), proc('bleed', 0.3), proc('poison', 0.3)] },
+  { key: 'kris', desc: "A wavy dagger built for one thing: venom. The fastest weapon in the crypt.", name: 'Kris', kind: 'katana', icon: 1444, dmg: [2, 4], speed: 1.25, innates: [proc('poison', 0.25), proc('poison', 0.35), proc('poison', 0.45, 1.3)] },
+  { key: 'katana', desc: "The fast, precise blade; 18% crits by family and a Precision tier to double down.", name: 'Katana', kind: 'katana', icon: 1453, dmg: [3, 6], innates: [null, trait('precise'), proc('bleed', 0.3)] },
+  { key: 'scimitar', desc: "A curved slasher that runs quick and, in crystal, burns.", name: 'Scimitar', kind: 'katana', icon: 1509, dmg: [3, 7], innates: [null, trait('swift'), proc('burn', 0.3)] },
+  { key: 'twinblade', desc: "Two blades on one hilt: every strike reaches a second foe.", name: 'Twinblade', kind: 'katana', icon: 1519, dmg: [3, 6], speed: 1.05, innates: [trait('cleave', 0.6), trait('cleave'), trait('cleave', 1.3)] },
   // ---- Axes: heavy, bleeding, cleaving ----------------------------------------
-  { key: 'hatchet', name: 'Hatchet', kind: 'axe', icon: 1457, dmg: [3, 7], speed: 1.08, innates: [null, trait('swift'), proc('bleed', 0.3)] },
-  { key: 'cleaver', name: 'Cleaver', kind: 'axe', icon: 1445, dmg: [4, 8], innates: [proc('bleed', 0.2), proc('bleed', 0.3), proc('bleed', 0.4, 1.3)] },
-  { key: 'axe', name: 'Axe', kind: 'axe', icon: 1458, dmg: [4, 9], innates: [null, trait('berserk'), trait('berserk', 1.5)] },
-  { key: 'broadaxe', name: 'Broadaxe', kind: 'axe', icon: 1461, dmg: [5, 10], innates: [null, trait('knockback'), proc('stun', 0.2)] },
-  { key: 'battleaxe', name: 'Battleaxe', kind: 'axe', icon: 1465, dmg: [6, 11], speed: 0.9, innates: [trait('cleave', 0.6), trait('cleave'), proc('bleed', 0.35, 1.5)] },
-  { key: 'greataxe', name: 'Greataxe', kind: 'axe', icon: 1466, dmg: [7, 12], speed: 0.8, innates: [trait('cleave', 0.8), trait('cleave', 1.2), trait('cleave', 1.6)] },
+  { key: 'hatchet', desc: "A one-handed axe that swings faster than its family: the axe for a light arm.", name: 'Hatchet', kind: 'axe', icon: 1457, dmg: [3, 7], speed: 1.08, innates: [null, trait('swift'), proc('bleed', 0.3)] },
+  { key: 'cleaver', desc: "A butcher’s edge: it bleeds, and in every tier it bleeds harder.", name: 'Cleaver', kind: 'axe', icon: 1445, dmg: [4, 8], innates: [proc('bleed', 0.2), proc('bleed', 0.3), proc('bleed', 0.4, 1.3)] },
+  { key: 'axe', desc: "The plain axe, angrier when its wielder is wounded.", name: 'Axe', kind: 'axe', icon: 1458, dmg: [4, 9], innates: [null, trait('berserk'), trait('berserk', 1.5)] },
+  { key: 'broadaxe', desc: "Wide and heavy; it shoves, and in crystal it stuns.", name: 'Broadaxe', kind: 'axe', icon: 1461, dmg: [5, 10], innates: [null, trait('knockback'), proc('stun', 0.2)] },
+  { key: 'battleaxe', desc: "A war axe that cleaves the pack and, in crystal, opens deep wounds.", name: 'Battleaxe', kind: 'axe', icon: 1465, dmg: [6, 11], speed: 0.9, innates: [trait('cleave', 0.6), trait('cleave'), proc('bleed', 0.35, 1.5)] },
+  { key: 'greataxe', desc: "The heaviest axe. Slow, devastating, and it cleaves in every tier.", name: 'Greataxe', kind: 'axe', icon: 1466, dmg: [7, 12], speed: 0.8, innates: [trait('cleave', 0.8), trait('cleave', 1.2), trait('cleave', 1.6)] },
   // ---- Maces: the stunners --------------------------------------------------
-  { key: 'hammer', name: 'Hammer', kind: 'mace', icon: 1469, dmg: [3, 8], innates: [proc('stun', 0.12), proc('stun', 0.18), proc('stun', 0.25, 1.2)] },
-  { key: 'maul', name: 'Maul', kind: 'mace', icon: 1471, dmg: [5, 10], speed: 0.85, innates: [trait('knockback', 0.7), trait('knockback', 1.2), proc('stun', 0.3, 1.3)] },
-  { key: 'flail', name: 'Flail', kind: 'mace', icon: 1478, dmg: [4, 9], innates: [null, proc('bleed', 0.25), proc('shock', 0.25)] },
-  { key: 'morningstar', name: 'Morningstar', kind: 'mace', icon: 1506, dmg: [4, 10], innates: [proc('stun', 0.1), proc('bleed', 0.25), proc('stun', 0.25)] },
-  { key: 'warpick', name: 'Warpick', kind: 'mace', icon: 1473, dmg: [4, 8], crit: 0.05, innates: [trait('precise', 0.6), trait('precise'), trait('precise', 1.5)] },
+  { key: 'hammer', desc: "Every mace staggers; the hammer stuns outright, and more with each tier.", name: 'Hammer', kind: 'mace', icon: 1469, dmg: [3, 8], innates: [proc('stun', 0.12), proc('stun', 0.18), proc('stun', 0.25, 1.2)] },
+  { key: 'maul', desc: "A sledge that throws foes across the room and, in crystal, leaves them reeling.", name: 'Maul', kind: 'mace', icon: 1471, dmg: [5, 10], speed: 0.85, innates: [trait('knockback', 0.7), trait('knockback', 1.2), proc('stun', 0.3, 1.3)] },
+  { key: 'flail', desc: "A chained head that bleeds in gilded and arcs lightning in crystal.", name: 'Flail', kind: 'mace', icon: 1478, dmg: [4, 9], innates: [null, proc('bleed', 0.25), proc('shock', 0.25)] },
+  { key: 'morningstar', desc: "Spikes and weight: a stunner that learns to bleed along the way.", name: 'Morningstar', kind: 'mace', icon: 1506, dmg: [4, 10], innates: [proc('stun', 0.1), proc('bleed', 0.25), proc('stun', 0.25)] },
+  { key: 'warpick', desc: "A beaked pick with a high crit and a Precision innate at every tier.", name: 'Warpick', kind: 'mace', icon: 1473, dmg: [4, 8], crit: 0.05, innates: [trait('precise', 0.6), trait('precise'), trait('precise', 1.5)] },
   // ---- Polearms: reach -----------------------------------------------------------
-  { key: 'spear', name: 'Spear', kind: 'polearm', icon: 1452, dmg: [4, 7], innates: [null, trait('swift'), proc('bleed', 0.25)] },
-  { key: 'pike', name: 'Pike', kind: 'polearm', icon: 1477, dmg: [5, 8], reach: 0.3, innates: [trait('knockback', 0.6), trait('knockback'), proc('stun', 0.2)] },
-  { key: 'glaive', name: 'Glaive', kind: 'polearm', icon: 1476, dmg: [5, 9], innates: [trait('cleave', 0.6), trait('cleave'), trait('cleave', 1.4)] },
-  { key: 'sickle', name: 'Sickle', kind: 'polearm', icon: 1451, dmg: [3, 7], speed: 1.1, reach: -0.5, innates: [proc('bleed', 0.2), trait('lifeOnKill'), trait('lifeOnKill', 1.5)] },
+  { key: 'spear', desc: "The reach weapon. Fast for a polearm; quick and, in crystal, bleeding.", name: 'Spear', kind: 'polearm', icon: 1452, dmg: [4, 7], innates: [null, trait('swift'), proc('bleed', 0.25)] },
+  { key: 'pike', desc: "The longest reach in the crypt: it shoves, and in crystal it stuns, before they close.", name: 'Pike', kind: 'polearm', icon: 1477, dmg: [5, 8], reach: 0.3, innates: [trait('knockback', 0.6), trait('knockback'), proc('stun', 0.2)] },
+  { key: 'glaive', desc: "A blade on a pole that sweeps a second foe at every tier.", name: 'Glaive', kind: 'polearm', icon: 1476, dmg: [5, 9], innates: [trait('cleave', 0.6), trait('cleave'), trait('cleave', 1.4)] },
+  { key: 'sickle', desc: "Short for a polearm and quick; it bleeds, and in the higher tiers it reaps life from every kill.", name: 'Sickle', kind: 'polearm', icon: 1451, dmg: [3, 7], speed: 1.1, reach: -0.5, innates: [proc('bleed', 0.2), trait('lifeOnKill'), trait('lifeOnKill', 1.5)] },
   // ---- Bows -------------------------------------------------------------------
-  { key: 'shortbow', name: 'Shortbow', kind: 'bow', icon: 1481, dmg: [3, 6], speed: 1.1, innates: [null, trait('swift'), proc('poison', 0.3)] },
-  { key: 'longbow', name: 'Longbow', kind: 'bow', icon: 1514, dmg: [4, 7], reach: 0.5, innates: [null, trait('precise'), proc('burn', 0.3)] },
-  { key: 'warbow', name: 'Warbow', kind: 'bow', icon: 1515, dmg: [5, 9], speed: 0.9, innates: [trait('knockback', 0.6), trait('knockback'), proc('shock', 0.3)] },
-  { key: 'crossbow', name: 'Crossbow', kind: 'bow', icon: 1482, dmg: [5, 8], speed: 0.85, innates: [proc('stun', 0.12), proc('stun', 0.2), proc('stun', 0.28, 1.2)] },
-  { key: 'recurve', name: 'Recurve Bow', kind: 'bow', icon: 1516, dmg: [4, 7], crit: 0.04, innates: [trait('seeker', 0.8), trait('seeker'), trait('seeker', 1.5)] },
+  { key: 'shortbow', desc: "A quick bow for a running fight; its crystal tier poisons.", name: 'Shortbow', kind: 'bow', icon: 1481, dmg: [3, 6], speed: 1.1, innates: [null, trait('swift'), proc('poison', 0.3)] },
+  { key: 'longbow', desc: "Half a tile more reach and a keen eye; its crystal tier burns.", name: 'Longbow', kind: 'bow', icon: 1514, dmg: [4, 7], reach: 0.5, innates: [null, trait('precise'), proc('burn', 0.3)] },
+  { key: 'warbow', desc: "A heavy draw that throws foes back and, in crystal, calls lightning.", name: 'Warbow', kind: 'bow', icon: 1515, dmg: [5, 9], speed: 0.9, innates: [trait('knockback', 0.6), trait('knockback'), proc('shock', 0.3)] },
+  { key: 'crossbow', desc: "Slow to wind, and the bolt stuns.", name: 'Crossbow', kind: 'bow', icon: 1482, dmg: [5, 8], speed: 0.85, innates: [proc('stun', 0.12), proc('stun', 0.2), proc('stun', 0.28, 1.2)] },
+  { key: 'recurve', desc: "The hunter’s bow: high crit and Seeker at every tier — rarer finds.", name: 'Recurve Bow', kind: 'bow', icon: 1516, dmg: [4, 7], crit: 0.04, innates: [trait('seeker', 0.8), trait('seeker'), trait('seeker', 1.5)] },
   // ---- Wands, scepters, rods -------------------------------------------------------
-  { key: 'wand', name: 'Wand', kind: 'wand', icon: 1489, dmg: [3, 5], speed: 1.05, innates: [null, trait('manaOnHit'), proc('shock', 0.3)] },
-  { key: 'scepter', name: 'Scepter', kind: 'wand', icon: 1490, dmg: [3, 6], innates: [trait('manaOnHit', 0.6), trait('manaOnHit'), trait('manaOnHit', 1.5)] },
-  { key: 'rod', name: 'Rod', kind: 'wand', icon: 1493, dmg: [4, 6], innates: [proc('burn', 0.2), proc('burn', 0.3), proc('burn', 0.4, 1.3)] },
-  { key: 'orbrod', name: 'Orb Rod', kind: 'wand', icon: 1498, dmg: [4, 7], speed: 0.95, innates: [proc('chill', 0.2), proc('chill', 0.3), proc('chill', 0.4, 1.2)] },
+  { key: 'wand', desc: "A quick focus; its gilded tier siphons mana, its crystal tier shocks.", name: 'Wand', kind: 'wand', icon: 1489, dmg: [3, 5], speed: 1.05, innates: [null, trait('manaOnHit'), proc('shock', 0.3)] },
+  { key: 'scepter', desc: "The caster’s sustain: every hit returns mana, more with each tier.", name: 'Scepter', kind: 'wand', icon: 1490, dmg: [3, 6], innates: [trait('manaOnHit', 0.6), trait('manaOnHit'), trait('manaOnHit', 1.5)] },
+  { key: 'rod', desc: "A fire focus in every tier, hotter as it climbs.", name: 'Rod', kind: 'wand', icon: 1493, dmg: [4, 6], innates: [proc('burn', 0.2), proc('burn', 0.3), proc('burn', 0.4, 1.3)] },
+  { key: 'orbrod', desc: "A frost focus: it chills, and in every tier it chills harder.", name: 'Orb Rod', kind: 'wand', icon: 1498, dmg: [4, 7], speed: 0.95, innates: [proc('chill', 0.2), proc('chill', 0.3), proc('chill', 0.4, 1.2)] },
 ];
 
 const weapon = (id: string, name: string, kind: WeaponKind, icon: number, band: Band, dmg: [number, number], color: number, extra: Partial<ItemDef> = {}): ItemDef => ({
@@ -126,6 +128,7 @@ for (let t = 0; t < TIERS.length; t++) {
         critBonus: s.crit,
         reachBonus: s.reach,
         innate,
+        desc: `${s.desc} ${tier.name} tier: iLvl ${tier.band[0]}–${tier.band[1]}.`,
       }),
     );
   }
@@ -257,11 +260,11 @@ const JEWELRY: ItemDef[] = [
 
 /** Crafting materials live in the hero's pouch, never in the pack. */
 export const MATERIALS: ItemDef[] = [
-  { id: 'iron_scrap', name: 'Iron Scraps', slot: 'material', rarity: 'common', icon: 'raven209', value: 6, color: 0x9a9a9a },
-  { id: 'arcane_dust', name: 'Arcane Dust', slot: 'material', rarity: 'uncommon', icon: 'raven187', value: 25, color: 0x5f7fdf },
-  { id: 'essence', name: 'Essence', slot: 'material', rarity: 'rare', icon: 'raven170', value: 110, color: 0x5fd8c8 },
-  { id: 'alloy_shard', name: 'Alloy Shards', slot: 'material', rarity: 'epic', icon: 'raven213', value: 420, color: 0xc8a0ff },
-  { id: 'catalyst', name: 'Catalyst', slot: 'material', rarity: 'legendary', icon: 'raven172', value: 1500, color: 0xffb347 },
+  { id: 'iron_scrap', desc: "The forge’s bread: from every salvage and every scrap-pack on the armorer’s counter. Five transmute to one Arcane Dust.", name: 'Iron Scraps', slot: 'material', rarity: 'common', icon: 'raven209', value: 6, color: 0x9a9a9a },
+  { id: 'arcane_dust', desc: "Ground from uncommon and better gear. Reinforcement from +4 and every enchantment ask for it. Five make an Essence.", name: 'Arcane Dust', slot: 'material', rarity: 'uncommon', icon: 'raven187', value: 25, color: 0x5f7fdf },
+  { id: 'essence', desc: "The heart of rare gear. Refining, enchanting and reinforcement past +8 spend it. Four make an Alloy Shard.", name: 'Essence', slot: 'material', rarity: 'rare', icon: 'raven170', value: 110, color: 0x5fd8c8 },
+  { id: 'alloy_shard', desc: "Epic and better salvage. Three make a Catalyst.", name: 'Alloy Shards', slot: 'material', rarity: 'epic', icon: 'raven213', value: 420, color: 0xc8a0ff },
+  { id: 'catalyst', desc: "One per attempt from +13 to +15, and one to forge a unique. The rarest thing in the pouch.", name: 'Catalyst', slot: 'material', rarity: 'legendary', icon: 'raven172', value: 1500, color: 0xffb347 },
 ];
 
 export const MATERIAL_ORDER: readonly string[] = ['iron_scrap', 'arcane_dust', 'essence', 'alloy_shard', 'catalyst'];
@@ -271,12 +274,12 @@ export const MATERIAL_ORDER: readonly string[] = ['iron_scrap', 'arcane_dust', '
  * belt; healing draughts share a five-second cooldown, the rest a short one.
  */
 export const DRAUGHTS: ItemDef[] = [
-  { id: 'rejuvenation', name: 'Draught of Rejuvenation', slot: 'consumable', rarity: 'uncommon', icon: 'raven122', value: 95, use: { heal: 0.35, resource: 0.35 }, color: 0x9a5ad8 },
-  { id: 'potion_haste', name: 'Draught of Haste', slot: 'consumable', rarity: 'uncommon', icon: 'raven121', value: 120, use: { haste: 480 }, color: 0x7fd67f },
-  { id: 'potion_stone', name: 'Draught of Stone', slot: 'consumable', rarity: 'uncommon', icon: 'raven123', value: 120, use: { stone: 480 }, color: 0x5f7fdf },
-  { id: 'potion_might', name: 'Draught of Might', slot: 'consumable', rarity: 'rare', icon: 'raven269', value: 150, use: { might: 600 }, color: 0xe0803a },
-  { id: 'greater_health', name: 'Greater Healing Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven270', value: 80, use: { heal: 0.8 }, color: 0xc83030 },
-  { id: 'greater_mana', name: 'Greater Mana Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven68', value: 80, use: { resource: 1 }, color: 0x4a6ad8 },
+  { id: 'rejuvenation', desc: "Life and resource together, a third each. Counts as a healing draught for the cooldown.", name: 'Draught of Rejuvenation', slot: 'consumable', rarity: 'uncommon', icon: 'raven122', value: 95, use: { heal: 0.35, resource: 0.35 }, color: 0x9a5ad8 },
+  { id: 'potion_haste', desc: "Thirty percent faster on your feet for eight seconds. Kiting, fleeing, and reaching the stairs first.", name: 'Draught of Haste', slot: 'consumable', rarity: 'uncommon', icon: 'raven121', value: 120, use: { haste: 480 }, color: 0x7fd67f },
+  { id: 'potion_stone', desc: "Forty percent of every blow turned for eight seconds; stacks under the 75% cap with Warding lines.", name: 'Draught of Stone', slot: 'consumable', rarity: 'uncommon', icon: 'raven123', value: 120, use: { stone: 480 }, color: 0x5f7fdf },
+  { id: 'potion_might', desc: "A quarter more damage from everything for ten seconds. Drink it before the warden, not after.", name: 'Draught of Might', slot: 'consumable', rarity: 'rare', icon: 'raven269', value: 150, use: { might: 600 }, color: 0xe0803a },
+  { id: 'greater_health', desc: "Eight tenths of your life back. The same five-second cooldown as any healing draught.", name: 'Greater Healing Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven270', value: 80, use: { heal: 0.8 }, color: 0xc83030 },
+  { id: 'greater_mana', desc: "Your whole pool refilled. The same two-second cooldown as any resource draught.", name: 'Greater Mana Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven68', value: 80, use: { resource: 1 }, color: 0x4a6ad8 },
 ];
 
 /** RECIPE SCROLLS (it.80): read one to learn an enchantment for the forge. */
@@ -289,6 +292,7 @@ export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r) => ({
   value: 220,
   use: { recipe: r.key },
   color: 0xd8c890,
+  desc: `${r.desc} Read it to learn the recipe forever; then lay it on a weapon at the camp forge.`,
 }));
 
 export const RAVEN_ITEMS: ItemDef[] = [...WEAPONS, ...UNIQUES, ...ARMOR, ...JEWELRY, ...MATERIALS, ...DRAUGHTS, ...RECIPES];

@@ -35,6 +35,7 @@ import { ITEMS, itemValue, type ItemDef, type Rarity } from '@/items/catalog';
 import { decodeItemId, encodeItemId, ilvlForDepth, itemDef, rollGear, UPGRADE_MAX } from '@/items/instance';
 import { rollAffixes } from '@/items/affixes';
 import { gearBases } from '@/items/registry';
+import { ENCHANTS } from '@/items/effects';
 import { mulberry32, type Rng } from '@/utils/rng';
 
 export type MaterialId = 'iron_scrap' | 'arcane_dust' | 'essence' | 'alloy_shard' | 'catalyst';
@@ -136,6 +137,23 @@ export function reinforceCost(def: ItemDef): { next: number; chance: number; cos
   return { next, chance: REINFORCE_CHANCE[next], cost, risk: next >= 8 };
 }
 
+/** ENCHANTING (it.80): the recipe's essence and dust, and 30% of the weapon's value in gold. */
+export function enchantCost(def: ItemDef, key: string): Cost | null {
+  const r = ENCHANTS[key];
+  if (!r || def.slot !== 'mainHand') return null;
+  return { essence: r.essence, arcane_dust: r.dust, gold: Math.round(itemValue(def) * 0.3) };
+}
+
+/** REINFORCING WITH GOLD ONLY (it.80): the materials' worth two and a half times, on top of the gold. */
+export function goldOnlyCost(cost: Cost): number {
+  let gold = cost.gold ?? 0;
+  for (const [k, n] of Object.entries(cost)) {
+    if (k === 'gold' || !n) continue;
+    gold += Math.round((ITEMS[k]?.value ?? 0) * n * 2.5);
+  }
+  return gold;
+}
+
 export function canAfford(p: Player, cost: Cost): boolean {
   if ((cost.gold ?? 0) > p.gold) return false;
   for (const [k, n] of Object.entries(cost)) {
@@ -186,7 +204,7 @@ export class CraftingEngine {
   /** Apply one tick's commands (shares the drained array with the other systems). */
   apply(commands: ReadonlyArray<InputCommand>): void {
     for (const cmd of commands) {
-      if (cmd.type !== 'SALVAGE' && cmd.type !== 'FORGE' && cmd.type !== 'TRANSMUTE' && cmd.type !== 'REROLL' && cmd.type !== 'REINFORCE') continue;
+      if (cmd.type !== 'SALVAGE' && cmd.type !== 'FORGE' && cmd.type !== 'TRANSMUTE' && cmd.type !== 'REROLL' && cmd.type !== 'REINFORCE' && cmd.type !== 'ENCHANT') continue;
       const p = this.deps.getPlayer(cmd.playerId);
       if (!p) continue;
       if (!this.deps.inTown()) {
@@ -207,7 +225,10 @@ export class CraftingEngine {
           this.reroll(p, cmd.backpackIndex, cmd.affixIndex);
           break;
         case 'REINFORCE':
-          this.reinforce(p, cmd.backpackIndex);
+          this.reinforce(p, cmd.backpackIndex, !!cmd.payGold);
+          break;
+        case 'ENCHANT':
+          this.enchant(p, cmd.backpackIndex, cmd.key);
           break;
       }
     }
@@ -271,15 +292,37 @@ export class CraftingEngine {
     this.done(`Refined: ${made?.affixLines?.[affixIndex] ?? 'a new line'}.`, next);
   }
 
-  private reinforce(p: Player, index: number): void {
+  private enchant(p: Player, index: number, key: string): void {
+    const id = p.backpack[index];
+    const def = itemDef(id);
+    const d = decodeItemId(id ?? '');
+    if (!def || !d) return;
+    if (!p.recipes.has(key)) return this.refuse('You have not learned that recipe.');
+    const cost = enchantCost(def, key);
+    if (!cost) return this.refuse('Only a weapon takes an enchantment.');
+    if (!canAfford(p, cost)) return this.refuse(`Enchanting needs ${costText(cost)}.`);
+    pay(p, cost);
+    const next = encodeItemId({ ...d, enchant: key });
+    p.backpack[index] = next;
+    this.done(`${ENCHANTS[key].name} laid on ${itemDef(next)?.name ?? def.name}.`, next);
+  }
+
+  private reinforce(p: Player, index: number, payGold: boolean): void {
     const id = p.backpack[index];
     const def = itemDef(id);
     const d = decodeItemId(id ?? '');
     if (!def || !d) return;
     const plan = reinforceCost(def);
     if (!plan) return this.refuse('That cannot be reinforced further.');
-    if (!canAfford(p, plan.cost)) return this.refuse(`Reinforcing needs ${costText(plan.cost)}.`);
-    pay(p, plan.cost);
+    if (payGold) {
+      // THE FORGE'S PRICE (it.80): gold for everything, the catalyst included.
+      const gold = goldOnlyCost(plan.cost);
+      if (p.gold < gold) return this.refuse(`Reinforcing with gold alone needs ${gold} gold.`);
+      p.gold -= gold;
+    } else {
+      if (!canAfford(p, plan.cost)) return this.refuse(`Reinforcing needs ${costText(plan.cost)}.`);
+      pay(p, plan.cost);
+    }
     const roll = this.rand();
     if (roll < plan.chance) {
       const next = encodeItemId({ ...d, upgrade: plan.next });

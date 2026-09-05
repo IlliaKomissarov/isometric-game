@@ -17,6 +17,7 @@
 
 import type { EquipmentSlot } from '@/network/Serialization';
 import type { AffixRoll } from './affixes';
+import type { Effect } from './effects';
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
@@ -45,8 +46,8 @@ export interface ItemDef {
   rarity: Rarity;
   /** Merchant price in gold (derived from level/rarity when omitted). */
   value?: number;
-  /** Consumables (it.39): what using it does. Fractions of max. */
-  use?: { heal?: number; resource?: number; portal?: boolean };
+  /** Consumables (it.39; draughts it.80): what using it does. Fractions of max; buffs in ticks; a recipe key. */
+  use?: { heal?: number; resource?: number; portal?: boolean; haste?: number; stone?: number; might?: number; recipe?: string };
   /** Weapon damage roll range (classic-ARPG-style min–max, replaces bare fists). */
   minDamage?: number;
   maxDamage?: number;
@@ -64,6 +65,22 @@ export interface ItemDef {
   art?: string;
   /** Worn bonuses (rings, relics — it.42): fractions for dmg/dodge/regen, flat hp/armor. */
   bonus?: { hp?: number; dmg?: number; armor?: number; dodge?: number; regen?: number };
+
+  // ---- Weapon identity (it.80) ----
+  /** Swing-speed multiplier on the family's timing (1.1 = faster). */
+  speedMult?: number;
+  /** Added crit chance. */
+  critBonus?: number;
+  /** Added reach in tiles. */
+  reachBonus?: number;
+  /** The shape-and-tier innate effect (a proc or a trait). */
+  innate?: Effect;
+  /** Uniques carry a second innate. */
+  innate2?: Effect;
+  /** Derived instances: the enchantment key applied at the forge. */
+  enchant?: string;
+  /** Derived instances: every effect the weapon carries (innates + enchantment). */
+  effects?: Effect[];
 
   // ---- Registry bases (it.78) ----
   /** Item-level range the base drops in. */
@@ -220,6 +237,10 @@ export function statLine(def: ItemDef): string {
     if (def.bonus.dodge) parts.push(`+${Math.round(def.bonus.dodge * 100)}% Dodge`);
     if (def.bonus.regen) parts.push(`+${Math.round(def.bonus.regen * 100)}% Regeneration`);
   }
+  if (def.use?.haste) parts.push(`Haste for ${Math.round(def.use.haste / 60)} s`);
+  if (def.use?.stone) parts.push(`Stone skin for ${Math.round(def.use.stone / 60)} s`);
+  if (def.use?.might) parts.push(`Might for ${Math.round(def.use.might / 60)} s`);
+  if (def.use?.recipe) parts.push('Read to learn the enchantment');
   if (def.affixLines?.length) parts.push(...def.affixLines);
   return parts.join(' · ') || 'No Bonuses';
 }

@@ -642,6 +642,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] `ui/keepScroll.ts`: ten panels keep their scroll across a repaint (the skill tree on a phone)
 - [x] Ten-sheet phone-box probe; device matrix 74/74; clean build
 
+## Iteration 80 - The arsenal (2026-09-05)
+
+- [x] Thirty-seven weapon shapes x three tiers with distinct innates; twenty-two uniques with two
+- [x] `systems/Status.ts`: bleed, poison, burn, chill, shock, stun; traits in the player and combat
+- [x] Twelve enchantment recipes: scrolls, the alchemist, the forge's ENCHANT tab; PAY IN GOLD
+- [x] The forge's RECIPES book
+- [x] The belt: Q / R assignable, cooldowns, new draughts, hotbar and thumb faces
+- [x] Weapon rack as the forge prop; desktop bar column; harness checks; matrix 74/74
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

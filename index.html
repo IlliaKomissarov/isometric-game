@@ -4699,6 +4699,72 @@
       /* Touch: the cross is a thumb target, the sheet never hides it under the tray. */
       body.input-touch #settings-panel > h3.set-head .tp-close, body.input-touch #level-select > h3.lvl-head .tp-close { width: 44px; height: 44px; }
 
+      /* ---- 8a4. THE ARSENAL, THE BELT, THE RECIPE BOOK (it.80) ---------- */
+      /* Gear wears its level in the cell's corner. */
+      .inv-cell .inv-lvl { position: absolute; left: 2px; top: 1px; font-family: 'Cinzel', 'Georgia', serif; font-size: 9px; letter-spacing: 0; color: #e8dfc8; text-shadow: 0 1px 2px #000, 0 0 3px #000; line-height: 1; pointer-events: none; }
+      .inv-cell .inv-lvl b { color: #7fd67f; font-weight: 700; margin-left: 1px; }
+      /* The belt: a picker beside each key, a cooldown veil over the draught. */
+      #inv-panel .inv-belt-pick { width: 22px; height: 44px; padding: 0; border: 1px solid var(--frame-iron); background: rgba(9, 7, 12, 0.7); color: var(--frame-gold-hi, #e8cf8a); font-size: 12px; cursor: pointer; }
+      #inv-panel .inv-belt-pick.on { border-color: var(--frame-gold-hi, #e8cf8a); box-shadow: 0 0 8px rgba(200, 165, 88, 0.4); }
+      #inv-panel .inv-belt-slot .inv-cell .inv-cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(8, 6, 10, 0.72); pointer-events: none; transition: height 0.1s linear; }
+      #inv-panel .inv-belt-slot .inv-cell.inv-none { opacity: 0.45; }
+      #inv-panel .inv-belt-menu { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; padding: 8px; border: 1px solid var(--frame-gold, #c8a558); background: rgba(9, 7, 12, 0.92); }
+      #inv-panel .inv-belt-menu-title { font-family: 'Cinzel', 'Georgia', serif; font-size: 10px; letter-spacing: 0.2em; color: var(--frame-gold-hi, #e8cf8a); margin-bottom: 2px; }
+      #inv-panel .inv-belt-opt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--frame-iron); background: rgba(12, 10, 15, 0.6); color: var(--ink, #e8dfc8); font-family: 'Crimson Pro', 'Georgia', serif; font-size: 13px; cursor: pointer; text-align: left; }
+      #inv-panel .inv-belt-opt img { width: 24px; height: 24px; image-rendering: pixelated; }
+      #inv-panel .inv-belt-opt b { margin-left: auto; font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; }
+      #inv-panel .inv-belt-opt.inv-belt-clear { color: var(--ink-dim, #8f8677); justify-content: center; }
+      body.input-touch #inv-panel .inv-belt-opt { min-height: 44px; }
+      /* The belt on the hotbar. */
+      #skill-bar .belt-slot { margin-left: 6px; }
+      #skill-bar .belt-slot .skill-key { color: #e8cf8a; }
+      #skill-bar .belt-slot.poor .skill-glyph { opacity: 0.4; }
+      #skill-bar .belt-slot .belt-count { right: 3px; bottom: 3px; }
+      #skill-bar .belt-slot.empty .skill-glyph { opacity: 0.35; }
+      /* The touch draughts wear the belt's faces. */
+      /* The face fills the button's own box: no baseline gap, no growth (the matrix caught 3 px). */
+      #touch-controls .tc-use .tc-face-draught { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+      #touch-controls .tc-use .tc-face-draught img { display: block; width: 58%; height: 58%; object-fit: contain; image-rendering: pixelated; }
+      #touch-controls .tc-use .tc-count { position: absolute; right: 4px; bottom: 3px; font-family: 'Cinzel', 'Georgia', serif; font-size: 10px; font-style: normal; color: #e8dfc8; text-shadow: 0 1px 2px #000; }
+      #touch-controls .tc-use .tc-cd { position: absolute; inset: 0; border-radius: inherit; background: conic-gradient(rgba(8, 6, 10, 0.75) var(--cd, 0deg), transparent 0); pointer-events: none; }
+      #touch-controls .tc-use.empty { opacity: 0.45; }
+      /* The card's effect lines. */
+      .tip-affixes li.fx { color: #ffb347; }
+      .tip-affixes li.ench { color: #ff9ac8; }
+      /* The recipe book. */
+      .rb-col h4 { margin-top: 10px; }
+      .rb-odds { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+      .rb-odd { display: inline-flex; flex-direction: column; align-items: center; min-width: 44px; padding: 4px 6px; border: 1px solid var(--frame-iron); background: rgba(9, 7, 12, 0.7); font-family: 'Cinzel', 'Georgia', serif; font-size: 10.5px; color: var(--ink, #e8dfc8); }
+      .rb-odd b { font-size: 11px; color: var(--frame-gold-hi, #e8cf8a); }
+      .rb-odd i { font-style: normal; font-size: 8px; letter-spacing: 0.1em; color: var(--ink-dim, #8f8677); text-transform: uppercase; }
+      .rb-odd.safe { border-color: rgba(127, 214, 127, 0.5); }
+      .rb-odd.risky { border-color: rgba(232, 207, 138, 0.5); }
+      .rb-odd.grim { border-color: rgba(224, 106, 90, 0.6); }
+      .rb-line { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-family: 'Crimson Pro', 'Georgia', serif; font-size: 13px; color: var(--ink, #e8dfc8); border-bottom: 1px solid rgba(200, 165, 88, 0.12); }
+      .rb-line img { width: 22px; height: 22px; image-rendering: pixelated; }
+      .rb-line em { font-style: normal; color: var(--frame-gold, #c8a558); }
+      .rb-rar { text-transform: capitalize; color: var(--rar, #e8dfc8); min-width: 84px; }
+      .rb-card { display: flex; gap: 10px; align-items: flex-start; padding: 8px; margin: 4px 0; border: 1px solid var(--frame-iron); background: rgba(9, 7, 12, 0.6); }
+      .rb-card.known { border-color: var(--frame-gold, #c8a558); }
+      .rb-card img { width: 32px; height: 32px; image-rendering: pixelated; flex: none; }
+      .rb-card b { display: block; font-family: 'Cinzel', 'Georgia', serif; font-size: 12px; color: var(--frame-gold-hi, #e8cf8a); }
+      .rb-card span { display: block; font-family: 'Crimson Pro', 'Georgia', serif; font-size: 13px; color: #ffb347; }
+      .rb-card small { display: block; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 11.5px; color: var(--ink-dim, #8f8677); }
+      .craft-go-gold { margin-top: 4px; }
+      /* Long effect lines wrap inside the forge's rows; nothing scrolls sideways. */
+      .craft-cols { overflow-x: hidden; }
+      .craft-affix { flex-wrap: wrap; }
+      .craft-affix .tp-name { flex: 1 1 180px; min-width: 0; white-space: normal; }
+      .craft-affix .tp-name .tp-meta { white-space: normal; }
+      .craft-affix .craft-actions { margin-left: auto; }
+      /* The portal rite steps right of the six-slot bar (Q and R joined it). */
+      #tp-button { left: calc(50% + 254px); }
+      /* On a desktop the bar is a column beside the map, not under it: the inventory may rise. */
+      body:not(.input-touch):not(.tiny-height):not(.has-pad) #inv-panel:not(.fit-centred) { top: calc(var(--map-h) + 22px); max-height: calc(var(--app-h) - var(--map-h) - 34px); }
+      /* THE DESKTOP BAR (it.80): a column hugging the right edge under the chart. */
+      body:not(.input-touch):not(.tiny-height):not(.has-pad) #system-bar { grid-template-columns: auto; justify-items: end; gap: 6px; }
+      body:not(.input-touch):not(.tiny-height):not(.has-pad) #hud-tr { align-items: flex-end; }
+
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone
          the pad and the stick zone sat OVER the lower half of every window,

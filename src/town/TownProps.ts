@@ -227,10 +227,10 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'forge': {
-        // THE CAMP FORGE (it.78): the Raven anvil, ember-lit, with its own plate.
-        const spr = standing(p, 'wicon_raven125', 0.86);
-        if (spr) spr.scale.set(0.95);
-        glowAt(p.x, p.y, 0xff9a40, 0.4, 0.9, 8);
+        // THE CAMP FORGE (it.78, it.80): the weapon rack from the town's own
+        // prop set — the camp's arms bench, ember-lit by the fire beside it.
+        standing(p, 'weapon_rack', 0.9);
+        glowAt(p.x, p.y, 0xff9a40, 0.32, 0.9, 8);
         interactables.push({ id: nextId++, kind: 'forge', x: p.x + 0.5, y: p.y + 0.5, label: 'E · CAMP FORGE', tiles: [{ x: p.x, y: p.y }] });
         plate(p.x, p.y, 'THE CAMP FORGE', 60);
         break;

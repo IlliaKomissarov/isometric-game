@@ -16,7 +16,8 @@ import { audio } from '@/engine/AudioManager';
 import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
 import { itemValue, type ItemDef } from '@/items/catalog';
-import { itemDef } from '@/items/instance';
+import { decodeItemId, itemDef } from '@/items/instance';
+import { QUAFF_COOLDOWN, quaffCategory } from '@/systems/Inventory';
 import { MATERIAL_ORDER } from '@/items/registry';
 import type { EquipmentSlot } from '@/network/Serialization';
 
@@ -39,6 +40,9 @@ const SLOT_ORDER: ReadonlyArray<{ slot: EquipmentSlot; label: string; area: stri
 /** Cell content: the real pack icon, or a crisp generated pixel icon. */
 const iconHtml = (def: ItemDef): string => itemIconHtml(def, '', 'inv-pxicon');
 
+/** THE LEVEL ON THE CELL (it.80): gear wears its item level in the corner, and its reinforcement. */
+const lvlBadge = (def: ItemDef): string => (def.ilvl && def.slot !== 'consumable' && def.slot !== 'material' ? `<span class="inv-lvl">${def.ilvl}${def.upgrade ? `<b>+${def.upgrade}</b>` : ''}</span>` : '');
+
 /** The pack field (it.50): six across, eight down. */
 const PACK_COLS = 6;
 const PACK_SLOTS = 48;
@@ -54,8 +58,12 @@ export class InventoryUI {
   /** Interval driving the animated paperdoll while the panel is rendered. */
   private previewTimer: number | null = null;
   private readonly abort = new AbortController();
+  /** THE BELT CHOOSER (it.80): which key is picking a draught (null = closed). */
+  private beltPick: number | null = null;
+  private cdTimer: number | null = null;
   private readonly offChanged: () => void;
   private readonly offMaterials: () => void;
+  private readonly offBelt: () => void;
 
   constructor(
     private readonly player: Player,
@@ -92,6 +100,10 @@ export class InventoryUI {
 
     this.offChanged = eventBus.on('inventory:changed', () => this.render());
     this.offMaterials = eventBus.on('materials:changed', () => this.render());
+    this.offBelt = eventBus.on('belt:changed', () => {
+      this.beltPick = null;
+      this.render();
+    });
     this.render();
   }
 
@@ -100,6 +112,12 @@ export class InventoryUI {
     this.panel.classList.toggle('open', this.visible);
     if (!this.visible) this.hideTooltip();
     audio.sfx(this.visible ? 'invOpen' : 'invClose');
+    if (this.cdTimer !== null) {
+      clearInterval(this.cdTimer);
+      this.cdTimer = null;
+    }
+    if (this.visible) this.cdTimer = window.setInterval(() => this.tickBelt(), 100);
+    else this.beltPick = null;
     if (this.visible) {
       const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
       closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
@@ -115,6 +133,8 @@ export class InventoryUI {
     this.abort.abort();
     this.offChanged();
     this.offMaterials();
+    this.offBelt();
+    if (this.cdTimer !== null) clearInterval(this.cdTimer);
     if (this.previewTimer !== null) clearInterval(this.previewTimer);
     this.panel.remove();
     this.tooltip.remove();
@@ -132,21 +152,40 @@ export class InventoryUI {
       const itemId = this.player.getEquipped(slot);
       const def = itemId ? itemDef(itemId) : undefined;
       const cell = def
-        ? `<button class="inv-cell inv-item rarity-${def.rarity}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}</button>`
+        ? `<button class="inv-cell inv-item rarity-${def.rarity}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}${lvlBadge(def)}</button>`
         : `<div class="inv-cell inv-cell-empty inv-cell-framed" data-slot="${slot}" style="background-image:url(${uiAssetUrl(`slots/${slot}.png`)})"></div>`;
       return `<div class="inv-slot-wrap" style="grid-area:${area}"><span class="inv-slot-label">${label}</span>${cell}</div>`;
     }).join('');
-    // BELT (it.42): the Q / R quick draughts, read straight from the pack.
-    const belt = (['health_potion', 'mana_potion'] as const)
-      .map((id, i) => {
-        const def = itemDef(id)!;
-        const count = this.player.backpack.filter((x) => x === id).length;
-        const firstIndex = this.player.backpack.indexOf(id);
-        return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${
-          count ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use" data-use="${firstIndex}" data-item="${def.id}">${iconHtml(def)}<span class="inv-qty">${count}</span></button>` : `<div class="inv-cell inv-cell-empty"><span class="inv-slot-ghost">${i === 0 ? '♥' : '◈'}</span></div>`
-        }</div>`;
+    // THE BELT (it.42, assignable it.80): Q and R hold whichever draught the
+    // hero chose; the chooser lists every draught in the pack.
+    const packBase = (id: string): string | null => decodeItemId(id)?.base ?? null;
+    const belt = [0, 1]
+      .map((i) => {
+        const base = this.player.belt[i];
+        const def = base ? itemDef(base) : undefined;
+        const count = base ? this.player.backpack.filter((x) => packBase(x) === base).length : 0;
+        const firstIndex = base ? this.player.backpack.findIndex((x) => packBase(x) === base) : -1;
+        const cat = def?.use ? quaffCategory(def.use) : null;
+        const cell = def
+          ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use${count ? '' : ' inv-none'}" ${count ? `data-use="${firstIndex}"` : ''} data-item="${def.id}">${iconHtml(def)}<span class="inv-qty">${count}</span><i class="inv-cd" data-cd="${cat ?? ''}"></i></button>`
+          : `<div class="inv-cell inv-cell-empty"><span class="inv-slot-ghost">${i === 0 ? '♥' : '◈'}</span></div>`;
+        return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${cell}<button class="inv-belt-pick${this.beltPick === i ? ' on' : ''}" data-beltpick="${i}" title="Choose the draught for ${i === 0 ? 'Q' : 'R'}">▾</button></div>`;
       })
       .join('');
+    let beltMenu = '';
+    if (this.beltPick !== null) {
+      const seen = new Map<string, ItemDef>();
+      for (const id of this.player.backpack) {
+        const def = itemDef(id);
+        const base = packBase(id);
+        if (!def || !base || def.slot !== 'consumable' || def.use?.portal || def.use?.recipe) continue;
+        if (!seen.has(base)) seen.set(base, def);
+      }
+      const rows = [...seen.entries()]
+        .map(([base, def]) => `<button class="inv-belt-opt rarity-${def.rarity}" data-beltset="${base}">${iconHtml(def)}<span>${def.name}</span><b>×${this.player.backpack.filter((x) => packBase(x) === base).length}</b></button>`)
+        .join('');
+      beltMenu = `<div class="inv-belt-menu"><span class="inv-belt-menu-title">DRAUGHT FOR ${this.beltPick === 0 ? 'Q' : 'R'}</span>${rows || '<span class="tp-empty">No draughts in the pack</span>'}<button class="inv-belt-opt inv-belt-clear" data-beltset="">Leave the key empty</button></div>`;
+    }
 
     // Backpack: duplicates STACK into one cell with a quantity badge;
     // the grid scrolls in its own compartment, never cutting items off.
@@ -164,7 +203,7 @@ export class InventoryUI {
       .map(
         ({ def, count, firstIndex }) =>
           `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
-             ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}
+             ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}${lvlBadge(def)}
            </button>`,
       )
       .join('');
@@ -187,7 +226,7 @@ export class InventoryUI {
       </div>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
-      <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts</span></div>
+      <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts · ▾ to assign</span></div>${beltMenu}
       <div class="inv-pouch">${pouch}</div>
       <div class="inv-divider"></div>
       <h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}</span>
@@ -283,10 +322,38 @@ export class InventoryUI {
         },
       );
     });
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-beltpick]').forEach((b) => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const i = Number(b.dataset.beltpick);
+        this.beltPick = this.beltPick === i ? null : i;
+        audio.sfx('uiClick');
+        this.render();
+      });
+    });
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-beltset]').forEach((b) => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.beltPick === null) return;
+        this.queue.enqueue({ type: 'SET_BELT', playerId: this.playerId, slot: this.beltPick, item: b.dataset.beltset || null });
+        audio.sfx('uiConfirm');
+      });
+    });
+    this.tickBelt();
     // A touch anywhere outside a cell folds a long-pressed card (it.76).
     this.panel.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch' && !(e.target as HTMLElement).closest('button.inv-item')) this.hideTooltip();
     }, { passive: true });
+  }
+
+  /** The belt's cooldown veils (it.80): the remaining share of each category's cooldown. */
+  private tickBelt(): void {
+    for (const veil of this.panel.querySelectorAll<HTMLElement>('.inv-cd[data-cd]')) {
+      const cat = veil.dataset.cd as keyof typeof QUAFF_COOLDOWN | '';
+      const left = cat ? (this.player.quaffCd.get(cat) ?? 0) : 0;
+      const h = cat && left > 0 ? `${Math.round((left / QUAFF_COOLDOWN[cat]) * 100)}%` : '0%';
+      if (veil.style.height !== h) veil.style.height = h;
+    }
   }
 
   /** The card: a worn piece on its own, a pack item beside what is worn in its slot. */

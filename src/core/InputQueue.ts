@@ -54,7 +54,11 @@ export type InputCommand =
   | { type: 'FORGE'; playerId: number; base: string }
   | { type: 'TRANSMUTE'; playerId: number; recipe: string; times?: number }
   | { type: 'REROLL'; playerId: number; backpackIndex: number; affixIndex: number }
-  | { type: 'REINFORCE'; playerId: number; backpackIndex: number }
+  | { type: 'REINFORCE'; playerId: number; backpackIndex: number; payGold?: boolean }
+  /** THE FORGE'S ENCHANTMENT (it.80): a learned recipe onto a weapon. */
+  | { type: 'ENCHANT'; playerId: number; backpackIndex: number; key: string }
+  /** THE BELT (it.80): which draught rides Q (slot 0) and R (slot 1). */
+  | { type: 'SET_BELT'; playerId: number; slot: number; item: string | null }
   /** CO-OP (it.59): where this player is aiming (world point) — swings and casts follow it on every peer. */
   | { type: 'AIM'; playerId: number; x: number; y: number }
   /** CO-OP (it.59): a floor change decided by the PARTY LEADER (solo: always honoured). */

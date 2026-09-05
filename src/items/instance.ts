@@ -27,6 +27,7 @@
 import { AFFIXES, foldAffixes, affixLine, rollAffixes, type AffixKey, type AffixRoll } from './affixes';
 import { ITEMS, RARITY_AFFIX_COUNT, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, type ItemDef, type Rarity, type UniqueEffect } from './catalog';
 import { RAVEN_ITEMS, gearBases } from './registry';
+import { ENCHANTS, ENCHANT_KEYS, effectAdjective, effectLine, type Effect } from './effects';
 import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 
 // The registry joins the catalog once, at load.
@@ -53,6 +54,8 @@ export interface Decoded {
   upgrade: number;
   affixes: AffixRoll[];
   count: number;
+  /** The forge's enchantment (it.80). */
+  enchant?: string;
 }
 
 /** Parse an id. A plain base id decodes to iLvl 1 / +0 / no affixes. */
@@ -69,7 +72,7 @@ export function decodeItemId(id: string): Decoded | null {
   const baseDef = ITEMS[base];
   if (!baseDef) return null;
   if (at < 0) return { base, ilvl: baseDef.ilvl ?? 1, rarity: baseDef.rarity, upgrade: 0, affixes: [], count };
-  const m = /^L(\d+)R(\d)U(\d+)(?:A([a-z0-9.]*))?$/.exec(core.slice(at + 1));
+  const m = /^L(\d+)R(\d)U(\d+)(?:A([a-z0-9.]*))?(?:E([a-z]+))?$/.exec(core.slice(at + 1));
   if (!m) return null;
   const rarity = RARITY_ORDER[Number(m[2])] ?? baseDef.rarity;
   const affixes: AffixRoll[] = [];
@@ -79,13 +82,15 @@ export function decodeItemId(id: string): Decoded | null {
       if (a && a[1] in AFFIXES) affixes.push({ key: a[1] as AffixKey, tier: Number(a[2]) });
     }
   }
-  return { base, ilvl: Math.max(1, Math.min(100, Number(m[1]) || 1)), rarity, upgrade: Math.max(0, Math.min(UPGRADE_MAX, Number(m[3]) || 0)), affixes, count };
+  const enchant = m[5] && m[5] in ENCHANTS ? m[5] : undefined;
+  return { base, ilvl: Math.max(1, Math.min(100, Number(m[1]) || 1)), rarity, upgrade: Math.max(0, Math.min(UPGRADE_MAX, Number(m[3]) || 0)), affixes, count, enchant };
 }
 
 export function encodeItemId(d: Omit<Decoded, 'count'> & { count?: number }): string {
   const r = RARITY_ORDER.indexOf(d.rarity);
   const a = d.affixes.length ? `A${d.affixes.map((x) => `${x.key}${Math.max(1, Math.min(5, x.tier))}`).join('.')}` : '';
-  const core = `${d.base}@L${d.ilvl}R${r}U${d.upgrade}${a}`;
+  const e = d.enchant && d.enchant in ENCHANTS ? `E${d.enchant}` : '';
+  const core = `${d.base}@L${d.ilvl}R${r}U${d.upgrade}${a}${e}`;
   return d.count && d.count > 1 ? `${core}#${d.count}` : core;
 }
 
@@ -127,8 +132,14 @@ function derive(id: string): ItemDef | null {
   if (!d) return null;
   const base = ITEMS[d.base];
   if (!base) return null;
-  // A plain catalog id IS its base — the classic relics keep their numbers.
-  if (!id.includes('@') && !id.includes('#')) return base;
+  // A plain catalog id IS its base — the classic relics keep their numbers
+  // (a registry base still lists its innate lines).
+  if (!id.includes('@') && !id.includes('#')) {
+    const fx: Effect[] = [];
+    if (base.innate) fx.push(base.innate);
+    if (base.innate2) fx.push(base.innate2);
+    return fx.length ? { ...base, effects: fx, affixLines: fx.map(effectLine) } : base;
+  }
   if (base.slot === 'material' || base.slot === 'consumable') {
     return { ...base, id, base: base.id, count: d.count, name: d.count > 1 ? `${base.name} ×${d.count}` : base.name };
   }
@@ -143,9 +154,17 @@ function derive(id: string): ItemDef | null {
   if (derivedBonus.dodge) bonus.dodge = (bonus.dodge ?? 0) + derivedBonus.dodge;
   const prefix = d.affixes.find((a) => AFFIXES[a.key].kind === 'prefix');
   const suffix = d.affixes.find((a) => AFFIXES[a.key].kind === 'suffix');
-  let name = base.uniqueOnly ? base.name : `${prefix ? `${AFFIXES[prefix.key].name} ` : ''}${base.name}${suffix ? ` ${AFFIXES[suffix.key].name}` : ''}`;
+  // THE EFFECTS (it.80): the shape's innate(s), then the forge's enchantment.
+  const effects: Effect[] = [];
+  if (base.innate) effects.push(base.innate);
+  if (base.innate2) effects.push(base.innate2);
+  const ench = d.enchant ? ENCHANTS[d.enchant] : undefined;
+  if (ench) effects.push(ench.effect);
+  const enchWord = ench ? `${effectAdjective(ench.effect)} ` : '';
+  let name = base.uniqueOnly ? `${enchWord}${base.name}` : `${enchWord}${prefix ? `${AFFIXES[prefix.key].name} ` : ''}${base.name}${suffix ? ` ${AFFIXES[suffix.key].name}` : ''}`;
   if (d.upgrade > 0) name += ` +${d.upgrade}`;
   const lines = d.affixes.map((a) => affixLine(a, power));
+  for (const fx of effects) lines.push(`${fx === ench?.effect ? 'Enchant: ' : ''}${effectLine(fx)}`);
   let unique: UniqueEffect | undefined;
   let passive: string | undefined;
   if (d.rarity === 'legendary' || d.rarity === 'mythic') {
@@ -169,6 +188,8 @@ function derive(id: string): ItemDef | null {
     affixLines: lines,
     unique,
     passive,
+    enchant: d.enchant,
+    effects,
     minDamage: scaled(base.minDamage, mult),
     maxDamage: scaled(base.maxDamage, mult),
     armor: scaled(base.armor, mult),
@@ -271,15 +292,33 @@ export function rollMaterial(rand: () => number, ilvl: number): string {
  * A slain foe's drop: nothing 40% of the time; otherwise gear (55%), a
  * draught (30%) or materials (15%). Luck grows with the level.
  */
-export function rollDrop(rand: () => number, ilvl: number): string | null {
+/** A draught: healing mostly, mana often, the rarer brews as the depths grow. */
+export function rollDraught(rand: () => number, ilvl: number): string {
+  const r = rand();
+  const deep = ilvl >= 9;
+  if (r < 0.42) return 'health_potion';
+  if (r < 0.64) return 'mana_potion';
+  if (r < 0.74) return 'elixir';
+  if (r < 0.82) return 'rejuvenation';
+  if (r < 0.88) return deep ? 'greater_health' : 'health_potion';
+  if (r < 0.92) return deep ? 'greater_mana' : 'mana_potion';
+  if (r < 0.95) return 'potion_haste';
+  if (r < 0.98) return 'potion_stone';
+  return 'potion_might';
+}
+
+export function rollDrop(rand: () => number, ilvl: number, luck?: number): string | null {
   if (rand() >= 0.6) return null;
   const kind = rand();
-  if (kind < 0.3) {
-    const r = rand();
-    return r < 0.55 ? 'health_potion' : r < 0.85 ? 'mana_potion' : 'elixir';
-  }
+  if (kind < 0.3) return rollDraught(rand, ilvl);
   if (kind < 0.45) return rollMaterial(rand, ilvl);
-  return rollGear(rand, ilvl, { luck: 1 + ilvl / 40 });
+  // RECIPE SCROLLS (it.80): one gear drop in twenty-five from depth II on.
+  const depth = 1 + Math.floor((ilvl - 1) / 2);
+  if (depth >= 2 && rand() < 0.04) {
+    const known = ENCHANT_KEYS.filter((k) => ENCHANTS[k].depth <= depth);
+    if (known.length) return `recipe_${known[Math.floor(rand() * known.length)]}`;
+  }
+  return rollGear(rand, ilvl, { luck: (1 + ilvl / 40) * (luck ?? 1) });
 }
 
 /** A chest's item: gear, never below uncommon. */

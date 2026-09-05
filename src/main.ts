@@ -61,6 +61,9 @@ import type { Entity } from '@/entities/Entity';
 import { ITEMS, overlayTextureFor, statLine } from '@/items/catalog';
 import { ilvlForDepth, itemDef, powerScale } from '@/items/instance';
 import { CraftingEngine } from '@/systems/Crafting';
+import { StatusSystem } from '@/systems/Status';
+import { QUAFF_COOLDOWN, quaffCategory } from '@/systems/Inventory';
+import { decodeItemId } from '@/items/instance';
 import { CampCraftingUI } from '@/ui/CampCrafting';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
@@ -123,6 +126,8 @@ interface World {
   projectiles: ProjectileSystem;
   enemies: EnemyPool;
   chests: ChestSystem;
+  /** THE STATUS ENGINE (it.80): bleed, poison, burn, chill, shock, stun on foes. */
+  status: StatusSystem;
   input: InputBindings;
   /** CO-OP (it.59): one locomotion system per party seat (null = empty seat). `movement` is the local hero's. */
   movements: Array<MovementSystem | null>;
@@ -843,6 +848,8 @@ async function boot(): Promise<void> {
         p.loadout[i] = id && p.unlockedSkills.has(id) ? id : null;
       });
       for (const [k, v] of Object.entries(ps.materials ?? {})) if (v > 0) p.addMaterial(k, v);
+      if (ps.belt) p.belt = [ps.belt[0] ?? null, ps.belt[1] ?? null];
+      for (const k of ps.recipes ?? []) p.recipes.add(k);
       for (const id of ps.backpack) if (itemDef(id)) p.addItem(id);
       for (const { itemId } of ps.equipped) {
         if (!itemDef(itemId)) continue;
@@ -1396,6 +1403,24 @@ async function boot(): Promise<void> {
           if (p === player) audio.sfx('potion');
           world.ambience.burst(p.pos.x, p.pos.y, 0x6f86b8, 10);
         },
+        buff: (kind, ticks) => {
+          if (p !== player) return;
+          audio.sfx('skillBuff');
+          const label = kind === 'haste' ? 'HASTE' : kind === 'stone' ? 'STONE SKIN' : 'MIGHT';
+          world.dmgText.show(p.pos.x, p.pos.y - 1.1, `${label} · ${Math.round(ticks / 60)} s`, 'crit');
+          world.ambience.burst(p.pos.x, p.pos.y, kind === 'haste' ? 0x7fd67f : kind === 'stone' ? 0x9fb4e8 : 0xffb347, 12);
+        },
+        learned: (key) => {
+          if (p !== player) return;
+          audio.sfx('uiConfirm');
+          world.dmgText.show(p.pos.x, p.pos.y - 1.1, `RECIPE LEARNED · ${key.toUpperCase()}`, 'crit');
+          tutorial.notify('recipe', 'A recipe learned — lay it on a weapon at the camp forge (ENCHANT).');
+        },
+        refuse: (reason) => {
+          if (p !== player) return;
+          audio.sfx('uiBack');
+          world.dmgText.show(p.pos.x, p.pos.y - 0.9, reason === 'nothing on the belt' ? 'NOTHING ON THE BELT · I' : reason === 'none left' ? 'NONE LEFT' : `NOT YET · ${reason}`, 'miss');
+        },
         portal: () => {
           if (coop && slot !== leaderSlot) {
             if (slot === localSlot) leaderOnlyNote();
@@ -1732,6 +1757,17 @@ async function boot(): Promise<void> {
         });
         return out;
       };
+      // THE STATUS ENGINE (it.80): the floor's wounds over time, fed by the weapons' procs.
+      const status = new StatusSystem({
+        enemyById: (id) => {
+          const e = state.getEntity(id);
+          return e instanceof Enemy ? e : null;
+        },
+        enemiesNear: (x, y, r) => (combat.enemiesNear?.(x, y, r) ?? []) as Enemy[],
+        combat: () => combat,
+        burst: (x, y, c, n) => ambience.burst(x, y, c, n),
+      });
+      combat.status = status;
       const projectiles = new ProjectileSystem(viewport, scene.isWalkable, seatPlayers, findEnemyAt);
       const vfx = new VfxSystem(viewport.objectLayer, viewport.ambienceLayer);
       const gore = new GoreSystem(viewport.groundLayer);
@@ -2058,6 +2094,7 @@ async function boot(): Promise<void> {
         arenaCleared: arenaAlreadyCleared, // SOFTLOCK FIX (it.44): a remembered clear stays cleared.
         arenaThreshold,
         goldPiles,
+        status,
         targetRing,
         playerHalo,
         dmgText,
@@ -2143,6 +2180,8 @@ async function boot(): Promise<void> {
         bestiary: Object.fromEntries([...p.bestiary].map(([k, v]) => [k, { ...v }])),
         goldCollected: p.goldCollected,
         materials: Object.fromEntries(p.materials),
+        belt: [...p.belt],
+        recipes: [...p.recipes],
       };
     };
     const saveNow = (): boolean => {
@@ -2308,6 +2347,7 @@ async function boot(): Promise<void> {
       player: hero,
       slot,
       combat: () => world.combat,
+      status: () => world.status,
       enemiesNear: (x, y, r) => {
         const out: Enemy[] = [];
         world.enemies.forEachActive((e) => {
@@ -2417,6 +2457,47 @@ async function boot(): Promise<void> {
     tpButton.title = 'Town Portal (T) — a rift home, free, 12 s cooldown';
     tpButton.addEventListener('click', () => inputQueue.enqueue({ type: 'TOWN_PORTAL', playerId: 0 }));
     document.body.appendChild(tpButton);
+    // THE BELT ON THE BAR (it.80): Q and R beside the skills, with the count and the cooldown.
+    const beltEls: Array<{ root: HTMLElement; count: HTMLElement; cd: HTMLElement; icon: string } | null> = [null, null];
+    const buildBelt = (): void => {
+      if (!skillBar) return;
+      for (const old of skillBar.querySelectorAll('.belt-slot')) old.remove();
+      for (let i = 0; i < 2; i++) {
+        const base = player.belt[i];
+        const def = base ? itemDef(base) : undefined;
+        const slot = document.createElement('div');
+        slot.className = `skill-slot belt-slot${def ? '' : ' empty'}`;
+        slot.innerHTML = def
+          ? `<div class="skill-glyph has-icon">${itemIconHtml(def, 'skill-icon', 'skill-icon')}</div><div class="skill-key">${i === 0 ? 'Q' : 'R'}</div><div class="skill-cost belt-count">0</div><div class="skill-cd"></div><div class="skill-cd-num"></div><div class="skill-tip"><b>${def.name}</b><span>${i === 0 ? 'Q' : 'R'} · assign in the inventory (▾)</span><p>${statLine(def)}</p></div>`
+          : `<div class="skill-glyph skill-empty"><span class="skill-lock" aria-hidden="true">◈</span></div><div class="skill-key">${i === 0 ? 'Q' : 'R'}</div><div class="skill-cd"></div><div class="skill-cd-num"></div><div class="skill-tip skill-tip-locked"><b>Empty</b><span>${i === 0 ? 'Q' : 'R'} has no draught</span><p>Open the inventory (I) and press ▾ beside the key to choose one.</p></div>`;
+        slot.addEventListener('click', () => inputQueue.enqueue({ type: 'USE_QUICK', playerId: 0, kind: i === 0 ? 'health' : 'mana' }));
+        skillBar.appendChild(slot);
+        beltEls[i] = def ? { root: slot, count: slot.querySelector('.belt-count') as HTMLElement, cd: slot.querySelector('.skill-cd') as HTMLElement, icon: def.icon ?? def.art ?? '' } : null;
+      }
+    };
+    const updateBelt = (): void => {
+      const faces: Array<{ icon: string; count: number; cdFrac: number } | null> = [null, null];
+      for (let i = 0; i < 2; i++) {
+        const base = player.belt[i];
+        const def = base ? itemDef(base) : undefined;
+        const el = beltEls[i];
+        if (!def) continue;
+        const count = player.backpack.filter((x) => decodeItemId(x)?.base === base).length;
+        const cat = def.use ? quaffCategory(def.use) : null;
+        const left = cat ? (player.quaffCd.get(cat) ?? 0) : 0;
+        const frac = cat && left > 0 ? Math.min(1, left / QUAFF_COOLDOWN[cat]) : 0;
+        faces[i] = { icon: itemIconHtml(def, 'tc-draught-icon', 'tc-draught-icon'), count, cdFrac: frac };
+        if (!el) continue;
+        const n = String(count);
+        if (el.count.textContent !== n) el.count.textContent = n;
+        el.root.classList.toggle('poor', count === 0);
+        const h = `${Math.round(frac * 100)}%`;
+        if (el.cd.style.height !== h) el.cd.style.height = h;
+        el.root.classList.toggle('cooling', frac > 0);
+      }
+      touchControls.setDraughts(faces);
+    };
+    subs.push(eventBus.on('belt:changed', () => buildBelt()));
     const buildSkillBar = (): void => {
       if (!skillBar) return;
       skillBar.innerHTML = '';
@@ -2453,6 +2534,7 @@ async function boot(): Promise<void> {
       );
     };
     buildSkillBar();
+    buildBelt();
     subs.push(eventBus.on('skills:changed', () => buildSkillBar()));
 
     // The resource gauge lives on the corner plate (it.66); this keeps the
@@ -2490,6 +2572,7 @@ async function boot(): Promise<void> {
         el.root.classList.toggle('poor', player.resource < def.cost);
         touchControls.setCooldown(i, cd > 0 ? Math.min(1, cd / def.cd) : 0, cd > 0 ? cd / 60 : 0, player.resource < def.cost);
       });
+      updateBelt();
     };
 
     // SMOOTH FLOOR TRANSITIONS (it.15): a quick fade-to-black covers the
@@ -3469,6 +3552,11 @@ async function boot(): Promise<void> {
         for (const sk of skillSystems) sk?.update();
         if (++sheetClock % 60 === 0) charSheetUI.tick();
         world.projectiles.update(dt);
+        world.status.update(); // Wounds over time (it.80).
+        // SEEKER (it.80): the party's best drop luck rides the floor's loot.
+        let seek = 0;
+        for (const seat of liveSeats()) seek = Math.max(seek, seat.player.traitPower('seeker'));
+        world.loot.luck = 1 + 0.25 * seek;
         // THE AUTHORITY (it.73): the leader samples what changed; every
         // other peer pulls its copy toward the leader's.
         hostSync?.sample(tick);
@@ -3572,7 +3660,7 @@ async function boot(): Promise<void> {
             pile.sprite.destroy();
             pile.glow.destroy();
             // GOLD ON THE CURVE (it.78): piles grow at half the power curve, prices at all of it.
-            const scooped = Math.round(pile.amount * (0.5 + 0.5 * powerScale(world.loot.ilvl)));
+            const scooped = Math.round(pile.amount * (0.5 + 0.5 * powerScale(world.loot.ilvl)) * (1 + 0.25 * hero.traitPower('fortune')));
             hero.gold += scooped;
             hero.goldCollected += scooped;
             if (hero === player) audio.sfx('gold');

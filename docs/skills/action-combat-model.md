@@ -55,3 +55,18 @@ is the attacker's own curve value (a hero's main-hand level, a foe's level);
 never flat subtraction again. Gold piles scale by half the curve, prices by
 all of it, reinforcement by the square of the level.
 
+## Weapon effects (it.80)
+
+A weapon carries `effects` (innates from its shape and tier, plus one forge
+enchantment). `CombatSystem.afterHit` rolls every proc on a landed primary
+strike (half chance on the arc) and hands the status to `StatusSystem.inflict`
+with the hit amount; traits are read as `Player.traitPower(key)`. Damage over
+time goes through `dealDamage({ pure: true })`: no armor, no echo, no cull, no
+procs. Statuses at power 1: bleed 60% / 4 s, poison 80% / 6 s, burn 50% / 3 s,
+chill 55% speed / 3 s, shock 45% to the nearest other foe in 3 tiles, stun
+0.8 s (wardens shrug off chill and stun). Traits: reaping 4% life a kill,
+siphon 3 resource a hit, cleave half to a second foe, impact +80% knockback,
+swiftness +8%, guardian +12% armor, fortune +25% gold, seeker luck ×1.25,
+berserk +18% under 40% life, precision crits 2.4×. The hero's hand adds +2%
+weapon damage a level.
+

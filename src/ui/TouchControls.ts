@@ -142,6 +142,8 @@ export class TouchControls {
   private lastDir = { x: 0, y: 0 };
   private attacking = false;
   private rowUse!: HTMLElement;
+  /** The two belt buttons (it.80): Q at 0, R at 1. */
+  private readonly draughtEls: Array<HTMLButtonElement | null> = [null, null];
   private readonly skillEls: HTMLButtonElement[] = [];
   private readonly skillFaces: Array<{ face: HTMLElement; cd: HTMLElement; num: HTMLElement }> = [];
   private idleTimer = 0;
@@ -174,8 +176,9 @@ export class TouchControls {
     const rowMain = this.row('tc-row-main', arc);
     this.rowUse = rowUse;
     this.mk(rowUse, 'tc-use tc-portal', 'TOWN PORTAL', ICON_PORTAL, () => this.tap({ type: 'TOWN_PORTAL', playerId: 0 }));
-    this.mk(rowUse, 'tc-use tc-mana', 'MANA DRAUGHT', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
-    this.mk(rowUse, 'tc-use tc-potion', 'HEALING DRAUGHT', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
+    // THE BELT (it.80): R rides the mana button, Q the potion button; their faces follow the belt.
+    this.draughtEls[1] = this.mk(rowUse, 'tc-use tc-mana', 'DRAUGHT R', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
+    this.draughtEls[0] = this.mk(rowUse, 'tc-use tc-potion', 'DRAUGHT Q', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
     for (let i = 0; i < 4; i++) {
       const el = this.mk(rowSkills, `tc-skill tc-skill-${i}`, `SKILL ${i + 1}`, String(i + 1), () => this.tap({ type: 'SKILL', playerId: 0, slot: i }));
       // The face: an icon (or glyph) under a cooldown veil with a readout.
@@ -288,6 +291,32 @@ export class TouchControls {
   }
 
   /** A cooldown sweep and its readout; `frac` 0..1 remaining, `secs` left. */
+  /**
+   * THE BELT'S FACES (it.80): the assigned draught's icon, how many are
+   * carried, and the cooldown sweep. The icon markup is rewritten only when
+   * the draught changes; the count and the veil write only on a change.
+   */
+  setDraughts(slots: Array<{ icon: string; count: number; cdFrac: number } | null>): void {
+    for (let i = 0; i < 2; i++) {
+      const el = this.draughtEls[i];
+      if (!el) continue;
+      const d = slots[i];
+      const key = d ? d.icon : '';
+      if (el.dataset.face !== key) {
+        el.dataset.face = key;
+        el.innerHTML = d ? `<span class="tc-face tc-face-draught">${d.icon}</span><i class="tc-cd"></i><em class="tc-count"></em>` : `<span>${ICON_FLASK}</span>`;
+      }
+      if (!d) continue;
+      const count = el.querySelector<HTMLElement>('.tc-count');
+      const n = String(d.count);
+      if (count && count.textContent !== n) count.textContent = n;
+      el.classList.toggle('empty', d.count === 0);
+      el.classList.toggle('cooling', d.cdFrac > 0);
+      const cd = el.querySelector<HTMLElement>('.tc-cd');
+      if (cd) cd.style.setProperty('--cd', `${Math.round(d.cdFrac * 360)}deg`);
+    }
+  }
+
   setCooldown(slot: number, frac: number, secs: number, poor: boolean): void {
     const el = this.skillEls[slot];
     const f = this.skillFaces[slot];

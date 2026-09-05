@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 79, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 80, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -46,6 +46,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `items/instance` / `affixes` / `registry` | catalog, the Raven icons | every derived item definition (`itemDef`), rolls | ids stay strings; stats derive, never store |
 | `systems/Crafting` / `ui/CampCrafting` | player pouch, `craft` RNG | salvage, forge, transmute, refine, reinforce | commands only; the panel reads |
 | `systems/Town` | `itemDef`, `rollGear`, tick | stock, buyback, restock clock | rolls seeded by (seed, serial) |
+| `systems/Status` / `items/effects` | combat, enemy pool | statuses on foes; traits read by the player | pure wounds through `dealDamage`; never a second hp mutator |
 | `ui/TouchControls` / `SystemBar` / `StatusFrame` / `Minimap` | layout, queue, player | commands, HUD | act on pointerup for windows |
 | `core/PerformanceScaler` | rAF timing | buffer resolution, `quality`, particle budget, colour grade gate | hysteresis, 2 s cooldown |
 | `persist/SaveGame` | player, floors, stash, stats | slots 1–3, co-op slots 11–14 | versioned schema |
@@ -119,6 +120,17 @@ Items examined and left as they are, with reasons:
 | Settings opened under the title menu (z 40 vs 85): CLOSE unreachable | High (UI) | `#settings-panel.open { z-index: 96 }` |
 | A phone sheet scrolled its heading and close cross away | High (touch) | sticky headings on every sheet; a cross on Settings and Depths |
 | Repaints discarded scroll offsets (spending a skill point snapped to the top) | Medium (touch) | `ui/keepScroll.ts` around ten panels' repaints |
+
+### Iteration 80 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| 60% of weapons were the same numbers behind another icon | High (design) | thirty-seven shapes with roles, three tiers with different innates, uniques with two |
+| Weapons did nothing but damage | Feature | six statuses and ten traits; twelve forge enchantments from found recipes |
+| Q and R were hard-wired to two potions, no cooldown, no sound | High (UX) | the assignable belt, category cooldowns, six new draughts, quaff cues |
+| Crafting rules lived only in code | Medium (UX) | the forge's RECIPES book |
+| The anvil prop was a pack icon | Low (art) | the town's weapon rack |
+| Desktop bar under the chart could crowd the corner | Low (UI) | a right-edge column; the inventory rises |
 
 ## 4. Known issues and regression log
 

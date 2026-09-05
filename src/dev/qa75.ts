@@ -386,6 +386,89 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       p.gold = goldBefore;
     }
 
+    // ---- the belt, the draughts, the enchantments, the effects (it.80) -------------------------
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      const p = g.player;
+      // The belt: assign a rejuvenation draught to Q, quaff it, and the cooldown refuses the next.
+      p.addItem('rejuvenation');
+      p.addItem('rejuvenation');
+      g.queue.enqueue({ type: 'SET_BELT', playerId: 0, slot: 0, item: 'rejuvenation' });
+      g.loop.step(2);
+      check('the belt takes a chosen draught on Q', p.belt[0] === 'rejuvenation', String(p.belt[0]));
+      p.hp = Math.max(1, Math.round(p.hpMax * 0.5));
+      const packBefore = p.backpack.length;
+      g.queue.enqueue({ type: 'USE_QUICK', playerId: 0, kind: 'health' });
+      g.loop.step(2);
+      check('Q quaffs the belt draught', p.backpack.length === packBefore - 1 && p.hp > p.hpMax * 0.5, `${p.hp}/${p.hpMax}`);
+      check('a healing draught starts its cooldown', (p.quaffCd.get('heal') ?? 0) > 200, String(p.quaffCd.get('heal')));
+      g.queue.enqueue({ type: 'USE_QUICK', playerId: 0, kind: 'health' });
+      g.loop.step(2);
+      check('the cooldown refuses a second quaff', p.backpack.length === packBefore - 1);
+      // A recipe scroll: read it, then enchant a weapon at the forge, then reinforce with gold alone.
+      p.addItem('recipe_flame');
+      const scrollIdx = p.backpack.indexOf('recipe_flame');
+      g.queue.enqueue({ type: 'USE_ITEM', playerId: 0, backpackIndex: scrollIdx });
+      g.loop.step(2);
+      check('a recipe scroll teaches the enchantment', p.recipes.has('flame'));
+      p.addItem('steel_saber@L4R2U0Astr1.crt1');
+      p.addMaterial('essence', 6);
+      p.addMaterial('arcane_dust', 12);
+      p.addMaterial('iron_scrap', 20);
+      const goldBefore2 = p.gold;
+      p.gold = Math.max(p.gold, 3000);
+      const saberIdx = p.backpack.findIndex((id: string) => id.startsWith('steel_saber'));
+      g.queue.enqueue({ type: 'ENCHANT', playerId: 0, backpackIndex: saberIdx, key: 'flame' });
+      g.loop.step(2);
+      const { itemDef } = await import('@/items/instance');
+      const saber = itemDef(p.backpack[saberIdx]);
+      check('the forge lays the enchantment', p.backpack[saberIdx].includes('Eflame') && !!saber?.effects?.some((e: { proc?: { status: string } }) => e.proc?.status === 'burn'), p.backpack[saberIdx]);
+      check('an enchanted weapon says so in its name and lines', !!saber && saber.name.startsWith('Flaming') && (saber.affixLines ?? []).some((l: string) => l.startsWith('Enchant')), saber?.name);
+      const scrapBefore = p.materials.get('iron_scrap') ?? 0;
+      const goldMid = p.gold;
+      g.queue.enqueue({ type: 'REINFORCE', playerId: 0, backpackIndex: saberIdx, payGold: true });
+      g.loop.step(2);
+      check('reinforcing with gold alone spends gold, not scraps', p.backpack[saberIdx].includes('U1') && (p.materials.get('iron_scrap') ?? 0) === scrapBefore && p.gold < goldMid, p.backpack[saberIdx]);
+      // The forge's book and the enchant tab open and fit.
+      g.craftUI.open('recipes');
+      await wait(60);
+      check('the recipe book opens', !!document.querySelector('#craft-panel.open .rb-odds'));
+      check('the recipe book fits the screen', inside(document.getElementById('craft-panel')));
+      g.craftUI.close();
+      g.craftUI.open('enchant');
+      await wait(60);
+      check('the enchant tab lists weapons', !!document.querySelector('#craft-panel.open [data-pick]'));
+      g.craftUI.close();
+      p.gold = goldBefore2;
+      // Weapon identity: a steel saber and a crystal saber are not the same weapon.
+      const a = itemDef('steel_saber');
+      const b = itemDef('crystal_saber');
+      check('tiers differ in their innates', !!a?.effects?.length && !!b?.effects?.length && JSON.stringify(a.effects) !== JSON.stringify(b.effects));
+      // Statuses on a foe: a floor the session has not cleared yet.
+      await g.travel(6);
+      await until(() => game() && game().floor === 6, 12000);
+      g = game();
+      await fadeClear();
+      g.loop.step(30);
+      const foe = foes(g).find((e: { hp: number }) => e.hp > 0);
+      if (foe) {
+        const hpBefore = foe.hp;
+        g.status.inflict(foe, { status: 'bleed', chance: 1, power: 1 }, 40, g.player.id);
+        g.loop.step(70);
+        check('a bleed bites over time', foe.hp < hpBefore || foe.action === 'dead', `${hpBefore} -> ${foe.hp}`);
+        const foe2 = foes(g).find((e: { hp: number; id: number }) => e.hp > 0 && e.id !== foe.id);
+        if (foe2) {
+          g.status.inflict(foe2, { status: 'chill', chance: 1, power: 1 }, 10, g.player.id);
+          check('a chill slows the foe', foe2.chillTicks > 0 && foe2.chillFactor < 1, `${foe2.chillTicks} ${foe2.chillFactor}`);
+        }
+      } else check('a foe stands to test statuses', false, 'no foe');
+    }
+
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
     {
       g.player.addItem('soldier_blade');

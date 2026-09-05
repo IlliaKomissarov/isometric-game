@@ -76,7 +76,8 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
     `<div class="tip-name" style="color:${hex(RARITY_COLOR[def.rarity])}">${def.name}</div>` +
     `<div class="tip-slot">${cap(def.rarity)} · ${SLOT_LABEL[def.slot] ?? def.slot}${def.ilvl ? ` · iLvl ${def.ilvl}` : ''}${opts.self ? ' · <b>worn</b>' : ''}</div>`;
   let body: string;
-  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${l.startsWith('Unique') ? 'uniq' : l.startsWith('Passive') ? 'pass' : ''}">${l}</li>`).join('')}</ul>` : '';
+  const cls = (l: string): string => (l.startsWith('Unique') ? 'uniq' : l.startsWith('Passive') ? 'pass' : l.startsWith('Enchant') ? 'ench' : /chance to|returns|Every strike|throw foes|movement speed|armor$|gold from|Rarer finds|under 40%|Critical strikes/.test(l) ? 'fx' : '');
+  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${cls(l)}">${l}</li>`).join('')}</ul>` : '';
   if (def.slot === 'consumable' || def.slot === 'material' || (opts.worn === undefined && !opts.self)) {
     body = `<div class="tip-stats">${statLine(def)}</div>`;
   } else if (opts.self) {

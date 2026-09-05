@@ -22,10 +22,12 @@
 import { eventBus } from '@/core/EventBus';
 import type { InputCommand } from '@/core/InputQueue';
 import { state } from '@/core/StateManager';
+import type { Enemy } from '@/entities/Enemy';
 import type { Entity } from '@/entities/Entity';
 import type { Player } from '@/entities/Player';
 import { mulberry32, randInt, type Rng } from '@/utils/rng';
 import { canStandAt, type WalkableFn } from './Collision';
+import type { StatusSystem } from './Status';
 import type { MovementSystem } from './Movement';
 
 export type SwingResult = 'hit' | 'crit' | 'miss';
@@ -43,6 +45,8 @@ export interface DamageEvent {
   forceStagger?: boolean;
   /** Thorns (it.53): a reflected wound never reflects again. */
   reflected?: boolean;
+  /** A status bite or an arc (it.80): no armor, no procs, no echo, no cull. */
+  pure?: boolean;
 }
 
 // Player warrior baseline (per-class tables arrive with the abilities task).
@@ -95,6 +99,8 @@ interface SwingState {
 
 export class CombatSystem {
   private readonly rand: Rng;
+  /** THE STATUS ENGINE (it.80): set by main once the floor stands. */
+  status: StatusSystem | null = null;
   private readonly swings: SwingState[] = [];
 
   /** The stream's position (a world snapshot carries it; it.73). */
@@ -308,7 +314,8 @@ export class CombatSystem {
         // Max-roll reads as a critical (display); true crits also double.
         const maxRoll = amount === profile.maxDamage;
         const crit = this.rand() < profile.critChance;
-        if (crit) amount *= 2;
+        // PRECISION (it.80): a keen weapon's crits cut deeper than double.
+        if (crit) amount = Math.round(amount * (2 + 0.4 * p.traitPower('precise')));
         eventBus.emit('combat:swing', {
           sourceId: p.id,
           targetId: target.id,
@@ -320,9 +327,10 @@ export class CombatSystem {
           amount,
           knockX: dirX,
           knockY: dirY,
-          knockDist: crit ? CRIT_KNOCKBACK_TILES : KNOCKBACK_TILES,
+          knockDist: (crit ? CRIT_KNOCKBACK_TILES : KNOCKBACK_TILES) * (1 + 0.8 * p.traitPower('knockback')),
           forceStagger: profile.stuns,
         });
+        this.afterHit(p, target, amount, reach, dirX, dirY);
       } else {
         eventBus.emit('combat:swing', { sourceId: p.id, targetId: target.id, result: 'miss' });
       }
@@ -352,6 +360,10 @@ export class CombatSystem {
         knockY: fdy / flen,
         knockDist: KNOCKBACK_TILES,
       });
+      for (const fx of p.weaponEffects) {
+        if (!fx.proc || foe.hp <= 0 || !this.status) continue;
+        if (this.rand() < fx.proc.chance * 0.5) this.status.inflict(foe as Enemy, fx.proc, amount, p.id);
+      }
     }
     void primaryHit;
   }
@@ -502,6 +514,43 @@ export class CombatSystem {
     return target.hp - before;
   }
 
+  /**
+   * WEAPON EFFECTS (it.80): after a landed primary strike, roll every proc
+   * the weapon carries, return siphoned resource, and cleave a second foe.
+   */
+  private afterHit(p: Player, target: Entity, amount: number, reach: number, dirX: number, dirY: number): void {
+    if (target.hp <= 0 && !p.traitPower('cleave')) {
+      // Procs still roll on a killing blow only for the arc (shock) — the corpse feels nothing.
+    }
+    for (const fx of p.weaponEffects) {
+      if (!fx.proc || target.hp <= 0 || !this.status) continue;
+      if (this.rand() < fx.proc.chance) this.status.inflict(target as Enemy, fx.proc, amount, p.id);
+    }
+    const siphon = p.traitPower('manaOnHit');
+    if (siphon > 0) p.resource = Math.min(p.resourceMax, p.resource + 3 * siphon);
+    const cleave = p.traitPower('cleave');
+    if (cleave > 0) {
+      let best: Entity | null = null;
+      let bd = reach + 0.6;
+      for (const foe of this.enemiesNear?.(p.pos.x, p.pos.y, reach + 0.6) ?? []) {
+        if (foe === target || foe.hp <= 0 || foe.action === 'dead') continue;
+        const d = Math.hypot(foe.pos.x - p.pos.x, foe.pos.y - p.pos.y);
+        if (d < bd) {
+          bd = d;
+          best = foe;
+        }
+      }
+      if (best) {
+        const fdx = best.pos.x - p.pos.x;
+        const fdy = best.pos.y - p.pos.y;
+        const flen = Math.hypot(fdx, fdy) || 1;
+        this.dealDamage({ sourceId: p.id, targetId: best.id, amount: Math.max(1, Math.round(amount * 0.5 * cleave)), knockX: fdx / flen, knockY: fdy / flen, knockDist: KNOCKBACK_TILES * 0.5 });
+      }
+    }
+    void dirX;
+    void dirY;
+  }
+
   /** Apply damage. The only legal way hp changes anywhere in the game. */
   dealDamage(event: DamageEvent): void {
     const target = state.getEntity(event.targetId);
@@ -521,13 +570,13 @@ export class CombatSystem {
     // Thorns (it.53) bites past armor — it is the hero's own steel coming back.
     const sourceEntity = state.getEntity(event.sourceId) as (Entity & { powerTier?: number }) | null;
     const attackerTier = event.reflected ? 1 : sourceHero ? sourceHero.powerTier : (sourceEntity?.powerTier ?? 1);
-    const armorAmt = event.reflected ? 0 : target.armor;
+    const armorAmt = event.reflected || event.pure ? 0 : target.armor;
     const reduction = armorAmt > 0 ? armorAmt / (armorAmt + ARMOR_K * attackerTier) : 0;
     let amount = Math.max(1, Math.round(rolled * (1 - reduction)));
     // LEGENDARY UNIQUES (it.78): echo doubles a tenth of the strikes; cull ends a foe under 15%.
     const fx = sourceHero?.uniqueEffects;
-    if (fx?.has('echo') && !event.reflected && this.rand() < 0.1) amount *= 2;
-    if (fx?.has('cull') && !targetHero && !event.reflected && target.hp < target.hpMax * 0.15) amount = Math.max(amount, target.hp);
+    if (fx?.has('echo') && !event.reflected && !event.pure && this.rand() < 0.1) amount *= 2;
+    if (fx?.has('cull') && !targetHero && !event.reflected && !event.pure && target.hp < target.hpMax * 0.15) amount = Math.max(amount, target.hp);
     target.hp = Math.max(0, target.hp - amount);
     if (fx?.has('lifesteal') && sourceHero && !event.reflected && sourceHero.hp > 0 && !targetHero) {
       const heal = Math.max(1, Math.ceil(amount * 0.08));
@@ -559,6 +608,13 @@ export class CombatSystem {
     }
 
     if (target.hp === 0) {
+      // REAPING (it.80): a slain foe returns a share of the striker's life.
+      const reap = sourceHero && !targetHero ? sourceHero.traitPower('lifeOnKill') : 0;
+      if (sourceHero && reap > 0 && sourceHero.hp > 0) {
+        const heal = Math.max(1, Math.round(sourceHero.hpMax * 0.04 * reap));
+        sourceHero.hp = Math.min(sourceHero.hpMax, sourceHero.hp + heal);
+        eventBus.emit('entity:healed', { entityId: sourceHero.id, amount: heal });
+      }
       eventBus.emit('entity:died', { entityId: event.targetId });
       return;
     }

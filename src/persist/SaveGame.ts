@@ -57,6 +57,10 @@ export interface PlayerSave {
   goldCollected?: number;
   /** The crafting pouch (it.78, save v4): material id → count. */
   materials?: Record<string, number>;
+  /** THE BELT (it.80): the draught base ids on Q and R. */
+  belt?: Array<string | null>;
+  /** Learned enchantment recipes (it.80). */
+  recipes?: string[];
 }
 
 export interface SaveGame {

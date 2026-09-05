@@ -26,6 +26,7 @@ import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { VfxAnim, VfxHandle, VfxOpts } from '@/render/Vfx';
 import { canStandAt } from '@/systems/Collision';
+import type { StatusSystem } from './Status';
 import type { CombatSystem } from '@/systems/Combat';
 import type { ProjectileSpawn } from '@/systems/Projectiles';
 import { randInt } from '@/utils/rng';
@@ -49,6 +50,8 @@ export interface SkillDeps {
   /** CO-OP (it.59): the seat this hero holds — only its own commands apply. */
   slot?: number;
   combat: () => CombatSystem;
+  /** THE STATUS ENGINE (it.80): every wound over time lives there. */
+  status: () => StatusSystem;
   enemiesNear: (x: number, y: number, r: number) => Enemy[];
   isWalkable: (gx: number, gy: number) => boolean;
   /** FX hooks (render-side; safe to no-op). */
@@ -94,10 +97,6 @@ export class SkillSystem {
   /** Remaining cooldown ticks per slot (UI reads this). */
   readonly cooldowns = [0, 0, 0, 0];
   private zones: Zone[] = [];
-  /** enemyId → poison state (Poison Blade DoT / rogue synergy). */
-  private readonly poisons = new Map<number, { ticksLeft: number; nextBite: number }>();
-  /** enemyId → burn state (mage synergy). */
-  private readonly burns = new Map<number, { ticksLeft: number; nextBite: number }>();
   /** Blade Flurry: staged follow-up cuts. */
   private flurry: { targetId: number; hitsLeft: number; nextHit: number; syn: Synergy } | null = null;
   /** The synergy of the cast currently executing (damage() reads it). */
@@ -115,7 +114,7 @@ export class SkillSystem {
     this.offSwing = eventBus.on('combat:swing', ({ sourceId, targetId, result }) => {
       const p = this.deps.player;
       if (sourceId !== p.id || result === 'miss' || p.poisonBladeTicks <= 0) return;
-      this.poisons.set(targetId, { ticksLeft: 160, nextBite: 25 });
+      this.deps.status().dot(targetId, 'poison', 160, 25, 3, p.id);
     });
   }
 
@@ -139,8 +138,6 @@ export class SkillSystem {
   clearZones(): void {
     for (const zone of this.zones) zone.dispose();
     this.zones = [];
-    this.poisons.clear();
-    this.burns.clear();
     this.flurry = null;
   }
 
@@ -386,9 +383,6 @@ export class SkillSystem {
     this.syn = NO_SYNERGY;
     this.zones = survivors;
 
-    // DoTs: poison (green) and burn (ember).
-    this.tickDot(this.poisons, 3, 30, 0x86c85a);
-    this.tickDot(this.burns, 2, 20, 0xff9040);
 
     // Blade Flurry follow-up cuts.
     if (this.flurry) {
@@ -414,23 +408,6 @@ export class SkillSystem {
     }
   }
 
-  private tickDot(map: Map<number, { ticksLeft: number; nextBite: number }>, dmg: number, period: number, color: number): void {
-    for (const [id, dot] of map) {
-      dot.ticksLeft--;
-      dot.nextBite--;
-      if (dot.nextBite <= 0) {
-        dot.nextBite = period;
-        const foe = this.deps.enemiesNear(this.deps.player.pos.x, this.deps.player.pos.y, 40).find((e) => e.id === id);
-        if (!foe || foe.hp <= 0) {
-          map.delete(id);
-          continue;
-        }
-        this.deps.combat().dealDamage({ sourceId: this.deps.player.id, targetId: id, amount: dmg });
-        this.deps.burst(foe.pos.x, foe.pos.y, color, 4);
-      }
-      if (dot.ticksLeft <= 0) map.delete(id);
-    }
-  }
 
   /** Roll + deliver skill damage through the one legal channel (synergy-scaled + class status). */
   private damage(foe: Enemy, min: number, max: number, kx: number, ky: number, knock = 0.4): void {
@@ -448,10 +425,10 @@ export class SkillSystem {
     const boss = foe.def.kind.startsWith('boss');
     switch (this.syn.status) {
       case 'mage':
-        this.burns.set(foe.id, { ticksLeft: 180, nextBite: 20 });
+        this.deps.status().dot(foe.id, 'burn', 180, 20, 2, this.deps.player.id);
         break;
       case 'rogue':
-        this.poisons.set(foe.id, { ticksLeft: 160, nextBite: 25 });
+        this.deps.status().dot(foe.id, 'poison', 160, 25, 3, this.deps.player.id);
         break;
       case 'warrior':
         if (!boss) {

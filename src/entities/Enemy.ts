@@ -871,6 +871,9 @@ export class Enemy extends Entity {
   level = 1;
   /** Elite affix (it.53) — null for the common dead. */
   affix: EnemyAffix | null = null;
+  /** CHILL (it.80): while ticks remain the foe moves at `chillFactor`. */
+  chillTicks = 0;
+  chillFactor = 1;
   /** SPAWN RISE (it.54): ticks left climbing out of the ground (sim; frozen until 0). */
   riseTicks = 0;
   private riseTotal = 30;
@@ -1236,6 +1239,7 @@ export class Enemy extends Entity {
   }
 
   override update(dt: number): void {
+    if (this.chillTicks > 0 && --this.chillTicks === 0) this.chillFactor = 1;
     if (!this.spawned) return;
     if (this.riseTicks > 0) {
       // Rising (it.54): no thought, no step, no strike until the body is up.
@@ -1477,7 +1481,7 @@ export class Enemy extends Entity {
   private moveDirect(dx: number, dy: number, dt: number): boolean {
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) return false;
-    const step = PLAYER_SPEED * this.def.speedMult * dt;
+    const step = PLAYER_SPEED * this.def.speedMult * (this.chillTicks > 0 ? this.chillFactor : 1) * dt;
     this.facing.x = dx / len;
     this.facing.y = dy / len;
     // Walk cycle advances WITH the ground covered — no foot-sliding.
@@ -1496,7 +1500,7 @@ export class Enemy extends Entity {
       this.pathIndex++;
       return;
     }
-    const step = Math.min(PLAYER_SPEED * this.def.speedMult * dt, dist);
+    const step = Math.min(PLAYER_SPEED * this.def.speedMult * (this.chillTicks > 0 ? this.chillFactor : 1) * dt, dist);
     this.facing.x = dx / dist;
     this.facing.y = dy / dist;
     this.walkPhase += step * (this.def.sprite?.stride ?? 0.4);

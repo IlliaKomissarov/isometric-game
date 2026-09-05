@@ -1,5 +1,77 @@
 # Development Log
 
+## 2026-09-05 (iteration 80) - The arsenal: weapons that do things, the belt, the recipe book
+
+### Weapon identity (`items/registry.ts`, `items/effects.ts`)
+- Sixty percent of the arsenal had been the same weapon behind another
+  icon. Now every SHAPE has a role - damage, swing speed, crit, reach - and
+  every TIER of a shape (steel 1-38, gilded 25-70, crystal 55-100) carries
+  a different innate: a status PROC on hit or a granted TRAIT. Thirty-seven
+  shapes (the rapier, the kris, the twinblade, the hatchet, the greataxe,
+  the warpick, the glaive, the sickle, the recurve, the orb rod joined),
+  three tiers, three staves and twenty-two uniques with two innates each.
+- Statuses (`systems/Status.ts`): bleed (60% of the hit over 4 s), poison
+  (80% over 6 s), burn (50% over 3 s), chill (55% speed for 3 s), shock
+  (45% of the hit arcs to the nearest other foe in 3 tiles), stun (0.8 s).
+  Wardens shrug off stuns and chills. Damage over time is a PURE wound
+  through `dealDamage` (no armor, no echo, no cull), credited to the hero,
+  so kills, reaping and the bestiary follow. The class synergies and
+  Poison Blade route through the same engine.
+- Traits: reaping (4% life a kill), siphon (3 resource a hit), cleave (a
+  second foe in reach for half), impact (+80% knockback), swiftness (+8%
+  speed), guardian (+12% armor), fortune (+25% gold), seeker (drop luck
+  x1.25), berserk (+18% under 40% life), precision (crits 2.4x). Read by
+  the player getters and the combat system; the seeker's luck rides the
+  floor's loot each tick.
+- The hero's hand: +2% weapon damage a level (a level-30 arm swings 58%
+  harder), on top of the item level curve. The card and the shop show
+  every weapon's level; the cell wears it in the corner with its +N.
+
+### Enchantments
+- Twelve recipes (`items/effects.ts`): flame, venom, frost, storm,
+  sanguine, crushing, reaping, siphon, cleaving, swiftness, keen, gilded.
+  A recipe SCROLL drops from depth II on (one gear drop in twenty-five,
+  gated by depth) and the alchemist sells one now and then; reading it
+  learns the recipe (saved). The forge's ENCHANT tab lays a learned recipe
+  on any weapon for its essence, dust and 30% of the weapon's worth; the
+  id carries `E<key>`, the name takes the adjective ("Flaming ..."), the
+  card lists the line. A new enchantment replaces the old.
+- REINFORCE gained PAY IN GOLD: the materials' worth at 2.5x, on top of
+  the gold - resources at camp, or gold at the forge.
+- The RECIPES tab is the forge's book: the reinforcement odds by level,
+  every transmutation, salvage by rarity, the blueprint count, and every
+  enchantment with its effect, cost and where to find it.
+
+### The belt
+- Q and R hold whichever draught the hero chooses (the inventory's belt
+  has a picker beside each key listing every draught in the pack;
+  `SET_BELT` is a command). The hotbar shows Q and R with the count and
+  the cooldown; the thumb cluster's two draught buttons wear the same
+  faces. Healing draughts share a five-second cooldown, resource draughts
+  two, brews one; a refused quaff says why over the hero.
+- New draughts: Rejuvenation, Greater Healing, Greater Mana, Haste (8 s),
+  Stone (8 s of 40% reduction), Might (10 s of +25%). A quaff has a sound;
+  a brew has its own cue and a floating name.
+
+### The camp and the desktop
+- The forge prop is the town's own WEAPON RACK beside the fire (no
+  generated art); the Raven anvil is gone.
+- On a desktop the system bar is a column hugging the right edge under
+  the chart; the inventory rises to meet the chart; the portal rite steps
+  right of the six-slot bar.
+
+### Verified
+- Town: the rack; the desktop column (seven buttons at x 1480-1528 under
+  a chart ending at 1528); the belt picker listing four draughts; a
+  rejuvenation on Q healing 60 -> 113, the cooldown refusing the second
+  quaff and allowing it after 300 ticks; level badges "4", "60+2", "8".
+  A recipe read, Flaming Edge laid on a saber (name and line), a gold-only
+  reinforcement spending gold and no scraps. Depth III: bleed 122 -> 116
+  over 70 ticks, chill 180 ticks at 55%, shock arcing 18 of a 40 hit,
+  stun 48 ticks, poison 90 -> 81; a 50% poison unique procs on the strike
+  path. The phone box shows the draught faces. Save v4 carries the belt
+  and the recipes. Device matrix 74/74.
+
 ## 2026-09-05 (iteration 79) - Sheets that keep their heading, scroll that stays put, settings above the title
 
 ### The bugs

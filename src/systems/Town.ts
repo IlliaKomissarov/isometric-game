@@ -22,6 +22,7 @@ import type { InputCommand } from '@/core/InputQueue';
 import type { Player } from '@/entities/Player';
 import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
 import { ilvlForDepth, itemDef, rollGear } from '@/items/instance';
+import { ENCHANTS } from '@/items/effects';
 import type { StashState } from '@/persist/SaveGame';
 import { mulberry32 } from '@/utils/rng';
 
@@ -99,9 +100,14 @@ export class TownSystem {
     if (deepestFloor >= 10) stock.push('alloy_shard#1');
     this.stock = [...new Set(stock.filter((id) => !!itemDef(id)))];
     // The ALCHEMIST (it.49): every draught the catalog knows, deeper delvers get more elixirs.
-    const alch = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir'];
-    for (const d of Object.values(ITEMS)) if (d.slot === 'consumable' && !d.use?.portal && !alch.includes(d.id)) alch.push(d.id);
-    if (deepestFloor >= 5) alch.push('elixir', 'mana_potion');
+    const alch = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir', 'rejuvenation'];
+    if (deepestFloor >= 3) alch.push('potion_haste', 'potion_stone');
+    if (deepestFloor >= 5) alch.push('elixir', 'mana_potion', 'greater_health', 'greater_mana', 'potion_might');
+    // A RECIPE ON THE COUNTER (it.80): one scroll the depth allows, now and then.
+    if (deepestFloor >= 2 && rand() < 0.6) {
+      const keys = Object.values(ENCHANTS).filter((r) => r.depth <= deepestFloor).map((r) => r.key);
+      if (keys.length) alch.push(`recipe_${keys[Math.floor(rand() * keys.length)]}`);
+    }
     this.stockAlch = alch.filter((id) => id in ITEMS);
     this.restockSerial = serial;
     this.lastRestockTick = tick;

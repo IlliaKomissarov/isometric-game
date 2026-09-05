@@ -46,6 +46,11 @@ export interface GameEvents {
   'craft:result': { ok: boolean; text: string; itemId?: string };
   /** A reinforcement attempt resolved (it.78). */
   'craft:reinforced': { ok: boolean; level: number };
+  /** The belt or the known recipes changed (it.80). */
+  'belt:changed': Record<string, never>;
+  'recipes:changed': Record<string, never>;
+  /** A draught refused (cooldown, nothing on the belt) — the HUD says why. */
+  'item:refused': { reason: string };
   /** Backpack or equipment changed — UI should re-render. */
   'inventory:changed': Record<string, never>;
   /** Simulation tick completed (deterministic hook for state sync). */

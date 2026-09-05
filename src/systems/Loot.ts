@@ -40,6 +40,8 @@ export class LootSystem {
   private readonly rand: Rng;
   /** The floor's item level (it.78): what its drops roll at. Set by the floor builder. */
   ilvl = 1;
+  /** SEEKER (it.80): the party's best drop luck, read by the floor each tick. */
+  luck = 1;
 
   /** The stream's position (a world snapshot carries it; it.73). */
   get rngState(): number {
@@ -75,7 +77,7 @@ export class LootSystem {
 
   /** Roll the drop table at a death location (deterministic stream). */
   tryDropAt(x: number, y: number): void {
-    const id = rollDrop(this.rand, this.ilvl);
+    const id = rollDrop(this.rand, this.ilvl, this.luck);
     if (id) this.spawnId(id, x, y);
   }
 

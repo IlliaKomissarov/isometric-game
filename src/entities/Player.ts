@@ -14,6 +14,7 @@ import { assets } from '@/core/AssetManager';
 import { eventBus } from '@/core/EventBus';
 import { overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type UniqueEffect, type WeaponKind } from '@/items/catalog';
 import { itemDef, itemLevers, powerScale } from '@/items/instance';
+import type { Effect, TraitKey } from '@/items/effects';
 import type { ClassArchetype, EntitySnapshot, EquipmentSlot } from '@/network/Serialization';
 import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
@@ -312,6 +313,25 @@ export class Player extends Entity {
     return powerScale(itemDef(this.equipped.get('mainHand'))?.ilvl ?? 1);
   }
 
+  /** THE WEAPON'S EFFECTS (it.80): innates and the enchantment of the held weapon. */
+  get weaponEffects(): readonly Effect[] {
+    return itemDef(this.equipped.get('mainHand'))?.effects ?? [];
+  }
+
+  /** Total power of a trait across the held weapon (0 = not carried). */
+  traitPower(key: TraitKey): number {
+    let total = 0;
+    for (const fx of this.weaponEffects) if (fx.trait?.key === key) total += fx.trait.power;
+    return total;
+  }
+
+  // ---- THE BELT (it.80): the draught base on Q (0) and R (1) ----
+  belt: Array<string | null> = ['health_potion', 'mana_potion'];
+  /** Learned enchantment recipes (it.80). */
+  readonly recipes = new Set<string>();
+  /** Draught cooldowns by category (it.80): 'heal' | 'resource' | 'buff' → ticks left. */
+  readonly quaffCd = new Map<string, number>();
+
   // ---- The crafting pouch (it.78): materials never take a pack slot ----
   readonly materials = new Map<string, number>();
 
@@ -359,7 +379,9 @@ export class Player extends Entity {
   }
 
   get damageMult(): number {
-    return (this.dmgBuffTicks > 0 ? this.dmgBuffMult : 1) * (1 + this.passiveBonus('dmg'));
+    // BERSERK (it.80): a wrathful weapon bites harder while the hero bleeds.
+    const berserk = this.hp < this.hpMax * 0.4 ? 0.18 * this.traitPower('berserk') : 0;
+    return (this.dmgBuffTicks > 0 ? this.dmgBuffMult : 1) * (1 + this.passiveBonus('dmg') + berserk);
   }
 
   get damageReduction(): number {
@@ -630,6 +652,10 @@ export class Player extends Entity {
       if (regrow > 0) this.hp = Math.min(this.hpMax, this.hp + regrow / 60);
     }
     if (this.dmgBuffTicks > 0) this.dmgBuffTicks--;
+    for (const [k, v] of this.quaffCd) {
+      if (v <= 1) this.quaffCd.delete(k);
+      else this.quaffCd.set(k, v - 1);
+    }
     if (this.drTicks > 0) this.drTicks--;
     if (this.hasteTicks > 0) this.hasteTicks--;
     if (this.stealthTicks > 0) this.stealthTicks--;
@@ -848,7 +874,7 @@ export class Player extends Entity {
   }
 
   get speedMult(): number {
-    let base = ARCHETYPES[this.archetype].speedMult * (1 + this.passiveBonus('speed'));
+    let base = ARCHETYPES[this.archetype].speedMult * (1 + this.passiveBonus('speed') + 0.08 * this.traitPower('swift'));
     if (this.hasteTicks > 0) base *= this.hasteMult;
     if (this.chillTicks > 0) base *= 0.75; // Frost-touched aura (it.53).
     return this.slowTicks > 0 ? base * 0.55 : base;
@@ -875,14 +901,16 @@ export class Player extends Entity {
     return {
       kind,
       ranged: kind === 'bow' || kind === 'wand',
-      range: def?.range ?? family.range,
+      range: (def?.range ?? family.range) + (def?.reachBonus ?? 0),
       // COMBAT ACCELERATION (it.53): 25 % faster swings, recovery trimmed a further 15 % for chaining.
       // Agility and "of Haste" lines (it.78) trim both halves of the swing, at most by half.
-      windupTicks: Math.max(5, Math.round((timing.windup * cls.attackSpeedMult * (1 - Math.min(0.5, this.passiveBonus('attackSpeed')))) / COMBAT_SPEED)),
-      recoverTicks: Math.max(4, Math.round((timing.recover * cls.attackSpeedMult * 0.85 * (1 - Math.min(0.5, this.passiveBonus('attackSpeed')))) / COMBAT_SPEED)),
-      minDamage: (def?.minDamage ?? cls.baseDamage.min) + this.levelDamageMin,
-      maxDamage: (def?.maxDamage ?? cls.baseDamage.max) + this.levelDamageMax,
-      critChance: Math.min(0.75, family.critChance + cls.critBonus + this.passiveBonus('crit')),
+      // The shape's own pace (it.80) and every haste line, at most half the swing.
+      windupTicks: Math.max(5, Math.round((timing.windup * cls.attackSpeedMult * (1 - Math.min(0.5, this.passiveBonus('attackSpeed')))) / (COMBAT_SPEED * (def?.speedMult ?? 1)))),
+      recoverTicks: Math.max(4, Math.round((timing.recover * cls.attackSpeedMult * 0.85 * (1 - Math.min(0.5, this.passiveBonus('attackSpeed')))) / (COMBAT_SPEED * (def?.speedMult ?? 1)))),
+      // THE HERO'S HAND (it.80): +2% weapon damage a level — a level-30 arm swings 58% harder.
+      minDamage: Math.round(((def?.minDamage ?? cls.baseDamage.min) + this.levelDamageMin) * (1 + 0.02 * (this.level - 1))),
+      maxDamage: Math.round(((def?.maxDamage ?? cls.baseDamage.max) + this.levelDamageMax) * (1 + 0.02 * (this.level - 1))),
+      critChance: Math.min(0.75, family.critChance + cls.critBonus + this.passiveBonus('crit') + (def?.critBonus ?? 0)),
       stuns: family.stuns,
       color: def?.color ?? 0xffcf90,
     };
@@ -892,7 +920,8 @@ export class Player extends Entity {
   override get armor(): number {
     let total = ARCHETYPES[this.archetype].armorBase + this.passiveBonus('armor');
     for (const id of this.equipped.values()) total += itemDef(id)?.armor ?? 0;
-    return total;
+    // GUARDIAN (it.80): a warding weapon lifts every plate.
+    return total * (1 + 0.12 * this.traitPower('guardian'));
   }
 
   getEquipped(slot: EquipmentSlot): string | null {

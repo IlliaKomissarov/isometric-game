@@ -54,8 +54,11 @@
   frames, to-hit rolls, crits, knockback, hit recovery and stagger. Melee, bows and wands. Four
   classes with talent paths, synergies and passives. Loot in six rarities with item levels,
   affixes, legendary uniques and mythic passives, on a paperdoll with an item card that lays
-  every piece beside what you wear and calls the verdict. A camp forge to salvage, forge,
-  transmute, refine and reinforce to +15. Merchants with a buyback counter and a restock clock.
+  every piece beside what you wear and calls the verdict. Weapons with a role and an innate:
+  bleed, poison, burn, chill, shock and stun on hit, or a granted trait, and twelve forge
+  enchantments learned from scrolls. A camp forge to salvage, forge, transmute, refine,
+  enchant and reinforce to +15, with a recipe book. An assignable draught belt with cooldowns.
+  Merchants with a buyback counter and a restock clock.
   A warden every fifth depth, with phases.
 - **Four-player co-op with no server.** WebRTC data channels brokered by PeerJS. Deterministic
   lockstep carries only intent; the Party Leader is the authority for every creature, hero and

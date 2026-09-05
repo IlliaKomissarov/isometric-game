@@ -4592,6 +4592,29 @@
       #bestiary .bs-head, #skill-tree .st-head, #char-sheet .cs-head { padding-right: 44px; }
 
       /* ---- 9. THE CLOSE MARK ------------------------------------------ */
+      /* A CROSS YOU CANNOT MISS (it.70). The gold medallion reads on a
+         desktop; on a phone it vanished into the frame. Touch screens get
+         a solid disc, a bold cross, and a bronze ring — every window. */
+      body.input-touch .tp-close {
+        background: radial-gradient(circle at 50% 35%, #3a2f44 0%, #1a1422 60%, #0d0a12 100%) !important;
+        border: 2px solid var(--ds-bronze-hi) !important;
+        border-radius: 50% !important;
+        box-shadow: 0 2px 0 #000, 0 0 12px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 230, 170, 0.25) !important;
+      }
+      body.input-touch .tp-close i, body.input-touch .tp-close::after { display: none !important; }
+      body.input-touch .tp-close::before {
+        content: '\2715';
+        font: 900 22px/1 'Cinzel', 'Georgia', serif;
+        color: #ffe3a8;
+        text-shadow: 0 1px 2px #000;
+      }
+      #cheat-menu .cheat-close {
+        display: block; width: 100%; min-height: 44px; margin-top: 8px;
+        font-family: 'Cinzel', 'Georgia', serif; font-weight: 700; font-size: 12px; letter-spacing: 0.22em;
+        color: #ffe3a8; background: linear-gradient(180deg, #2b2633, #120e18);
+        border: 1px solid var(--ds-bronze-hi); cursor: pointer;
+      }
+      #cheat-menu .cheat-close:hover, #cheat-menu .cheat-close:active { border-color: #ffd070; color: #fff2cf; }
       /* The pause sheet is the one modal that had no mark; its mark resumes. */
       #pause-menu .modal-panel { position: relative; }
       /* A PHONE HELD FLAT (it.68): seven stacked buttons are 500 px tall on

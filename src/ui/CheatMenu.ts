@@ -84,6 +84,11 @@ export class CheatMenuUI {
         if ((e.code === 'F1' || e.code === 'Backquote') && !e.repeat) {
           e.preventDefault();
           this.toggle();
+        } else if (e.code === 'Escape' && this.panel.classList.contains('open')) {
+          // ESC (and the bar's Menu) closes the sheet rather than pausing
+          // over it: this listener is registered before the pause menu's.
+          e.stopImmediatePropagation();
+          this.toggle();
         }
       },
       { signal: this.abort.signal },
@@ -203,7 +208,8 @@ export class CheatMenuUI {
       <div class="cheat-tabs">${tabs}</div>
       <div class="cheat-items">${rows}</div>
       ${this.tab === 'travel' || this.tab === 'hero' ? '' : `<button class="cheat-takeall" data-act="takeall">⚑ TAKE ALL ${TAB_LABEL[this.tab]}</button>`}
-      <div class="cheat-tip">L jumps floors · F1 / \` or the mark closes</div>
+      <div class="cheat-tip">L jumps floors · F1 / \` · ESC or the cross closes</div>
+      <button class="cheat-close" type="button" data-close>&#10005;&nbsp; CLOSE</button>
     `;
 
     this.panel.querySelectorAll<HTMLButtonElement>('button').forEach((btn) => {

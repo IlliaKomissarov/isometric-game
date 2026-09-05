@@ -574,6 +574,10 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] `core/Haptics.ts` event vibration with a settings toggle
 - [x] Matrix 74/74, clean build, zero console errors
 
+## Iteration 70 - A cross you cannot miss (2026-09-05)
+
+- [x] Touch close marks: solid disc + bold cross on every window; cheat sheet gets a CLOSE button and ESC
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

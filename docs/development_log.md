@@ -1,5 +1,15 @@
 # Development Log
 
+## 2026-09-05 (iteration 70) - A cross you cannot miss
+
+- The Forbidden Arts' close mark was the it.62 gold medallion — a thin X
+  that vanished into the frame on a phone. On touch screens every window's
+  close mark is now a solid disc with a bold cross and a bronze ring; the
+  cheat sheet also carries a full-width CLOSE button at its foot, and ESC
+  (the bar's Menu) closes it instead of pausing over it.
+- Verified at 412x780 with touch: cross tap closes, CLOSE closes, ESC
+  closes without pausing; zero console errors.
+
 ## 2026-09-05 (iteration 69) - Cheat close mark, the browser-bars landscape, vibration
 
 - The Forbidden Arts has a close mark in its head (a phone has no F1);

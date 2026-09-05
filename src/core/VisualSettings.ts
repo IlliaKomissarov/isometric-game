@@ -12,11 +12,13 @@ export interface VisualSettings {
   gore: boolean;
   flash: boolean;
   particles: boolean;
+  /** Vibration on hits, kills and level-ups (phones and tablets; it.69). */
+  haptics: boolean;
 }
 
 const KEY = 'iso-arpg-visuals';
 
-export const visuals: VisualSettings = { shake: true, gore: true, flash: true, particles: true };
+export const visuals: VisualSettings = { shake: true, gore: true, flash: true, particles: true, haptics: true };
 
 try {
   const raw = localStorage.getItem(KEY);

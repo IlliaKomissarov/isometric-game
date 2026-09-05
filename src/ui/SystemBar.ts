@@ -25,7 +25,8 @@
 
 import { audio } from '@/engine/AudioManager';
 import { ICON_BESTIARY, ICON_COG, ICON_FULLSCREEN, ICON_HERO, ICON_PACK, ICON_SKULL, ICON_TREE } from '@/ui/icons';
-import { toggleFullscreen } from '@/ui/TouchControls';
+import { markFullscreenDeclined, toggleFullscreen } from '@/ui/TouchControls';
+import { haptics } from '@/core/Haptics';
 
 interface Entry {
   /** The key the entry stands in for, or null for an action of its own. */
@@ -113,6 +114,8 @@ export class SystemBar {
         // Fullscreen is granted only inside the user gesture: it must run
         // synchronously here, not from the timer.
         if (!e.key) {
+          // Leaving fullscreen by choice: the first-touch prompt stays quiet.
+          if (isFullscreen()) markFullscreenDeclined();
           void toggleFullscreen();
           return;
         }
@@ -133,11 +136,7 @@ export class SystemBar {
 
   private feedback(): void {
     audio.sfx('uiClick');
-    try {
-      navigator.vibrate?.(8);
-    } catch {
-      /* vibration is a courtesy, never a requirement */
-    }
+    haptics.tap();
   }
 
   /** The fullscreen mark reads its own state, like the corner button does. */

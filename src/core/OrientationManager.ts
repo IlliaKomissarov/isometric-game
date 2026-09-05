@@ -281,7 +281,8 @@ export class OrientationManager {
     const barW = barForm === 'row' ? 7 * barSize + 6 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
 
     // THE CHART (it.67): 4:3, per tier. A micro handset has no room for it.
-    const mapW = tier === 'micro' ? 0 : h < 420 ? 112 : tier === 'huge' ? 200 : tier === 'tablet' ? 150 : tier === 'desktop' ? 160 : 120;
+    // 96 px on the browser-bars landscape (it.69): 112 reached into the fight's middle band.
+    const mapW = tier === 'micro' ? 0 : h < 360 ? 96 : h < 420 ? 112 : tier === 'huge' ? 200 : tier === 'tablet' ? 150 : tier === 'desktop' ? 160 : 120;
     const mapH = Math.round(mapW * 0.75);
 
     // THE STATUS PLATE (it.66): legible first, then no wider than the room
@@ -291,10 +292,17 @@ export class OrientationManager {
     const plateBase = orientation === 'portrait' ? minEdge / 430 : minEdge / 520;
     // A 240 px handset cannot hold a legible plate AND the folded bar: the
     // plate yields, to 0.48, because a plate that overlaps the bar is worse.
-    const cornerW = Math.max(barW, mapW + 8);
+    // A LANDSCAPE PHONE WITH ITS BROWSER BARS SHOWING (it.69) is ~330 px
+    // tall: the chart cannot sit ABOVE the folded bar, so it sits beside it
+    // and the corner is that much wider.
+    const tiny = orientation === 'landscape' && h < 360;
+    const cornerW = tiny ? mapW + 8 + 6 + barW : Math.max(barW, mapW + 8);
     const plateScale = Math.min(clamp(plateBase, 0.78, tier === 'huge' ? 1.3 : 1), Math.max(tier === 'micro' ? 0.48 : 0.55, (w - cornerW - 40) / 236));
 
-    const hudInset = w / Math.max(1, h) > 2.05 ? Math.round((w - (h * 16) / 9) / 2) : 0;
+    // Only a genuinely wide SCREEN (it.69): a landscape phone with its
+    // browser bars showing is 915x330 — a 2.8:1 box — and is not an
+    // ultrawide; clamping it pushed the whole HUD 164 px in from the edges.
+    const hudInset = w >= 1600 && w / Math.max(1, h) > 2.05 ? Math.round((w - (h * 16) / 9) / 2) : 0;
 
     const stageMin = Math.min(w, h - padH);
     let stageZoom = 1;
@@ -445,6 +453,7 @@ export class OrientationManager {
       b.toggle('input-touch', s.touch);
       b.toggle('has-pad', s.padH > 1);
       b.toggle('short-screen', s.h < 420);
+      b.toggle('tiny-height', s.orientation === 'landscape' && s.h < 360);
       for (const t of ['micro', 'compact', 'standard', 'tablet', 'desktop', 'huge']) b.toggle(`tier-${t}`, s.tier === t);
       // `bar-*`, not `sb-*`: the settings sheet already owns `.sb-row`.
       for (const f of ['row', 'grid4', 'grid2']) b.toggle(`bar-${f}`, s.barForm === f);

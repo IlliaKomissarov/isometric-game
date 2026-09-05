@@ -131,6 +131,7 @@ export class SettingsUI {
         ${toggle('gore', 'Blood & gore', 'sprays, stains and corpses')}
         ${toggle('flash', 'Hurt flash', 'the red edge when you bleed')}
         ${toggle('particles', 'Ambient particles', 'embers, ash and fog on the title')}
+        ${toggle('haptics', 'Vibration', 'a pulse on blows, kills and level-ups — phones and tablets')}
       </div>
       <div data-pane="controls" hidden>
         <div class="set-row set-action set-seg">

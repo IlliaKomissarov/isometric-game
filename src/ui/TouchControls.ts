@@ -19,6 +19,7 @@
 import type { InputCommand, InputQueue } from '@/core/InputQueue';
 import { layout } from '@/core/OrientationManager';
 import { audio } from '@/engine/AudioManager';
+import { haptics } from '@/core/Haptics';
 import { ICON_BLADES, ICON_FLASK, ICON_HAND, ICON_PORTAL } from '@/ui/icons';
 import { VirtualJoystick } from './VirtualJoystick';
 
@@ -50,7 +51,20 @@ interface HoldButton {
   pointerId: number | null;
 }
 
-const HAPTIC_MS = 15;
+/**
+ * FULLSCREEN ON THE FIRST TOUCH (it.69). A landscape phone with its address
+ * bar and navigation bar showing has ~330 px of height for the whole HUD;
+ * the layout copes, but the game belongs in the full screen, and a touch
+ * on the controls is the user gesture the browser demands for it. Once per
+ * page, and never again after the player leaves fullscreen on purpose.
+ */
+let fullscreenAsked = false;
+let fullscreenDeclined = false;
+export function markFullscreenDeclined(): void {
+  fullscreenDeclined = true;
+}
+const inFullscreen = (): boolean =>
+  !!(document.fullscreenElement || (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
 
 /**
  * FULLSCREEN (it.63): the only way a phone browser gives the game the whole
@@ -174,7 +188,17 @@ export class TouchControls {
       });
     }
     // Any touch on the cluster wakes it; the timer then lets it fade again.
-    this.root.addEventListener('pointerdown', () => this.wake(), { capture: true, signal: this.abort.signal });
+    this.root.addEventListener(
+      'pointerdown',
+      (e) => {
+        this.wake();
+        if (e.pointerType === 'touch' && !fullscreenAsked && !fullscreenDeclined && !inFullscreen() && layout.state.touch) {
+          fullscreenAsked = true;
+          void toggleFullscreen();
+        }
+      },
+      { capture: true, signal: this.abort.signal },
+    );
     this.root.addEventListener('pointerup', () => this.wake(), { capture: true, signal: this.abort.signal });
     this.mk(rowMain, 'tc-use tc-interact', 'INTERACT', ICON_HAND, () => this.tap({ type: 'PICKUP_NEAREST', playerId: 0 }));
     this.mk(rowMain, 'tc-attack', 'ATTACK', ICON_BLADES, () => this.press('attack'), () => this.release('attack'));
@@ -371,11 +395,7 @@ export class TouchControls {
   }
 
   private haptic(): void {
-    try {
-      navigator.vibrate?.(HAPTIC_MS);
-    } catch {
-      /* vibration is a courtesy, never a requirement */
-    }
+    haptics.tap();
   }
 
   /** A rotation or a modal must not leave the hero walking into a wall. */

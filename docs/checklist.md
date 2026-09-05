@@ -565,6 +565,15 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] A new hero starts with its first skill on slot 1
 - [x] Matrix 66/66, clean build, zero console errors
 
+## Iteration 69 - Cheat close mark, browser-bars landscape, vibration (2026-09-05)
+
+- [x] Close mark on the Forbidden Arts
+- [x] `tiny-height` landscape layout (browser bars showing): chart beside the bar, clock hidden; four viewports added to the matrix
+- [x] Ultrawide clamp restricted to real wide screens
+- [x] Fullscreen requested on the first touch of the controls
+- [x] `core/Haptics.ts` event vibration with a settings toggle
+- [x] Matrix 74/74, clean build, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

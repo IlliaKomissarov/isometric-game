@@ -85,6 +85,7 @@ import { TitleScreen } from '@/ui/TitleScreen';
 import { LoadingScreen } from '@/ui/LoadingScreen';
 import { layout } from '@/core/OrientationManager';
 import { perf } from '@/core/PerformanceScaler';
+import { haptics } from '@/core/Haptics';
 /** The screen layout, reachable inside `buildWorld`, where `layout` names a town plan. */
 const screenLayout = layout;
 import { touchControls, fullscreenButton } from '@/ui/TouchControls';
@@ -2364,6 +2365,7 @@ async function boot(): Promise<void> {
         const cd = skills.cooldowns[i];
         // CAST FLASH (it.40): a cooldown that just started means the skill fired.
         if (cd > 0 && lastSkillCd[i] === 0) {
+          haptics.cast();
           el.root.classList.remove('cast');
           void el.root.offsetWidth;
           el.root.classList.add('cast');
@@ -2692,6 +2694,7 @@ async function boot(): Promise<void> {
         else world.camera.addKick(5);
         hurtFlashTimer = 0.15; // A short pulse (it.49), max alpha 0.25 in the stylesheet.
         if (visuals.flash) vignetteEl?.classList.add('hurt');
+        haptics.hurt(amount / Math.max(1, player.hpMax)); // The glass takes the blow too (it.69).
         updateOrb();
         tutorial.notify('hurt', 'You bleed. Their heavy blows are telegraphed — step away as they rear back.');
       }
@@ -2705,6 +2708,7 @@ async function boot(): Promise<void> {
 
     on('combat:swing', ({ sourceId, targetId, result }) => {
       lastCritTarget = result === 'crit' ? targetId : -1;
+      if (result === 'crit' && sourceId === player.id) haptics.crit();
       if (result === 'miss') {
         const at = state.getEntity(targetId) ?? state.getEntity(sourceId);
         if (at) world.dmgText.show(at.pos.x, at.pos.y, 'miss', 'miss');
@@ -2811,6 +2815,8 @@ async function boot(): Promise<void> {
       const entity = state.getEntity(entityId);
       if (entity instanceof Enemy) {
         if (entity.spawnIndex >= 0) world.killed.add(entity.spawnIndex); // FloorMemory (it.39).
+        if (entity.def.kind.startsWith('boss')) haptics.bossKill();
+        else haptics.kill();
         player.noteKill(entity.def.kind); // Bestiary (it.42).
         eventBus.emit('bestiary:changed', {});
         stats.noteKill(!!world.coliseum, entity.def.kind.startsWith('boss')); // The ledgers (it.54).
@@ -2861,6 +2867,7 @@ async function boot(): Promise<void> {
           world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
           // GOLDEN PILLAR (it.48): a column of light climbs off the hero; a second chime rings.
           audio.sfx('rarePickup');
+          haptics.levelUp();
           // SCREEN FLASH + BANNER (it.49).
           {
             const flash = document.getElementById('level-flash');
@@ -3413,6 +3420,7 @@ async function boot(): Promise<void> {
           if (coop) {
             if (hero.actionTicks >= COOP_REVIVE_TICKS) reviveSeat(seat);
           } else if (hero.actionTicks >= PLAYER_DEATH_TICKS && !runMenus.isDeathShown) {
+            haptics.death();
             runMenus.showDeath(
               `${floor < 0 ? 'The Coliseum' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark`,
             );

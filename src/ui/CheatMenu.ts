@@ -192,6 +192,7 @@ export class CheatMenuUI {
           <h3>FORBIDDEN ARTS</h3>
           <div class="cheat-sub">the dark obeys, for a price</div>
         </div>
+        <button class="tp-close" type="button" data-close title="Close (F1 / ESC)" aria-label="Close"><i></i></button>
       </div>
       <div class="cheat-powers">
         <button data-act="god" class="${this.god ? 'lit' : ''}">${this.god ? '✦ GOD ON' : 'God Mode'}</button>
@@ -202,13 +203,17 @@ export class CheatMenuUI {
       <div class="cheat-tabs">${tabs}</div>
       <div class="cheat-items">${rows}</div>
       ${this.tab === 'travel' || this.tab === 'hero' ? '' : `<button class="cheat-takeall" data-act="takeall">⚑ TAKE ALL ${TAB_LABEL[this.tab]}</button>`}
-      <div class="cheat-tip">L jumps floors · F1 / \` closes</div>
+      <div class="cheat-tip">L jumps floors · F1 / \` or the mark closes</div>
     `;
 
     this.panel.querySelectorAll<HTMLButtonElement>('button').forEach((btn) => {
       btn.addEventListener('mouseenter', () => audio.sfx('uiHover'));
       btn.addEventListener('click', () => {
         audio.sfx('uiClick');
+        if ('close' in btn.dataset) {
+          this.toggle(); // The mark (it.69): a phone has no F1.
+          return;
+        }
         const act = btn.dataset.act;
         const give = btn.dataset.give;
         const tab = btn.dataset.tab as ArsenalTab | undefined;

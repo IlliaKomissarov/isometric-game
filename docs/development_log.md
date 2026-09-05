@@ -1,5 +1,26 @@
 # Development Log
 
+## 2026-09-05 (iteration 69) - Cheat close mark, the browser-bars landscape, vibration
+
+- The Forbidden Arts has a close mark in its head (a phone has no F1);
+  the button wiring routes `data-close` to `toggle()`.
+- A landscape phone with the address and navigation bars showing is
+  ~330 px tall. `tiny-height` (landscape, h < 360): the chart sits BESIDE
+  the folded bar instead of above it, the run clock steps aside, and the
+  plate's width limit counts both. Four such viewports joined the matrix
+  (915x330, 844x320, 667x300, 640x290).
+- The ultrawide 16:9 clamp fired on that 2.8:1 phone box and pushed the
+  HUD 164 px in from the edges; it now needs a real wide screen (w >= 1600).
+- Fullscreen on the first touch: a touch on the controls is the user
+  gesture the browser demands, so the first one asks for fullscreen (once
+  per page; never again after the player leaves fullscreen by the bar).
+- `core/Haptics.ts`: rate-limited vibration patterns — tap, hurt (scaled
+  by the blow), crit, kill, boss kill, cast, drink, level-up, death — wired
+  at the damage, swing, death, level and cast sites; a Vibration toggle on
+  the settings sheet (`visuals.haptics`). Render-side only.
+- Verified: matrix 74/74; cheat close mark closes; vibrate calls captured
+  (hurt 25 ms, level-up pattern, kill 22 ms); clean build; zero errors.
+
 ## 2026-09-05 (iteration 68) - The layout viewport, a touch override, readable menus that reflow
 
 ### The root cause behind "zoomed in and cut", "no controls", "tiny menus"

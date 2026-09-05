@@ -48,6 +48,8 @@ const DEVICES: Array<[string, number, number]> = [
   ['Office', 1366, 768], ['Laptop', 1440, 900], ['Surface', 1536, 960],
   ['SurfacePro', 2256, 1504], ['FHD', 1920, 1080], ['Pivot', 1080, 1920],
   ['UW', 2560, 1080], ['SUW', 5120, 1440], ['4K', 3840, 2160], ['8K', 7680, 4320],
+  // Landscape phones with the browser's address and navigation bars showing (it.69).
+  ['8T-bars', 915, 330], ['i13-bars', 844, 320], ['SE-bars', 667, 300], ['Budget-bars', 640, 290],
 ];
 
 /** HUD furniture: the things that must stay in a corner. */

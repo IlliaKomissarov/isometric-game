@@ -816,6 +816,8 @@
         display: flex;
       }
       #cheat-menu .cheat-head {
+        position: relative;
+        padding-right: 44px; /* the close mark's room (it.69) */
         display: flex;
         align-items: flex-end;
         gap: 10px;
@@ -4271,6 +4273,11 @@
         pointer-events: none;
       }
       body:not(.in-run) #hud-tr { display: none; }
+      /* TINY HEIGHT (it.69): a landscape phone with the address and
+         navigation bars showing. The chart sits BESIDE the folded bar, the
+         run clock steps aside, and the corner stays clear of the arc. */
+      body.tiny-height #hud-tr { flex-direction: row; align-items: flex-start; gap: 6px; }
+      body.tiny-height #hud-tl > #timer { display: none; }
       /* THE THREE FORMS (it.66). The layout publishes one of bar-row /
          bar-grid3 / bar-grid2 on the body; the bar is a grid whose column
          count follows. Row: a wide free top edge (desktop, tablet, a phone

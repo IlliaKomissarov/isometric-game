@@ -661,8 +661,14 @@
         z-index: 100;
         font-family: 'Cinzel', 'Georgia', serif;
         font-weight: 700;
-        font-size: 22px;
-        letter-spacing: 0.4em;
+        /* A phone: 22 px at 0.4em tracking is 400 px of "FORGING THE
+           DEPTHS", wider than the screen, and a flex item wider than its
+           box is placed at its left edge — the text ran off the screen. */
+        font-size: clamp(13px, 4.6vw, 22px);
+        letter-spacing: 0.3em;
+        text-align: center;
+        padding: 0 24px;
+        box-sizing: border-box;
         color: var(--gold-dim);
         text-shadow: 0 0 20px rgba(200, 165, 88, 0.3);
         transition: opacity 0.8s ease;
@@ -3567,6 +3573,7 @@
       }
       /* Portrait stacks the multi-column windows; landscape keeps the columns. */
       body.orient-portrait.tier-micro .st-cols, body.orient-portrait.tier-compact .st-cols, body.orient-portrait.tier-standard .st-cols { grid-template-columns: 1fr; }
+      body.orient-portrait.tier-micro .bs-body, body.orient-portrait.tier-compact .bs-body, body.orient-portrait.tier-standard .bs-body,
       body.orient-portrait.tier-micro .bs-cols, body.orient-portrait.tier-compact .bs-cols, body.orient-portrait.tier-standard .bs-cols,
       body.orient-portrait.tier-micro .tp-cols, body.orient-portrait.tier-compact .tp-cols, body.orient-portrait.tier-standard .tp-cols { grid-template-columns: 1fr; }
       body.orient-portrait.tier-micro .cp-setup, body.orient-portrait.tier-compact .cp-setup, body.orient-portrait.tier-standard .cp-setup,
@@ -3647,10 +3654,10 @@
 
 
                                     
-            body.tier-micro.touch-controls-on #minimap { display: none; }
+            body.tier-micro.touch-controls-on #minimap, body.tier-micro #minimap { display: none; }
       /* Under ~420 px of height, three rows of controls and a map cannot share
          the screen. The map steps aside; M still summons it. */
-      body.touch-controls-on.orient-landscape.short-screen #minimap { display: none; }
+      /* (it.67) The map no longer hides on short screens: a 112x84 chart fits above the folded bar. */
             
       /* ===================================================================
          IT.64 — VIEWPORT LOCK, CONTAIN-FIT PANELS, ARPG TOUCH CONTROLS,
@@ -4240,25 +4247,69 @@
       body.bar-grid3 #system-bar { --sb-cols: 3; }
       body.bar-grid2 #system-bar { --sb-cols: 2; }
       body:not(.in-run) #system-bar { display: none; }
+      /* THE CHART (it.67). A framed RECTANGLE, not a round clip: a round
+         map hid its own corners, and on a phone its 80 px were a blur. The
+         frame is 4:3 at a size the tier can spare, the dungeon drawn inside
+         it with `object-fit: contain` so nothing stretches; a tap swells it
+         to the middle of the screen (`.expanded`), where a whole floor reads
+         at once. Sizes are per tier, set on the body so the frame inherits. */
+      /* --map-w / --map-h come from OrientationManager (mapW, mapH). */
       body #minimap {
         position: static !important;
         top: auto !important; right: auto !important; left: auto !important; bottom: auto !important;
-        padding: 5px !important;
-        border-radius: 50% !important;
-        background: radial-gradient(circle at 50% 30%, rgba(28, 24, 36, 0.9), rgba(8, 7, 12, 0.94)) !important;
+        padding: 4px !important;
+        border-radius: 5px !important;
+        background: linear-gradient(180deg, rgba(28, 24, 36, 0.92), rgba(8, 7, 12, 0.95)) !important;
         border: 1px solid var(--ds-gold-line) !important;
         box-shadow:
           inset 0 0 0 1px rgba(0, 0, 0, 0.8),
-          inset 0 2px 10px rgba(231, 207, 143, 0.12),
+          inset 0 1px 0 rgba(231, 207, 143, 0.14),
           0 6px 20px rgba(0, 0, 0, 0.7) !important;
         transform: none !important;
+        cursor: pointer;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
       }
+      body.in-run #hud-tr > #minimap:not(.hidden) { pointer-events: auto; }
       body #minimap canvas {
-        width: calc(176px * clamp(0.46, calc(var(--hud-scale) * 0.62), 0.75)) !important;
-        height: calc(176px * clamp(0.46, calc(var(--hud-scale) * 0.62), 0.75)) !important;
-        border-radius: 50%;
-        border: 1px solid rgba(212, 175, 55, 0.22) !important;
+        display: block;
+        width: var(--map-w) !important;
+        height: var(--map-h) !important;
+        object-fit: contain;
+        border-radius: 3px;
+        border: 1px solid rgba(212, 175, 55, 0.18) !important;
+        background: rgba(0, 0, 0, 0.35);
+        transition: none;
       }
+      #minimap .mm-head { display: none; }
+      body #minimap.expanded {
+        position: fixed !important;
+        left: 50% !important; top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: min(560px, calc(var(--app-w) * 0.92));
+        max-width: calc(var(--app-w) * 0.92);
+        padding: 6px 8px 8px !important;
+        z-index: 60;
+        box-sizing: border-box;
+      }
+      /* The veil is the chart's own pseudo-element, so a tap on it is a tap
+         on the chart — which folds it. */
+      body #minimap.expanded::before {
+        content: ''; position: fixed; inset: -100vmax;
+        background: rgba(4, 3, 6, 0.62);
+        z-index: -1;
+      }
+      body #minimap.expanded canvas {
+        width: 100% !important;
+        height: min(calc(var(--app-h) * 0.66), 420px) !important;
+      }
+      body #minimap.expanded .mm-head {
+        display: flex; align-items: center; justify-content: space-between;
+        height: 44px; padding: 0 0 0 8px;
+        font: 700 12px/1 'Cinzel', 'Georgia', serif; letter-spacing: 0.22em;
+        color: var(--ds-bronze-hi);
+      }
+      #minimap .mm-head .tp-close { position: static; transform: none; flex: 0 0 auto; }
 
       /* The corner control belongs to the menus now: in a run the top-right
          is the map and the action bar, and three things cannot share it. */
@@ -4363,12 +4414,7 @@
       body.short-screen #touch-controls .tc-arc .tc-interact,
       body.has-pad #touch-controls .tc-arc .tc-interact { left: 0; top: 96px; }
 
-      /* MICRO held flat: the draught rides above the stick on the left, out
-         of the folded system bar's box on the right. */
-      body.tier-micro:not(.has-pad) #touch-controls .tc-left .tc-row-use {
-        position: absolute; left: 0; bottom: 100%; margin-bottom: 4px;
-        pointer-events: auto;
-      }
+      /* (it.67) The draught row rides above the stick in every floating layout; see the cluster rules. */
       /* MICRO (a 240x320 handset): 44 px on a 74 px arc, and the two far
          skills stay on the keyboard — a device this size has one. */
       body.tier-micro #touch-controls .tc-attack { left: 111px; top: 60px; }
@@ -4377,6 +4423,65 @@
       body.tier-micro #touch-controls .tc-skill-2 { left: 98px; top: 2px; }
       body.tier-micro #touch-controls .tc-skill-3 { left: 142px; top: 0; }
       body.tier-micro #touch-controls .tc-arc .tc-interact { left: 142px; top: 0; }
+
+      /* THE SKILL FACES (it.67). The four thumb targets show the hotbar's
+         own icons, a conic cooldown veil that unwinds clockwise, and the
+         seconds left in the middle — the desktop's readout, on the thumb. */
+      #touch-controls .tc-skill { overflow: hidden; }
+      .tc-skill .tc-face {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+      }
+      .tc-skill .tc-face img { width: 64%; height: 64%; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 1px 2px #000); }
+      .tc-skill .tc-face b { font: 700 calc(var(--tc-s, 56px) * 0.36)/1 'Cinzel', 'Georgia', serif; color: #e6c88a; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.9); }
+      .tc-skill .tc-face .tc-lock { font-size: calc(var(--tc-s, 56px) * 0.32); opacity: 0.55; filter: grayscale(1); }
+      .tc-skill .tc-cd {
+        position: absolute; inset: 0; border-radius: 50%;
+        background: conic-gradient(rgba(6, 5, 9, 0.84) var(--cd, 0deg), rgba(6, 5, 9, 0) 0);
+        pointer-events: none;
+      }
+      .tc-skill .tc-cd-num {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        font: 700 calc(var(--tc-s, 56px) * 0.3)/1 'Cinzel', 'Georgia', serif;
+        color: #f4ecd8; text-shadow: 0 1px 2px #000, 0 0 8px #000;
+        pointer-events: none; opacity: 0;
+      }
+      .tc-skill .tc-key {
+        position: absolute; left: 7px; top: 5px;
+        font: 700 9px/1 'Cinzel', 'Georgia', serif;
+        color: rgba(230, 200, 138, 0.75); text-shadow: 0 1px 2px #000;
+        pointer-events: none;
+      }
+      .tc-skill.cooling .tc-cd-num { opacity: 1; }
+      .tc-skill.cooling .tc-face { opacity: 0.4; }
+      .tc-skill.poor .tc-face img { filter: grayscale(0.9) brightness(0.55); }
+      .tc-skill.poor .tc-face b { color: #6a6274; }
+      .tc-skill.empty { opacity: 0.55; }
+
+      /* THE IDLE FADE (it.67): after ~2.6 s without a touch the cluster
+         thins so the crypt shows through; the next touch is instant. */
+      #touch-controls .tc-left, #touch-controls .tc-right { transition: opacity 0.1s ease; }
+      #touch-controls.idle .tc-left, #touch-controls.idle .tc-right { opacity: 0.42; transition: opacity 1.4s ease 0.05s; }
+      body.orient-portrait.has-pad #touch-controls.idle .tc-left,
+      body.orient-portrait.has-pad #touch-controls.idle .tc-right { opacity: 0.62; }
+
+      /* THE DRAUGHTS ABOVE THE STICK, wherever the controls float (it.67).
+         The stick zone grows to the lower-left quadrant a thumb actually
+         covers, and the draught row sits on its upper edge. */
+      body:not(.has-pad) #touch-controls .tc-left {
+        /* --app-w / --app-h, never vw / vh: a simulated viewport must take
+           the same path as a real one, and vh ignores the simulation. */
+        width: min(max(calc(200px * var(--hud-scale)), calc(var(--app-w) * 0.34)), 300px);
+        height: min(max(calc(200px * var(--hud-scale)), calc(var(--app-h) * 0.4)), 220px);
+      }
+      body:not(.has-pad) #touch-controls .tc-left .tc-row-use {
+        position: absolute; left: 0; bottom: 100%; margin-bottom: 6px;
+        width: max-content; flex-wrap: nowrap; justify-content: flex-start;
+        pointer-events: auto;
+      }
 
       /* Vector marks, sized from the target they sit in. */
       .tc-btn .ds-ico { width: 46%; height: 46%; }
@@ -4426,6 +4531,13 @@
       body.orient-portrait #inv-panel.open[data-tab='pack'] > .inv-divider { display: none; }
       body.orient-portrait #inv-panel.open[data-tab='gear'] > h4,
       body.orient-portrait #inv-panel.open[data-tab='gear'] > .inv-scroll { display: none; }
+
+      /* The bestiary in portrait (it.67): one column, the list capped so
+         the page shows beneath it; the head leaves the close mark its room. */
+      body.orient-portrait.tier-micro .bs-list, body.orient-portrait.tier-compact .bs-list, body.orient-portrait.tier-standard .bs-list { max-height: 34vh; }
+      body.orient-portrait.tier-micro .bs-detail, body.orient-portrait.tier-compact .bs-detail, body.orient-portrait.tier-standard .bs-detail { max-height: none; }
+      body.orient-portrait.tier-micro .bs-stage, body.orient-portrait.tier-compact .bs-stage, body.orient-portrait.tier-standard .bs-stage { height: 120px; }
+      #bestiary .bs-head, #skill-tree .st-head, #char-sheet .cs-head { padding-right: 44px; }
 
       /* ---- 9. THE CLOSE MARK ------------------------------------------ */
       /* The pause sheet is the one modal that had no mark; its mark resumes. */
@@ -4620,6 +4732,7 @@
         <button class="menu-btn" data-act="restart">RESTART RUN</button>
         <button class="menu-btn" data-act="class">CHANGE CLASS</button>
         <button class="menu-btn" data-act="saveExit">SAVE &amp; EXIT<span class="mm-sub">progress is also saved in town</span></button>
+        <button class="menu-btn" data-act="cheats">FORBIDDEN ARTS<span class="mm-sub">the cheat menu · F1 on a keyboard</span></button>
         <button class="menu-btn danger" data-act="menu">RETURN TO MAIN MENU</button>
       </div>
     </div>

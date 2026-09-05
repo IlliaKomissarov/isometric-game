@@ -1,5 +1,55 @@
 # Development Log
 
+## 2026-09-05 (iteration 67) - The OnePlus 8T bug folder: menu tap, chart, cheats, skill faces, ergonomics, idle fade
+
+### What the five screenshots showed (`public/assets/bugs`)
+- Landscape: the draughts rode the top of the RIGHT cluster, 300 px up the
+  screen on the fighting hand; the skill targets were bare numerals with no
+  icon and no cooldown; the map was hidden entirely (the short-screen rule).
+- Portrait: the round map clipped its own corners and read as a blob at
+  80 px; the bestiary opened in two columns with the page squeezed to one
+  word per line; the close mark sat on top of "0 / 22 KNOWN".
+- The boot label "FORGING THE DEPTHS" ran off the left edge of a 412 px
+  screen: 22 px at 0.4em tracking is 400 px, and a flex item wider than its
+  box sits at the left.
+- "Menu" restarted the run. Reproduced in the simulator: the bar opened the
+  pause sheet on pointerdown, and the SAME tap's `click` (which fires after
+  pointerup, at the same spot) landed on whichever sheet button had just
+  appeared under the finger.
+
+### What shipped
+- `SystemBar` acts on pointerup and one macrotask later, after the browser
+  has dispatched the tap's click to the bar button; `RunMenus` ignores
+  clicks for 350 ms after a sheet appears (the ghost-click shield).
+- Forbidden Arts: a pause-sheet entry (`cheats` hook) opens the cheat menu
+  on a phone; the cheat menu, level select and the open chart now block the
+  thumb controls.
+- The chart: `Minimap` is a framed 4:3 rectangle (`object-fit: contain`,
+  sized by `OrientationManager.mapW/mapH` per tier, 112 px on short
+  landscape screens, hidden only on micro) and a tap swells it to the middle
+  of the screen with a veil, a plaque and a close mark; the veil, the mark,
+  ESC or M fold it. ESC over the chart no longer also pauses.
+- Skill faces: the four thumb targets carry the hotbar's icons, a conic
+  cooldown veil unwinding clockwise, the seconds left (tenths under 10 s), a
+  lock when unlearned and a grey face when the resource is short
+  (`touchControls.setSkills` / `setCooldown`, fed from the hotbar builder).
+- Ergonomics: the draughts ride above the stick in every layout, and the
+  floating stick zone is the lower-left quadrant (34% x 40% of the stage,
+  capped 300x220) so the idle hand owns its corner and the right cluster is
+  the arc alone.
+- Idle fade: 2.6 s without a touch thins the cluster to 42% (62% in the
+  pad) over 1.4 s; the next touch restores it in 100 ms. A held stick or
+  button never fades.
+- Bestiary stacks in portrait (the old rule named `.bs-cols`; the panel's
+  grid is `.bs-body`); the list is capped at 34vh so the page shows beneath;
+  panel heads leave the close mark 44 px.
+
+### Traps
+- `vh` / `vw` in HUD rules ignore the simulated viewport (and a phone's
+  address bar); use `--app-w` / `--app-h`.
+- The plate's width limit must consider the chart, which is wider than the
+  folded bar beneath it in portrait.
+
 ## 2026-09-05 (iteration 66) - Ultra-adaptive HUD: the corner plate, the folding system bar, the globes retired
 
 ### The audit

@@ -542,6 +542,18 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Touch tutorial copy; micro-landscape draught placement; desktop command sheet restored; hotbar strip hidden on touch
 - [x] `src/dev/qa66.ts` device matrix: 66/66, zero failures; bar entries open/close; two-pointer stick + attack; live rotation keeps state; clean build; zero console errors
 
+## Iteration 67 - The OnePlus 8T bug folder (2026-09-05)
+
+- [x] Screenshot diagnostics: five captures mapped to code (menu tap, round map, bestiary columns, boot label overflow, bare skill numerals, draughts on the wrong hand)
+- [x] Menu tap: the tap's own click no longer lands in the sheet it opens (act on release + ghost-click shield)
+- [x] Forbidden Arts on the pause sheet opens the cheat menu on touch
+- [x] The chart: framed 4:3 rectangle sized per tier, present on short landscape screens, tap to expand with veil and close mark
+- [x] Skill faces on the thumb targets: icons, conic cooldown, seconds, lock, resource-poor state
+- [x] Draughts above the stick in every layout; stick zone is the lower-left quadrant; right cluster is the arc alone
+- [x] Idle fade of the virtual controls with instant wake on touch
+- [x] Bestiary stacks in portrait; close marks clear panel heads; boot label wraps centred
+- [x] Matrix 66/66, clean build, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

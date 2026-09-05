@@ -25,7 +25,17 @@ export interface RunMenuHooks {
   respawn: () => void;
   /** Blocks ESC pausing while another modal (class select, fade) owns the screen. */
   canPause: () => boolean;
+  /** THE FORBIDDEN ARTS (it.67): the cheat menu, reachable without an F1 key. */
+  cheats: () => void;
 }
+
+/**
+ * THE GHOST-CLICK SHIELD (it.67). A window opened by a touch receives the
+ * same touch's `click` a few milliseconds later; a button that answers it
+ * fires on a press the player never made. Clicks inside this window of the
+ * sheet appearing are the opening tap's, not a choice.
+ */
+const SHIELD_MS = 350;
 
 export class RunMenusUI {
   private readonly pauseEl: HTMLElement;
@@ -33,6 +43,7 @@ export class RunMenusUI {
   private readonly abort = new AbortController();
   private paused = false;
   private dead = false;
+  private shownAt = 0;
 
   constructor(private readonly hooks: RunMenuHooks) {
     this.pauseEl = document.getElementById('pause-menu')!;
@@ -57,6 +68,7 @@ export class RunMenusUI {
         btn.addEventListener(
           'click',
           () => {
+            if (performance.now() - this.shownAt < SHIELD_MS) return;
             const act = btn.dataset.act;
             if (act === 'resume') this.resume();
             else if (act === 'respawn') {
@@ -82,6 +94,10 @@ export class RunMenusUI {
             } else if (act === 'settings') {
               audio.sfx('uiClick');
               this.hooks.settings();
+            } else if (act === 'cheats') {
+              audio.sfx('uiClick');
+              this.resume();
+              this.hooks.cheats();
             }
           },
           { signal },
@@ -103,6 +119,7 @@ export class RunMenusUI {
   pause(): void {
     if (this.paused || this.dead) return;
     this.paused = true;
+    this.shownAt = performance.now();
     this.pauseEl.classList.add('show');
     audio.sfx('pause');
     audio.duck(true);
@@ -122,6 +139,7 @@ export class RunMenusUI {
   showDeath(stats: string): void {
     if (this.dead) return;
     this.dead = true;
+    this.shownAt = performance.now();
     const el = this.deathEl.querySelector('.dm-stats');
     if (el) el.textContent = stats;
     this.deathEl.classList.add('show');

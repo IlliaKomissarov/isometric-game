@@ -68,6 +68,9 @@ export interface LayoutState {
    * the bar a metre apart from the fight. 0 on anything narrower than 21:9.
    */
   hudInset: number;
+  /** THE CHART'S FRAME (it.67): a 4:3 corner map sized to what the tier can spare; 0 hides it. */
+  mapW: number;
+  mapH: number;
 }
 
 type Listener = (s: LayoutState) => void;
@@ -222,14 +225,19 @@ export class OrientationManager {
     const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 ? 'grid3' : 'row';
     const barW = barForm === 'row' ? 6 * barSize + 5 * 6 : barForm === 'grid3' ? 3 * 44 + 2 * 6 : 2 * 44 + 6;
 
+    // THE CHART (it.67): 4:3, per tier. A micro handset has no room for it.
+    const mapW = tier === 'micro' ? 0 : h < 420 ? 112 : tier === 'huge' ? 200 : tier === 'tablet' ? 150 : tier === 'desktop' ? 160 : 120;
+    const mapH = Math.round(mapW * 0.75);
+
     // THE STATUS PLATE (it.66): legible first, then no wider than the room
-    // the bar leaves it. The floor of 0.78 keeps 9 px type at 7 px; the
+    // the bar — or, in the pad layout, the wider chart above it — leaves it. The floor of 0.78 keeps 9 px type at 7 px; the
     // width limit only bites on a micro handset, where a plate that touches
     // the bar is worse than one that is a little small.
     const plateBase = orientation === 'portrait' ? minEdge / 430 : minEdge / 520;
     // A 240 px handset cannot hold a legible plate AND the folded bar: the
     // plate yields, to 0.48, because a plate that overlaps the bar is worse.
-    const plateScale = Math.min(clamp(plateBase, 0.78, tier === 'huge' ? 1.3 : 1), Math.max(tier === 'micro' ? 0.48 : 0.55, (w - barW - 40) / 236));
+    const cornerW = Math.max(barW, mapW + 8);
+    const plateScale = Math.min(clamp(plateBase, 0.78, tier === 'huge' ? 1.3 : 1), Math.max(tier === 'micro' ? 0.48 : 0.55, (w - cornerW - 40) / 236));
 
     const hudInset = w / Math.max(1, h) > 2.05 ? Math.round((w - (h * 16) / 9) / 2) : 0;
 
@@ -259,6 +267,8 @@ export class OrientationManager {
       barSize,
       stageZoom,
       hudInset,
+      mapW,
+      mapH,
       safe: {
         top: readInset('--sat'),
         right: readInset('--sar'),
@@ -323,6 +333,8 @@ export class OrientationManager {
       a.plateScale += (t.plateScale - a.plateScale) * k;
       a.stageZoom += (t.stageZoom - a.stageZoom) * k;
       a.hudInset += (t.hudInset - a.hudInset) * k;
+      a.mapW += (t.mapW - a.mapW) * k;
+      a.mapH += (t.mapH - a.mapH) * k;
       const done =
         Math.abs(t.w - a.w) < 0.6 &&
         Math.abs(t.h - a.h) < 0.6 &&
@@ -337,6 +349,8 @@ export class OrientationManager {
         a.plateScale = t.plateScale;
         a.stageZoom = t.stageZoom;
         a.hudInset = t.hudInset;
+        a.mapW = t.mapW;
+        a.mapH = t.mapH;
         a.minEdge = t.minEdge;
         a.aspect = t.aspect;
       }
@@ -367,6 +381,8 @@ export class OrientationManager {
     root.setProperty('--tl-scale', s.plateScale.toFixed(3));
     root.setProperty('--sb-size', `${s.barSize}px`);
     root.setProperty('--hud-inset', `${Math.round(s.hudInset)}px`);
+    root.setProperty('--map-w', `${s.mapW}px`);
+    root.setProperty('--map-h', `${s.mapH}px`);
     if (discrete || true) {
       const b = document.body.classList;
       b.toggle('orient-portrait', s.orientation === 'portrait');

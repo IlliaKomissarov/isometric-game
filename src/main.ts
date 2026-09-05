@@ -706,7 +706,7 @@ async function boot(): Promise<void> {
     // THE VIRTUAL CONTROLS (it.63): live for this run, silent behind a modal.
     touchControls.attach(inputQueue, {
       blocked: () =>
-        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open'),
+        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #cheat-menu.open, #level-select.open, #minimap.expanded, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open'),
     });
     // A rotation must never leave a thumb "held" on the old layout.
     subsOnLayout.push(layout.onChange(() => touchControls.releaseAll()));
@@ -2326,6 +2326,10 @@ async function boot(): Promise<void> {
           num: slot.querySelector('.skill-cd-num') as HTMLElement,
         });
       });
+      // THE THUMB CLUSTER SHOWS THE SAME SKILLS (it.67): icon, cost and cooldown.
+      touchControls.setSkills(
+        skills.skills.map((def) => (def ? { name: def.name, icon: def.icon ? uiAssetUrl(`skills/${def.icon}.png`) : null, glyph: def.glyph, cost: def.cost } : null)),
+      );
     };
     buildSkillBar();
     subs.push(eventBus.on('skills:changed', () => buildSkillBar()));
@@ -2358,6 +2362,7 @@ async function boot(): Promise<void> {
           el.num.textContent = '';
         }
         el.root.classList.toggle('poor', player.resource < def.cost);
+        touchControls.setCooldown(i, cd > 0 ? Math.min(1, cd / def.cd) : 0, cd > 0 ? cd / 60 : 0, player.resource < def.cost);
       });
     };
 
@@ -3952,6 +3957,7 @@ async function boot(): Promise<void> {
       settings: () => settings.open(),
       respawn: () => respawnPlayer(),
       canPause: () => !transitioning && !victoryShown,
+      cheats: () => cheatMenu.toggle(), // The pause sheet is the phone's F1 (it.67).
     });
 
     // A closing tab keeps its progress (it.60): the co-op hero is what the next join restores.

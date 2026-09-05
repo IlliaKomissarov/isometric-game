@@ -79,35 +79,45 @@ export class SystemBar {
       b.setAttribute('aria-label', e.label);
       b.innerHTML = `${e.icon}<em>${e.label}</em>`;
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'), { signal });
-      // POINTERDOWN, NOT CLICK. A touch that has to wait for the click event
-      // feels broken next to a joystick that answers on contact, and a
-      // 300 ms tap delay on an older mobile browser is worse still. The one
-      // exception is fullscreen: browsers grant it only from a completed
-      // user gesture, and pointerdown is not always one — that entry waits
-      // for pointerup.
+      // ON RELEASE, ONE TASK LATER (it.67). The first cut opened the window
+      // on pointerdown. On a phone the same tap then delivered its `click`
+      // — which fires after pointerup, at the same spot — to whatever the
+      // new window had just put under the finger: the pause sheet's
+      // RESTART or MAIN MENU button sat exactly there on a 412 px screen,
+      // so "Menu" restarted the run. The press still lights on contact
+      // (:active / .held) for feel; the ACTION waits for pointerup and then
+      // one macrotask, which is after the browser has dispatched the tap's
+      // click to this button and not to the window it opens.
       b.addEventListener(
         'pointerdown',
         (ev) => {
           ev.preventDefault();
           ev.stopPropagation();
-          if (!e.key) return;
-          this.feedback();
-          window.dispatchEvent(new KeyboardEvent('keydown', { code: e.key, key: e.key, bubbles: true }));
+          b.classList.add('held');
+          try {
+            b.setPointerCapture(ev.pointerId);
+          } catch {
+            /* synthetic pointers cannot be captured */
+          }
         },
         { signal },
       );
-      if (!e.key) {
-        b.addEventListener(
-          'pointerup',
-          (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            this.feedback();
-            void toggleFullscreen();
-          },
-          { signal },
-        );
-      }
+      const release = (ev: PointerEvent, fire: boolean): void => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        b.classList.remove('held');
+        if (!fire) return;
+        this.feedback();
+        // Fullscreen is granted only inside the user gesture: it must run
+        // synchronously here, not from the timer.
+        if (!e.key) {
+          void toggleFullscreen();
+          return;
+        }
+        window.setTimeout(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: e.key!, key: e.key!, bubbles: true })), 0);
+      };
+      b.addEventListener('pointerup', (ev) => release(ev, true), { signal });
+      b.addEventListener('pointercancel', (ev) => release(ev, false), { signal });
       b.addEventListener('contextmenu', (ev) => ev.preventDefault(), { signal });
       this.root.appendChild(b);
     }

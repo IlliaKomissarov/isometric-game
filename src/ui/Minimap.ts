@@ -40,20 +40,71 @@ export class MinimapUI {
   /** CO-OP (it.59): the other heroes, drawn in their seat colours. */
   party: (() => Array<{ x: number; y: number; color: string; dead: boolean }>) | null = null;
 
+  /** THE EXPANDED CHART (it.67): the same map, large, in the middle. */
+  private expanded = false;
+
   constructor() {
     this.wrap = document.createElement('div');
     this.wrap.id = 'minimap';
+    this.wrap.setAttribute('role', 'button');
+    this.wrap.setAttribute('aria-label', 'Map — tap to enlarge');
     this.canvas = document.createElement('canvas');
     this.base = document.createElement('canvas');
     this.wrap.appendChild(this.canvas);
+    // The chart's furniture: a title plaque and a close mark, seen only
+    // while expanded.
+    const head = document.createElement('div');
+    head.className = 'mm-head';
+    head.innerHTML = '<span>THE CHART</span><button class="tp-close" type="button" aria-label="Close map"><i></i></button>';
+    this.wrap.appendChild(head);
     document.body.appendChild(this.wrap);
     this.ctx = this.canvas.getContext('2d')!;
     this.baseCtx = this.base.getContext('2d')!;
 
+    // A TAP OPENS THE CHART (it.67): the corner map was too small to read on
+    // a phone and the round clip hid its corners. A tap swells it to the
+    // middle of the screen; a tap on the veil, the mark, ESC or M folds it
+    // back. Acting on pointerup, one task late, for the same reason the
+    // system bar does: the tap's click must not land in the chart.
+    let down: number | null = null;
+    this.wrap.addEventListener(
+      'pointerdown',
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        down = e.pointerId;
+      },
+      { signal: this.abort.signal },
+    );
+    this.wrap.addEventListener(
+      'pointerup',
+      (e) => {
+        if (down !== e.pointerId) return;
+        down = null;
+        e.preventDefault();
+        e.stopPropagation();
+        window.setTimeout(() => this.setExpanded(!this.expanded), 0);
+      },
+      { signal: this.abort.signal },
+    );
+    this.wrap.addEventListener('contextmenu', (e) => e.preventDefault(), { signal: this.abort.signal });
+
     window.addEventListener(
       'keydown',
       (e: KeyboardEvent) => {
+        if (e.code === 'Escape' && this.expanded) {
+          // The chart is built before the pause sheet, so this listener runs
+          // first: ESC folds the chart and goes no further — it must not
+          // also pause the game.
+          e.stopImmediatePropagation();
+          this.setExpanded(false);
+          return;
+        }
         if (e.code === 'KeyM' && !e.repeat) {
+          if (this.expanded) {
+            this.setExpanded(false);
+            return;
+          }
           this.visible = !this.visible;
           this.wrap.classList.toggle('hidden', !this.visible);
           audio.sfx(this.visible ? 'mapOpen' : 'mapClose');
@@ -63,9 +114,23 @@ export class MinimapUI {
     );
   }
 
+  get isExpanded(): boolean {
+    return this.expanded;
+  }
+
+  setExpanded(on: boolean): void {
+    if (this.expanded === on) return;
+    this.expanded = on;
+    this.wrap.classList.toggle('expanded', on);
+    document.body.classList.toggle('map-expanded', on);
+    audio.sfx(on ? 'mapOpen' : 'mapClose');
+    if (on) this.dirty = true;
+  }
+
   /** Run teardown (it.36). */
   destroy(): void {
     this.abort.abort();
+    document.body.classList.remove('map-expanded');
     this.wrap.remove();
   }
 

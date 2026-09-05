@@ -18,6 +18,12 @@ import type { Viewport } from './Viewport';
 export class Camera {
   private zoom = 1.0;
   private targetZoom = 1.0;
+  /**
+   * THE LAYOUT BIAS (it.66): multiplied into the wheel zoom, never added to
+   * it. The wheel stays clamped to its own range, the bias follows the
+   * screen (OrientationManager.stageZoom), and the two cannot fight.
+   */
+  private layoutZoom = 1;
   private readonly focusScreen = vec2();
   private initialized = false;
   private kickX = 0;
@@ -49,10 +55,11 @@ export class Camera {
     // Smooth zoom toward the wheel target.
     this.zoom += (this.targetZoom - this.zoom) * damp(10, dt);
 
+    const zoom = this.currentZoom;
     const cx = this.app.screen.width / 2;
     const cy = this.app.screen.height / 2;
-    const targetX = cx - this.focusScreen.x * this.zoom;
-    const targetY = cy - this.focusScreen.y * this.zoom;
+    const targetX = cx - this.focusScreen.x * zoom;
+    const targetY = cy - this.focusScreen.y * zoom;
 
     const world = this.viewport.world;
     if (!this.initialized) {
@@ -80,7 +87,12 @@ export class Camera {
       this.trauma = Math.max(0, this.trauma - dt * 2.2);
     }
     world.position.set(world.position.x + this.kickX + shakeX, world.position.y + this.kickY + shakeY);
-    world.scale.set(this.zoom);
+    world.scale.set(zoom);
+  }
+
+  /** The screen's own zoom bias; see `LayoutState.stageZoom`. */
+  setLayoutZoom(z: number): void {
+    this.layoutZoom = z > 0 ? z : 1;
   }
 
   /** DIRECTIONAL KICK (it.48): the view recoils along the blow's screen direction. */
@@ -111,8 +123,9 @@ export class Camera {
   /** Convert a pointer event position (canvas pixels) to world coordinates. */
   pointerToWorld(px: number, py: number, out: Vec2): Vec2 {
     const world = this.viewport.world;
-    const localX = (px - world.position.x) / this.zoom;
-    const localY = (py - world.position.y) / this.zoom;
+    const zoom = this.currentZoom;
+    const localX = (px - world.position.x) / zoom;
+    const localY = (py - world.position.y) / zoom;
     return screenToWorld(localX, localY, out);
   }
 
@@ -120,13 +133,14 @@ export class Camera {
   worldToCanvas(wx: number, wy: number, out: Vec2): Vec2 {
     const world = this.viewport.world;
     worldToScreen(wx, wy, out);
-    out.x = out.x * this.zoom + world.position.x;
-    out.y = out.y * this.zoom + world.position.y;
+    const zoom = this.currentZoom;
+    out.x = out.x * zoom + world.position.x;
+    out.y = out.y * zoom + world.position.y;
     return out;
   }
 
   /** Current zoom factor (canvas pixels per iso-screen pixel). */
   get currentZoom(): number {
-    return this.zoom;
+    return this.zoom * this.layoutZoom;
   }
 }

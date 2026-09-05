@@ -19,8 +19,8 @@
 import type { InputCommand, InputQueue } from '@/core/InputQueue';
 import { layout } from '@/core/OrientationManager';
 import { audio } from '@/engine/AudioManager';
+import { ICON_BLADES, ICON_FLASK, ICON_HAND, ICON_PORTAL } from '@/ui/icons';
 import { VirtualJoystick } from './VirtualJoystick';
-import { fit } from './FitScaler';
 
 /** The controls exist only while a run does; main hands the queue over. */
 export interface TouchHooks {
@@ -111,9 +111,6 @@ export class TouchControls {
   private lastDir = { x: 0, y: 0 };
   private attacking = false;
   private rowUse!: HTMLElement;
-  private rowSkills!: HTMLElement;
-  private tray!: HTMLElement;
-  private trayToggle!: HTMLButtonElement;
 
   constructor() {
     this.root = document.createElement('div');
@@ -128,118 +125,37 @@ export class TouchControls {
     this.stick = new VirtualJoystick(this.padLeft, { radius: 60, deadzone: 0.12 });
     this.stick.onChange = (x, y) => this.steer(x, y);
 
-    // The right cluster packs into three wrapping rows — utilities, skills,
-    // then the attack at the thumb's rest. Rows (not an absolute arc) are
-    // what keep every target its full 44 px and non-overlapping from a
-    // 240 px feature phone to an 8K panel.
+    // THE SKILL ARC (it.66). The four skills ride a 118 px arc around the
+    // attack, swept from due-left to up-and-right, which is the path the
+    // thumb actually travels when the hand rests at the corner. The radius
+    // is not a taste: at 118 px every neighbouring pair is at least 56 px
+    // apart on one axis, so four round 56 px targets and one 84 px attack
+    // never share a pixel at any scale. Anything tighter and the boxes
+    // overlap even while the circles look clear.
     const rowUse = this.row('tc-row-use');
-    const rowSkills = this.row('tc-row-skills');
-    const rowMain = this.row('tc-row-main');
+    const arc = document.createElement('div');
+    arc.className = 'tc-arc';
+    this.padRight.appendChild(arc);
+    const rowSkills = this.row('tc-row-skills', arc);
+    const rowMain = this.row('tc-row-main', arc);
     this.rowUse = rowUse;
-    this.rowSkills = rowSkills;
-    this.mk(rowUse, 'tc-use tc-portal', 'TOWN PORTAL', '⌂', () => this.tap({ type: 'TOWN_PORTAL', playerId: 0 }));
-    this.mk(rowUse, 'tc-use tc-mana', 'MANA DRAUGHT', '✦', () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
-    this.mk(rowUse, 'tc-use tc-potion', 'HEALING DRAUGHT', '❤', () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
+    this.mk(rowUse, 'tc-use tc-portal', 'TOWN PORTAL', ICON_PORTAL, () => this.tap({ type: 'TOWN_PORTAL', playerId: 0 }));
+    this.mk(rowUse, 'tc-use tc-mana', 'MANA DRAUGHT', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
+    this.mk(rowUse, 'tc-use tc-potion', 'HEALING DRAUGHT', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
     for (let i = 0; i < 4; i++) {
       this.mk(rowSkills, `tc-skill tc-skill-${i}`, `SKILL ${i + 1}`, String(i + 1), () => this.tap({ type: 'SKILL', playerId: 0, slot: i }));
     }
-    this.mk(rowMain, 'tc-use tc-interact', 'INTERACT', 'E', () => this.tap({ type: 'PICKUP_NEAREST', playerId: 0 }));
-    this.mk(rowMain, 'tc-attack', 'ATTACK', '⚔', () => this.press('attack'), () => this.release('attack'));
+    this.mk(rowMain, 'tc-use tc-interact', 'INTERACT', ICON_HAND, () => this.tap({ type: 'PICKUP_NEAREST', playerId: 0 }));
+    this.mk(rowMain, 'tc-attack', 'ATTACK', ICON_BLADES, () => this.press('attack'), () => this.release('attack'));
 
-    this.buildTray();
     layout.onChange(() => this.applyLayout());
-    // The free band changes with every reflow frame, not only on a flip.
-    layout.onReflow(() => this.placeHud());
     this.applyLayout();
   }
 
-  /**
-   * THE SYSTEM TRAY (it.65): a phone has no keyboard, so the bag, the tree,
-   * the sheet, the map and the pause menu were simply unreachable — the one
-   * thing no amount of layout work could fix. A single gothic ☰ opens a
-   * column of them beside the fullscreen corner.
-   *
-   * Each entry dispatches the SAME key the desktop uses, so there is one code
-   * path into every panel and no second way for them to disagree.
-   */
-  private buildTray(): void {
-    this.tray = document.createElement('div');
-    this.tray.id = 'tc-tray';
-    this.trayToggle = document.createElement('button');
-    this.trayToggle.type = 'button';
-    this.trayToggle.className = 'tc-tray-toggle';
-    this.trayToggle.setAttribute('aria-label', 'Menus');
-    this.trayToggle.innerHTML = '<span>☰</span>';
-    const list = document.createElement('div');
-    list.className = 'tc-tray-list';
-    const items: Array<[string, string, string]> = [
-      ['BAG', 'KeyI', '🎒'],
-      ['SKILLS', 'KeyK', '✦'],
-      ['HERO', 'KeyC', '👤'],
-      ['MAP', 'KeyM', '🗺'],
-      ['PAUSE', 'Escape', '⏸'],
-    ];
-    // Fullscreen lives in the tray on touch: the screen corners belong to the
-    // map and the thumb clusters, and a corner button collided with both.
-    const fsBtn = document.createElement('button');
-    fsBtn.type = 'button';
-    fsBtn.className = 'tc-tray-item';
-    fsBtn.setAttribute('aria-label', 'FULLSCREEN');
-    fsBtn.innerHTML = '<i>⛶</i><em>FULLSCREEN</em>';
-    fsBtn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.haptic();
-      audio.sfx('uiClick');
-      this.openTray(false);
-      void toggleFullscreen();
-    });
-    for (const [label, code, glyph] of items) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'tc-tray-item';
-      b.setAttribute('aria-label', label);
-      b.innerHTML = `<i>${glyph}</i><em>${label}</em>`;
-      b.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.haptic();
-        audio.sfx('uiClick');
-        this.openTray(false);
-        // The panels all listen on window; one path in for keys and thumbs.
-        window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true }));
-        fit.schedule(); // The panel just gained a box — fit it to the phone.
-        window.setTimeout(() => fit.schedule(), 60);
-      });
-      list.appendChild(b);
-    }
-    list.appendChild(fsBtn);
-    // Tapping the darkened ground closes the sheet.
-    const veil = document.createElement('div');
-    veil.className = 'tc-tray-veil';
-    veil.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      this.openTray(false);
-    });
-    this.tray.append(this.trayToggle, veil, list);
-    document.body.appendChild(this.tray);
-    this.trayToggle.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.haptic();
-      audio.sfx('uiClick');
-      this.openTray(!this.tray.classList.contains('open'));
-    });
-  }
-
-  private openTray(on: boolean): void {
-    this.tray.classList.toggle('open', on);
-  }
-
-  private row(cls: string): HTMLElement {
+  private row(cls: string, into: HTMLElement = this.padRight): HTMLElement {
     const el = document.createElement('div');
     el.className = `tc-row ${cls}`;
-    this.padRight.appendChild(el);
+    into.appendChild(el);
     return el;
   }
 
@@ -295,7 +211,6 @@ export class TouchControls {
     this.hooks = hooks;
     this.enabled = !!queue;
     this.refresh();
-    this.placeHud();
   }
 
   /** Touch controls appear on touch devices, or when forced for testing. */
@@ -303,7 +218,6 @@ export class TouchControls {
   setForced(on: boolean | null): void {
     this.forced = on;
     this.refresh();
-    this.placeHud();
   }
 
   private get shouldShow(): boolean {
@@ -314,12 +228,7 @@ export class TouchControls {
   private refresh(): void {
     this.root.classList.toggle('show', this.shouldShow);
     document.body.classList.toggle('touch-controls-on', this.shouldShow);
-    this.tray?.classList.toggle('show', this.shouldShow);
-    if (!this.shouldShow) {
-      this.openTray(false);
-      this.stick.reset();
-      document.body.classList.remove('hud-top');
-    }
+    if (!this.shouldShow) this.stick.reset();
   }
 
   private applyLayout(): void {
@@ -330,29 +239,17 @@ export class TouchControls {
     // 56 px skills plus the attack already fill the right half of a phone;
     // splitting the load is what keeps every target its full size and stops
     // the cluster growing up out of the slate into the fight.
-    const wantLeft = s.padH > 0;
+    // A micro screen held flat (320x240) moves them left too: the folded
+    // system bar takes the upper right, and a draught row under it would
+    // sit inside the bar's own box (it.66).
+    const wantLeft = s.padH > 0 || s.tier === 'micro';
+    // The draughts ride above the arc on the right, or above the stick on the
+    // left when there is a pad. The arc is the right pad's other child, so
+    // the row always goes in FRONT of it rather than before a skill row that
+    // now lives one level down (it.66).
     if (wantLeft && this.rowUse.parentElement !== this.padLeft) this.padLeft.insertBefore(this.rowUse, this.padLeft.firstChild);
-    else if (!wantLeft && this.rowUse.parentElement !== this.padRight) this.padRight.insertBefore(this.rowUse, this.rowSkills);
+    else if (!wantLeft && this.rowUse.parentElement !== this.padRight) this.padRight.insertBefore(this.rowUse, this.padRight.firstChild);
     this.refresh();
-    this.placeHud();
-  }
-
-  /**
-   * WHERE THE METERS GO (it.63). With the controls floating, the lower band
-   * is hands. The globes sit at the lower centre when there is a real gap
-   * between the stick and the cluster, and move to the top band when there
-   * is not — measured, because the answer depends on the screen's width,
-   * the HUD scale and how many controls the tier shows.
-   */
-  private placeHud(): void {
-    if (!this.shouldShow || layout.state.padH > 0) {
-      document.body.classList.remove('hud-top');
-      return;
-    }
-    const stick = this.padLeft.getBoundingClientRect();
-    const cluster = this.padRight.getBoundingClientRect();
-    const free = cluster.left - stick.right;
-    document.body.classList.toggle('hud-top', free < 250);
   }
 
   // --- Input ---------------------------------------------------------------------
@@ -402,7 +299,6 @@ export class TouchControls {
 
   /** A rotation or a modal must not leave the hero walking into a wall. */
   releaseAll(): void {
-    this.openTray(false);
     this.stick.reset();
     for (const b of this.buttons) {
       b.pointerId = null;

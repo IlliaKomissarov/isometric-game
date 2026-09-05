@@ -84,7 +84,11 @@ import { TitleScreen } from '@/ui/TitleScreen';
 import { LoadingScreen } from '@/ui/LoadingScreen';
 import { layout } from '@/core/OrientationManager';
 import { perf } from '@/core/PerformanceScaler';
+/** The screen layout, reachable inside `buildWorld`, where `layout` names a town plan. */
+const screenLayout = layout;
 import { touchControls, fullscreenButton } from '@/ui/TouchControls';
+import { StatusFrame } from '@/ui/StatusFrame';
+import { SystemBar } from '@/ui/SystemBar';
 import { fit } from '@/ui/FitScaler';
 import { visuals } from '@/core/VisualSettings';
 import type { PlayerSave } from '@/persist/SaveGame';
@@ -237,15 +241,15 @@ async function boot(): Promise<void> {
   void fullscreenButton; // The corner control exists for every screen (it.64).
   // CONTAIN-FIT (it.64): no window may be cropped on any viewport. Centred
   // panels keep their translate; flex-centred ones scale on their own.
-  fit.add(document.querySelector('#class-select .cs-fit'), { max: 0.94, minScale: 0.28 });
-  fit.add(document.querySelector('#main-menu .mm-panel'), { max: 0.94, minScale: 0.45 });
-  fit.add(document.querySelector('#credits .modal-panel'), { max: 0.92, minScale: 0.4 });
-  fit.add(document.querySelector('#pause-menu .modal-panel'), { max: 0.9, minScale: 0.5 });
-  fit.add(document.querySelector('#death-menu .modal-panel'), { max: 0.9, minScale: 0.5 });
-  fit.add(document.querySelector('#exit-modal .am-box'), { max: 0.9, minScale: 0.5 });
-  fit.add(document.querySelector('#coop-panel .cp-frame'), { max: 0.94, minScale: 0.4 });
-  fit.add(document.querySelector('#loading-screen .ls-frame'), { max: 0.9, minScale: 0.5 });
-  fit.add(document.getElementById('settings-panel'), { max: 0.92, minScale: 0.45, base: 'translate(-50%, -50%)' });
+  fit.add(document.querySelector('#class-select .cs-fit'), { maxW: 0.92, maxH: 0.9, minScale: 0.28 });
+  fit.add(document.querySelector('#main-menu .mm-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.45 });
+  fit.add(document.querySelector('#credits .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.4 });
+  fit.add(document.querySelector('#pause-menu .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
+  fit.add(document.querySelector('#death-menu .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
+  fit.add(document.querySelector('#exit-modal .am-box'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
+  fit.add(document.querySelector('#coop-panel .cp-frame'), { maxW: 0.92, maxH: 0.9, minScale: 0.4 });
+  fit.add(document.querySelector('#loading-screen .ls-frame'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
+  fit.add(document.getElementById('settings-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.45, base: 'translate(-50%, -50%)' });
 
   // CURSOR FIRST (it.25 freeze fix): the gothic pointer exists during the
   // loading screen and from the very first frame of every run.
@@ -1318,6 +1322,11 @@ async function boot(): Promise<void> {
     const inventoryUI = new InventoryUI(player, inputQueue, 0, buildPaperdollFrames);
     const tutorial = new TutorialUI();
     const minimap = new MinimapUI();
+    // THE it.66 HUD: a status plate in the top-left corner and a system bar
+    // in the top-right. Both are created before the first HUD update so no
+    // call site has to guard against a half-built frame.
+    const statusFrame = new StatusFrame(player, () => classPreviewFrames(player.archetype));
+    const systemBar = new SystemBar();
 
     let pendingDescend = false;
     let pendingArena = false;
@@ -1327,9 +1336,6 @@ async function boot(): Promise<void> {
     const cheatState = { god: false };
 
     // --- HUD refs -----------------------------------------------------------
-    const orb = document.getElementById('orb');
-    const orbFill = document.getElementById('orb-fill');
-    const orbLabel = document.getElementById('orb-label');
     const deathNote = document.getElementById('death-note');
     const descendNote = document.getElementById('descend-note');
     const depthLabel = document.getElementById('depth-label');
@@ -1340,18 +1346,10 @@ async function boot(): Promise<void> {
     const bossBar = document.getElementById('boss-bar');
     const bossBarFill = document.getElementById('boss-bar-fill');
 
-    // Progression HUD: level plaque, XP bar, gold counter (it.22).
-    const levelLabel = document.getElementById('level-label');
-    const xpFill = document.getElementById('xp-fill');
-    const goldLabel = document.getElementById('gold-label');
-    const xpText = document.getElementById('xp-text');
-    const updateProgressHud = (): void => {
-      if (levelLabel) levelLabel.textContent = `LVL ${player.level}`;
-      if (xpFill) xpFill.style.width = `${Math.round((player.xp / player.xpToNext()) * 100)}%`;
-      if (xpText) xpText.textContent = `XP: ${player.xp} / ${player.xpToNext()}`; // Readable gauge (it.48).
-      if (xpFill?.parentElement) xpFill.parentElement.title = `XP: ${player.xp} / ${player.xpToNext()}`;
-      if (goldLabel) goldLabel.textContent = `${player.gold}`;
-    };
+    // Progression HUD (it.66): the corner plate carries level, XP and gold.
+    // The globes, the XP strip and the purse it replaced were four elements
+    // at three anchors; the plate is one element at one.
+    const updateProgressHud = (): void => statusFrame.update();
 
     /** ACTIVE BUFF RINGS (it.48): rebuilt when the set changes, ticked every frame. */
     const buffIconHtml = (b: { icon: string | null; glyph: string }): string =>
@@ -1387,12 +1385,8 @@ async function boot(): Promise<void> {
       headBuffs.classList.add('show');
     };
 
-    const updateOrb = (): void => {
-      const frac = Math.max(0, player.hp / player.hpMax);
-      if (orbFill) orbFill.style.height = `${Math.round(frac * 100)}%`;
-      if (orbLabel) orbLabel.textContent = `${player.hp}`;
-      orb?.classList.toggle('low', frac < 0.3 && frac > 0);
-    };
+    /** Health changed: the corner plate is the sole readout (it.66). */
+    const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
@@ -1483,6 +1477,7 @@ async function boot(): Promise<void> {
 
       const viewport = new Viewport(app);
       const camera = new Camera(app, viewport);
+      camera.setLayoutZoom(screenLayout.state.stageZoom); // The screen's zoom bias (it.66).
       const scene = new SceneManager();
       const lighting = new Lighting();
       // Sight is blocked by ARCHITECTURE only — solid props don't cast fog.
@@ -1517,6 +1512,7 @@ async function boot(): Promise<void> {
       }
 
       const ambience = new Ambience(viewport);
+      ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
       const goldPiles = isHub || isColiseum ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
@@ -1840,14 +1836,18 @@ async function boot(): Promise<void> {
             x: dungeon.spawn.x + 0.5,
             y: dungeon.spawn.y + 0.5,
             radius: 2.5,
-            text: 'Click the ground — or hold W A S D — to move through the dark.',
+            text: screenLayout.state.touch
+              ? 'Push the left thumb-stick — or tap the ground — to move through the dark.'
+              : 'Click the ground — or hold W A S D — to move through the dark.',
           },
           {
             id: 'strike',
             x: waystone.x + 0.5,
             y: waystone.y + 0.5,
             radius: 2.2,
-            text: 'The waystone hums: press SPACE to swing your blade. Click a foe to hunt it down.',
+            text: screenLayout.state.touch
+              ? 'The waystone hums: hold the crossed blades to swing. Tap a foe to hunt it down.'
+              : 'The waystone hums: press SPACE to swing your blade. Click a foe to hunt it down.',
           },
           {
             id: 'stairs',
@@ -1980,6 +1980,10 @@ async function boot(): Promise<void> {
 
     await preloadFloor(floor, floor === 0 ? 'hub' : 'normal');
     let world = buildWorld(floor, floor === 0 ? 'hub' : loaded?.arena && isBossFloor(floor) ? 'arena' : 'normal');
+    // A rotation re-biases the camera for its new box, and a slipping frame
+    // rate thins the embers — both per run, because the world is per run.
+    subsOnLayout.push(layout.onReflow((s) => world.camera.setLayoutZoom(s.stageZoom)));
+    subsOnLayout.push(perf.onQuality(() => world.ambience.setBudget(perf.particleBudget)));
 
     /** Remember the current dungeon floor exactly as the hero leaves it (it.39). */
     const captureFloor = (): void => {
@@ -2322,27 +2326,14 @@ async function boot(): Promise<void> {
           num: slot.querySelector('.skill-cd-num') as HTMLElement,
         });
       });
-      const label = document.getElementById('resource-label');
-      if (label) label.textContent = player.resourceName;
-      document.getElementById('resource-fill')?.classList.toggle('stamina', player.resourceName === 'STAMINA');
     };
     buildSkillBar();
     subs.push(eventBus.on('skills:changed', () => buildSkillBar()));
 
-    const resourceFill = document.getElementById('resource-fill');
-    const resourceText = document.getElementById('resource-text');
-    // THE RESOURCE GLOBE (it.49): the right-hand orb — stamina gold, mana blue.
-    const orb2Wrap = document.getElementById('orb2-wrap');
-    const orb2Fill = document.getElementById('orb2-fill');
-    const orb2Label = document.getElementById('orb2-label');
-    const orb2Name = document.getElementById('orb2-name');
-    if (orb2Wrap) orb2Wrap.classList.toggle('mana', player.resourceName !== 'STAMINA');
-    if (orb2Name) orb2Name.textContent = player.resourceName;
+    // The resource gauge lives on the corner plate (it.66); this keeps the
+    // portal button and the cooldown sweeps current.
     const updateSkillHud = (): void => {
-      if (resourceFill) resourceFill.style.width = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
-      if (resourceText) resourceText.textContent = `${Math.round(player.resource)} / ${player.resourceMax}`; // Readable gauge (it.48).
-      if (orb2Fill) orb2Fill.style.height = `${Math.round((player.resource / player.resourceMax) * 100)}%`;
-      if (orb2Label) orb2Label.textContent = `${Math.round(player.resource)}`;
+      statusFrame.update();
       const tpNote = tpButton.querySelector('i');
       if (tpNote) tpNote.textContent = world.town ? 'in town' : portalCooldown > 0 ? `${Math.ceil(portalCooldown / 60)}s` : 'ready';
       tpButton.classList.toggle('cooling', portalCooldown > 0 || !!world.town);
@@ -2758,7 +2749,7 @@ async function boot(): Promise<void> {
     };
 
     on('item:dropped', ({ itemId, x, y }) => {
-      tutorial.notify('loot', 'A treasure has fallen — press E near it, or click to claim it.');
+      tutorial.notify('loot', screenLayout.state.touch ? 'A treasure has fallen — tap it, or press the open hand beside it.' : 'A treasure has fallen — press E near it, or click to claim it.');
       // Rare finds announce themselves with the pack's treasure glint.
       if (ITEMS[itemId]?.rarity === 'rare') world.ambience.playGlint(x, y);
     });
@@ -2875,7 +2866,7 @@ async function boot(): Promise<void> {
             world.viewport.ambienceLayer.addChild(pillar);
             pillars.push({ sprite: pillar, life: 0 });
           }
-          tutorial.notify('skillpoint', 'A skill point is yours — press K to open the Skill Tree.');
+          tutorial.notify('skillpoint', screenLayout.state.touch ? 'A skill point is yours — open the Talents from the bar in the corner.' : 'A skill point is yours — press K to open the Skill Tree.');
           updateOrb(); // Max HP grew (and partially refilled).
           eventBus.emit('skills:changed', {});
         }
@@ -3791,8 +3782,10 @@ async function boot(): Promise<void> {
     const skillTreeUI = new SkillTreeUI(player, inputQueue, () => !!world.town);
     // EVERY WINDOW FITS (it.65): the run's panels are built per run, so they
     // are registered here rather than at boot.
+    // By id (it.66): the hero sheet and the bestiary are built a few lines
+    // below this, and a registration by element silently dropped them.
     for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'leaderboard', 'level-select']) {
-      fit.add(document.getElementById(id), { max: 0.96, minScale: 0.4, base: 'translate(-50%, -50%)', responsive: true });
+      fit.addById(id, { maxW: 0.92, maxH: 0.9, minScale: 0.4, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
     const bestiaryUI = new BestiaryUI(player);
@@ -4093,6 +4086,8 @@ async function boot(): Promise<void> {
         statsUI.destroy();
         hudBuffs.remove();
         headBuffs.remove();
+        statusFrame.destroy();
+        systemBar.destroy();
         vignetteEl?.classList.remove('hurt');
         tpButton.remove();
         skillTreeUI.destroy();
@@ -4142,7 +4137,7 @@ async function boot(): Promise<void> {
 
   if (import.meta.env.DEV) {
     (window as unknown as { __menu: unknown }).__menu = { beginRun, exitToMenu, restartRun, mainMenu, settings, coopLobby, titleScreen, savePanel, loading };
-    (window as unknown as { __layout: unknown }).__layout = { layout, perf, touchControls, app };
+    (window as unknown as { __layout: unknown }).__layout = { layout, perf, touchControls, app, fit }; // `fit` for synchronous panel QA (it.66).
   }
 }
 

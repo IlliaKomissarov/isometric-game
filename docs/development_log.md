@@ -1,5 +1,80 @@
 # Development Log
 
+## 2026-09-05 (iteration 66) - Ultra-adaptive HUD: the corner plate, the folding system bar, the globes retired
+
+### The audit
+- Landscape on a touch device put the health and resource globes, the XP
+  strip and the stat line at the LOWER CENTRE of the screen — the it.63
+  answer to "both lower corners are thumbs". That is the central clutter
+  the report describes: four elements at three anchors, all in the fight.
+- The it.66 draft found uncommitted in the tree had the right shape (a
+  status plate top-left, an action bar top-right, an arc of skills) but had
+  never been verified: the plate scaled with `hudScale * 0.86` and landed at
+  0.5 on a landscape phone — 4.5 px type; the bar hid two of its four
+  entries on every short screen, which is the it.65 regression exactly; the
+  desktop's command sheet was hidden in-run; the hotbar strip ran under the
+  thumb stick; and ~400 lines of CSS still positioned globes that were no
+  longer in the DOM.
+
+### What shipped
+- `ui/StatusFrame.ts`: one obsidian plate — living portrait, level lozenge,
+  HP / resource / XP gauges with a slow ghost trail behind each fill, the
+  purse — and `#hud-tl`, a flex column that adopts the buffs, the co-op
+  roster, the stat line, the depth plaque and the timer. Laid out, never
+  pinned: the corner cannot overlap itself at any scale.
+- `ui/SystemBar.ts`: six SVG icon targets (inventory, talents, hero,
+  bestiary, menu, fullscreen) under the minimap. They dispatch the desktop
+  keys, so there is one path into every panel. The bar FOLDS instead of
+  hiding: `bar-row` on a wide free edge, `bar-grid3` (3x2) on short and
+  micro screens, `bar-grid2` (2x3) beside the portrait pad. Six entries on
+  all 66 device configurations.
+- `core/OrientationManager.ts` now publishes `plateScale` (`--tl-scale`,
+  floor 0.78, 0.48 on a 240 px handset), `barForm` / `barSize`
+  (`--sb-size` 48 or 44), `hudInset` (`--hud-inset`: the ultrawide 16:9
+  clamp — 1280 px on 5120x1440) and `stageZoom` (0.82–1 on phones, up to
+  1.8 on the huge tier). `Camera.setLayoutZoom` multiplies it into the
+  wheel zoom. `Ambience.setBudget` thins the embers and mist when the
+  PerformanceScaler steps down.
+- `ui/icons.ts`: `currentColor` SVG marks on a 24 px grid — an emoji is a
+  different picture in every browser and a different width in every font.
+- The globes, `#progress-hud`, `#resource-wrap`, the it.65 tray and the
+  `hud-top` measuring path are gone from the DOM, from `main.ts` and from
+  the CSS: 89 rules and 103 selectors purged by a parser over the
+  `<style>` block, 5010 -> 4645 lines, brace balance verified.
+- Touch tutorial copy: the move / strike / loot / skill-point hints name
+  the stick, the blades, the hand and the bar when the layout is touch.
+- Micro landscape (320x240) moves the draught above the stick so it stays
+  out of the folded bar's box.
+
+### Bugs found by the matrix, in order
+- `sb-row` as a body class collided with the settings sheet's `.sb-row`
+  (padding 8px 12px): every device overflowed by 25 px on the right. Body
+  classes are now `bar-*`. The lesson is in `docs/skills/adaptive-hud-layout.md`.
+- The plate and the folded bar touched on 240x320; the plate yields to
+  0.48 there.
+- The healing draught sat inside the 3x2 bar's box on 320x240.
+- The hero sheet and the bestiary were never contain-fitted: `fit.add` ran
+  on `getElementById` two lines BEFORE those panels were constructed, so the
+  registration was a silent no-op. `FitScaler.addById` resolves on every
+  pass instead, so construction order is moot.
+- A hidden tab never advances a CSS transition, so a probe of the close
+  mark's inverse scale reads the start frame (identity). Disable the
+  transition while measuring; see the skill note.
+- The pause sheet had no close mark; it has the medallion now (resumes).
+
+### Verified
+- `__qa66(true)`: 66/66 configurations, zero failures — no document
+  scroll, no overflow, 44 px targets (84 px attack), no control or HUD
+  overlap, corridor rules, six bar entries, legible plate, no thumb
+  control above the pad.
+- Every bar entry opens its panel and closes it again by pointerdown.
+- Joystick + attack on two pointer ids in one gesture: DIRECT_MOVE,
+  ATTACK_DOWN, a second heading, ATTACK_UP, STOP — nothing dropped; the
+  base spawned exactly under the touch point.
+- Simulated rotation 390x844 -> 844x390 in 128 ms with hp, position, gold
+  and camera zoom unchanged.
+- Clean `tsc --noEmit` and `vite build`; zero console errors.
+
 ## 2026-09-04 (iteration 65) - A phone has no keyboard: the system tray, panel fit, HUD restack
 
 ### The bug behind every other bug

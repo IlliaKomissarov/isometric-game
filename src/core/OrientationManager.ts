@@ -21,6 +21,8 @@
 export type Orientation = 'portrait' | 'landscape';
 /** Size bands, smallest first. The tier drives HUD density, not the orientation. */
 export type SizeTier = 'micro' | 'compact' | 'standard' | 'tablet' | 'desktop' | 'huge';
+/** How the system bar folds: one row of six, three columns of two, or two columns of three. */
+export type BarForm = 'row' | 'grid3' | 'grid2';
 
 export interface LayoutState {
   /** Usable viewport in CSS pixels. */
@@ -42,12 +44,30 @@ export interface LayoutState {
   minEdge: number;
   aspect: number;
   /**
-   * How far the resource globes scale down. In portrait the control cluster
-   * owns the right of the pad, so the pair has to fit the strip left of it —
-   * a ratio CSS cannot derive, because a length divided by a length is not a
-   * number there.
+   * THE STATUS PLATE'S SCALE (it.66). Two limits, whichever bites first: a
+   * legibility floor (the plate is designed at 236 px with 9-10 px type, so
+   * below ~0.78 its numbers stop being numbers) and the room actually left
+   * beside the system bar. A number, not a length: `scale()` takes a number
+   * and CSS cannot divide a length by a length to get one.
    */
-  orbScale: number;
+  plateScale: number;
+  /** How the system bar folds on this screen. */
+  barForm: BarForm;
+  /** The bar's target size: 48 px with a pointer or on a tablet, 44 on a phone. */
+  barSize: number;
+  /**
+   * A zoom bias the camera multiplies into the wheel zoom. 1 on a desktop;
+   * a phone's stage is a few tiles wide, so it pulls back a little (more of
+   * the fight, tiles still crisp), and a huge screen pushes in so a 64 px
+   * tile is not a postage stamp on a 4K panel.
+   */
+  stageZoom: number;
+  /**
+   * THE 16:9 CLAMP (it.66): on an ultrawide the HUD's corners are pulled in
+   * to a centred 16:9 frame, so a 5120 px panel does not put the plate and
+   * the bar a metre apart from the fight. 0 on anything narrower than 21:9.
+   */
+  hudInset: number;
 }
 
 type Listener = (s: LayoutState) => void;
@@ -193,11 +213,30 @@ export class OrientationManager {
     }
     const stageH = Math.max(120, h - padH);
 
-    // The globe pair is ~370 px of art at scale 1. With a pad, the cluster
-    // takes max(200 px, 52%) of the width on the right, so the globes get
-    // what is left of the dividing border.
-    const clusterW = Math.max(200, w * 0.52);
-    const orbScale = padH > 0 ? clamp((w - clusterW - 16) / 370, 0.3, 0.62) : 0.6;
+    // THE SYSTEM BAR'S FORM (it.66). Six targets in one row where the top
+    // edge is wide and free (desktops, tablets, phones held flat), folded
+    // into a 3x2 block on a short or micro screen, and into a 2x3 column in
+    // the pad layout — where a row would run out of the corner into the
+    // crypt, but a narrow column hugs the right edge under the map.
+    const barSize = tier === 'tablet' || tier === 'desktop' || tier === 'huge' ? 48 : 44;
+    const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 ? 'grid3' : 'row';
+    const barW = barForm === 'row' ? 6 * barSize + 5 * 6 : barForm === 'grid3' ? 3 * 44 + 2 * 6 : 2 * 44 + 6;
+
+    // THE STATUS PLATE (it.66): legible first, then no wider than the room
+    // the bar leaves it. The floor of 0.78 keeps 9 px type at 7 px; the
+    // width limit only bites on a micro handset, where a plate that touches
+    // the bar is worse than one that is a little small.
+    const plateBase = orientation === 'portrait' ? minEdge / 430 : minEdge / 520;
+    // A 240 px handset cannot hold a legible plate AND the folded bar: the
+    // plate yields, to 0.48, because a plate that overlaps the bar is worse.
+    const plateScale = Math.min(clamp(plateBase, 0.78, tier === 'huge' ? 1.3 : 1), Math.max(tier === 'micro' ? 0.48 : 0.55, (w - barW - 40) / 236));
+
+    const hudInset = w / Math.max(1, h) > 2.05 ? Math.round((w - (h * 16) / 9) / 2) : 0;
+
+    const stageMin = Math.min(w, h - padH);
+    let stageZoom = 1;
+    if (tier === 'huge') stageZoom = clamp(stageMin / 1100, 1, 1.8);
+    else if (padH > 0 || tier === 'micro' || tier === 'compact') stageZoom = clamp(stageMin / 460, 0.82, 1);
 
     const cs = getComputedStyle(document.documentElement);
     const readInset = (name: string): number => {
@@ -215,7 +254,11 @@ export class OrientationManager {
       stageH,
       minEdge,
       aspect: w / Math.max(1, h),
-      orbScale,
+      plateScale,
+      barForm,
+      barSize,
+      stageZoom,
+      hudInset,
       safe: {
         top: readInset('--sat'),
         right: readInset('--sar'),
@@ -236,7 +279,8 @@ export class OrientationManager {
     const discrete =
       next.orientation !== this.target.orientation ||
       next.tier !== this.target.tier ||
-      next.touch !== this.target.touch;
+      next.touch !== this.target.touch ||
+      next.barForm !== this.target.barForm;
     this.target = next;
     if (instant) {
       this.applied = { ...next, safe: { ...next.safe } };
@@ -249,6 +293,8 @@ export class OrientationManager {
     this.applied.orientation = next.orientation;
     this.applied.tier = next.tier;
     this.applied.touch = next.touch;
+    this.applied.barForm = next.barForm;
+    this.applied.barSize = next.barSize;
     this.applied.safe = { ...next.safe };
     this.settled = false;
     this.startSpring();
@@ -274,7 +320,9 @@ export class OrientationManager {
       a.padH += (t.padH - a.padH) * k;
       a.stageH += (t.stageH - a.stageH) * k;
       a.hudScale += (t.hudScale - a.hudScale) * k;
-      a.orbScale += (t.orbScale - a.orbScale) * k;
+      a.plateScale += (t.plateScale - a.plateScale) * k;
+      a.stageZoom += (t.stageZoom - a.stageZoom) * k;
+      a.hudInset += (t.hudInset - a.hudInset) * k;
       const done =
         Math.abs(t.w - a.w) < 0.6 &&
         Math.abs(t.h - a.h) < 0.6 &&
@@ -286,7 +334,9 @@ export class OrientationManager {
         a.padH = t.padH;
         a.stageH = t.stageH;
         a.hudScale = t.hudScale;
-        a.orbScale = t.orbScale;
+        a.plateScale = t.plateScale;
+        a.stageZoom = t.stageZoom;
+        a.hudInset = t.hudInset;
         a.minEdge = t.minEdge;
         a.aspect = t.aspect;
       }
@@ -314,7 +364,9 @@ export class OrientationManager {
     root.setProperty('--stage-h', `${Math.round(s.stageH)}px`);
     root.setProperty('--pad-h', `${Math.round(s.padH)}px`);
     root.setProperty('--hud-scale', s.hudScale.toFixed(3));
-    root.setProperty('--orb-scale', s.orbScale.toFixed(3));
+    root.setProperty('--tl-scale', s.plateScale.toFixed(3));
+    root.setProperty('--sb-size', `${s.barSize}px`);
+    root.setProperty('--hud-inset', `${Math.round(s.hudInset)}px`);
     if (discrete || true) {
       const b = document.body.classList;
       b.toggle('orient-portrait', s.orientation === 'portrait');
@@ -323,6 +375,8 @@ export class OrientationManager {
       b.toggle('has-pad', s.padH > 1);
       b.toggle('short-screen', s.h < 420);
       for (const t of ['micro', 'compact', 'standard', 'tablet', 'desktop', 'huge']) b.toggle(`tier-${t}`, s.tier === t);
+      // `bar-*`, not `sb-*`: the settings sheet already owns `.sb-row`.
+      for (const f of ['row', 'grid3', 'grid2']) b.toggle(`bar-${f}`, s.barForm === f);
     }
   }
 

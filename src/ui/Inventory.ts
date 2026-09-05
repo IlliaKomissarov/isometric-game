@@ -51,6 +51,8 @@ export class InventoryUI {
   /** Always-visible extracted stats readout (lives beside the health orb). */
   private readonly statsBar: HTMLElement;
   private visible = false;
+  /** Which half a portrait screen is showing (it.66). */
+  private tab: 'gear' | 'pack' = 'gear';
   /** Interval driving the animated paperdoll while the panel is rendered. */
   private previewTimer: number | null = null;
   private readonly abort = new AbortController();
@@ -166,6 +168,10 @@ export class InventoryUI {
 
     this.panel.innerHTML = `
       <h3 class="drag-handle">INVENTORY<button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></h3>
+      <div class="inv-tabs" role="tablist">
+        <button class="ds-btn" type="button" role="tab" data-tab="gear" aria-selected="${this.tab === 'gear'}">GEAR</button>
+        <button class="ds-btn" type="button" role="tab" data-tab="pack" aria-selected="${this.tab === 'pack'}">PACK</button>
+      </div>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
       <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts</span></div>
@@ -175,6 +181,22 @@ export class InventoryUI {
       <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div>
     `;
 
+    this.panel.dataset.tab = this.tab;
+    // PORTRAIT TABS (it.66): a phone stacks the window, so the gear half and
+    // the pack half take turns rather than making a thumb scroll past one to
+    // reach the other. Landscape shows both columns and hides the tabs.
+    for (const b of this.panel.querySelectorAll<HTMLButtonElement>('.inv-tabs button')) {
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.tab = b.dataset.tab === 'pack' ? 'pack' : 'gear';
+        this.panel.dataset.tab = this.tab;
+        for (const other of this.panel.querySelectorAll('.inv-tabs button')) {
+          other.setAttribute('aria-selected', String(other === b));
+        }
+        audio.sfx('uiClick');
+      });
+    }
     fitItemIcons(this.panel); // Every icon scaled into its slot (it.51).
     // Stats live OUTSIDE the inventory — always visible beside the orb.
     const dmg = this.player.weaponDamage;

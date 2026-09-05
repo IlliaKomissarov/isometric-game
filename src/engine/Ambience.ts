@@ -113,6 +113,8 @@ export class Ambience {
   private readonly fx: FxSprite[] = [];
   private glintFrames: Texture[] | null = null;
   private hotspots: ReadonlyArray<{ x: number; y: number }> = [];
+  /** Share of the mote and mist fields that run (PerformanceScaler, it.66). */
+  private budget = 1;
   private readonly scratch = vec2();
   private readonly viewport: Viewport;
 
@@ -167,6 +169,19 @@ export class Ambience {
   }
 
   /** Ember-emitter positions (brazier coals) that attract mote respawns. */
+  /**
+   * THE PARTICLE BUDGET (it.66): a weak device keeps a fraction of the field.
+   * The sprites past the cut are parked at alpha 0 rather than destroyed, so
+   * a device that recovers gets its embers back without a rebuild.
+   */
+  setBudget(fraction: number): void {
+    this.budget = Math.max(0, Math.min(1, fraction));
+    const moteCut = Math.round(this.motes.length * this.budget);
+    for (let i = moteCut; i < this.motes.length; i++) this.motes[i].sprite.alpha = 0;
+    const fogCut = Math.round(this.fogPatches.length * this.budget);
+    for (let i = fogCut; i < this.fogPatches.length; i++) this.fogPatches[i].sprite.alpha = 0;
+  }
+
   setHotspots(points: ReadonlyArray<{ x: number; y: number }>): void {
     this.hotspots = points;
   }
@@ -527,7 +542,9 @@ export class Ambience {
     }
 
     // Crypt mist: slow drift, soft breathe, lit by the scene like the floor.
-    for (const patch of this.fogPatches) {
+    const fogCut = Math.round(this.fogPatches.length * this.budget);
+    for (let i = 0; i < fogCut; i++) {
+      const patch = this.fogPatches[i];
       patch.life += dt;
       const far = Math.hypot(patch.wx - px, patch.wy - py) > SPAWN_RADIUS + 4;
       if (patch.life >= patch.maxLife || far) this.respawnFog(patch, px, py);
@@ -542,7 +559,9 @@ export class Ambience {
       patch.sprite.position.set(s.x, s.y - 4);
     }
 
-    for (const mote of this.motes) {
+    const moteCut = Math.round(this.motes.length * this.budget);
+    for (let i = 0; i < moteCut; i++) {
+      const mote = this.motes[i];
       mote.life += dt;
       const far = Math.hypot(mote.wx - px, mote.wy - py) > SPAWN_RADIUS + 2;
       if (mote.life >= mote.maxLife || far) {

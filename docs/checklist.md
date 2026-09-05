@@ -532,6 +532,16 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] `.fit-centred` applied only after a successful measure, so a closed panel is never centred without a scale
 - [x] Verified at 390x660: every tray entry opens a panel that fits; desktop keeps CSS placement; 66/66 device configs pass; clean build; zero console errors
 
+## Iteration 66 - Ultra-adaptive HUD: corner plate, folding system bar, globes retired (2026-09-05)
+
+- [x] Audit: globes + XP strip + stat line at the lower centre on landscape touch (the central clutter); draft plate at 4.5 px type; bar hiding entries on short screens; desktop command sheet hidden in-run; ~400 lines of dead globe CSS
+- [x] `StatusFrame`: top-left plate (portrait, level, HP / resource / XP with ghost trails, purse) + `#hud-tl` flex column adopting buffs, party roster, stats, depth, timer
+- [x] `SystemBar`: six SVG targets (inventory, talents, hero, bestiary, menu, fullscreen) that fold — row / 3x2 / 2x3 — and never hide an entry
+- [x] `OrientationManager`: `plateScale`, `barForm` / `barSize`, `hudInset` (ultrawide 16:9 clamp), `stageZoom`; `Camera.setLayoutZoom`; `Ambience.setBudget` on the PerformanceScaler
+- [x] DOM + `main.ts` + CSS purged of the globes, `#progress-hud`, `#resource-wrap`, the it.65 tray and `hud-top` (89 rules, 103 selectors)
+- [x] Touch tutorial copy; micro-landscape draught placement; desktop command sheet restored; hotbar strip hidden on touch
+- [x] `src/dev/qa66.ts` device matrix: 66/66, zero failures; bar entries open/close; two-pointer stick + attack; live rotation keeps state; clean build; zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

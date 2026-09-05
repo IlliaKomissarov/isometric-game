@@ -23,8 +23,12 @@
 import { layout } from '@/core/OrientationManager';
 
 export interface FitOptions {
-  /** Share of the viewport the panel may occupy (0..1). */
+  /** Share of the viewport the panel may occupy on BOTH axes (0..1). */
   max?: number;
+  /** Width share, when it differs from the height share (it.66: 0.92). */
+  maxW?: number;
+  /** Height share, when it differs from the width share (it.66: 0.90). */
+  maxH?: number;
   /** Never enlarge past this. */
   maxScale?: number;
   /** Never shrink past this; the panel scrolls instead. */
@@ -39,10 +43,14 @@ export interface FitOptions {
   responsive?: boolean;
 }
 
-interface Entry extends Required<Omit<FitOptions, 'base' | 'responsive'>> {
-  el: HTMLElement;
+interface Entry extends Required<Omit<FitOptions, 'base' | 'responsive' | 'maxW' | 'maxH'>> {
+  el: HTMLElement | null;
+  /** Resolved on each pass when `el` is null: the panel may be built later. */
+  id: string | null;
   base: string;
   responsive: boolean;
+  maxW: number;
+  maxH: number;
 }
 
 class FitScaler {
@@ -72,9 +80,30 @@ class FitScaler {
    */
   add(el: HTMLElement | null, opts: FitOptions = {}): void {
     if (!el || this.entries.some((e) => e.el === el)) return;
+    this.register(el, null, opts);
+  }
+
+  /**
+   * Register BY ID (it.66): a run builds its windows one after another, and
+   * a registration that ran before the window existed used to be silently
+   * dropped — the hero sheet and the bestiary never fitted at all. An id is
+   * resolved on every pass instead, so the order of construction is moot.
+   */
+  addById(id: string, opts: FitOptions = {}): void {
+    if (this.entries.some((e) => e.id === id)) return;
+    this.register(null, id, opts);
+  }
+
+  private register(el: HTMLElement | null, id: string | null, opts: FitOptions): void {
+    // THE ENVELOPE (it.66): 92% of the width and 90% of the height, so a
+    // window always sits inside a visible margin rather than against the
+    // bezel — and so a phone's rounded corners never clip a border.
     const entry: Entry = {
       el,
+      id,
       max: opts.max ?? 0.9,
+      maxW: opts.maxW ?? opts.max ?? 0.92,
+      maxH: opts.maxH ?? opts.max ?? 0.9,
       maxScale: opts.maxScale ?? 1,
       minScale: opts.minScale ?? 0.5,
       base: opts.base ?? '',
@@ -95,7 +124,7 @@ class FitScaler {
   remove(el: HTMLElement): void {
     const i = this.entries.findIndex((e) => e.el === el);
     if (i < 0) return;
-    this.entries[i].el.style.removeProperty('transform');
+    el.style.removeProperty('transform');
     this.entries.splice(i, 1);
   }
 
@@ -127,7 +156,10 @@ class FitScaler {
   }
 
   private apply(e: Entry): void {
-    const el = e.el;
+    // A by-id entry re-resolves every pass: a run tears its windows down and
+    // builds new ones, and a stale element must never be measured.
+    const el = e.id ? document.getElementById(e.id) : e.el;
+    if (!el) return;
     const s0 = layout.state;
     const release = (): void => {
       if (!el.classList.contains('fit-centred')) return;
@@ -156,8 +188,8 @@ class FitScaler {
     }
     if (e.responsive) el.classList.add('fit-centred');
     const s = layout.state;
-    const availW = s.w * e.max;
-    const availH = s.h * e.max;
+    const availW = s.w * e.maxW;
+    const availH = s.h * e.maxH;
     const scale = Math.max(e.minScale, Math.min(e.maxScale, availW / natW, availH / natH));
     const next = e.base ? `${e.base} scale(${scale.toFixed(4)})` : `scale(${scale.toFixed(4)})`;
     if (el.style.transform !== next) el.style.transform = next;

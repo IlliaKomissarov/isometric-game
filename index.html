@@ -3559,6 +3559,8 @@
         max-width: calc(var(--app-w) - 12px);
         max-height: calc(var(--app-h) - 12px);
         box-sizing: border-box;
+        overflow: auto;
+        overscroll-behavior: contain;
       }
       /* Small screens: windows become full-bleed sheets that scroll. */
       body.tier-micro #inv-panel, body.tier-compact #inv-panel, body.tier-standard.orient-portrait #inv-panel,
@@ -3598,6 +3600,27 @@
       #main-menu .mm-panel { max-height: calc(var(--app-h) - 16px); overflow: auto; }
       /* A pivoted monitor or a phone in portrait: the stack still centres. */
       body.orient-portrait #main-menu .mm-panel { width: min(460px, calc(var(--app-w) - 24px)); }
+      /* A PHONE HELD FLAT (it.68): a 460 px column of six buttons is taller
+         than the screen, and shrinking it made 30 px buttons. The panel
+         turns into two columns — the crest and its motto on the left, the
+         six buttons on the right — and shows at full size. */
+      body.orient-landscape.short-screen #main-menu .mm-panel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        grid-template-rows: auto auto auto auto;
+        column-gap: 22px;
+        align-items: center;
+        width: min(720px, calc(var(--app-w) - 24px));
+        padding: 14px 20px;
+      }
+      body.orient-landscape.short-screen #main-menu .mm-logo { grid-column: 1; grid-row: 1; }
+      body.orient-landscape.short-screen #main-menu .mm-tag { grid-column: 1; grid-row: 2; }
+      body.orient-landscape.short-screen #main-menu .mm-rule { grid-column: 1; grid-row: 3; }
+      body.orient-landscape.short-screen #main-menu .mm-stack { grid-column: 2; grid-row: 1 / span 4; gap: 6px; }
+      body.orient-landscape.short-screen #main-menu .mm-btn { padding: 8px 14px; font-size: 12.5px; letter-spacing: 0.16em; }
+      body.orient-landscape.short-screen #main-menu .mm-foot { grid-column: 1; grid-row: 4; font-size: 10px; }
+      body.orient-landscape.short-screen #main-menu .mm-logo span { font-size: 28px; }
+      body.orient-landscape.short-screen #main-menu .mm-logo span:last-child { font-size: 32px; }
 
       /* The loading screen and modals never exceed the viewport either. */
       #loading-screen .ls-frame { max-width: calc(var(--app-w) - 16px); max-height: calc(var(--app-h) - 16px); overflow: auto; }
@@ -3608,6 +3631,9 @@
       #settings-panel .set-action small { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
       #settings-panel .set-btn { padding: 6px 12px; font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.16em; color: var(--ink); background: #0d0a12; border: 1px solid #5a4a30; cursor: pointer; }
       #settings-panel .set-btn:hover { color: #ffd070; border-color: #c8a558; }
+      #settings-panel .set-segs { display: flex; gap: 4px; flex: 0 0 auto; }
+      #settings-panel .set-segs .set-btn { min-height: 36px; }
+      #settings-panel .set-segs .set-btn.on { color: #0b0910; background: linear-gradient(180deg, #e8c46a, #a8843a); border-color: #c8a558; }
 
       /* ---- it.63 fixes found by the device matrix ---------------------- */
                   /* Same for the stat strip, which shares the desktop's left offsets. */
@@ -3714,11 +3740,24 @@
       body.tier-tablet #class-cards, body.orient-portrait.tier-desktop #class-cards { grid-template-columns: repeat(2, auto); gap: 14px; }
       body.tier-standard #class-cards, body.tier-compact #class-cards { grid-template-columns: repeat(2, auto); gap: 12px; }
       body.tier-micro #class-cards { grid-template-columns: repeat(2, auto); gap: 8px; }
+      /* A PHONE HELD FLAT (it.68): the four cards in one row, at the compact
+         size — 4 x 176 + gaps is 740 px, which a 667 px phone scales to 0.9
+         and an 844 px one shows at full size, with nothing to scroll. */
+      body.orient-landscape.tier-standard #class-cards, body.orient-landscape.tier-compact #class-cards { grid-template-columns: repeat(4, auto); gap: 12px; }
       /* The design width follows the column count. */
       body.tier-tablet #class-select .cs-fit, body.orient-portrait.tier-desktop #class-select .cs-fit { width: 560px; }
-      body.tier-standard #class-select .cs-fit, body.tier-compact #class-select .cs-fit, body.tier-micro #class-select .cs-fit { width: 430px; }
-      body.tier-micro .class-card, body.tier-compact .class-card { width: 176px; padding: 10px 10px 8px; }
-      body.tier-micro .cc-preview, body.tier-compact .cc-preview { width: 68px; height: 82px; }
+      body.tier-standard #class-select .cs-fit, body.tier-compact #class-select .cs-fit, body.tier-micro #class-select .cs-fit { width: 400px; }
+      body.orient-landscape.tier-standard #class-select .cs-fit, body.orient-landscape.tier-compact #class-select .cs-fit { width: 780px; }
+      /* The compact card belongs to EVERY phone tier: the standard tier (a
+         400-600 px short edge) used to keep the 240 px desktop card, two of
+         which overflowed the 430 px design width and were cut at the edges. */
+      body.tier-micro .class-card, body.tier-compact .class-card, body.tier-standard .class-card { width: 176px; padding: 10px 10px 8px; }
+      body.tier-micro .cc-preview, body.tier-compact .cc-preview, body.tier-standard .cc-preview { width: 68px; height: 82px; }
+      body.tier-standard #class-select h1, body.tier-compact #class-select h1 { font-size: 22px; letter-spacing: 0.22em; }
+      body.orient-landscape.tier-standard #class-select h1, body.orient-landscape.tier-compact #class-select h1 { margin-bottom: 2px; }
+      body.orient-landscape.tier-standard #class-select .cs-sub, body.orient-landscape.tier-compact #class-select .cs-sub { margin-bottom: 10px; }
+      /* Whatever is left scrolls; nothing is ever cut. */
+      #class-select { overflow-y: auto; overscroll-behavior: contain; }
       /* The action row wraps at every design width narrower than the desktop
          one, so three 220 px buttons can never set the panel's width. */
       #class-select .cs-actions { flex-wrap: wrap; justify-content: center; }
@@ -4241,11 +4280,12 @@
       #system-bar {
         display: grid;
         gap: 6px;
-        grid-template-columns: repeat(var(--sb-cols, 6), auto);
+        grid-template-columns: repeat(var(--sb-cols, 7), auto);
         justify-content: end;
       }
-      body.bar-grid3 #system-bar { --sb-cols: 3; }
+      body.bar-grid4 #system-bar { --sb-cols: 4; }
       body.bar-grid2 #system-bar { --sb-cols: 2; }
+      .ds-icon-btn.sb-cheats { color: #c9a0ff; }
       body:not(.in-run) #system-bar { display: none; }
       /* THE CHART (it.67). A framed RECTANGLE, not a round clip: a round
          map hid its own corners, and on a phone its 80 px were a blur. The
@@ -4534,14 +4574,42 @@
 
       /* The bestiary in portrait (it.67): one column, the list capped so
          the page shows beneath it; the head leaves the close mark its room. */
-      body.orient-portrait.tier-micro .bs-list, body.orient-portrait.tier-compact .bs-list, body.orient-portrait.tier-standard .bs-list { max-height: 34vh; }
-      body.orient-portrait.tier-micro .bs-detail, body.orient-portrait.tier-compact .bs-detail, body.orient-portrait.tier-standard .bs-detail { max-height: none; }
-      body.orient-portrait.tier-micro .bs-stage, body.orient-portrait.tier-compact .bs-stage, body.orient-portrait.tier-standard .bs-stage { height: 120px; }
+      /* The creature's page comes FIRST in portrait (it.68) — it is what a
+         player opened the book to see — and the list of names scrolls under
+         it; the panel itself scrolls when a screen is short. */
+      body.orient-portrait.tier-micro .bs-detail, body.orient-portrait.tier-compact .bs-detail, body.orient-portrait.tier-standard .bs-detail { order: -1; max-height: none; }
+      body.orient-portrait.tier-micro .bs-list, body.orient-portrait.tier-compact .bs-list, body.orient-portrait.tier-standard .bs-list { max-height: calc(var(--app-h) * 0.3); }
+      body.orient-portrait.tier-micro .bs-stage, body.orient-portrait.tier-compact .bs-stage, body.orient-portrait.tier-standard .bs-stage { height: 150px; }
+      body.orient-landscape.short-screen .bs-list, body.orient-landscape.short-screen .bs-detail { max-height: calc(var(--app-h) * 0.72); }
+      body.orient-landscape.short-screen .bs-stage { height: 120px; }
       #bestiary .bs-head, #skill-tree .st-head, #char-sheet .cs-head { padding-right: 44px; }
 
       /* ---- 9. THE CLOSE MARK ------------------------------------------ */
       /* The pause sheet is the one modal that had no mark; its mark resumes. */
       #pause-menu .modal-panel { position: relative; }
+      /* A PHONE HELD FLAT (it.68): seven stacked buttons are 500 px tall on
+         a 412 px screen. Two columns, full size, and the sheet scrolls if a
+         screen is shorter still. */
+      body.orient-landscape.short-screen #pause-menu .modal-panel,
+      body.orient-landscape.short-screen #death-menu .modal-panel {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 10px;
+        width: min(640px, calc(var(--app-w) - 24px));
+        padding: 16px 20px 14px;
+        text-align: center;
+      }
+      body.orient-landscape.short-screen #pause-menu .modal-panel > h2,
+      body.orient-landscape.short-screen #pause-menu .modal-panel > .modal-sub,
+      body.orient-landscape.short-screen #death-menu .modal-panel > h2,
+      body.orient-landscape.short-screen #death-menu .modal-panel > .modal-sub,
+      body.orient-landscape.short-screen #death-menu .modal-panel > .dm-stats { grid-column: 1 / -1; }
+      body.orient-landscape.short-screen #pause-menu .modal-panel > h2,
+      body.orient-landscape.short-screen #death-menu .modal-panel > h2 { margin-bottom: 2px; font-size: 20px; }
+      body.orient-landscape.short-screen #pause-menu .modal-panel > .modal-sub,
+      body.orient-landscape.short-screen #death-menu .modal-panel > .modal-sub { margin-bottom: 8px; }
+      body.orient-landscape.short-screen .modal .menu-btn { margin: 0 0 6px; padding: 9px 12px; font-size: 12.5px; letter-spacing: 0.18em; }
+      body.orient-landscape.short-screen .modal .menu-btn .mm-sub { display: none; }
       /* Top-right of every window, one shape, 44 px of target under a 20 px
          medallion — the size a thumb needs, not the size the mark looks. */
       body .tp-close {

@@ -32,6 +32,7 @@ import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
 import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
+import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
 import { StatsManager } from '@/systems/StatsManager';
 import { dressColiseum, generateColiseumMap, type ColiseumMap } from '@/scenes/Coliseum';
@@ -241,15 +242,18 @@ async function boot(): Promise<void> {
   void fullscreenButton; // The corner control exists for every screen (it.64).
   // CONTAIN-FIT (it.64): no window may be cropped on any viewport. Centred
   // panels keep their translate; flex-centred ones scale on their own.
-  fit.add(document.querySelector('#class-select .cs-fit'), { maxW: 0.92, maxH: 0.9, minScale: 0.28 });
-  fit.add(document.querySelector('#main-menu .mm-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.45 });
-  fit.add(document.querySelector('#credits .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.4 });
-  fit.add(document.querySelector('#pause-menu .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
-  fit.add(document.querySelector('#death-menu .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
-  fit.add(document.querySelector('#exit-modal .am-box'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
-  fit.add(document.querySelector('#coop-panel .cp-frame'), { maxW: 0.92, maxH: 0.9, minScale: 0.4 });
-  fit.add(document.querySelector('#loading-screen .ls-frame'), { maxW: 0.92, maxH: 0.9, minScale: 0.5 });
-  fit.add(document.getElementById('settings-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.45, base: 'translate(-50%, -50%)' });
+  // READABLE FLOORS (it.68). A window is never shrunk into a miniature: the
+  // floor is where its type stops being legible, and past it the window
+  // REFLOWS (an orientation layout in the CSS) and SCROLLS inside itself.
+  fit.add(document.querySelector('#class-select .cs-fit'), { maxW: 0.94, maxH: 0.92, minScale: 0.75 });
+  fit.add(document.querySelector('#main-menu .mm-panel'), { maxW: 0.94, maxH: 0.92, minScale: 0.8 });
+  fit.add(document.querySelector('#credits .modal-panel'), { maxW: 0.92, maxH: 0.9, minScale: 0.75 });
+  fit.add(document.querySelector('#pause-menu .modal-panel'), { maxW: 0.94, maxH: 0.92, minScale: 0.85 });
+  fit.add(document.querySelector('#death-menu .modal-panel'), { maxW: 0.94, maxH: 0.92, minScale: 0.85 });
+  fit.add(document.querySelector('#exit-modal .am-box'), { maxW: 0.92, maxH: 0.9, minScale: 0.8 });
+  fit.add(document.querySelector('#coop-panel .cp-frame'), { maxW: 0.94, maxH: 0.92, minScale: 0.7 });
+  fit.add(document.querySelector('#loading-screen .ls-frame'), { maxW: 0.92, maxH: 0.9, minScale: 0.7 });
+  fit.add(document.getElementById('settings-panel'), { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)' });
 
   // CURSOR FIRST (it.25 freeze fix): the gothic pointer exists during the
   // loading screen and from the very first frame of every run.
@@ -795,6 +799,19 @@ async function boot(): Promise<void> {
       // Every delver leaves town with two draughts and a way back (it.39).
       p.addItem('health_potion');
       p.addItem('health_potion');
+      // THE FIRST SKILL IS FREE (it.68): a new hero leaves town with its
+      // class's opening skill on slot 1 — the free point spent on it — so
+      // the hotbar is never four locks and a mystery on the first screen.
+      // Deterministic: every peer builds a fresh hero the same way.
+      const first = CLASS_SKILLS[cls][0];
+      if (first && !p.unlockedSkills.has(first.id)) {
+        p.skillPoints = Math.max(0, p.skillPoints - skillCost(p, first));
+        p.unlockedSkills.add(first.id);
+        if (!p.loadout.includes(first.id)) {
+          const free = p.loadout.indexOf(null);
+          p.loadout[free >= 0 ? free : 0] = first.id;
+        }
+      }
     };
 
     /** One party seat: the hero, its colours, its co-op bookkeeping. */
@@ -3790,7 +3807,7 @@ async function boot(): Promise<void> {
     // By id (it.66): the hero sheet and the bestiary are built a few lines
     // below this, and a registration by element silently dropped them.
     for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'leaderboard', 'level-select']) {
-      fit.addById(id, { maxW: 0.92, maxH: 0.9, minScale: 0.4, base: 'translate(-50%, -50%)', responsive: true });
+      fit.addById(id, { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
     const bestiaryUI = new BestiaryUI(player);

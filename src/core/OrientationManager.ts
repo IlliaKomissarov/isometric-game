@@ -21,8 +21,29 @@
 export type Orientation = 'portrait' | 'landscape';
 /** Size bands, smallest first. The tier drives HUD density, not the orientation. */
 export type SizeTier = 'micro' | 'compact' | 'standard' | 'tablet' | 'desktop' | 'huge';
-/** How the system bar folds: one row of six, three columns of two, or two columns of three. */
-export type BarForm = 'row' | 'grid3' | 'grid2';
+/** How the system bar folds: one row of seven, four columns of two, or two columns of four. */
+export type BarForm = 'row' | 'grid4' | 'grid2';
+
+/**
+ * THE VIRTUAL-CONTROLS OVERRIDE (it.68). Detection is a guess — a phone in
+ * "desktop site" mode reports no touch points, a touch laptop reports some
+ * — so the player has the last word: 'auto' trusts detection plus the first
+ * touch actually seen, 'on' and 'off' do what they say. Persisted.
+ */
+export type ControlsMode = 'auto' | 'on' | 'off';
+const CONTROLS_KEY = 'iso-arpg-controls';
+let controlsMode: ControlsMode = 'auto';
+try {
+  const raw = localStorage.getItem(CONTROLS_KEY);
+  if (raw === 'on' || raw === 'off' || raw === 'auto') controlsMode = raw;
+} catch {
+  /* storage unavailable: auto */
+}
+export function getControlsMode(): ControlsMode {
+  return controlsMode;
+}
+/** A touch event has been observed on this page (set once, never cleared). */
+let touchSeen = false;
 
 export interface LayoutState {
   /** Usable viewport in CSS pixels. */
@@ -106,6 +127,16 @@ export class OrientationManager {
     this.write(this.applied, true);
     const { signal } = this.abort;
     const bump = (): void => this.recompute();
+    // THE FIRST TOUCH IS PROOF (it.68): whatever the media queries claimed,
+    // a finger on the glass means the virtual controls belong on screen.
+    const sawTouch = (e: Event): void => {
+      if (touchSeen) return;
+      if (e.type === 'pointerdown' && (e as PointerEvent).pointerType !== 'touch') return;
+      touchSeen = true;
+      this.recompute();
+    };
+    window.addEventListener('touchstart', sawTouch, { capture: true, passive: true, signal });
+    window.addEventListener('pointerdown', sawTouch, { capture: true, passive: true, signal });
     window.addEventListener('resize', bump, { signal });
     window.addEventListener('orientationchange', bump, { signal });
     window.visualViewport?.addEventListener('resize', bump, { signal });
@@ -178,15 +209,37 @@ export class OrientationManager {
 
   // --- The computation ---------------------------------------------------------
 
+  /** The player's override; 'auto' returns to detection. */
+  setControlsMode(mode: ControlsMode): void {
+    controlsMode = mode;
+    try {
+      localStorage.setItem(CONTROLS_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+    this.recompute();
+  }
+
   private compute(): LayoutState {
-    const vv = window.visualViewport;
-    const w = Math.round(this.sim?.w ?? vv?.width ?? window.innerWidth);
-    const h = Math.round(this.sim?.h ?? vv?.height ?? window.innerHeight);
+    // THE LAYOUT VIEWPORT, NOT THE VISUAL ONE (it.68). `visualViewport`
+    // tracks pinch-zoom: zoomed out, it reported 1463 px on a 412 px phone
+    // and the HUD dressed for a tablet; zoomed in, it reported 300 and the
+    // screen was "zoomed in and cut". Fixed elements are laid out against
+    // the layout viewport — that is the box the HUD must agree with.
+    const doc = document.documentElement;
+    const w = Math.round(this.sim?.w ?? (doc.clientWidth || window.innerWidth));
+    const h = Math.round(this.sim?.h ?? (doc.clientHeight || window.innerHeight));
     const orientation: Orientation = h >= w ? 'portrait' : 'landscape';
     const minEdge = Math.min(w, h);
     const maxEdge = Math.max(w, h);
     const tier = tierFor(minEdge, maxEdge);
-    const touch = this.sim?.touch ?? (navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches);
+    const detected =
+      navigator.maxTouchPoints > 0 ||
+      window.matchMedia('(pointer: coarse)').matches ||
+      window.matchMedia('(hover: none)').matches ||
+      'ontouchstart' in window ||
+      /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    const touch = this.sim?.touch ?? (controlsMode === 'on' ? true : controlsMode === 'off' ? false : detected || touchSeen);
 
     // The HUD's furniture shrinks with the short edge and never overwhelms a
     // small screen; on very large ones it grows a little so it is not lost.
@@ -221,9 +274,11 @@ export class OrientationManager {
     // into a 3x2 block on a short or micro screen, and into a 2x3 column in
     // the pad layout — where a row would run out of the corner into the
     // crypt, but a narrow column hugs the right edge under the map.
-    const barSize = tier === 'tablet' || tier === 'desktop' || tier === 'huge' ? 48 : 44;
-    const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 ? 'grid3' : 'row';
-    const barW = barForm === 'row' ? 6 * barSize + 5 * 6 : barForm === 'grid3' ? 3 * 44 + 2 * 6 : 2 * 44 + 6;
+    // Seven entries since it.68 (the Forbidden Arts joined). A 240 px
+    // handset takes 36 px targets: seven 44s do not fit beside a plate.
+    const barSize = tier === 'micro' ? 36 : tier === 'tablet' || tier === 'desktop' || tier === 'huge' ? 48 : 44;
+    const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 ? 'grid4' : 'row';
+    const barW = barForm === 'row' ? 7 * barSize + 6 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
 
     // THE CHART (it.67): 4:3, per tier. A micro handset has no room for it.
     const mapW = tier === 'micro' ? 0 : h < 420 ? 112 : tier === 'huge' ? 200 : tier === 'tablet' ? 150 : tier === 'desktop' ? 160 : 120;
@@ -392,7 +447,7 @@ export class OrientationManager {
       b.toggle('short-screen', s.h < 420);
       for (const t of ['micro', 'compact', 'standard', 'tablet', 'desktop', 'huge']) b.toggle(`tier-${t}`, s.tier === t);
       // `bar-*`, not `sb-*`: the settings sheet already owns `.sb-row`.
-      for (const f of ['row', 'grid3', 'grid2']) b.toggle(`bar-${f}`, s.barForm === f);
+      for (const f of ['row', 'grid4', 'grid2']) b.toggle(`bar-${f}`, s.barForm === f);
     }
   }
 

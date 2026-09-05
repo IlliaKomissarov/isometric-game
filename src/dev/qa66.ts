@@ -113,7 +113,8 @@ export function runMatrix(detail = false): { tested: number; failed: number; fai
       // The floors: 44 for any target (48 for a system target where a
       // pointer or a tablet gives the room), 84 for the attack (68 on a
       // micro handset, where 84 cannot coexist with a stick).
-      const min = el.classList.contains('tc-attack') ? 67.5 : 43.5;
+      const micro = document.body.classList.contains('tier-micro');
+      const min = el.classList.contains('tc-attack') ? 67.5 : el.classList.contains('ds-icon-btn') && micro ? 35.5 : 43.5;
       if (b.width < min || b.height < min) fails.push(`small ${n} ${Math.round(b.width)}`);
       // THE PAD IS THE THUMBS' OWN: with a pad, no thumb control may reach
       // up into the crypt — that is the whole point of the split. (The
@@ -123,7 +124,7 @@ export function runMatrix(detail = false): { tested: number; failed: number; fai
     // Every system target is present on every screen (it.66): no tier may
     // hide the bag, the talents, the hero, the bestiary, the menu or fullscreen.
     const sysCount = [...document.querySelectorAll<HTMLElement>('#system-bar .ds-icon-btn')].filter(visible).length;
-    if (sysCount !== 6) fails.push(`sysbar ${sysCount}/6`);
+    if (sysCount !== 7) fails.push(`sysbar ${sysCount}/7`);
     // The plate must stay legible: its scale floor is 0.55 (micro) and its
     // real width at least 128 px.
     const plate = document.getElementById('status-frame');

@@ -2,7 +2,8 @@
  * @module ui/SystemBar
  * THE SYSTEM ACCESS BAR (it.66): the top-right corner, beside the minimap.
  *
- * Six targets — pack, talents, hero, bestiary, menu, fullscreen — that open
+ * Seven targets — pack, talents, hero, bestiary, menu, the Forbidden Arts
+ * (the cheat menu, it.68) and fullscreen — that open
  * the same windows the keyboard opens, by dispatching the same keys. One
  * code path in, so a thumb and a key can never disagree about what a panel
  * does. Fullscreen is the one entry with no key: it calls the toggle the
@@ -23,7 +24,7 @@
  */
 
 import { audio } from '@/engine/AudioManager';
-import { ICON_BESTIARY, ICON_COG, ICON_FULLSCREEN, ICON_HERO, ICON_PACK, ICON_TREE } from '@/ui/icons';
+import { ICON_BESTIARY, ICON_COG, ICON_FULLSCREEN, ICON_HERO, ICON_PACK, ICON_SKULL, ICON_TREE } from '@/ui/icons';
 import { toggleFullscreen } from '@/ui/TouchControls';
 
 interface Entry {
@@ -40,6 +41,7 @@ const ENTRIES: Entry[] = [
   { key: 'KeyC', label: 'Hero', icon: ICON_HERO, cls: 'sb-hero' },
   { key: 'KeyB', label: 'Bestiary', icon: ICON_BESTIARY, cls: 'sb-bestiary' },
   { key: 'Escape', label: 'Menu', icon: ICON_COG, cls: 'sb-menu' },
+  { key: 'F1', label: 'Forbidden Arts', icon: ICON_SKULL, cls: 'sb-cheats' },
   { key: null, label: 'Fullscreen', icon: ICON_FULLSCREEN, cls: 'sb-full' },
 ];
 

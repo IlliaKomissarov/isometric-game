@@ -88,6 +88,13 @@ export const ICON_HERO = svg(
     '<path d="M4.4 20.6a7.6 7.6 0 0 1 15.2 0"/>',
 );
 
+/** A skull: the Forbidden Arts. */
+export const ICON_SKULL = svg(
+  '<path d="M12 3.2a7 7 0 0 0-7 7c0 2.5 1.2 4.2 2.6 5.4V19a1.6 1.6 0 0 0 1.6 1.6h5.6A1.6 1.6 0 0 0 16.4 19v-3.4C17.8 14.4 19 12.7 19 10.2a7 7 0 0 0-7-7z"/>' +
+    '<circle cx="9.3" cy="10.6" r="1.7"/><circle cx="14.7" cy="10.6" r="1.7"/>' +
+    '<path d="M12 13.2l-1 1.9h2z"/><path d="M10.2 17.6v3M13.8 17.6v3"/>',
+);
+
 /** Four carved corner brackets: the universal "expand" mark. */
 export const ICON_FULLSCREEN = svg(
   '<path d="M4.4 9.4V4.4h5"/><path d="M14.6 4.4h5v5"/>' +

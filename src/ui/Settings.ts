@@ -14,6 +14,7 @@
 import { audio } from '@/engine/AudioManager';
 import { setVisual, visuals } from '@/core/VisualSettings';
 import { toggleFullscreen } from '@/ui/TouchControls';
+import { getControlsMode, layout, type ControlsMode } from '@/core/OrientationManager';
 
 type Tab = 'audio' | 'visuals' | 'controls';
 
@@ -132,6 +133,12 @@ export class SettingsUI {
         ${toggle('particles', 'Ambient particles', 'embers, ash and fog on the title')}
       </div>
       <div data-pane="controls" hidden>
+        <div class="set-row set-action set-seg">
+          <span>Virtual controls<small>the thumb stick and buttons — AUTO shows them on a touch screen</small></span>
+          <div class="set-segs" role="group" aria-label="Virtual controls">
+            ${(['auto', 'on', 'off'] as ControlsMode[]).map((m) => `<button type="button" class="set-btn${getControlsMode() === m ? ' on' : ''}" data-controls="${m}">${m === 'auto' ? 'AUTO' : m === 'on' ? 'ALWAYS' : 'NEVER'}</button>`).join('')}
+          </div>
+        </div>
         <div class="set-controls">${controls
           .map(([what, key]) => `<div class="set-ctl"><span>${what}</span><kbd>${key}</kbd></div>`)
           .join('')}</div>
@@ -161,6 +168,13 @@ export class SettingsUI {
     this.panel.querySelector('[data-fullscreen]')?.addEventListener('click', () => {
       audio.sfx('uiClick');
       void toggleFullscreen();
+    });
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-controls]').forEach((b) => {
+      b.addEventListener('click', () => {
+        audio.sfx('uiClick');
+        layout.setControlsMode(b.dataset.controls as ControlsMode);
+        this.panel.querySelectorAll<HTMLElement>('[data-controls]').forEach((o) => o.classList.toggle('on', o === b));
+      });
     });
     this.panel.querySelectorAll<HTMLInputElement>('input[data-visual]').forEach((input) => {
       input.addEventListener('change', () => {

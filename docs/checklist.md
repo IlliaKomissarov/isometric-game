@@ -554,6 +554,17 @@ User-confirmed direction: **Diablo 1 deliberate pacing** (0.8 s swings).
 - [x] Bestiary stacks in portrait; close marks clear panel heads; boot label wraps centred
 - [x] Matrix 66/66, clean build, zero console errors
 
+## Iteration 68 - Layout viewport, touch override, menus that reflow (2026-09-05)
+
+- [x] Root cause: the layout read the pinch-zoomable visual viewport; it reads the layout viewport now
+- [x] Touch detection: hover/UA fallbacks, first-touch-seen, and a Virtual Controls AUTO / ALWAYS / NEVER switch in settings
+- [x] Class screen: compact cards on every phone tier, four across on a landscape phone, nothing cut
+- [x] Title, pause and death menus reflow to two columns on a landscape phone at full size; modals scroll
+- [x] Bestiary: creature page first in portrait
+- [x] Forbidden Arts as the seventh bar entry; bar folds row / 4x2 / 2x4
+- [x] A new hero starts with its first skill on slot 1
+- [x] Matrix 66/66, clean build, zero console errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

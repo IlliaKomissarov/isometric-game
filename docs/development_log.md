@@ -1,5 +1,45 @@
 # Development Log
 
+## 2026-09-05 (iteration 68) - The layout viewport, a touch override, readable menus that reflow
+
+### The root cause behind "zoomed in and cut", "no controls", "tiny menus"
+- `OrientationManager` read `visualViewport`, which tracks PINCH ZOOM. A
+  phone zoomed out reported 1463x662 for a 412 px screen: the layout dressed
+  for a tablet — row bar, desktop map, no pad — and a phone zoomed in
+  reported a few hundred px and cut the screen. Fixed elements are laid out
+  against the LAYOUT viewport, so that is what the HUD now reads
+  (`documentElement.clientWidth/Height`).
+- Touch detection had no fallback; a browser in "desktop site" mode reports
+  no touch. Detection now also counts `hover: none`, `ontouchstart` and a
+  mobile UA, the FIRST TOUCH SEEN on the page flips it on for good, and the
+  settings sheet has a Virtual Controls switch: AUTO / ALWAYS / NEVER,
+  persisted (`iso-arpg-controls`).
+- The class screen's standard tier (400-600 px phones) kept the 240 px
+  desktop card: two of them overflowed the 430 px design width and were cut
+  at the edges. Every phone tier takes the compact card.
+
+### Menus that reflow instead of shrinking
+- Contain-fit floors are legibility floors now (0.75-0.85); past them a
+  window REFLOWS and SCROLLS. Modals carry `overflow: auto`.
+- Landscape phone: the title menu is two columns (crest left, stack right)
+  at full size; the pause and death sheets are two columns of 44 px buttons;
+  the class screen shows the four cards in one row; the bestiary caps its
+  columns to the screen.
+- Portrait: the bestiary shows the creature's page first, the list beneath.
+
+### Also
+- The Forbidden Arts is the seventh bar entry (F1); the bar folds row /
+  4x2 / 2x4; a 240 px handset takes 36 px targets.
+- A new hero leaves town with its class's first skill on slot 1 (the free
+  point spent on it) — the hotbar is never four locks on the first screen.
+
+### Verified
+- Matrix 66/66; class screen inside the viewport at 412x780 (0.96) and
+  915x412 (1.0); title menu 762x324 at 915x412; pause sheet 640x278 at
+  scale 1; first skill `whirlwind` on slot 1 with its icon on the thumb
+  target; seven bar entries; settings switch renders and persists; clean
+  build; zero console errors.
+
 ## 2026-09-05 (iteration 67) - The OnePlus 8T bug folder: menu tap, chart, cheats, skill faces, ergonomics, idle fade
 
 ### What the five screenshots showed (`public/assets/bugs`)

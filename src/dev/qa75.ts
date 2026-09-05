@@ -332,6 +332,60 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     check('coliseum back to town', await until(() => game() && game().floor === 0, 25000, 250));
     g = game();
 
+    // ---- the camp forge and the merchants (it.78) ----------------------------------------------
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      const forge = g.town?.interactables.find((i: { kind: string }) => i.kind === 'forge');
+      check('the camp forge stands in town', !!forge, forge ? `${forge.x},${forge.y}` : 'none');
+      const p = g.player;
+      p.addItem('steel_blade@L3R2U0Astr2.crt1');
+      p.addItem('leather_boots@L2R0U0');
+      p.addMaterial('iron_scrap', 30);
+      p.addMaterial('arcane_dust', 6);
+      p.addMaterial('essence', 4);
+      const goldBefore = p.gold;
+      p.gold = Math.max(p.gold, 2000);
+      g.craftUI.open('salvage');
+      await wait(60);
+      check('the forge panel opens', !!document.querySelector('#craft-panel.open'));
+      check('the forge panel fits the screen', inside(document.getElementById('craft-panel')));
+      const bootsIdx = p.backpack.findIndex((id: string) => id.startsWith('leather_boots'));
+      const scrapBefore = p.materials.get('iron_scrap') ?? 0;
+      g.queue.enqueue({ type: 'SALVAGE', playerId: 0, backpackIndex: bootsIdx });
+      g.loop.step(3);
+      check('salvage pays scraps', (p.materials.get('iron_scrap') ?? 0) > scrapBefore && !p.backpack.some((id: string) => id.startsWith('leather_boots')));
+      const dustBefore = p.materials.get('arcane_dust') ?? 0;
+      g.queue.enqueue({ type: 'TRANSMUTE', playerId: 0, recipe: 'scrap_dust', times: 1 });
+      g.loop.step(3);
+      check('transmute turns five scraps into dust', (p.materials.get('arcane_dust') ?? 0) === dustBefore + 1);
+      const bladeIdx = p.backpack.findIndex((id: string) => id.startsWith('steel_blade'));
+      for (let i = 0; i < 3; i++) {
+        g.queue.enqueue({ type: 'REINFORCE', playerId: 0, backpackIndex: bladeIdx });
+        g.loop.step(3);
+      }
+      check('three sure reinforcements reach +3', p.backpack[bladeIdx]?.includes('U3'), p.backpack[bladeIdx]);
+      const before = p.backpack[bladeIdx];
+      g.queue.enqueue({ type: 'REROLL', playerId: 0, backpackIndex: bladeIdx, affixIndex: 0 });
+      g.loop.step(3);
+      check('refining rewrites one line', p.backpack[bladeIdx] !== before && p.backpack[bladeIdx]?.includes('U3'), p.backpack[bladeIdx]);
+      const packBefore = p.backpack.length;
+      g.queue.enqueue({ type: 'FORGE', playerId: 0, base: 'steel_shortsword' });
+      g.loop.step(3);
+      check('the forge makes a blueprint', p.backpack.length === packBefore + 1 && p.backpack[p.backpack.length - 1].startsWith('steel_shortsword@'), p.backpack[p.backpack.length - 1]);
+      g.craftUI.close();
+      g.shopUI.open('armorer');
+      await wait(60);
+      check('the armorer stocks rolled gear', g.townSystem.stock.some((id: string) => id.includes('@')), String(g.townSystem.stock.length));
+      check('the restock clock reads', !!document.querySelector('#shop-panel [data-restock]')?.textContent);
+      g.shopUI.close();
+      p.gold = goldBefore;
+    }
+
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
     {
       g.player.addItem('soldier_blade');

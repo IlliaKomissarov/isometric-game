@@ -14,7 +14,8 @@ import { eventBus } from '@/core/EventBus';
 import type { Camera } from '@/engine/Camera';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
-import { RARITY_COLOR, rollChestItem, rollDrop, rollRareItem, type ItemDef, ITEMS } from '@/items/catalog';
+import { RARITY_COLOR, type ItemDef } from '@/items/catalog';
+import { itemDef, rollChestItem, rollDrop, rollRareItem } from '@/items/instance';
 import { spriteLib } from '@/render/SpriteLibrary';
 import { itemIconTexture } from '@/ui/itemIcons';
 import { vec2 } from '@/utils/Vec2';
@@ -37,6 +38,8 @@ export class LootSystem {
   private readonly items = new Map<number, GroundItemView>();
   private nextUid = 1;
   private readonly rand: Rng;
+  /** The floor's item level (it.78): what its drops roll at. Set by the floor builder. */
+  ilvl = 1;
 
   /** The stream's position (a world snapshot carries it; it.73). */
   get rngState(): number {
@@ -56,7 +59,7 @@ export class LootSystem {
     for (const it of this.items.values()) it.root.destroy({ children: true });
     this.items.clear();
     for (const it of s.items) {
-      const def = ITEMS[it.itemId];
+      const def = itemDef(it.itemId);
       if (def) this.spawnAs(it.uid, def, it.x, it.y);
     }
     this.nextUid = Math.max(s.next, this.nextUid);
@@ -72,22 +75,28 @@ export class LootSystem {
 
   /** Roll the drop table at a death location (deterministic stream). */
   tryDropAt(x: number, y: number): void {
-    const def = rollDrop(this.rand);
-    if (def) this.spawn(def, x, y);
+    const id = rollDrop(this.rand, this.ilvl);
+    if (id) this.spawnId(id, x, y);
   }
 
-  /** Guaranteed drop (chests): always yields an item, rarity-weighted. */
+  /** Guaranteed drop (chests): always yields gear, uncommon at least. */
   dropForced(x: number, y: number): void {
-    this.spawn(rollChestItem(this.rand), x, y);
+    this.spawnId(rollChestItem(this.rand, this.ilvl), x, y);
   }
 
   /** Guaranteed RARE drop (boss trophies). */
   dropRareAt(x: number, y: number): void {
-    this.spawn(rollRareItem(this.rand), x, y);
+    this.spawnId(rollRareItem(this.rand, this.ilvl), x, y);
   }
 
   spawn(def: ItemDef, x: number, y: number): void {
     this.spawnAs(this.nextUid++, def, x, y);
+  }
+
+  /** Lay an item by id (an instance id resolves to its derived def). */
+  spawnId(id: string, x: number, y: number): void {
+    const def = itemDef(id);
+    if (def) this.spawnAs(this.nextUid++, def, x, y);
   }
 
   /**
@@ -137,7 +146,8 @@ export class LootSystem {
       // burst never carpets the floor.
       glyph = new Sprite(spriteLib.single(`wicon_${def.icon}`));
       glyph.anchor.set(0.5, 0.5);
-      glyph.scale.set(1.0);
+      // The Raven icons are 64 px paintings (it.78): a third of that on the ground.
+      glyph.scale.set(def.icon.startsWith('raven') ? 0.42 : 1.0);
       glyph.position.y = -7;
     } else {
       // Non-pack gear drops as its crisp generated pixel icon (40 px source → 28 px).

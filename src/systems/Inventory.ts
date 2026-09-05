@@ -9,7 +9,7 @@
 import { eventBus } from '@/core/EventBus';
 import type { InputCommand } from '@/core/InputQueue';
 import type { Player } from '@/entities/Player';
-import { ITEMS } from '@/items/catalog';
+import { itemDef } from '@/items/instance';
 
 /** Effects a consumable may trigger — wired by main (heal goes through Combat). */
 export interface UseHooks {
@@ -27,7 +27,7 @@ export class InventorySystem {
   /** Drink/read a backpack consumable (it.39). Returns true when consumed. */
   private useIndex(index: number): boolean {
     const id = this.player.backpack[index];
-    const def = id ? ITEMS[id] : undefined;
+    const def = id ? itemDef(id) : undefined;
     if (!def || def.slot !== 'consumable' || !def.use) return false;
     if (def.use.portal) {
       if (!this.hooks.portal()) return false; // Not castable here (already in town).
@@ -59,7 +59,7 @@ export class InventorySystem {
           break;
         case 'USE_QUICK': {
           const want = cmd.kind === 'health' ? 'health_potion' : 'mana_potion';
-          const i = this.player.backpack.indexOf(want);
+          const i = this.player.backpack.findIndex((id) => id === want || id.startsWith(`${want}#`));
           if (i >= 0) this.useIndex(i);
           break;
         }

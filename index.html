@@ -4632,6 +4632,56 @@
       .tip-verdict { font-family: 'Cinzel', 'Georgia', serif; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 3px; }
       body.input-touch #item-tip, body.input-touch #inv-tooltip { font-size: 13px; }
 
+      /* ---- 8a2. RARITIES, THE POUCH, THE FORGE (it.78) ------------------ */
+      .rarity-uncommon { --rar: #5f7fdf; }
+      .rarity-epic { --rar: #b46cff; }
+      .rarity-mythic { --rar: #ff5f8a; }
+      #inv-panel .inv-pack-grid .rarity-uncommon { --rar: #6f8fdf; border-color: #6f8fdf; box-shadow: inset 0 0 0 1px #000, inset 0 0 10px rgba(111, 143, 223, 0.55); }
+      #inv-panel .inv-pack-grid .rarity-epic { --rar: #b46cff; border-color: #b46cff; box-shadow: inset 0 0 0 1px #000, inset 0 0 12px rgba(180, 108, 255, 0.6); }
+      #inv-panel .inv-pack-grid .rarity-mythic { --rar: #ff5f8a; border-color: #ff5f8a; box-shadow: inset 0 0 0 1px #000, inset 0 0 14px rgba(255, 95, 138, 0.65); }
+      .town-panel .tp-row.rarity-uncommon .tp-name { color: #8fa8ef; }
+      .town-panel .tp-row.rarity-rare .tp-name { color: #f0d24a; }
+      .town-panel .tp-row.rarity-epic .tp-name { color: #c89aff; }
+      .town-panel .tp-row.rarity-legendary .tp-name { color: #ffb347; }
+      .town-panel .tp-row.rarity-mythic .tp-name { color: #ff7fa0; }
+      .town-panel .tp-row .tp-meta, .craft-pick .tp-meta { display: block; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 11px; color: var(--ink-dim, #8f8677); letter-spacing: 0; text-transform: none; margin-top: 1px; }
+      .town-panel .tp-row.on { box-shadow: inset 0 0 0 1px var(--frame-gold-hi, #e8cf8a), 0 0 12px rgba(200, 165, 88, 0.35); }
+      .tp-tabs { display: flex; gap: 6px; margin: 0 0 8px; }
+      .tp-tabs .ds-btn { flex: 1; padding: 7px 8px; font-size: 11px; letter-spacing: 0.12em; }
+      .tp-tabs .ds-btn[aria-selected="true"] { border-color: var(--frame-gold-hi, #e8cf8a); color: var(--frame-gold-hi, #e8cf8a); }
+      .inv-pouch, .craft-pouch { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 4px; }
+      .inv-mat { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 4px; border: 1px solid var(--frame-iron, #4a3f56); background: rgba(9, 7, 12, 0.7); font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; color: var(--ink, #e8dfc8); }
+      .inv-mat img { width: 22px; height: 22px; image-rendering: pixelated; }
+      .inv-mat.empty { opacity: 0.45; }
+      .inv-mat b { font-weight: 600; }
+      .craft-tabs { flex-wrap: wrap; }
+      .craft-cols { min-height: 200px; }
+      .craft-cost { display: inline-flex; gap: 8px; align-items: center; font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; letter-spacing: 0.04em; }
+      .craft-cost i { display: inline-flex; align-items: center; gap: 2px; font-style: normal; color: var(--ink, #e8dfc8); }
+      .craft-cost i img { width: 18px; height: 18px; image-rendering: pixelated; }
+      .craft-cost i.short { color: #e06a5a; }
+      .craft-recipe, .craft-affix { cursor: default; }
+      .craft-actions { display: inline-flex; gap: 6px; align-items: center; margin-left: auto; }
+      .craft-actions .ds-btn { padding: 6px 10px; font-size: 10.5px; letter-spacing: 0.1em; }
+      .craft-detail { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; }
+      .craft-pick { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--frame-gold, #c8a558); background: rgba(9, 7, 12, 0.7); }
+      .craft-pick img { width: 40px; height: 40px; image-rendering: pixelated; }
+      .craft-pick b { font-family: 'Cinzel', 'Georgia', serif; font-size: 13px; color: var(--rar, #e8dfc8); }
+      .craft-pick .tp-meta { margin-left: auto; text-align: right; }
+      .craft-odds { font-family: 'Crimson Pro', 'Georgia', serif; font-size: 13.5px; color: var(--ink, #e8dfc8); }
+      .craft-odds b { font-family: 'Cinzel', 'Georgia', serif; font-size: 18px; }
+      .craft-odds.safe b { color: #7fd67f; }
+      .craft-odds.risky b { color: #e8cf8a; }
+      .craft-odds.grim b { color: #e06a5a; }
+      .craft-costline { padding: 4px 0; }
+      .craft-go { padding: 10px 14px; font-size: 12px; letter-spacing: 0.14em; }
+      .craft-log.bad { color: #e06a5a; }
+      .tip-affixes { list-style: none; margin: 6px 0 0; padding: 6px 0 0; border-top: 1px solid rgba(200, 165, 88, 0.28); font-family: 'Crimson Pro', 'Georgia', serif; font-size: 12.5px; color: #9fc2ff; }
+      .tip-affixes li { padding: 1px 0; }
+      .tip-affixes li.uniq { color: #ffb347; }
+      .tip-affixes li.pass { color: #ff7fa0; }
+      button.ds-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone
          the pad and the stick zone sat OVER the lower half of every window,

@@ -12,7 +12,8 @@
 import { Container, Sprite, type ContainerChild } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { eventBus } from '@/core/EventBus';
-import { ITEMS, overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type WeaponKind } from '@/items/catalog';
+import { overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type UniqueEffect, type WeaponKind } from '@/items/catalog';
+import { itemDef, itemLevers, powerScale } from '@/items/instance';
 import type { ClassArchetype, EntitySnapshot, EquipmentSlot } from '@/network/Serialization';
 import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
@@ -276,16 +277,49 @@ export class Player extends Entity {
   readonly loadout: Array<string | null> = [null, null, null, null];
   readonly passives = new Set<string>();
 
-  /** Sum of one bonus across learned passives AND worn item bonuses (rings, relics — it.42). */
-  passiveBonus(key: 'armor' | 'dmg' | 'regen' | 'speed' | 'dodge' | 'hp'): number {
+  /**
+   * Sum of one bonus across learned passives AND worn gear (it.42; it.78:
+   * the affix levers — crit, attack speed, cooldown reduction, resistance,
+   * health regrowth, max resource — and a mythic's granted passive).
+   */
+  passiveBonus(key: 'armor' | 'dmg' | 'regen' | 'speed' | 'dodge' | 'hp' | 'crit' | 'attackSpeed' | 'cdr' | 'resist' | 'hpRegen' | 'resource'): number {
     let total = 0;
-    for (const id of this.passives) total += PASSIVE_BY_ID[id]?.effect[key] ?? 0;
+    const fromPassive = (id: string): number => (PASSIVE_BY_ID[id]?.effect as Record<string, number | undefined> | undefined)?.[key] ?? 0;
+    for (const id of this.passives) total += fromPassive(id);
     for (const id of this.equipped.values()) {
-      const b = ITEMS[id]?.bonus;
-      if (!b) continue;
-      if (key !== 'speed') total += b[key] ?? 0;
+      const def = itemDef(id);
+      if (!def) continue;
+      const b = def.bonus as Record<string, number | undefined> | undefined;
+      if (b && key !== 'speed') total += b[key] ?? 0;
+      if (def.passive) total += fromPassive(def.passive);
+      if (key === 'crit' || key === 'attackSpeed' || key === 'cdr' || key === 'resist' || key === 'hpRegen' || key === 'resource') total += itemLevers(def)[key];
     }
     return total;
+  }
+
+  /** The legendary uniques worn right now (it.78). */
+  get uniqueEffects(): Set<UniqueEffect> {
+    const out = new Set<UniqueEffect>();
+    for (const id of this.equipped.values()) {
+      const u = itemDef(id)?.unique;
+      if (u) out.add(u);
+    }
+    return out;
+  }
+
+  /** The hero's place on the power curve: the main hand's item level (it.78). */
+  get powerTier(): number {
+    return powerScale(itemDef(this.equipped.get('mainHand'))?.ilvl ?? 1);
+  }
+
+  // ---- The crafting pouch (it.78): materials never take a pack slot ----
+  readonly materials = new Map<string, number>();
+
+  addMaterial(id: string, n: number): void {
+    const v = Math.max(0, (this.materials.get(id) ?? 0) + n);
+    if (v === 0) this.materials.delete(id);
+    else this.materials.set(id, v);
+    eventBus.emit('materials:changed', {});
   }
 
   /** Re-derive max HP after a worn bonus changes; gains heal, losses clamp. */
@@ -294,6 +328,9 @@ export class Player extends Entity {
     this.hpMax = this.baseHpMax();
     if (this.hpMax > was) this.hp = Math.min(this.hpMax, this.hp + (this.hpMax - was));
     else this.hp = Math.min(this.hp, this.hpMax);
+    // Intelligence widens the pool (it.78).
+    this.resourceMax = Math.round(ARCHETYPES[this.archetype].resourceMax + this.passiveBonus('resource'));
+    this.resource = Math.min(this.resource, this.resourceMax);
   }
 
   // ---- Bestiary (it.42): creatures seen and slain, persisted in the save ----
@@ -315,7 +352,10 @@ export class Player extends Entity {
 
   /** Max HP the sheet should have at this level with these passives. */
   baseHpMax(): number {
-    return ARCHETYPES[this.archetype].hpMax + 4 * (this.level - 1) + this.passiveBonus('hp');
+    // THE HERO'S CURVE (it.78): +4 a level, then 5% compound a level, so a
+    // level-30 body (×4.1) stands against depth-XX blows the way its gear does.
+    const cls = ARCHETYPES[this.archetype];
+    return Math.round((cls.hpMax + 4 * (this.level - 1)) * Math.pow(1.05, this.level - 1)) + Math.round(this.passiveBonus('hp'));
   }
 
   get damageMult(): number {
@@ -323,7 +363,8 @@ export class Player extends Entity {
   }
 
   get damageReduction(): number {
-    return this.drTicks > 0 ? this.drFrac : 0;
+    // Stone Skin plus every "of Warding" line (it.78), never past three quarters.
+    return Math.min(0.75, (this.drTicks > 0 ? this.drFrac : 0) + this.passiveBonus('resist'));
   }
 
   get dodgeChance(): number {
@@ -381,7 +422,10 @@ export class Player extends Entity {
       this.level++;
       gained++;
       this.skillPoints += 2; // Two points per level (it.44): 59 by level 30 covers every rank.
-      this.hpMax += 4;
+      // The hero's curve (it.78): recompute, and heal the gain.
+      const grown = this.baseHpMax();
+      this.hp += Math.max(0, grown - this.hpMax);
+      this.hpMax = grown;
       this.hp = Math.min(this.hpMax, this.hp + Math.round(this.hpMax * 0.25));
     }
     return gained;
@@ -502,7 +546,7 @@ export class Player extends Entity {
     let b = 255;
     for (const slot of ['head', 'torso', 'legs', 'offHand', 'cloak'] as const) {
       const id = this.equipped.get(slot);
-      const def = id ? ITEMS[id] : undefined;
+      const def = id ? itemDef(id) : undefined;
       if (!def) continue;
       // Pull 10% toward each worn item's color — stacks into a visible cast.
       r = r * 0.9 + ((def.color >> 16) & 0xff) * 0.1;
@@ -580,6 +624,11 @@ export class Player extends Entity {
 
     // Skill economy (it.32): resource trickles back; timed buffs burn down.
     this.resource = Math.min(this.resourceMax, this.resource + this.resourceRegen * (1 + this.passiveBonus('regen')));
+    // HEALTH REGROWTH (it.78): "of Regrowth" lines heal a trickle every tick.
+    if (this.hp > 0 && this.hp < this.hpMax) {
+      const regrow = this.passiveBonus('hpRegen');
+      if (regrow > 0) this.hp = Math.min(this.hpMax, this.hp + regrow / 60);
+    }
     if (this.dmgBuffTicks > 0) this.dmgBuffTicks--;
     if (this.drTicks > 0) this.drTicks--;
     if (this.hasteTicks > 0) this.hasteTicks--;
@@ -819,7 +868,7 @@ export class Player extends Entity {
   get weaponProfile(): WeaponProfile {
     const cls = ARCHETYPES[this.archetype];
     const id = this.equipped.get('mainHand');
-    const def = id ? ITEMS[id] : undefined;
+    const def = id ? itemDef(id) : undefined;
     const kind: WeaponKind = def?.weaponKind ?? cls.defaultWeapon;
     const timing = WEAPON_TIMING[kind];
     const family = WEAPON_FAMILY[kind];
@@ -828,11 +877,12 @@ export class Player extends Entity {
       ranged: kind === 'bow' || kind === 'wand',
       range: def?.range ?? family.range,
       // COMBAT ACCELERATION (it.53): 25 % faster swings, recovery trimmed a further 15 % for chaining.
-      windupTicks: Math.max(5, Math.round((timing.windup * cls.attackSpeedMult) / COMBAT_SPEED)),
-      recoverTicks: Math.max(4, Math.round((timing.recover * cls.attackSpeedMult * 0.85) / COMBAT_SPEED)),
+      // Agility and "of Haste" lines (it.78) trim both halves of the swing, at most by half.
+      windupTicks: Math.max(5, Math.round((timing.windup * cls.attackSpeedMult * (1 - Math.min(0.5, this.passiveBonus('attackSpeed')))) / COMBAT_SPEED)),
+      recoverTicks: Math.max(4, Math.round((timing.recover * cls.attackSpeedMult * 0.85 * (1 - Math.min(0.5, this.passiveBonus('attackSpeed')))) / COMBAT_SPEED)),
       minDamage: (def?.minDamage ?? cls.baseDamage.min) + this.levelDamageMin,
       maxDamage: (def?.maxDamage ?? cls.baseDamage.max) + this.levelDamageMax,
-      critChance: family.critChance + cls.critBonus,
+      critChance: Math.min(0.75, family.critChance + cls.critBonus + this.passiveBonus('crit')),
       stuns: family.stuns,
       color: def?.color ?? 0xffcf90,
     };
@@ -841,7 +891,7 @@ export class Player extends Entity {
   /** Total flat damage reduction: class body + all worn armor. */
   override get armor(): number {
     let total = ARCHETYPES[this.archetype].armorBase + this.passiveBonus('armor');
-    for (const id of this.equipped.values()) total += ITEMS[id]?.armor ?? 0;
+    for (const id of this.equipped.values()) total += itemDef(id)?.armor ?? 0;
     return total;
   }
 
@@ -851,6 +901,13 @@ export class Player extends Entity {
 
   /** Add a picked-up item to the backpack. */
   addItem(itemId: string): void {
+    // Materials go to the pouch (it.78), never to a pack slot.
+    const def = itemDef(itemId);
+    if (def?.slot === 'material') {
+      this.addMaterial(def.base ?? itemId, def.count ?? 1);
+      eventBus.emit('inventory:changed', {});
+      return;
+    }
     this.backpack.push(itemId);
     eventBus.emit('inventory:changed', {});
   }
@@ -858,8 +915,8 @@ export class Player extends Entity {
   /** Equip a backpack item into its slot; the displaced item returns to the pack. */
   equipFromBackpack(index: number): void {
     const itemId = this.backpack[index];
-    const def = itemId ? ITEMS[itemId] : undefined;
-    if (!def || def.slot === 'consumable') return; // Potions are used, not worn.
+    const def = itemId ? itemDef(itemId) : undefined;
+    if (!def || def.slot === 'consumable' || def.slot === 'material') return; // Potions are used, not worn.
     this.backpack.splice(index, 1);
     const previous = this.equipped.get(def.slot);
     if (previous) this.backpack.push(previous);

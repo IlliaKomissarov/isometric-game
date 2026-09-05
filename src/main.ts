@@ -59,6 +59,9 @@ import { MainMenuUI } from '@/ui/MainMenu';
 import { RunMenusUI } from '@/ui/RunMenus';
 import type { Entity } from '@/entities/Entity';
 import { ITEMS, overlayTextureFor, statLine } from '@/items/catalog';
+import { ilvlForDepth, itemDef, powerScale } from '@/items/instance';
+import { CraftingEngine } from '@/systems/Crafting';
+import { CampCraftingUI } from '@/ui/CampCrafting';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
 import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
@@ -104,7 +107,7 @@ import { TownSystem } from '@/systems/Town';
 import { ShopUI } from '@/ui/Shop';
 import { StashUI } from '@/ui/Stash';
 import { SavePanelUI } from '@/ui/SavePanel';
-import { base64ToBytes, bytesToBase64, saves, type FloorMemory, type SaveGame, type StashState } from '@/persist/SaveGame';
+import { base64ToBytes, bytesToBase64, SAVE_VERSION, saves, type FloorMemory, type SaveGame, type StashState } from '@/persist/SaveGame';
 
 /** Everything owned by one dungeon floor. */
 interface World {
@@ -828,8 +831,8 @@ async function boot(): Promise<void> {
       p.level = ps.level;
       p.xp = ps.xp;
       p.gold = ps.gold;
-      p.hpMax = ps.hpMax;
-      p.hp = Math.min(ps.hpMax, Math.max(1, ps.hp));
+      p.hpMax = p.baseHpMax(); // The curve, not the saved number (it.78).
+      p.hp = Math.min(p.hpMax, Math.max(1, ps.hp));
       p.resource = Math.min(p.resourceMax, ps.resource);
       p.skillPoints = ps.skillPoints;
       for (const id of ps.unlocked) p.unlockedSkills.add(id);
@@ -839,9 +842,10 @@ async function boot(): Promise<void> {
       ps.loadout.forEach((id, i) => {
         p.loadout[i] = id && p.unlockedSkills.has(id) ? id : null;
       });
-      for (const id of ps.backpack) if (ITEMS[id]) p.addItem(id);
+      for (const [k, v] of Object.entries(ps.materials ?? {})) if (v > 0) p.addMaterial(k, v);
+      for (const id of ps.backpack) if (itemDef(id)) p.addItem(id);
       for (const { itemId } of ps.equipped) {
-        if (!ITEMS[itemId]) continue;
+        if (!itemDef(itemId)) continue;
         p.addItem(itemId);
         p.equipFromBackpack(p.backpack.length - 1);
       }
@@ -1053,7 +1057,7 @@ async function boot(): Promise<void> {
           let gemIndex = 0;
           for (const slot of PREVIEW_SLOTS) {
             const itemId = player.getEquipped(slot);
-            const def = itemId ? ITEMS[itemId] : undefined;
+            const def = itemId ? itemDef(itemId) : undefined;
             if (!def) continue;
             const gem = new Sprite(assets.get('mote'));
             gem.anchor.set(0.5);
@@ -1070,7 +1074,7 @@ async function boot(): Promise<void> {
           rig.addChild(body);
           for (const slot of PREVIEW_SLOTS) {
             const itemId = player.getEquipped(slot);
-            const def = itemId ? ITEMS[itemId] : undefined;
+            const def = itemId ? itemDef(itemId) : undefined;
             if (!def) continue;
             const overlay = new Sprite(assets.get(overlayTextureFor(def)));
             overlay.anchor.set(0.5, 1.0);
@@ -1098,6 +1102,12 @@ async function boot(): Promise<void> {
     // withdrawal is a lockstep command, so all four see the same chest.
     const town = new TownSystem((slot) => (party[slot] && !party[slot]!.gone ? party[slot]!.player : null), coop ? coop.stash : (opts.stash ?? loaded?.stash ?? { items: [], gold: 0 }));
     let townVisits = coop ? 0 : loaded ? 1 : 0;
+    // THE CAMP FORGE (it.78): a run-level system like the town; its rolls
+    // come from the run's own seeded stream so four peers share the sparks.
+    const crafting = new CraftingEngine(
+      { getPlayer: (slot) => (party[slot] && !party[slot]!.gone ? party[slot]!.player : null), inTown: () => !!world.town, deepestFloor: () => deepestFloor },
+      baseSeed,
+    );
     let pendingPortal = false;
     let portalCooldown = 0;
     /** HIT-STOP (it.48): sim ticks frozen when heavy steel lands — the frame the blow READS. */
@@ -1659,6 +1669,7 @@ async function boot(): Promise<void> {
       }
 
       const loot = new LootSystem(viewport, seed);
+      loot.ilvl = ilvlForDepth(Math.max(1, floorNum)); // What this floor drops (it.78).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
       if (!isArena && !isHub && !isColiseum) chests.place(dungeon, [stairs]); // The arena floors stay clean.
       if (memory) chests.applyMemory(memory.openedChests);
@@ -2003,7 +2014,7 @@ async function boot(): Promise<void> {
       // the item card, laid beside what the hero wears in that slot.
       input.onHoverItem = (uid, x, y) => {
         const item = uid === null ? null : loot.getItem(uid);
-        const def = item ? ITEMS[item.itemId] : undefined;
+        const def = item ? itemDef(item.itemId) : undefined;
         if (!def) {
           hideItemTip();
           return;
@@ -2131,13 +2142,14 @@ async function boot(): Promise<void> {
         passives: [...p.passives],
         bestiary: Object.fromEntries([...p.bestiary].map(([k, v]) => [k, { ...v }])),
         goldCollected: p.goldCollected,
+        materials: Object.fromEntries(p.materials),
       };
     };
     const saveNow = (): boolean => {
       if (!alive) return false;
       if (!world.town) captureFloor();
       const save: SaveGame = {
-        version: 3,
+        version: SAVE_VERSION,
         slot,
         seed: baseSeed,
         createdAt,
@@ -2234,7 +2246,7 @@ async function boot(): Promise<void> {
         portalArmed = false;
       }
       townVisits++;
-      town.restock(baseSeed, deepestFloor, townVisits);
+      town.restockIfDue(baseSeed, deepestFloor, state.tick);
       // FAST TRAVEL HINT (it.48): back from the depths, the DEPTHS menu is the quick way down.
       if (deepestFloor > 0) tutorial.notify('fastTravel', 'Back in town — press L to open DEPTHS and fast-travel to any floor you have reached.');
       minimap.markDirty();
@@ -2669,7 +2681,7 @@ async function boot(): Promise<void> {
         updateOrb();
       },
       giveItem: (id) => {
-        if (ITEMS[id]) player.addItem(id);
+        if (itemDef(id)) player.addItem(id);
       },
       killVisibleEnemies: () => {
         world.enemies.forEachActive((enemy) => {
@@ -2872,7 +2884,7 @@ async function boot(): Promise<void> {
     on('item:dropped', ({ itemId, x, y }) => {
       tutorial.notify('loot', screenLayout.state.touch ? 'A treasure has fallen — tap it, or press the open hand beside it.' : 'A treasure has fallen — press E near it, or click to claim it.');
       // Rare finds announce themselves with the pack's treasure glint.
-      if (ITEMS[itemId]?.rarity === 'rare') world.ambience.playGlint(x, y);
+      if (['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '')) world.ambience.playGlint(x, y);
     });
 
     // An idle thing in the dark just noticed you (species growl/hiss/moan).
@@ -2898,10 +2910,10 @@ async function boot(): Promise<void> {
       if (itemId) {
         seat.player.addItem(itemId);
         if (seat.player === player) {
-          audio.sfx(ITEMS[itemId]?.rarity === 'rare' ? 'rarePickup' : 'pickup');
+          audio.sfx(['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '') ? 'rarePickup' : 'pickup');
           tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
         } else if (chat) {
-          chat.system(`${seat.name} picked up ${ITEMS[itemId]?.name ?? itemId}.`);
+          chat.system(`${seat.name} picked up ${itemDef(itemId)?.name ?? itemId}.`);
         }
       }
     });
@@ -3042,6 +3054,7 @@ async function boot(): Promise<void> {
           });
           if (remaining === 0) {
             world.arenaCleared = true;
+            town.markBossCleared(); // The merchants restock on a warden's fall (it.78).
             const w = world;
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
             const delay = entity === w.boss ? 7600 : 1100;
@@ -3418,6 +3431,8 @@ async function boot(): Promise<void> {
         for (const inv of inventories) inv?.apply(commands);
         for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
         town.apply(commands); // Buy / sell / stash (it.39).
+        crafting.apply(commands); // The camp forge (it.78).
+        if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
           if (cmd.type !== 'TOWN_PORTAL') continue;
@@ -3556,8 +3571,10 @@ async function boot(): Promise<void> {
             // DESTROY, don't hide (it.26): destroyed sprites stay gone.
             pile.sprite.destroy();
             pile.glow.destroy();
-            hero.gold += pile.amount;
-            hero.goldCollected += pile.amount;
+            // GOLD ON THE CURVE (it.78): piles grow at half the power curve, prices at all of it.
+            const scooped = Math.round(pile.amount * (0.5 + 0.5 * powerScale(world.loot.ilvl)));
+            hero.gold += scooped;
+            hero.goldCollected += scooped;
             if (hero === player) audio.sfx('gold');
             world.ambience.sparks(pile.x, pile.y, 0, 0, 6, 0xffd870);
             world.dmgText.show(pile.x, pile.y, `+${pile.amount} gold`, 'crit');
@@ -3603,6 +3620,7 @@ async function boot(): Promise<void> {
           emptyArenaTicks = breathing === 0 ? emptyArenaTicks + 1 : 0;
           if (emptyArenaTicks >= 45) {
             world.arenaCleared = true;
+            town.markBossCleared(); // The merchants restock on a warden's fall (it.78).
             world.stairs.sprite.renderable = true;
             world.lighting.registerProp(world.stairs.x, world.stairs.y, world.stairs.sprite);
             world.ambience.burst(world.stairs.x + 0.5, world.stairs.y + 0.5, 0xffd9a0, 20);
@@ -3929,14 +3947,15 @@ async function boot(): Promise<void> {
 
     // --- Pause / death menus (it.36) -----------------------------------------
     // --- Town panels + interaction (it.39) ------------------------------------
-    const shopUI = new ShopUI(player, town, inputQueue);
+    const shopUI = new ShopUI(player, town, inputQueue, () => state.tick);
     const stashUI = new StashUI(player, town, inputQueue);
+    const craftUI = new CampCraftingUI(player, inputQueue, () => deepestFloor);
     const skillTreeUI = new SkillTreeUI(player, inputQueue, () => !!world.town);
     // EVERY WINDOW FITS (it.65): the run's panels are built per run, so they
     // are registered here rather than at boot.
     // By id (it.66): the hero sheet and the bestiary are built a few lines
     // below this, and a registration by element silently dropped them.
-    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'leaderboard', 'level-select']) {
+    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'leaderboard', 'level-select']) {
       fit.addById(id, { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
@@ -3973,6 +3992,7 @@ async function boot(): Promise<void> {
       else if (it.kind === 'alchemist') shopUI.open('alchemist');
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
+      else if (it.kind === 'forge') craftUI.open();
       else stashUI.open();
     };
     /** E in town / a click on the stall or stash: walk up, then open. */
@@ -4062,7 +4082,7 @@ async function boot(): Promise<void> {
         const d = interactableDist(it);
         if (d < bestD) {
           bestD = d;
-          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : 54 };
+          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : 54 };
         }
       }
       const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
@@ -4156,7 +4176,7 @@ async function boot(): Promise<void> {
           snapshot: () => world.loot.snapshot(),
           getItem: (uid) => world.loot.getItem(uid),
           place: (uid, itemId, x, y) => {
-            const def = ITEMS[itemId];
+            const def = itemDef(itemId);
             if (def) world.loot.place(uid, def, x, y);
           },
           remove: (uid) => world.loot.remove(uid),
@@ -4194,7 +4214,7 @@ async function boot(): Promise<void> {
             seats: seated.map((s) => ({ slot: s.slot, x: s.player.pos.x, y: s.player.pos.y, hp: s.player.hp, res: s.player.resource, dead: s.player.action === 'dead' })),
             enemies: encodeAllEnemies(syncWorld),
             loot: world.loot.snapshot(),
-            rng: { combat: world.combat.rngState, loot: world.loot.rngState, chests: world.chests.rngState },
+            rng: { combat: world.combat.rngState, loot: world.loot.rngState, chests: world.chests.rngState, craft: crafting.rngState },
             bossSeen: world.bossSeen,
             idBase: world.idBase,
             floorStartTick,
@@ -4294,6 +4314,7 @@ async function boot(): Promise<void> {
       world.combat.rngState = s.rng.combat;
       world.loot.rngState = s.rng.loot;
       world.chests.rngState = s.rng.chests;
+      if (typeof s.rng.craft === 'number') crafting.rngState = s.rng.craft;
       lockstep?.loadSnapshot(s);
       updateOrb();
       updateProgressHud();
@@ -4325,7 +4346,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, crafting, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -4354,6 +4375,7 @@ async function boot(): Promise<void> {
         loop.stop();
         shopUI.destroy();
         stashUI.destroy();
+        craftUI.destroy();
         statsUI.destroy();
         hudBuffs.remove();
         headBuffs.remove();

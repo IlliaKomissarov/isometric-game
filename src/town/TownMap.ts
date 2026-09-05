@@ -42,6 +42,7 @@ export type TownPropKind =
   | 'tavern'
   | 'stall'
   | 'campfire'
+  | 'forge'
   | 'well'
   | 'stash'
   | 'pillar'
@@ -103,6 +104,8 @@ export interface TownLayout {
   arenaGate: { x: number; y: number };
   arenaMaster: { x: number; y: number };
   campfire: { x: number; y: number };
+  /** THE CAMP FORGE (it.78): the anvil beside the fire. */
+  forge: { x: number; y: number };
   /** Where the three unselected heroes rest (tile centres, facing the fire). */
   campSpots: Array<{ x: number; y: number }>;
   /** Where a town portal from the depths deposits the hero (and its return portal). */
@@ -354,6 +357,9 @@ export function buildTownLayout(): TownLayout {
   // Campsite (SW): the fire, the heroes' spots, seats and stores.
   const campfire = { x: 17, y: 37 };
   block({ kind: 'campfire', x: campfire.x, y: campfire.y });
+  // THE CAMP FORGE (it.78): an anvil two strides west of the fire.
+  const forge = { x: 14, y: 36 };
+  block({ kind: 'forge', x: forge.x, y: forge.y });
   const campSpots = [
     { x: 15.5, y: 36.4 },
     { x: 16.6, y: 39.5 },
@@ -532,6 +538,7 @@ export function buildTownLayout(): TownLayout {
     arenaGate: { x: 54, y: 23 },
     arenaMaster: { x: 53, y: 26 },
     campfire,
+    forge,
     campSpots,
     portal: { x: 43, y: 37 },
     wander,

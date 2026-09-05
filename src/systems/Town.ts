@@ -1,17 +1,27 @@
 /**
  * @module systems/Town
- * The town economy (it.39): the merchant's seeded stock, buying/selling,
- * and the shared stash. Every mutation arrives as an InputCommand drained
- * inside the fixed tick (BUY / SELL / STASH_PUT / STASH_TAKE / STASH_GOLD),
- * so the DOM panels never touch the player directly and the flow stays
- * replicable. The stash lives on the SAVE SLOT (it survives restarts of
- * that slot); the run hands it in and reads it back on save.
+ * The town economy (it.39, overhauled it.78): the merchants' seeded stock,
+ * buying and selling, the buyback counter and the shared stash. Every
+ * mutation arrives as an InputCommand drained inside the fixed tick
+ * (BUY / SELL / BUYBACK / STASH_*), so the DOM panels never touch the
+ * player directly and the flow stays replicable across four peers.
+ *
+ * THE ECONOMY (it.78):
+ *   value      = (iLvl × 15) × rarityMult × (1 + 0.15 × upgrade)   (items/catalog)
+ *   buy        = 100% of value            sell = 25% of value
+ *   buyback    = the last fifteen sold pieces, bought back for what was paid
+ *   restock    every 30 in-game minutes (108,000 ticks) or when a warden's
+ *              arena is cleared — the tables roll at the deepest depth's
+ *              item level, so the armorer keeps pace with the crypt.
+ * Gold stays scarce: piles scale by half the power curve, prices by all of
+ * it, and the forge's reinforcement costs grow with the square of the level.
  */
 
 import { eventBus } from '@/core/EventBus';
 import type { InputCommand } from '@/core/InputQueue';
 import type { Player } from '@/entities/Player';
 import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
+import { ilvlForDepth, itemDef, rollGear } from '@/items/instance';
 import type { StashState } from '@/persist/SaveGame';
 import { mulberry32 } from '@/utils/rng';
 
@@ -19,20 +29,27 @@ export const STASH_CAPACITY = 24;
 /** Merchants pay a quarter of an item's worth. */
 export const SELL_RATIO = 0.25;
 /** How many sold items the merchant keeps on the counter for buyback. */
-export const BUYBACK_CAPACITY = 8;
+export const BUYBACK_CAPACITY = 15;
+/** Thirty in-game minutes at 60 Hz. */
+export const RESTOCK_TICKS = 30 * 60 * 60;
 
 export class TownSystem {
-  /** Item ids on the ARMORER's table (a purchase removes it; restocks per visit). */
+  /** Item ids on the ARMORER's table (a purchase removes it; restocks on the timer). */
   stock: string[] = [];
   /** Item ids on the ALCHEMIST's table (it.48): draughts and scrolls. */
   stockAlch: string[] = [];
   /**
-   * BUYBACK (it.40): what the hero sold this visit, newest first. Bought
-   * back for exactly what the merchant paid; capped, and cleared when the
-   * table restocks — nothing lingers on the counter forever.
+   * BUYBACK (it.40, it.78): what the hero sold, newest first. Bought back
+   * for exactly what the merchant paid; the last fifteen survive a restock.
    */
   buyback: string[] = [];
   readonly stash: StashState;
+  /** The tick the tables last rolled (−∞ before the first). */
+  lastRestockTick = -Infinity;
+  /** Times the tables have rolled this run (part of the roll's seed). */
+  restockSerial = 0;
+  /** A warden fell since the last roll: the next check restocks. */
+  private bossCleared = false;
 
   constructor(
     /** CO-OP (it.59): resolve the hero behind a command's seat (null = nobody there). */
@@ -42,31 +59,53 @@ export class TownSystem {
     this.stash = { items: [...stash.items], gold: stash.gold };
   }
 
+  /** A warden's arena was cleared: the merchants restock on the next check. */
+  markBossCleared(): void {
+    this.bossCleared = true;
+  }
+
+  /** Ticks until the timer restocks (0 when a roll is due). */
+  ticksToRestock(tick: number): number {
+    if (this.bossCleared || !Number.isFinite(this.lastRestockTick)) return 0;
+    return Math.max(0, this.lastRestockTick + RESTOCK_TICKS - tick);
+  }
+
+  /** Called every tick in town and on every visit: rolls when the timer or a warden says so. */
+  restockIfDue(seed: number, deepestFloor: number, tick: number): boolean {
+    if (this.ticksToRestock(tick) > 0) return false;
+    this.restock(seed, deepestFloor, this.restockSerial + 1, tick);
+    return true;
+  }
+
   /**
-   * Restock for a town visit: staples always, plus a few magic pieces
-   * scaled to how deep the hero has been. Seeded from (seed, visit) so a
-   * reload shows the same table.
+   * Roll the tables: the ARMORER's staples and six pieces at the deepest
+   * depth's level (uncommon and rare mostly, an epic now and then) plus
+   * material packs; the ALCHEMIST's draughts. Seeded from (seed, serial) so
+   * every peer, and a reload, sees the same counter.
    */
-  restock(seed: number, deepestFloor: number, visit: number): void {
-    const rand = mulberry32((seed ^ (visit * 0x9e37)) >>> 0);
-    const staples = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir'];
-    const gear = ['rusty_sword', 'short_bow', 'plank_shield', 'iron_cap', 'leather_jerkin', 'worn_boots', 'flanged_mace', 'war_axe'];
-    const magic = Object.values(ITEMS).filter((d) => d.rarity === 'magic' && d.slot !== 'consumable').map((d) => d.id);
-    const rare = Object.values(ITEMS).filter((d) => d.rarity === 'rare' && d.slot !== 'consumable').map((d) => d.id);
-    // TWO VENDORS (it.48): the ARMORER sells arms and armor, the ALCHEMIST
-    // sells every draught and scroll.
+  restock(seed: number, deepestFloor: number, serial: number, tick = 0): void {
+    const rand = mulberry32((seed ^ (serial * 0x9e37)) >>> 0);
+    const ilvl = ilvlForDepth(Math.max(1, deepestFloor));
     const stock: string[] = [];
-    for (let i = 0; i < 4; i++) stock.push(gear[Math.floor(rand() * gear.length)]);
-    const magicCount = deepestFloor >= 3 ? 2 : 1;
-    for (let i = 0; i < magicCount; i++) stock.push(magic[Math.floor(rand() * magic.length)]);
-    if (deepestFloor >= 8 && rand() < 0.5) stock.push(rare[Math.floor(rand() * rare.length)]);
-    this.stock = [...new Set(stock.filter((id) => id in ITEMS))];
+    // Two plain pieces for the fresh delver, then rolled gear.
+    const staples = ['rusty_sword', 'short_bow', 'plank_shield', 'iron_cap', 'leather_jerkin', 'worn_boots', 'flanged_mace', 'war_axe'];
+    for (let i = 0; i < 2; i++) stock.push(staples[Math.floor(rand() * staples.length)]);
+    for (let i = 0; i < 6; i++) {
+      stock.push(rollGear(rand, ilvl, { floor: 'uncommon', weights: { uncommon: 55, rare: 35, epic: 9, legendary: 1 } }));
+    }
+    // Material packs (it.78): the forge's staples are for sale.
+    stock.push('iron_scrap#5', 'iron_scrap#5', 'arcane_dust#2');
+    if (deepestFloor >= 5) stock.push('essence#1');
+    if (deepestFloor >= 10) stock.push('alloy_shard#1');
+    this.stock = [...new Set(stock.filter((id) => !!itemDef(id)))];
     // The ALCHEMIST (it.49): every draught the catalog knows, deeper delvers get more elixirs.
-    const alch = [...staples];
+    const alch = ['health_potion', 'health_potion', 'health_potion', 'mana_potion', 'mana_potion', 'elixir'];
     for (const d of Object.values(ITEMS)) if (d.slot === 'consumable' && !d.use?.portal && !alch.includes(d.id)) alch.push(d.id);
     if (deepestFloor >= 5) alch.push('elixir', 'mana_potion');
     this.stockAlch = alch.filter((id) => id in ITEMS);
-    this.buyback = [];
+    this.restockSerial = serial;
+    this.lastRestockTick = tick;
+    this.bossCleared = false;
     eventBus.emit('town:changed', {});
   }
 
@@ -87,7 +126,7 @@ export class TownSystem {
         case 'BUY': {
           const table = cmd.vendor === 'alchemist' ? this.stockAlch : this.stock;
           const id = table[cmd.index];
-          const def = id ? ITEMS[id] : undefined;
+          const def = itemDef(id);
           if (!def) break;
           const price = this.buyPrice(def);
           if (p.gold < price) {
@@ -97,12 +136,13 @@ export class TownSystem {
           p.gold -= price;
           table.splice(cmd.index, 1);
           p.addItem(def.id);
+          eventBus.emit('town:changed', {});
           eventBus.emit('town:traded', { kind: 'buy', itemId: def.id, gold: price });
           break;
         }
         case 'SELL': {
           const id = p.backpack[cmd.backpackIndex];
-          const def = id ? ITEMS[id] : undefined;
+          const def = itemDef(id);
           if (!def) break;
           const price = this.sellPrice(def);
           p.backpack.splice(cmd.backpackIndex, 1);
@@ -116,7 +156,7 @@ export class TownSystem {
         }
         case 'BUYBACK': {
           const id = this.buyback[cmd.index];
-          const def = id ? ITEMS[id] : undefined;
+          const def = itemDef(id);
           if (!def) break;
           const price = this.sellPrice(def);
           if (p.gold < price) {

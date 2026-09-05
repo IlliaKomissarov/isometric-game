@@ -15,7 +15,9 @@ import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
-import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
+import { itemValue, type ItemDef } from '@/items/catalog';
+import { itemDef } from '@/items/instance';
+import { MATERIAL_ORDER } from '@/items/registry';
 import type { EquipmentSlot } from '@/network/Serialization';
 
 import { fitItemIcons, itemIconHtml } from './itemIcons';
@@ -52,6 +54,7 @@ export class InventoryUI {
   private previewTimer: number | null = null;
   private readonly abort = new AbortController();
   private readonly offChanged: () => void;
+  private readonly offMaterials: () => void;
 
   constructor(
     private readonly player: Player,
@@ -87,6 +90,7 @@ export class InventoryUI {
     );
 
     this.offChanged = eventBus.on('inventory:changed', () => this.render());
+    this.offMaterials = eventBus.on('materials:changed', () => this.render());
     this.render();
   }
 
@@ -109,6 +113,7 @@ export class InventoryUI {
   destroy(): void {
     this.abort.abort();
     this.offChanged();
+    this.offMaterials();
     if (this.previewTimer !== null) clearInterval(this.previewTimer);
     this.panel.remove();
     this.tooltip.remove();
@@ -119,7 +124,7 @@ export class InventoryUI {
     // Equipment: one labeled cell per slot (grid of 3×2).
     const equipmentCells = SLOT_ORDER.map(({ slot, label, area }) => {
       const itemId = this.player.getEquipped(slot);
-      const def = itemId ? ITEMS[itemId] : undefined;
+      const def = itemId ? itemDef(itemId) : undefined;
       const cell = def
         ? `<button class="inv-cell inv-item rarity-${def.rarity}" data-unequip="${slot}" data-item="${def.id}">${iconHtml(def)}</button>`
         : `<div class="inv-cell inv-cell-empty inv-cell-framed" data-slot="${slot}" style="background-image:url(${uiAssetUrl(`slots/${slot}.png`)})"></div>`;
@@ -128,7 +133,7 @@ export class InventoryUI {
     // BELT (it.42): the Q / R quick draughts, read straight from the pack.
     const belt = (['health_potion', 'mana_potion'] as const)
       .map((id, i) => {
-        const def = ITEMS[id];
+        const def = itemDef(id)!;
         const count = this.player.backpack.filter((x) => x === id).length;
         const firstIndex = this.player.backpack.indexOf(id);
         return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${
@@ -141,7 +146,7 @@ export class InventoryUI {
     // the grid scrolls in its own compartment, never cutting items off.
     const stacks = new Map<string, { def: ItemDef; count: number; firstIndex: number }>();
     this.player.backpack.forEach((itemId, index) => {
-      const def = ITEMS[itemId];
+      const def = itemDef(itemId);
       if (!def) return;
       const existing = stacks.get(itemId);
       if (existing) existing.count++;
@@ -161,6 +166,13 @@ export class InventoryUI {
     const empties = Array.from({ length: Math.max(0, slotCount - stacks.size) }, () => '<div class="inv-cell inv-cell-empty inv-pack-empty"></div>').join('');
     const backpackCells = filled + empties;
 
+    // THE POUCH (it.78): crafting materials, never a pack slot each.
+    const pouch = MATERIAL_ORDER.map((mid) => {
+      const def = itemDef(mid);
+      const n = this.player.materials.get(mid) ?? 0;
+      if (!def) return '';
+      return `<span class="inv-mat${n ? '' : ' empty'}" title="${def.name}">${iconHtml(def)}<b>${n}</b></span>`;
+    }).join('');
     this.panel.innerHTML = `
       <h3 class="drag-handle">INVENTORY<button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></h3>
       <div class="inv-tabs" role="tablist">
@@ -170,6 +182,7 @@ export class InventoryUI {
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
       <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts</span></div>
+      <div class="inv-pouch">${pouch}</div>
       <div class="inv-divider"></div>
       <h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}</span>
         <span class="inv-gold">◆ Gold: ${this.player.gold}</span></h4>
@@ -247,7 +260,7 @@ export class InventoryUI {
         }
         this.hideTooltip();
       });
-      const def = btn.dataset.item ? ITEMS[btn.dataset.item] : undefined;
+      const def = btn.dataset.item ? itemDef(btn.dataset.item) : undefined;
       if (!def) return;
       const worn = btn.dataset.unequip !== undefined;
       let hovered = false;

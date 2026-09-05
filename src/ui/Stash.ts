@@ -11,7 +11,8 @@ import { eventBus } from '@/core/EventBus';
 import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
-import { ITEMS, type ItemDef } from '@/items/catalog';
+import { itemDef } from '@/items/instance';
+import { type ItemDef } from '@/items/catalog';
 import { STASH_CAPACITY, type TownSystem } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
 import { hideItemTip, wireItemTips, wornFor } from './itemTip';
@@ -81,8 +82,18 @@ export class StashUI {
     const s = this.town.stash;
     const row = (def: ItemDef, attr: string, i: number): string =>
       `<button class="tp-row rarity-${def.rarity}" ${attr}="${i}" data-tip="${def.id}">${iconHtml(def)}<span class="tp-name">${def.name}</span><span class="tp-arrow">${attr === 'data-put' ? '→' : '←'}</span></button>`;
-    const pack = p.backpack.map((id, i) => (ITEMS[id] ? row(ITEMS[id], 'data-put', i) : '')).join('');
-    const stash = s.items.map((id, i) => (ITEMS[id] ? row(ITEMS[id], 'data-take', i) : '')).join('');
+    const pack = p.backpack
+      .map((id, i) => {
+        const def = itemDef(id);
+        return def ? row(def, 'data-put', i) : '';
+      })
+      .join('');
+    const stash = s.items
+      .map((id, i) => {
+        const def = itemDef(id);
+        return def ? row(def, 'data-take', i) : '';
+      })
+      .join('');
     this.panel.innerHTML = `
       <div class="tp-head drag-handle"><h3>THE STASH</h3><span class="tp-purse">◆ ${p.gold} carried · ◆ ${s.gold} stashed</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
@@ -125,7 +136,7 @@ export class StashUI {
       });
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
     });
-    wireItemTips(this.panel, ITEMS, (def) => `Worth ${this.town.buyPrice(def)} gold`, (def) => wornFor(this.player, def));
+    wireItemTips(this.panel, (id) => itemDef(id), (def) => `Worth ${this.town.buyPrice(def)} gold`, (def) => wornFor(this.player, def));
   }
 
   destroy(): void {

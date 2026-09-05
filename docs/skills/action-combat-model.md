@@ -43,3 +43,15 @@ system at all." What makes classic ARPG's melee feel real is that attacks are
 - All combat randomness through the CombatSystem's seeded `rand` — one
   stray Math.random() breaks co-op determinism.
 - Per-type tuning lives in ENEMY_TYPES — do not scatter constants.
+
+## The power curve (it.78)
+
+Every number climbs `1.08^(ilvl − 1)`, where a floor's item level is
+`1 + 2·(depth − 1)` (depth 20 = 39; cap 100). Gear: `base × curve ×
+rarityMult × (1 + 0.05·upgrade)`. Foes: life and damage `× curve` of their
+level, armor +½ a level. Hero: max HP `(base + 4·(L−1)) × 1.05^(L−1)` plus
+gear. Armor is a share: `armor / (armor + 6 × attackerTier)` where the tier
+is the attacker's own curve value (a hero's main-hand level, a foe's level);
+never flat subtraction again. Gold piles scale by half the curve, prices by
+all of it, reinforcement by the square of the level.
+

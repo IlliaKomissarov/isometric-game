@@ -1,5 +1,75 @@
 # Development Log
 
+## 2026-09-05 (iteration 78) - Items reborn: the Raven registry, instances and affixes, the camp forge, the economy
+
+### The Raven registry (`src/items/registry.ts`)
+- The local pack `public/assets/test-models/new items` is 2,192 unnamed
+  painted icons in three sizes. Sorted by eye (contact sheets), it holds
+  weapon sets in steel (1441-1520), gilded (1521-1600) and crystal
+  (1601-1680), a hundred and twenty unique weapons (1681-1800), staves,
+  and every armor class (helms, plates, robes, boots, shields, cloaks,
+  rings, amulets), plus ores, dust, gems and scrolls. 160 of them now wear
+  the game's bases: 75 ordinary weapons (25 shapes x 3 tiers), 3 staves,
+  22 uniques, 46 armor pieces, 10 jewels and 5 materials, each served as
+  the atlas single `wicon_raven<n>` (the manifest grew from 104 to 265).
+  There are no 3D meshes in the pack; the game is 2D sprites.
+
+### Instances (`src/items/instance.ts`, `affixes.ts`)
+- An item id can now encode an instance
+  (`steel_blade@L12R2U3Astr2.crt1`): base, item level, rarity,
+  reinforcement, affixes. Every id-shaped thing in the game (pack, doll,
+  stash, ground, saves, co-op messages) kept its type; `itemDef(id)`
+  derives the definition, memoised.
+- `stat = base x 1.08^(iLvl-1) x rarityMult x (1 + 0.05 x upgrade)`.
+  Rarities: common 1.0 (0 affixes, 60%), uncommon 1.25 (1, 25%), rare 1.6
+  (2, 10%), epic 2.1 (3, 4%), legendary 2.8 (4 + a unique effect, 0.9%),
+  mythic 3.8 (5 + a passive skill, 0.1%).
+- Nine affixes in three pools: Strength / Agility / Intelligence
+  (prefixes; points convert - 1 STR = +1% damage +2 HP, 1 AGI = +0.6% attack
+  speed +0.3% dodge, 1 INT = +0.8% cooldown reduction +2 resource), Crit /
+  Attack Speed / Cooldown Reduction, Armor / Resistance / Health Regrowth
+  (suffixes). Five tiers, one per twenty levels with spread. The engine
+  reads them through `Player.passiveBonus` (new keys), the weapon profile
+  (crit, swing speed), the skills (cooldowns), the damage path (resist),
+  and a per-tick regrowth.
+- Legendary uniques: lifesteal, cull, thorns, echo (chosen per base).
+  Mythics grant a passive skill while worn.
+- Item level tracks depth: two per floor (depth 20 = 39; the cap of 100
+  leaves room). Foes climb the SAME curve now (`levelHpScale` is
+  `1.08^(ilvl-1)`, damage scales with it too), the hero's max HP compounds
+  5% a level, and armor became a share: `armor / (armor + 6 x
+  attackerTier)`, so every number on both sides grows together.
+
+### The camp forge (`systems/Crafting.ts`, `ui/CampCrafting.ts`)
+- An anvil two strides west of the campfire (the Raven anvil, ember-lit,
+  its own plate and E-prompt). Five tabs: SALVAGE, FORGE, TRANSMUTE,
+  REFINE, REINFORCE. Every operation is a command drained in the tick and
+  rolled from the run's `craft` stream (in the snapshot too), so a party
+  shares the sparks. Materials live in a pouch on the hero (saved, v4),
+  never in a pack slot; the inventory shows the pouch under the belt.
+- Reinforcement +1..+15 at +5% each: 100% to +3, 80/70/60/50 to +7,
+  40/35/30/25/20 to +12, 15/10/5 with a catalyst to +15; a failure at +8
+  or above costs one level, never the item. Costs grow with the square of
+  the level and 35% of the value - the gold sink.
+
+### The merchants (`systems/Town.ts`, `ui/Shop.ts`)
+- Value `(iLvl x 15) x rarityMult x (1 + 0.15 x upgrade)`; buy at 100%,
+  sell at 25%; BUYBACK tab keeps the last fifteen sold across restocks;
+  the tables restock every thirty in-game minutes or on a warden's fall,
+  rolled at the deepest depth's level, with material packs for sale. The
+  header counts down. Gold piles scale by half the power curve.
+
+### Verified
+- Town: the forge node and prompt; salvage, transmute (5 -> 1), three sure
+  reinforcements (+3, 6-15 on an iLvl-3 rare blade), a refine that rewrote
+  one line, a forge that made an uncommon longsword; the armorer's rolled
+  stock with the clock. Depth III: ten drops from twelve kills, all Raven
+  icons, materials to the pouch, the epic's card with its three lines.
+  Depth X: foes 120-256 HP hitting 20-56, a level-2 hero in iLvl-19 rare
+  gear at 39-70 per swing - four hits either way. Save v4 round-trips the
+  instances and the pouch. Device matrix 74/74. Phone box: the forge
+  panel fits at 0.97.
+
 ## 2026-09-05 (iteration 77) - Loot on the leader's word, a living seat, the lobby's breath, the ground card
 
 ### Multiplayer

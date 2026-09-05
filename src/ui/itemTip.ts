@@ -14,10 +14,11 @@
 
 import { ARCHETYPES, type Player } from '@/entities/Player';
 import { compareItems, soloRows, type CompareRow, type Verdict } from '@/items/compare';
-import { ITEMS, RARITY_COLOR, statLine, type ItemDef } from '@/items/catalog';
+import { RARITY_COLOR, statLine, type ItemDef } from '@/items/catalog';
+import { itemDef } from '@/items/instance';
 
 const SLOT_LABEL: Record<string, string> = {
-  head: 'Head', torso: 'Body', legs: 'Legs', mainHand: 'Main Hand', offHand: 'Off Hand', cloak: 'Back', ring: 'Ring', consumable: 'Consumable',
+  head: 'Head', torso: 'Body', legs: 'Legs', mainHand: 'Main Hand', offHand: 'Off Hand', cloak: 'Back', ring: 'Ring', consumable: 'Consumable', material: 'Material',
 };
 
 const VERDICT_TEXT: Record<Verdict, string> = { upgrade: '▲ Upgrade', downgrade: '▼ Downgrade', tradeoff: '◆ Trade-off', equal: '= Equal' };
@@ -42,9 +43,9 @@ function classWeapon(player: Player): ItemDef {
 
 /** The piece the hero wears in `def`'s slot, or the class weapon for a bare main hand, or null. */
 export function wornFor(player: Player, def: ItemDef): ItemDef | null {
-  if (def.slot === 'consumable') return null;
+  if (def.slot === 'consumable' || def.slot === 'material') return null;
   const id = player.getEquipped(def.slot);
-  const worn = id ? ITEMS[id] : undefined;
+  const worn = id ? itemDef(id) : undefined;
   if (worn) return worn;
   return def.slot === 'mainHand' ? classWeapon(player) : null;
 }
@@ -73,14 +74,15 @@ function rowsHtml(rows: CompareRow[], compare: boolean): string {
 export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
   const head =
     `<div class="tip-name" style="color:${hex(RARITY_COLOR[def.rarity])}">${def.name}</div>` +
-    `<div class="tip-slot">${cap(def.rarity)} · ${SLOT_LABEL[def.slot] ?? def.slot}${opts.self ? ' · <b>worn</b>' : ''}</div>`;
+    `<div class="tip-slot">${cap(def.rarity)} · ${SLOT_LABEL[def.slot] ?? def.slot}${def.ilvl ? ` · iLvl ${def.ilvl}` : ''}${opts.self ? ' · <b>worn</b>' : ''}</div>`;
   let body: string;
-  if (def.slot === 'consumable' || (opts.worn === undefined && !opts.self)) {
+  const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${l.startsWith('Unique') ? 'uniq' : l.startsWith('Passive') ? 'pass' : ''}">${l}</li>`).join('')}</ul>` : '';
+  if (def.slot === 'consumable' || def.slot === 'material' || (opts.worn === undefined && !opts.self)) {
     body = `<div class="tip-stats">${statLine(def)}</div>`;
   } else if (opts.self) {
     const rows = soloRows(def);
     body = rows.length
-      ? `<table class="tip-cmp tip-solo"><thead><tr><th></th><th>WORN</th></tr></thead><tbody>${rowsHtml(rows, false)}</tbody></table>`
+      ? `<table class="tip-cmp tip-solo"><thead><tr><th></th><th>WORN</th></tr></thead><tbody>${rowsHtml(rows, false)}</tbody></table>${affixHtml}`
       : `<div class="tip-stats">${statLine(def)}</div>`;
   } else {
     const worn = opts.worn ?? null;
@@ -90,6 +92,7 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
       : '<span class="tip-empty">empty slot</span>';
     body =
       `<table class="tip-cmp"><thead><tr><th></th><th>THIS</th><th>YOURS</th><th></th></tr></thead><tbody>${rowsHtml(cmp.rows, true)}</tbody></table>` +
+      affixHtml +
       `<div class="tip-yours">vs ${yours}</div>` +
       `<div class="tip-verdict ${cmp.verdict}">${VERDICT_TEXT[cmp.verdict]}</div>`;
   }
@@ -189,12 +192,13 @@ export function attachItemCard(cell: HTMLElement, show: (x: number, y: number) =
  */
 export function wireItemTips(
   root: HTMLElement,
-  items: Record<string, ItemDef>,
+  items: Record<string, ItemDef> | ((id: string) => ItemDef | undefined),
   goldLine: (def: ItemDef) => string,
   worn?: (def: ItemDef) => ItemDef | null,
 ): void {
   root.querySelectorAll<HTMLElement>('[data-tip]').forEach((row) => {
-    const def = items[row.dataset.tip ?? ''];
+    const id = row.dataset.tip ?? '';
+    const def = typeof items === 'function' ? items(id) : (items[id] ?? itemDef(id));
     if (!def) return;
     attachItemCard(row, (x, y) => showItemTip(def, x, y, goldLine(def), worn ? worn(def) : undefined), hideItemTip);
   });

@@ -8,6 +8,7 @@
  */
 
 import { WEAPON_FAMILY, WEAPON_TIMING, type ItemDef } from './catalog';
+import { itemLevers } from './instance';
 
 /** One line of the table: the candidate's value, the worn value, how to print them. */
 export interface CompareRow {
@@ -46,10 +47,16 @@ export interface ItemStats {
   dmgPct: number;
   dodge: number;
   regen: number;
+  /** Affix levers (it.78). */
+  aspd: number;
+  cdr: number;
+  resist: number;
+  regrowth: number;
 }
 
 export function itemStats(def: ItemDef | null): ItemStats {
-  if (!def) return { dmgMin: 0, dmgMax: 0, speed: 0, range: 0, crit: 0, stuns: false, armor: 0, hp: 0, dmgPct: 0, dodge: 0, regen: 0 };
+  if (!def) return { dmgMin: 0, dmgMax: 0, speed: 0, range: 0, crit: 0, stuns: false, armor: 0, hp: 0, dmgPct: 0, dodge: 0, regen: 0, aspd: 0, cdr: 0, resist: 0, regrowth: 0 };
+  const lv = itemLevers(def);
   const weapon = def.slot === 'mainHand';
   const kind = def.weaponKind ?? 'blade';
   const timing = WEAPON_TIMING[kind];
@@ -57,15 +64,19 @@ export function itemStats(def: ItemDef | null): ItemStats {
   return {
     dmgMin: def.minDamage ?? 0,
     dmgMax: def.maxDamage ?? 0,
-    speed: weapon ? 60 / (timing.windup + timing.recover) : 0,
+    speed: weapon ? (60 / (timing.windup + timing.recover)) * (1 + lv.attackSpeed) : 0,
     range: weapon ? (def.range ?? family.range) : 0,
-    crit: weapon ? family.critChance : 0,
+    crit: (weapon ? family.critChance : 0) + lv.crit,
     stuns: weapon ? family.stuns : false,
     armor: (def.armor ?? 0) + (def.bonus?.armor ?? 0),
     hp: def.bonus?.hp ?? 0,
     dmgPct: def.bonus?.dmg ?? 0,
     dodge: def.bonus?.dodge ?? 0,
     regen: def.bonus?.regen ?? 0,
+    aspd: lv.attackSpeed,
+    cdr: lv.cdr,
+    resist: lv.resist,
+    regrowth: lv.hpRegen,
   };
 }
 
@@ -92,6 +103,9 @@ const ROWS: RowSpec[] = [
   { key: 'dmgPct', label: 'Damage %', print: pct },
   { key: 'dodge', label: 'Dodge', print: pct },
   { key: 'regen', label: 'Regen', print: pct },
+  { key: 'cdr', label: 'Cooldowns', print: pct },
+  { key: 'resist', label: 'Resist', print: pct },
+  { key: 'regrowth', label: 'Regrowth', print: (v) => `${fmt1(Math.round(v * 10) / 10)}/s` },
 ];
 
 /**

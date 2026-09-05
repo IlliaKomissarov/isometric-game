@@ -13,7 +13,7 @@
 import type { ClassArchetype, EquipmentSlot } from '@/network/Serialization';
 import type { RecordsSnapshot } from '@/systems/StatsManager';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const SAVE_SLOTS = 3;
 const KEY = (slot: number): string => `iso-arpg-save-${slot}`;
 
@@ -55,6 +55,8 @@ export interface PlayerSave {
   bestiary?: Record<string, { seen: number; killed: number }>;
   /** Records board (it.48, save v3): every coin scooped this run. */
   goldCollected?: number;
+  /** The crafting pouch (it.78, save v4): material id → count. */
+  materials?: Record<string, number>;
 }
 
 export interface SaveGame {
@@ -118,6 +120,11 @@ function readRaw(slot: number): SaveGame | null {
       delete (parsed as { pos?: unknown }).pos;
       parsed.arena = false;
       ver = 3;
+    }
+    if (ver === 3) {
+      // v3 → v4: an empty crafting pouch; every item id stays valid (a base id is an instance).
+      (parsed.player as Partial<PlayerSave>).materials = {};
+      ver = 4;
     }
     if (ver !== SAVE_VERSION) return null;
     parsed.version = SAVE_VERSION;

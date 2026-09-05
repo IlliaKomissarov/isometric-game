@@ -49,6 +49,12 @@ export type InputCommand =
   | { type: 'STASH_PUT'; playerId: number; backpackIndex: number }
   | { type: 'STASH_TAKE'; playerId: number; index: number }
   | { type: 'STASH_GOLD'; playerId: number; amount: number }
+  /** THE CAMP FORGE (it.78): every crafting operation is a command. */
+  | { type: 'SALVAGE'; playerId: number; backpackIndex: number }
+  | { type: 'FORGE'; playerId: number; base: string }
+  | { type: 'TRANSMUTE'; playerId: number; recipe: string; times?: number }
+  | { type: 'REROLL'; playerId: number; backpackIndex: number; affixIndex: number }
+  | { type: 'REINFORCE'; playerId: number; backpackIndex: number }
   /** CO-OP (it.59): where this player is aiming (world point) — swings and casts follow it on every peer. */
   | { type: 'AIM'; playerId: number; x: number; y: number }
   /** CO-OP (it.59): a floor change decided by the PARTY LEADER (solo: always honoured). */

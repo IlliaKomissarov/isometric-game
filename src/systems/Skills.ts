@@ -309,7 +309,8 @@ export class SkillSystem {
     }
     const synergy = this.isSynergy(def);
     this.deps.interruptMove(); // RESPONSIVE (it.53): the cast lands the instant the key does.
-    this.cooldowns[slot] = Math.round(def.cd * (synergy ? SYNERGY.cooldown : 1));
+    // COOLDOWN REDUCTION (it.78): Intelligence and "of Focus" lines, capped at half.
+    this.cooldowns[slot] = Math.round(def.cd * (synergy ? SYNERGY.cooldown : 1) * (1 - Math.min(0.5, p.passiveBonus('cdr'))));
     this.syn = synergy ? { scale: SYNERGY.power, status: def.cls } : NO_SYNERGY;
     this.execute(def);
     this.syn = NO_SYNERGY;

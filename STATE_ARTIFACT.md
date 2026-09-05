@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 77, 2026-09-05)
+- **Project version:** 0.1.0 (iteration 78, 2026-09-05)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -42,7 +42,10 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `engine/Camera` | app screen, layout `stageZoom` | world transform | destroyed with its world |
 | `core/OrientationManager` | layout viewport, touch detection, settings | CSS custom properties + body classes | the only source of layout truth |
 | `ui/FitScaler` | layout | panel scale, `--fit-scale` | legibility floors; scroll past them |
-| `items/compare` / `ui/itemTip` | catalog, player equipment | the item card for inventory, shop, stash | pure rows; the caller resolves "yours" |
+| `items/compare` / `ui/itemTip` | catalog, player equipment | the item card for inventory, shop, stash, forge | pure rows; the caller resolves "yours" |
+| `items/instance` / `affixes` / `registry` | catalog, the Raven icons | every derived item definition (`itemDef`), rolls | ids stay strings; stats derive, never store |
+| `systems/Crafting` / `ui/CampCrafting` | player pouch, `craft` RNG | salvage, forge, transmute, refine, reinforce | commands only; the panel reads |
+| `systems/Town` | `itemDef`, `rollGear`, tick | stock, buyback, restock clock | rolls seeded by (seed, serial) |
 | `ui/TouchControls` / `SystemBar` / `StatusFrame` / `Minimap` | layout, queue, player | commands, HUD | act on pointerup for windows |
 | `core/PerformanceScaler` | rAF timing | buffer resolution, `quality`, particle budget, colour grade gate | hysteresis, 2 s cooldown |
 | `persist/SaveGame` | player, floors, stash, stats | slots 1–3, co-op slots 11–14 | versioned schema |
@@ -100,6 +103,14 @@ Items examined and left as they are, with reasons:
 | A stale seat claim evicted a live player | High (co-op) | a seat whose link answered inside 6 s is never reclaimed over its holder |
 | Lobby portraits shook (per-frame trim + 7 fps counter) | Medium (UI) | one union box for every frame; `uiIdleFrame` pacing |
 | No inspection of ground loot | Feature | the item card over a fallen item |
+
+### Iteration 78 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Thirty static items, no levels, no affixes, no crafting | Feature | the Raven registry (160 bases), instances in the id, affixes, uniques, the camp forge, the economy |
+| Flat armor and linear foe scaling could not meet an exponential item curve | High (balance) | foes, hero HP and armor share the 1.08 curve; armor is a share weighed by the attacker's tier |
+| Level-ups added a flat +4 HP; a load trusted the saved max | Low | both go through `baseHpMax()` |
 
 ## 4. Known issues and regression log
 

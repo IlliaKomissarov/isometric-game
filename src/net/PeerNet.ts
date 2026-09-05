@@ -36,7 +36,7 @@ import type { EnemyRec, HeroRec, LootRec } from './StateSync';
 
 export const PARTY_MAX = 4;
 /** Bump when the wire format changes — mismatched builds refuse each other politely. */
-export const PROTOCOL = 3;
+export const PROTOCOL = 4;
 /** Slot colours: gold (leader), sky, rose, moss. */
 export const PARTY_COLORS: readonly number[] = [0xffd070, 0x7fc8ff, 0xff6f8a, 0x8ee08a];
 export const PARTY_COLOR_CSS: readonly string[] = ['#ffd070', '#7fc8ff', '#ff6f8a', '#8ee08a'];
@@ -112,7 +112,7 @@ export interface SnapshotPayload {
   seats: Array<{ slot: number; x: number; y: number; hp: number; res: number; dead: boolean }>;
   enemies: EnemyRec[];
   loot: { next: number; items: Array<{ uid: number; itemId: string; x: number; y: number }> };
-  rng: { combat: number; loot: number; chests: number };
+  rng: { combat: number; loot: number; chests: number; craft?: number };
   bossSeen: boolean;
   /** The entity id counter when this floor was built (foes get the same ids). */
   idBase: number;

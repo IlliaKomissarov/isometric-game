@@ -52,9 +52,11 @@
 
 - **An action RPG in the classic mould.** A 60 Hz simulation with wind-up, strike and recovery
   frames, to-hit rolls, crits, knockback, hit recovery and stagger. Melee, bows and wands. Four
-  classes with talent paths, synergies and passives. Loot in three rarities on a paperdoll, with
-  an item card that lays every piece beside what you wear and calls the verdict. A town with a
-  shop, a stash and a coliseum. A warden every fifth depth, with phases.
+  classes with talent paths, synergies and passives. Loot in six rarities with item levels,
+  affixes, legendary uniques and mythic passives, on a paperdoll with an item card that lays
+  every piece beside what you wear and calls the verdict. A camp forge to salvage, forge,
+  transmute, refine and reinforce to +15. Merchants with a buyback counter and a restock clock.
+  A warden every fifth depth, with phases.
 - **Four-player co-op with no server.** WebRTC data channels brokered by PeerJS. Deterministic
   lockstep carries only intent; the Party Leader is the authority for every creature, hero and
   fallen item, ten times a second, so screens never drift apart. Room codes, a lobby with
@@ -82,6 +84,7 @@
 | Networking | PeerJS 1.5 over WebRTC, custom lockstep, leader-authoritative state sync |
 | Audio | Web Audio synthesis for effects, streamed music |
 | UI | Hand-written DOM, SVG icons, an obsidian-glass design system |
+| Items | 160 Raven-icon bases, instances encoded in the id, `stat = base × 1.08^(iLvl−1) × rarity × (1 + 0.05·upgrade)` |
 | Persistence | Versioned `localStorage` saves, co-op hero slots, floor memories |
 | Build and deploy | Vite 6 with vendor chunks, `tsc --noEmit`, GitHub Pages |
 

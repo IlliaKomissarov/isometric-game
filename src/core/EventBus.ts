@@ -40,6 +40,12 @@ export interface GameEvents {
   'item:pickupArrived': { uid: number; playerId: number };
   /** An item left the ground and entered an inventory. */
   'item:pickedUp': { uid: number; itemId: string };
+  /** The crafting pouch changed (it.78). */
+  'materials:changed': Record<string, never>;
+  /** A forge operation resolved (it.78): the panel's log line. */
+  'craft:result': { ok: boolean; text: string; itemId?: string };
+  /** A reinforcement attempt resolved (it.78). */
+  'craft:reinforced': { ok: boolean; level: number };
   /** Backpack or equipment changed — UI should re-render. */
   'inventory:changed': Record<string, never>;
   /** Simulation tick completed (deterministic hook for state sync). */

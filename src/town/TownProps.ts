@@ -30,7 +30,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge';
   x: number;
   y: number;
   label: string;
@@ -224,6 +224,15 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         interactables.push({ id: nextId++, kind: 'stash', x: p.x + 0.5, y: p.y + 0.5, label: 'E · STASH', tiles: [{ x: p.x, y: p.y }] });
         glowAt(p.x, p.y, 0xd8a85c, 0.35, 0.9, 10);
         plate(p.x, p.y, 'TOWN STASH', 64);
+        break;
+      }
+      case 'forge': {
+        // THE CAMP FORGE (it.78): the Raven anvil, ember-lit, with its own plate.
+        const spr = standing(p, 'wicon_raven125', 0.86);
+        if (spr) spr.scale.set(0.95);
+        glowAt(p.x, p.y, 0xff9a40, 0.4, 0.9, 8);
+        interactables.push({ id: nextId++, kind: 'forge', x: p.x + 0.5, y: p.y + 0.5, label: 'E · CAMP FORGE', tiles: [{ x: p.x, y: p.y }] });
+        plate(p.x, p.y, 'THE CAMP FORGE', 60);
         break;
       }
       case 'campfire': {

@@ -626,6 +626,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ground inspection: the item card over a fallen item
 - [x] Four-tab session verified; clean build
 
+## Iteration 78 - Items reborn (2026-09-05)
+
+- [x] The Raven registry: 160 icons mapped to 75 weapons, 3 staves, 22 uniques, 46 armor, 10 jewels, 5 materials
+- [x] Instances in the id: iLvl 1-100 (1.08 a level), six rarities, nine affixes in three pools, uniques, mythic passives
+- [x] Foes, hero HP and armor on the same curve
+- [x] The camp forge: salvage, forge, transmute, refine, reinforce +15 with the odds; materials pouch (save v4)
+- [x] Merchants: value formula, 25% sell, fifteen-deep buyback, thirty-minute / warden restock, the clock
+- [x] Harness checks; device matrix 74/74; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

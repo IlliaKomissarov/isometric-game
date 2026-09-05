@@ -132,12 +132,16 @@ export const MOB_HEIGHT = 56;
 export const BOSS_HEIGHT = 128;
 
 /**
- * DEPTH SCALING (it.42 audit): life grows 30% of base per level above the
- * first — hp = base × (1 + 0.3·(level − 1)); floor-1 mobs are their base.
- * Damage adds +1 per level (`damageBonus`), armor +½ per level.
+ * DEPTH SCALING (it.78): foes climb the same power curve as the gear —
+ * an item level of two per floor, 1.08 per item level:
+ *   scale = 1.08^(ilvl(level) − 1), ilvl(level) = 1 + 2·(level − 1)
+ * Life AND damage scale by it (a depth-XX foe hits like its own drops
+ * would); armor still adds ½ per level and the armor formula in Combat
+ * weighs it against the attacker's tier.
  */
 export function levelHpScale(level: number): number {
-  return 1 + 0.3 * (Math.max(1, level) - 1);
+  const ilvl = Math.max(1, Math.min(100, 1 + 2 * (Math.max(1, level) - 1)));
+  return Math.pow(1.08, ilvl - 1);
 }
 
 /** Every atlas an enemy kind can put on screen (phase chains included). */
@@ -840,7 +844,7 @@ export class Enemy extends Entity {
 
   /** Sim-owned lifecycle flag (never gate sim on container.visible). */
   private spawned = false;
-  private damageBonus = 0;
+  private dmgScale = 1;
 
   private readonly bobPhase = Math.random() * Math.PI * 2;
   private elapsed = 0;
@@ -951,7 +955,7 @@ export class Enemy extends Entity {
     this.warpTo(x, y);
     this.hpMax = Math.round(this.def.hp * scale);
     this.hp = this.hpMax;
-    this.damageBonus = Math.round(1.0 * (this.level - 1));
+    this.dmgScale = scale;
     this.levelText.text = `Lv ${this.level}`;
     this.levelText.visible = false;
     this.hitRecoveryTicks = this.def.hitRecoveryTicks;
@@ -1150,6 +1154,16 @@ export class Enemy extends Entity {
   /** Flat reduction: the kind's base plus half a point per level (it.42). */
   override get armor(): number {
     return (this.def.armor ?? 0) + Math.floor((this.level - 1) * 0.5);
+  }
+
+  /** The foe's place on the power curve (the armor formula weighs armor against it). */
+  get powerTier(): number {
+    return this.dmgScale;
+  }
+
+  /** Damage at this level: the type's roll scaled by the curve (it.78). */
+  get damageScale(): number {
+    return this.dmgScale;
   }
 
   /** XP this creature yields — a strict function of its base hp and level. */
@@ -1367,15 +1381,15 @@ export class Enemy extends Entity {
           this,
           player.x,
           player.y,
-          this.def.minDamage + this.damageBonus,
-          this.def.maxDamage + this.damageBonus,
+          Math.round(this.def.minDamage * this.dmgScale),
+          Math.round(this.def.maxDamage * this.dmgScale),
           this.def.toHit,
         );
       } else {
         this.ai.meleeStrike(
           this,
-          this.def.minDamage + this.damageBonus,
-          this.def.maxDamage + this.damageBonus,
+          Math.round(this.def.minDamage * this.dmgScale),
+          Math.round(this.def.maxDamage * this.dmgScale),
           this.def.toHit,
           this.def.reach + 0.15,
           this.def.hitEffect,

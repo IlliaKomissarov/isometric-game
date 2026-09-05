@@ -52,6 +52,13 @@ const PLAYER_TO_HIT = 0.8;
 const PLAYER_CRIT_CHANCE = 0.1;
 const PLAYER_HIT_RECOVERY_TICKS = 10;
 
+/**
+ * ARMOR (it.78): a share of the blow, weighed against the attacker's tier —
+ *   reduction = armor / (armor + ARMOR_K × attackerTier)
+ * so a depth-I jerkin turns half of a depth-I bite and almost none of a
+ * depth-XX one, and the numbers on both sides climb the same curve.
+ */
+const ARMOR_K = 6;
 /** Hits below this post-armor damage do not interrupt the victim. */
 const STUN_THRESHOLD = 4;
 /**
@@ -510,10 +517,23 @@ export class CombatSystem {
     if (targetHero && targetHero.damageReduction > 0) {
       rolled = Math.round(rolled * (1 - targetHero.damageReduction));
     }
-    // Armor is flat reduction; a landed hit always deals at least 1.
+    // Armor turns a share of the blow (it.78); a landed hit always deals at least 1.
     // Thorns (it.53) bites past armor — it is the hero's own steel coming back.
-    const amount = Math.max(1, rolled - (event.reflected ? 0 : target.armor));
+    const sourceEntity = state.getEntity(event.sourceId) as (Entity & { powerTier?: number }) | null;
+    const attackerTier = event.reflected ? 1 : sourceHero ? sourceHero.powerTier : (sourceEntity?.powerTier ?? 1);
+    const armorAmt = event.reflected ? 0 : target.armor;
+    const reduction = armorAmt > 0 ? armorAmt / (armorAmt + ARMOR_K * attackerTier) : 0;
+    let amount = Math.max(1, Math.round(rolled * (1 - reduction)));
+    // LEGENDARY UNIQUES (it.78): echo doubles a tenth of the strikes; cull ends a foe under 15%.
+    const fx = sourceHero?.uniqueEffects;
+    if (fx?.has('echo') && !event.reflected && this.rand() < 0.1) amount *= 2;
+    if (fx?.has('cull') && !targetHero && !event.reflected && target.hp < target.hpMax * 0.15) amount = Math.max(amount, target.hp);
     target.hp = Math.max(0, target.hp - amount);
+    if (fx?.has('lifesteal') && sourceHero && !event.reflected && sourceHero.hp > 0 && !targetHero) {
+      const heal = Math.max(1, Math.ceil(amount * 0.08));
+      sourceHero.hp = Math.min(sourceHero.hpMax, sourceHero.hp + heal);
+      eventBus.emit('entity:healed', { entityId: sourceHero.id, amount: heal });
+    }
     eventBus.emit('entity:damaged', {
       entityId: event.targetId,
       amount,
@@ -532,6 +552,10 @@ export class CombatSystem {
     if (thorny && sourceHero && !event.reflected && target.hp > 0) {
       // Thorns: 15 % of the blow comes back at the striker.
       this.dealDamage({ sourceId: target.id, targetId: sourceHero.id, amount: Math.max(1, Math.ceil(amount * 0.15)), reflected: true });
+    }
+    // A hero's thorns unique (it.78): a fifth of the blow back at the foe.
+    if (targetHero?.uniqueEffects.has('thorns') && sourceEntity && !sourceHero && !event.reflected && sourceEntity.hp > 0 && targetHero.hp > 0) {
+      this.dealDamage({ sourceId: targetHero.id, targetId: sourceEntity.id, amount: Math.max(1, Math.ceil(amount * 0.2)), reflected: true });
     }
 
     if (target.hp === 0) {

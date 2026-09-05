@@ -1,0 +1,1167 @@
+[item]
+id=3000
+name=Furoreball Scroll
+INCLUDE items/base/scrolls/scroll_3.txt
+power=3000
+power_desc=Use: Shoot a Furoreball.
+price=25
+price_per_level=25
+price_sell=12
+max_quantity=20
+no_stash=shared
+
+[item]
+id=3001
+name=Broken Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=-30
+quality=broken
+price=1
+requires_level=1
+
+[item]
+id=3002
+name=Decrepit Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=-20
+quality=decrepit
+price=10
+requires_level=1
+
+[item]
+id=3003
+name=Crude Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=-10
+quality=crude
+price=100
+requires_level=1
+
+[item]
+id=3004
+name=Common Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+
+[item]
+id=3005
+name=Fine Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=10
+quality=fine
+price=10000
+requires_level=1
+
+[item]
+id=3006
+name=Exquisite Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=20
+quality=exquisite
+price=100000
+requires_level=1
+
+[item]
+id=3007
+name=Masterwork Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=30
+quality=masterwork
+price=1000000
+requires_level=1
+
+[item]
+id=3008
+name=Elite Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=40
+quality=elite
+price=10000000
+requires_level=1
+
+[item]
+id=3009
+name=Heroic Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=50
+quality=heroic
+price=100000000
+requires_level=1
+
+[item]
+id=3010
+name=Epic Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=60
+quality=epic
+price=1000000000
+requires_level=1
+
+[item]
+id=3011
+name=Legendary Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=80
+quality=legendary
+price=10000000000
+requires_level=1
+
+[item]
+id=3012
+name=Mythical Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=100
+quality=mythical
+price=100000000000
+requires_level=1
+
+[item]
+id=3013
+name=Higher Level Requirement Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+flavor=Glowing when worn, it clears the wearer's mind and allows them to deeply focus.
+level=16
+quality=enchanted
+price=17000000
+requires_level=14
+bonus=mp,25
+bonus=fire_resist,5
+bonus=ice_resist,5
+bonus=lightning_resist,5
+bonus=dark_resist,5
+
+[item]
+id=3014
+name=Lower Level Requirement Test Ring
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+flavor=Glowing when worn, it clears the wearer's mind and allows them to deeply focus.
+level=16
+quality=enchanted
+price=17000000
+requires_level=23
+bonus=mp,25
+bonus=fire_resist,5
+bonus=ice_resist,5
+bonus=lightning_resist,5
+bonus=dark_resist,5
+
+
+
+# Equipment types
+
+# Main Armour
+
+# Steel Plate Armour Set intended for level 65-90
+
+[item]
+id=3015
+name=Steel Plate Helm
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Helm.txt
+level=65
+quality=common
+price=2000
+abs=9,11
+requires_stat=defense,22
+bonus=speed,97
+
+[item]
+id=3016
+name=Steel Plate Cuirass
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Cuirass.txt
+level=65
+quality=common
+price=3000
+abs=10,12
+requires_stat=defense,21
+bonus=speed,94
+
+[item]
+id=3017
+name=Steel Plate Cuisses
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Cuisses.txt
+level=65
+quality=common
+price=2500
+abs=8,10
+requires_stat=defense,21
+bonus=speed,95
+
+[item]
+id=3018
+name=Steel Plate Boots
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Boots.txt
+level=65
+quality=common
+price=2500
+abs=7,9
+requires_stat=defense,21
+bonus=speed,96
+
+[item]
+id=3019
+name=Steel Plate Gauntlets
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Gauntlets.txt
+level=65
+quality=common
+price=2000
+abs=7,9
+requires_stat=defense,21
+bonus=speed,99
+
+[item]
+id=3020
+name=Steel Plate Faulds
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Faulds.txt
+level=65
+quality=common
+price=1500
+abs=5,6
+requires_stat=defense,21
+bonus=speed,98
+
+[item]
+id=3021
+name=Steel Plate Greaves
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Greaves.txt
+level=65
+quality=common
+price=1000
+abs=4,5
+requires_stat=defense,21
+bonus=speed,98
+
+[item]
+id=3022
+name=Steel Plate Sabatons
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Sabatons.txt
+level=65
+quality=common
+price=1500
+abs=3,4
+requires_stat=defense,21
+bonus=speed,98
+
+[item]
+id=3023
+name=Steel Plate Pauldrons
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Pauldrons.txt
+level=65
+quality=common
+price=2000
+abs=6,8
+requires_stat=defense,21
+bonus=speed,98
+
+[item]
+id=3024
+name=Steel Plate Rerebraces
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Rerebraces.txt
+level=65
+quality=common
+price=1000
+abs=1,2
+requires_stat=defense,21
+bonus=speed,99
+
+[item]
+id=3025
+name=Steel Plate Vambraces
+INCLUDE Items/AGABAL/Base/Armour/Plate_Mail/AGABAL_Steel_Plate_Mail_Vambraces.txt
+level=65
+quality=common
+price=1000
+abs=2,3
+requires_stat=defense,21
+bonus=speed,99
+
+#-Matthew Gordon Roulston 2:20 AM 14th / 08 (August) / 2021 + 12:09 AM 19th / 08 (August) / 2021
+
+
+# Enhancements
+
+[item]
+id=3026
+name=Test Aura Enhancement
+INCLUDE items/AGABAL/base/enhancements/aura_enhancement/AGABAL_Test_Aura_Enhancement.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+[item]
+id=3027
+name=Test Armour Enhancement
+INCLUDE items/AGABAL/base/enhancements/armour_enhancement/AGABAL_Test_Armour_Enhancement.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+[item]
+id=3028
+name=Test Weapon Enhancement
+INCLUDE items/AGABAL/base/enhancements/weapon_enhancement/AGABAL_Test_Weapon_Enhancement.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+# Arms
+
+[item]
+id=3029
+name=Test Dagger
+INCLUDE items/AGABAL/base/weapons/melee/AGABAL_Test_Dagger.txt
+level=1
+price=100
+dmg=melee,25,30
+#requires_stat=physical,2
+
+[item]
+id=3030
+name=Test Wooden Buckler
+INCLUDE items/AGABAL/base/weapons/shields/AGABAL_Test_Wooden_Buckler.txt
+level=1
+price=75
+abs=0,1
+
+
+# Clothing / Unarmoured
+
+#[type]
+#id=hat
+#name=Hat
+[item]
+id=3031
+name=Test Hat
+INCLUDE items/AGABAL/base/clothing/hat/AGABAL_Test_Hat.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=eyes
+#name=Eyes
+[item]
+id=3032
+name=Test Eyes
+INCLUDE items/AGABAL/base/clothing/eyes/AGABAL_Test_Eyes.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+#[type]
+#id=face
+#name=Face
+[item]
+id=3033
+name=Test Face
+INCLUDE items/AGABAL/base/clothing/face/AGABAL_Test_Face.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=neck
+#name=Neck
+[item]
+id=3034
+name=Test Neck
+INCLUDE items/AGABAL/base/clothing/neck/AGABAL_Test_Neck.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=back
+#name=Back
+[item]
+id=3035
+name=Test Back
+INCLUDE items/AGABAL/base/clothing/back/AGABAL_Test_Back.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=tabard
+#name=Tabard
+[item]
+id=3036
+name=Test Tabard
+INCLUDE items/AGABAL/base/clothing/tabard/AGABAL_Test_Tabard.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=shirt
+#name=Shirt
+[item]
+id=3037
+name=Test Shirt
+INCLUDE items/AGABAL/base/clothing/shirt/AGABAL_Test_Shirt.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=girdle
+#name=Girdle
+[item]
+id=3038
+name=Test Girdle
+INCLUDE items/AGABAL/base/clothing/girdle/AGABAL_Test_Girdle.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=pants
+#name=Pants
+[item]
+id=3039
+name=Test Pants
+INCLUDE items/AGABAL/base/clothing/pants/AGABAL_Test_Pants.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=socks
+#name=Socks
+[item]
+id=3040
+name=Test Socks
+INCLUDE items/AGABAL/base/clothing/socks/AGABAL_Test_Socks.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=gloves
+#name=Gloves
+[item]
+id=3041
+name=Test Gloves
+INCLUDE items/AGABAL/base/clothing/gloves/AGABAL_Test_Gloves.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+#[type]
+#id=amulet
+#name=Amulet
+[item]
+id=3042
+name=Test Amulet
+INCLUDE items/AGABAL/base/jewellery/amulet/AGABAL_Test_Amulet.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+#[type]
+#id=finger
+#name=Finger
+[item]
+id=3043
+name=Test Finger
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Test_Finger.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=trinket
+#name=Trinket
+[item]
+id=3044
+name=Test Trinket
+INCLUDE items/AGABAL/base/jewellery/trinket/AGABAL_Test_Trinket.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+#[type]
+#id=accessory
+#name=Accessory
+[item]
+id=3045
+name=Test Accessory
+INCLUDE items/AGABAL/base/jewellery/accessory/AGABAL_Test_Accessory.txt
+level=1
+price=100
+bonus=hp,1
+#requires_stat=physical,2
+
+
+
+
+
+# Carried types
+
+
+#[type]
+#id=consumable
+#name=Consumable
+
+#[type]
+#id=gem
+#name=Gem
+
+#[type]
+#id=key
+#name=Key
+
+#[type]
+#id=book
+#name=Book
+
+#[type]
+#id=relic
+#name=Ancient Relic
+
+#[type]
+#id=crafting
+#name=Crafting Resource
+
+#[type]
+#id=crafting_tool
+#name=Crafting Tool
+
+
+#-Matthew Gordon Roulston 9:15 PM 30th / 05 (May) / 2021
+
+
+
+
+
+
+[item]
+id=3046
+name=Test Speed Ring 0% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,0
+
+[item]
+id=3047
+name=Test Speed Ring 0.5% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,0.5
+
+[item]
+id=3048
+name=Test Speed Ring 1% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,1
+
+[item]
+id=3049
+name=Test Speed Ring 0.9% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,.9
+
+[item]
+id=3050
+name=Test Ring 10% Mana Regeneration Bonus
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=mp_percent,10
+
+[item]
+id=3051
+name=Test Ring 10% Mana Pool Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=mp_percent,-10
+
+[item]
+id=3052
+name=Test Ring 10% Mana Regeneration Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=mpot_percent,-10
+#bonus=mp_regen_percent,-10
+
+[item]
+id=3053
+name=Test Speed Ring -25% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,75
+
+[item]
+id=3054
+name=Test Speed Ring -35% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,65
+
+[item]
+id=3055
+name=Test Speed Ring -45% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,55
+
+[item]
+id=3056
+name=Test Speed Ring -55% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,45
+
+[item]
+id=3057
+name=Test Speed Ring -65% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,35
+
+[item]
+id=3058
+name=Test Speed Ring -75% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,25
+
+[item]
+id=3059
+name=Test Speed Ring -85% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,15
+
+[item]
+id=3060
+name=Test Speed Ring -10% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,90
+
+[item]
+id=3061
+name=Test Speed Ring -20% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,80
+
+[item]
+id=3062
+name=Test Speed Ring -30% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,70
+
+[item]
+id=3063
+name=Test Speed Ring -40% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,60
+
+[item]
+id=3064
+name=Test Speed Ring -50% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,50
+
+[item]
+id=3065
+name=Test Speed Ring -60% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,40
+
+[item]
+id=3066
+name=Test Speed Ring -70% Speed Penalty
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=speed,30
+
+[item]
+id=3067
+name=Test Ring 1.6% Mana Pool Bonus
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=mp_percent,1.6
+
+[item]
+id=3068
+name=Test Ring 1.1% Mana Pool Bonus
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000
+requires_level=1
+bonus=mp_percent,1.1
+
+[item]
+id=3069
+name=Test Ring of 100% Furore Resistance
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=common
+price=1000000000
+requires_level=1
+bonus=furore_resist,100
+
+[item]
+id=3070
+name=Test Ring of 100,000 Absorb Armour
+INCLUDE items/AGABAL/base/jewellery/finger/AGABAL_Gold_Ring_05.txt
+level=1
+quality=mythical
+price=1000000000000000000
+requires_level=1
+abs=100000
+
+[item]
+id=3071
+name=Copper Off-Hand Dagger
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=96
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Dagger
+loot_animation=animations/loot/dagger.txt
+price=100
+requires_level=1
+flavor=Off-Hand Dagger Test.
+
+[item]
+id=3072
+name=Alder Off-Hand Club
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=109
+soundfx=soundfx/inventory/inventory_wood.ogg
+gfx=AGABAL_Off-Hand_Club
+loot_animation=animations/loot/club.txt
+price=100
+requires_level=1
+flavor=Off-Hand Club Test.
+
+[item]
+id=3073
+name=Copper Off-Hand Hand-Axe
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=117
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Hand-Axe
+loot_animation=animations/loot/hand_axe.txt
+price=100
+requires_level=1
+flavor=Off-Hand Hand-Axe Test.
+
+[item]
+id=3074
+name=Copper Off-Hand Infantry-Axe
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=118
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Infantry-Axe
+loot_animation=animations/loot/infantry_axe.txt
+price=100
+requires_level=1
+flavor=Off-Hand Infantry-Axe Test.
+
+[item]
+id=3075
+name=Copper Off-Hand Longsword
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=98
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Longsword
+loot_animation=animations/loot/longsword.txt
+price=100
+requires_level=1
+flavor=Off-Hand Longsword Test.
+
+[item]
+id=3076
+name=Copper Off-Hand Mace
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=111
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Mace
+loot_animation=animations/loot/mace.txt
+price=100
+requires_level=1
+flavor=Off-Hand Mace Test.
+
+[item]
+id=3077
+name=Copper Off-Hand Reinforced-Club
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=110
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Reinforced-Club
+loot_animation=animations/loot/reinforced_club.txt
+price=100
+requires_level=1
+flavor=Off-Hand Reinforced-Club Test.
+
+[item]
+id=3078
+name=Copper Off-Hand Shortsword
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=97
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Shortsword
+loot_animation=animations/loot/shortsword.txt
+price=100
+requires_level=1
+flavor=Off-Hand Shortsword Test.
+
+[item]
+id=3079
+name=Copper Off-Hand Smith-Hammer
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=101
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Smith-Hammer
+loot_animation=animations/loot/smith_hammer.txt
+price=100
+requires_level=1
+flavor=Off-Hand Smith-Hammer Test.
+
+[item]
+id=3080
+name=Copper Off-Hand Warhammer
+level=1
+quality=common
+item_type=off
+dmg=melee,25,30
+icon=102
+soundfx=soundfx/inventory/inventory_metal.ogg
+gfx=AGABAL_Off-Hand_Warhammer
+loot_animation=animations/loot/war_hammer.txt
+price=100
+requires_level=1
+flavor=Off-Hand Warhammer Test.
+
+
+
+
+
+
+#All Metal Plate Mail Armour Sets
+
+10-35 (22.5) Copper
+
+
+
+25-50 (37.5) Bronze
+
+
+
+30-55 (42.5) Brass
+
+
+
+30-60 (45) Nickel
+
+
+
+35-60 (47.5) Cupronickel
+
+
+
+50-75 (62.5) Iron
+
+
+
+30-80 (55) Silver
+
+
+
+65-90 (77.5) Steel
+
+
+
+25-100 (62.5) Gold
+
+
+
+70-100 (85) Chromium
+
+
+
+75-100 (87.5) Stainless Steel
+
+
+
+80-110 (95) Magnesium
+
+
+
+90-115 (102.5) Black Iron
+
+
+
+70-120 (95) Aluminum
+
+
+
+105-130 (117.5) Black Steel
+
+
+
+65-140 (102.5) Platinum
+
+
+
+110-140 (125) Bismuth
+
+
+
+130-155 (142.5) Titanium
+
+
+
+110-160 (135) Cold Iron
+
+
+
+145-170 (157.5) Thunder Steel
+
+
+
+110-180 (145) Shadow Steel
+
+
+
+150-180 (165) Wolfram
+
+
+
+170-190 (180) Azurium
+
+
+
+150-200 (175) Truesilver
+
+
+
+180-200 (190) Starilium
+
+
+
+150-220 (185) Aridium
+
+
+
+190-220 (205) Adamantium
+
+
+
+200-220 (210) Primal Obsidian
+
+
+
+210-230 (220) Elemental Obsidian
+
+
+
+190-240 (215) Quicksilver
+
+
+
+210-240 (225) Elementium
+
+
+
+200-250 (225) Blood of the Mountain
+
+
+
+190-260 (225) Truegold
+
+
+
+200-275 (237.5) Crimsonite
+
+
+
+235-275 (255) Runite
+
+
+
+240-290 (265) Mithril
+
+
+
+240-299 (269.5) Arcanite
+
+
+
+300 (300) Orichalcum
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

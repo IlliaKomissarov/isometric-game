@@ -1,0 +1,5 @@
+magick montage -background "transparent" -geometry 128x128 -tile 32x8 *.png testdaggerheroinemontagesprites.png 
+
+magick montage -background "transparent" -geometry 128x128 -tile 32x8 *.png FILENAMEHERE.png
+
+-Matthew Gordon Roulston 7:20 AM 25th / 10 (October) / 2021

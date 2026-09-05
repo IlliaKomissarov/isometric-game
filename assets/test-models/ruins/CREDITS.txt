@@ -1,0 +1,59 @@
+released under CC-BY-SA 3.0
+
+models:
+
+the grass field:
+https://www.blendswap.com/blends/view/74098
+Artist: Spelle (CC-BY 3.0)
+
+wall models from (only models, no textures) - file: grassland_walls.blend
+https://opengameart.org/content/grassland-tileset
+Artist: Clint Bellanger (CC-BY-SA 3.0)
+used on masking layers for some tiles
+
+metal gate for entrance-tiles
+https://opengameart.org/content/gate-low-poly
+Artist: MrCraftAnimation (CC0)
+
+statue:
+https://opengameart.org/content/medieval-statue
+Artist: Daniel Andersson (CC0)
+
+torch:
+https://opengameart.org/content/wall-mounted-torch
+Artist: Scribe (CC-BY 3.0)
+
+
+
+textures:
+
+from torch (see credits above)
+alpha map4.png
+normal map2.png
+pdtexture.jpg
+
+
+own textures / photos (CC0):
+IMG_*
+moss.png
+rock_scanned_05_disp.png
+
+
+
+HDRI:
+Shady Patch
+from blender cloud (CC0)
+https://cloud.blender.org/p/hdri/57ff6a49e5e20f05e23ba15b
+
+
+
+other:
+
+node group "snow"
+own creation (CC0)
+
+
+
+
+
+

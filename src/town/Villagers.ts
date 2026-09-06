@@ -23,6 +23,8 @@ const WALK_SPEED = 1.25; // tiles / s
 const CYCLES_PER_TILE = 0.5;
 const WALK = 'folk_walk';
 const GUARD_IDLE = 'poacher_idle';
+/** The gatekeeper wears the guard's mail (it.87). */
+const KEEPER_IDLE = 'guard_idle';
 
 interface Villager {
   root: Container;
@@ -48,6 +50,7 @@ interface Guard {
 export class Villagers {
   private readonly folk: Villager[] = [];
   private readonly guards: Guard[] = [];
+  private keeper: Guard | null = null;
   private readonly scratch = vec2();
   private readonly scale: number;
   private merchant: { body: Sprite; clock: number; scale: number } | null = null;
@@ -64,6 +67,8 @@ export class Villagers {
     alchemistAt: { x: number; y: number } | null = null,
     /** THE MARKET WARD (it.84): the ward's vendors wear their own colours. */
     tints: { merchant?: number; alchemist?: number } = {},
+    /** THE GATEKEEPER (it.87): a sentry in mail, breathing, at the eastern road. */
+    keeperAt: { x: number; y: number } | null = null,
   ) {
     const painted = spriteLib.paintedHeight(WALK) || 50;
     this.scale = FOLK_HEIGHT / painted;
@@ -126,6 +131,19 @@ export class Villagers {
         layer.addChild(body);
         this.guards.push({ body, clock: Math.random() * 3, x: at.x + 0.5, y: at.y + 0.5 });
       }
+    }
+    if (keeperAt && spriteLib.hasAnim(KEEPER_IDLE)) {
+      const kp = spriteLib.paintedHeight(KEEPER_IDLE) || 60;
+      const kscale = 64 / kp;
+      const body = new Sprite(spriteLib.frame(KEEPER_IDLE, 5, 0));
+      body.anchor.set(0.5, 1);
+      body.scale.set(kscale);
+      body.tint = 0xd8c8a8;
+      const s = worldToScreen(keeperAt.x + 0.5, keeperAt.y + 0.5, this.scratch);
+      body.position.set(s.x, s.y + 2);
+      body.zIndex = depthKey(keeperAt.x + 0.5, keeperAt.y + 0.5);
+      layer.addChild(body);
+      this.keeper = { body, clock: 0.4, x: keeperAt.x + 0.5, y: keeperAt.y + 0.5 };
     }
   }
 
@@ -196,6 +214,12 @@ export class Villagers {
         g.body.tint = tint(g.x, g.y);
       }
     }
+    if (this.keeper && spriteLib.hasAnim(KEEPER_IDLE)) {
+      const k = this.keeper;
+      k.clock += dt;
+      k.body.texture = spriteLib.frame(KEEPER_IDLE, 5, Math.floor(k.clock * 5) % spriteLib.anim(KEEPER_IDLE).frameCount);
+      k.body.tint = tint(k.x, k.y);
+    }
   }
 
   destroy(): void {
@@ -207,5 +231,7 @@ export class Villagers {
     this.alchemist = null;
     for (const g of this.guards) g.body.destroy();
     this.guards.length = 0;
+    this.keeper?.body.destroy();
+    this.keeper = null;
   }
 }

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 86, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 87, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -195,6 +195,19 @@ Items examined and left as they are, with reasons:
 | Finding | Severity | Fix |
 | --- | --- | --- |
 | The shortcut bar lay flat on touch laptops, tablets and wide phones | Medium (UX) | an upright stack on every layout with the height; two columns on shorter touch landscapes; `tall-screen` class |
+
+### Iteration 87 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| No quests | Feature | the gatekeeper, the dialogue panel, the forest errand (clear, return, 100 gold, safe forest), `SaveGame.quests` |
+| The old teleporter | Asset | the new model's disc and rune everywhere a portal stands |
+| The key too big and hidden by south walls | Medium (UX) | a quarter scale, low, with a top-layer beacon gated by the fog |
+| Gates faced one way | Low (visual) | mirrored across corridors running the other way |
+| The boss chamber seized the hero at its door | Medium (design) | the seal is the way in, the room says so |
+| A tree hid a foe or a partner | Medium (UX) | the cutaway fades for every visible body |
+| The gatekeeper stood behind a pine | Medium (UX) | moved into the gate yard; the road's prompt names him, his tile counts as the gate's |
+| The bar met the thumb cluster on a 932x430 phone (since it.86) | Low (layout) | four-across bar on touch landscapes under 480 px; matrix 74/74 |
 
 ## 4. Known issues and regression log
 

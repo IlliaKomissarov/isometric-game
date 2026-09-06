@@ -277,7 +277,10 @@ export class OrientationManager {
     // Seven entries since it.68 (the Forbidden Arts joined). A 240 px
     // handset takes 36 px targets: seven 44s do not fit beside a plate.
     const barSize = tier === 'micro' ? 36 : tier === 'tablet' || tier === 'desktop' || tier === 'huge' ? 48 : 44;
-    const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 ? 'grid4' : 'row';
+    // A touch landscape under 480 px tall (it.87): two columns of four ran
+    // into the thumb cluster's top face on a 932x430 phone; four across, two
+    // down, ends above it.
+    const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 || (touch && orientation === 'landscape' && h < 480) ? 'grid4' : 'row';
     // Eight entries since it.82 (the journal joined).
     const barW = barForm === 'row' ? 8 * barSize + 7 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
 

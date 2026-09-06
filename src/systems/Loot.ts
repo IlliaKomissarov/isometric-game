@@ -32,6 +32,8 @@ export interface GroundItem {
 interface GroundItemView extends GroundItem {
   root: Container;
   glyph: Sprite;
+  /** THE BEACON (it.87): a key's silhouette and light column in the top layer, seen through walls. */
+  beacon?: Container;
 }
 
 export class LootSystem {
@@ -121,6 +123,17 @@ export class LootSystem {
     if (!item) return;
     this.items.delete(uid);
     item.root.destroy({ children: true });
+    item.beacon?.destroy({ children: true });
+  }
+
+  /** THE BEACONS (it.87): a key's top-layer light shows only where the fog has lifted, and breathes. */
+  updateBeacons(isVisible: (gx: number, gy: number) => boolean, time: number): void {
+    for (const item of this.items.values()) {
+      if (!item.beacon) continue;
+      const seen = isVisible(Math.floor(item.x), Math.floor(item.y));
+      item.beacon.visible = seen;
+      if (seen) item.beacon.alpha = 0.75 + 0.25 * Math.sin(time * 3 + item.uid);
+    }
   }
 
   /** Never hand out a uid the leader has already used. */
@@ -149,8 +162,9 @@ export class LootSystem {
       glyph = new Sprite(spriteLib.single(`wicon_${def.icon}`));
       glyph.anchor.set(0.5, 0.5);
       // The Raven icons are 64 px paintings (it.78): a third of that on the ground.
-      glyph.scale.set(def.icon.startsWith('raven') ? 0.42 : 1.0);
-      glyph.position.y = -7;
+      // A quarry key (it.87) is a quarter: it lies on the floor, it does not tower over it.
+      glyph.scale.set(def.use?.key ? 0.3 : def.icon.startsWith('raven') ? 0.42 : 1.0);
+      glyph.position.y = def.use?.key ? -4 : -7;
     } else {
       // Non-pack gear drops as its crisp generated pixel icon (40 px source → 28 px).
       glyph = new Sprite(itemIconTexture(def));
@@ -165,7 +179,33 @@ export class LootSystem {
     root.zIndex = depthKey(x, y);
     this.viewport.objectLayer.addChild(root);
 
-    this.items.set(uid, { uid, itemId: def.id, x, y, root, glyph });
+    const view: GroundItemView = { uid, itemId: def.id, x, y, root, glyph };
+    if (def.use?.key) {
+      // THE BEACON (it.87): the key drawn again in the top layer - a soft
+      // light column and its own silhouette, additive, so a wall in front of
+      // it never hides it. The fog still gates it (see updateBeacons).
+      const beacon = new Container();
+      const column = new Sprite(assets.get('glow'));
+      column.anchor.set(0.5, 0.92);
+      column.blendMode = 'add';
+      column.tint = 0xffd070;
+      column.scale.set(0.55, 2.2);
+      column.alpha = 0.35;
+      beacon.addChild(column);
+      const ghost = new Sprite(glyph.texture);
+      ghost.anchor.set(0.5, 0.5);
+      ghost.scale.set(0.3);
+      ghost.blendMode = 'add';
+      ghost.tint = 0xffe8a0;
+      ghost.alpha = 0.55;
+      ghost.position.y = -4;
+      beacon.addChild(ghost);
+      beacon.position.set(s.x, s.y);
+      beacon.visible = false;
+      this.viewport.ambienceLayer.addChild(beacon);
+      view.beacon = beacon;
+    }
+    this.items.set(uid, view);
     if (!quiet) eventBus.emit('item:dropped', { uid, itemId: def.id, x, y });
   }
 
@@ -193,6 +233,7 @@ export class LootSystem {
     if (!item) return null;
     this.items.delete(uid);
     item.root.destroy({ children: true });
+    item.beacon?.destroy({ children: true });
     eventBus.emit('item:pickedUp', { uid, itemId: item.itemId });
     return item.itemId;
   }

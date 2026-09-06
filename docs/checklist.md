@@ -707,6 +707,16 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Shortcut bar a vertical stack on every layout with the height; two columns on shorter touch landscapes
 - [x] Device matrix; playthrough; clean build
 
+## Iteration 87 - The forest errand (2026-09-06)
+
+- [x] The dialogue panel; the gatekeeper; the forest errand start to finish; 100 gold; the safe forest
+- [x] The new teleporter everywhere
+- [x] The key small with a beacon through walls; gates across their corridors
+- [x] The seal is the arena's door, not the room
+- [x] Trees fade for every body behind them
+- [x] The gatekeeper in the open; the road's prompt names him; the 932x430 bar fold
+- [x] Phone-fit dialogue; matrix (74/74); playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

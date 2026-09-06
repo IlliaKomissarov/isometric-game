@@ -5075,6 +5075,18 @@
    "w": 64,
    "h": 64,
    "nearest": false
+  },
+  "portal_pad": {
+   "file": "single_portal_pad.png",
+   "w": 256,
+   "h": 128,
+   "nearest": false
+  },
+  "portal_rune": {
+   "file": "single_portal_rune.png",
+   "w": 224,
+   "h": 112,
+   "nearest": false
   }
  }
-}
+}

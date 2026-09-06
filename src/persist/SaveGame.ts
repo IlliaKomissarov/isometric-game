@@ -90,6 +90,8 @@ export interface SaveGame {
   player: PlayerSave;
   stash: StashState;
   floors: Record<number, FloorMemory>;
+  /** THE QUEST LEDGER (it.87): quest id → state ('new' | 'active' | 'done'). */
+  quests?: Record<string, string>;
 }
 
 export interface SaveMeta {

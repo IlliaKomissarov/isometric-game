@@ -927,6 +927,83 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the quarry remembers its opened gate', !!g.floors[102] && (g.floors[102].doorsOpened ?? []).includes(1) && g.floors[102].arenaCleared === true, JSON.stringify(g.floors[102] && { d: g.floors[102].doorsOpened, c: g.floors[102].arenaCleared }));
     }
 
+    // ---- THE FOREST ERRAND (it.87): the gatekeeper, the errand, the clearing, the thanks, the safe road ---
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      const p = g.player;
+      g.quests.forest = 'new';
+      const keeper = g.town.layout.gatekeeper;
+      check('the gatekeeper stands at the eastern road', !!keeper && !g.scene.isWalkable(keeper.x, keeper.y));
+      p.pos.x = 50.5;
+      p.pos.y = 72.5;
+      g.lighting.updateVisibility(50, 72);
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(3);
+      await wait(80);
+      check('E at the shut road opens the gatekeeper\'s word', !!document.querySelector('#dialogue-panel.open') && /clear the forest/i.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
+      check('the dialogue fits the screen', inside(document.getElementById('dialogue-panel')));
+      document.querySelector<HTMLElement>('#dialogue-panel [data-choice=accept]')?.click();
+      await until(() => game() && game().floor === 101, 12000);
+      g = game();
+      await fadeClear();
+      check('taking the errand walks the hero into the forest', g.floor === 101 && g.quests.forest === 'active');
+      let alive = 0;
+      g.enemies.forEachActive((e: { hp: number }) => {
+        if (e.hp > 0) {
+          alive++;
+          e.hp = 0;
+        }
+      });
+      check('the forest had beasts to clear', alive > 0, String(alive));
+      const gold0 = p.gold;
+      g.loop.step(125);
+      await until(() => game() && game().floor === 0, 12000);
+      g = game();
+      await fadeClear();
+      await wait(120);
+      check('the last beast\'s fall sends the hero back to the gatekeeper', g.floor === 0 && g.quests.forest === 'done' && Math.hypot(p.pos.x - (keeper!.x + 0.5), p.pos.y - (keeper!.y + 0.5)) < 3, `${g.floor} ${g.quests.forest} ${p.pos.x},${p.pos.y}`);
+      check('the gatekeeper pays a hundred gold', p.gold === gold0 + 100, `${gold0} → ${p.gold}`);
+      check('the thanks are on the table', !!document.querySelector('#dialogue-panel.open') && /hundred gold/i.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
+      document.querySelector<HTMLElement>('#dialogue-panel [data-choice=ok]')?.click();
+      await wait(40);
+      await g.travel(101);
+      await until(() => game() && game().floor === 101, 12000);
+      g = game();
+      await fadeClear();
+      let hostile = 0;
+      g.enemies.forEachActive((e: { hp: number }) => {
+        if (e.hp > 0) hostile++;
+      });
+      check('the cleared forest is a safe road with folk and sentries', hostile === 0 && g.town.layout.guards.length === 2, String(hostile));
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 8000);
+      g = game();
+      await fadeClear();
+      // The key beacon and the mirrored gates.
+      await g.travel(102);
+      await until(() => game() && game().floor === 102, 12000);
+      g = game();
+      await fadeClear();
+      const k = g.mines.keys[0];
+      const item = g.loot.getItem(k.uid);
+      check('a quarry key lies small on the floor with a beacon above the walls', !!item && item.glyph.scale.x <= 0.31 && !!item.beacon && !item.beacon.visible);
+      g.player.pos.x = k.x + 0.5;
+      g.player.pos.y = k.y + 1.5;
+      g.lighting.updateVisibility(k.x, k.y + 1);
+      g.loot.updateBeacons((x: number, y: number) => g.lighting.isVisible(x, y), 0);
+      check('the beacon lights once the fog lifts', !!item?.beacon?.visible);
+      check('every gate knows its corridor\'s way', g.mines.doors.every((d: { axis: string }) => d.axis === 'x' || d.axis === 'y'));
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 8000);
+      g = game();
+      await fadeClear();
+    }
+
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
     {
       g.player.addItem('soldier_blade');

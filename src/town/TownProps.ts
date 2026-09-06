@@ -387,7 +387,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'jeweler':
       case 'scribe':
       case 'bowyer':
-        break; // The shopkeepers and the Arena Master are drawn by Villagers.
+      case 'gatekeeper':
+        break; // The shopkeepers, the Arena Master and the gatekeeper are drawn by Villagers.
       // ---- THE MARKET WARD (it.84): the new part's props ----
       case 'guildhall': {
         // The timber-frame hall: its south corner sits a little inside its
@@ -466,7 +467,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // An iron gate across a mine corridor: solid and opaque until its key.
         const spr = standing(p, p.variant ?? 'gate_closed', 0.96);
         if (spr) {
-          spr.scale.set(1.15);
+          spr.scale.set(p.flip ? -1.15 : 1.15, 1.15);
           gates.set(`${p.x},${p.y}`, spr);
         }
         break;
@@ -509,7 +510,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         }
         glowAt(p.x, p.y, 0x7fa8ff, 0.62, 2.2, 44);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 130, 170, 255, 0.95);
-        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: g?.dest ? `E · ${g.label}` : `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: [{ x: p.x, y: p.y }], note: g?.note, dest: g?.dest });
+        // THE GATEKEEPER (it.87): the forest road's prompt names him, and his
+        // own tile counts as the road's, so E beside him is E at the gate.
+        const keeper = g?.dest === 'forest' ? layout.gatekeeper : undefined;
+        const gateTiles = keeper ? [{ x: p.x, y: p.y }, { x: keeper.x, y: keeper.y }] : [{ x: p.x, y: p.y }];
+        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: g?.dest ? (keeper ? `E · THE GATEKEEPER · ${g.label}` : `E · ${g.label}`) : `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: gateTiles, note: g?.note, dest: g?.dest });
         plate(p.x, p.y, g?.dest ? `${g.label} · THE FOREST` : (g?.label ?? 'THE WAY'), 118);
         break;
       }

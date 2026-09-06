@@ -34,6 +34,8 @@ export interface MineDoor {
   open: boolean;
   /** Every tile the gate spans (a two-wide corridor takes two bars). */
   tiles: Array<{ x: number; y: number }>;
+  /** Which way the corridor runs through the gate: the bars stand across it. */
+  axis: 'x' | 'y';
 }
 
 export interface MineKey {
@@ -135,13 +137,16 @@ export function planMines(map: DungeonMap, seed: number): MinesPlan {
     return (wall(x - 1, y) && wall(x + 1, y)) || (wall(x, y - 1) && wall(x, y + 1));
   };
   /** The corridor's cross-section at a path tile: the tile and its floor neighbours across the way. */
+  const axisAt = (k: number): 'x' | 'y' => {
+    const prev = path[k - 1];
+    const next = path[k + 1];
+    return Math.abs((prev % width) - (next % width)) >= Math.abs(Math.floor(prev / width) - Math.floor(next / width)) ? 'x' : 'y';
+  };
   const crossSection = (k: number): Array<{ x: number; y: number }> => {
     const i = path[k];
     const x = i % width;
     const y = (i - x) / width;
-    const prev = path[k - 1];
-    const next = path[k + 1];
-    const along = Math.abs((prev % width) - (next % width)) >= Math.abs(Math.floor(prev / width) - Math.floor(next / width)) ? 'x' : 'y';
+    const along = axisAt(k);
     const out = [{ x, y }];
     const side = along === 'x' ? [[0, -1], [0, 1]] : [[-1, 0], [1, 0]];
     for (const [dx, dy] of side) {
@@ -184,7 +189,7 @@ export function planMines(map: DungeonMap, seed: number): MinesPlan {
     }
     if (best < 0) break;
     const i = path[best];
-    doors.push({ x: i % width, y: Math.floor(i / width), key: 0, open: false, tiles: sections.get(best) ?? [{ x: i % width, y: Math.floor(i / width) }] });
+    doors.push({ x: i % width, y: Math.floor(i / width), key: 0, open: false, tiles: sections.get(best) ?? [{ x: i % width, y: Math.floor(i / width) }], axis: axisAt(best) });
   }
   doors.sort((a, b) => path.indexOf(idx(a.x, a.y)) - path.indexOf(idx(b.x, b.y)));
   doors.forEach((d, i) => {
@@ -290,7 +295,10 @@ export function planMines(map: DungeonMap, seed: number): MinesPlan {
     tryProp({ kind: 'lamp', x: bossRoom.x + dx, y: bossRoom.y + dy });
   }
   // The gates themselves, drawn by the dressing.
-  for (const d of doors) for (const t of d.tiles) props.push({ kind: 'gate', x: t.x, y: t.y, variant: 'gate_closed' });
+  // The gate sprite is a wall piece running along x (its door faces south-west,
+  // +y). Bars must stand ACROSS the corridor: a corridor running along x
+  // needs the piece mirrored so it spans y; a corridor along y takes it as is (it.87).
+  for (const d of doors) for (const t of d.tiles) props.push({ kind: 'gate', x: t.x, y: t.y, variant: 'gate_closed', flip: d.axis === 'x' });
 
   return { doors, keys, bossRoom, boss, props, candidates: candidates.length, pathLength: path.length };
 }

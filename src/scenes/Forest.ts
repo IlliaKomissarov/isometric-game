@@ -65,7 +65,7 @@ export interface ForestLayout {
   quarry: { x: number; y: number };
 }
 
-export function buildForestLayout(seed: number): ForestLayout {
+export function buildForestLayout(seed: number, safe = false): ForestLayout {
   const W = FOREST_W;
   const H = FOREST_H;
   const rand = mulberry32((seed ^ 0xf0a357) >>> 0);
@@ -246,5 +246,15 @@ export function buildForestLayout(seed: number): ForestLayout {
     seed,
     tileKind,
   };
-  return { layout: bareLayout(map, props, 'THE DARK FOREST'), entry, townRoad, quarry };
+  const layout = bareLayout(map, props, 'THE DARK FOREST');
+  if (safe) {
+    // THE FOREST CLEARED (it.87): sentries at the gate yard, folk in the second clearing.
+    layout.guards = [
+      { x: 5, y: 18 },
+      { x: 5, y: 22 },
+    ];
+    for (const g of layout.guards) if (grid[idx(g.x, g.y)] === TILE_FLOOR) grid[idx(g.x, g.y)] = TILE_BLOCKED;
+    layout.wander = { x: 23, y: 21, w: 7, h: 5 };
+  }
+  return { layout, entry, townRoad, quarry };
 }

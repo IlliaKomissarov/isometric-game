@@ -103,7 +103,8 @@ export type TownPropKind =
   // THE FOREST AND THE QUARRY (it.85).
   | 'gate'
   | 'quarry'
-  | 'townroad';
+  | 'townroad'
+  | 'gatekeeper';
 
 export interface TownProp {
   kind: TownPropKind;
@@ -115,6 +116,8 @@ export interface TownProp {
   h?: number;
   /** Atlas single/anim variant (house_a…, stall_b…, pine_c…). */
   variant?: string;
+  /** Mirror the sprite (it.87): a gate across a corridor running the other way. */
+  flip?: boolean;
 }
 
 export interface TownLayout {
@@ -156,6 +159,8 @@ export interface TownLayout {
   gateways: Array<{ x: number; y: number; label: string; note: string; dest?: 'forest' }>;
   /** Street tiles (it.85): the ones a standing prop must never take. */
   road?: Uint8Array;
+  /** THE GATEKEEPER (it.87): the sentry at the eastern road who hands out the forest's first errand. */
+  gatekeeper?: { x: number; y: number };
   /** The ward's folk wander here. */
   wander2: Room;
   /** The ward gate's sentries. */
@@ -606,6 +611,10 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'pillar', x: 52, y: 70 });
   block({ kind: 'pillar', x: 52, y: 74 });
   block({ kind: 'gateway', x: 52, y: 72 });
+  // THE GATEKEEPER (it.87): a sentry in the gate yard, south-west of the
+  // light - in the open, not behind the pines that crowd the gateway's north.
+  const gatekeeper = { x: 50, y: 74 };
+  block({ kind: 'gatekeeper', x: gatekeeper.x, y: gatekeeper.y });
 
   // THE OLD QUARTER, DRESSED DEEPER (it.84): benches by the well, a cart on
   // the square, lamps on the high street, a monument at the lower plaza, big
@@ -830,6 +839,7 @@ export function buildTownLayout(): TownLayout {
     wander2,
     guards2,
     road,
+    gatekeeper,
     districts: [
       { name: 'THE OLD QUARTER', x: 0, y: 0, w: W, h: WARD_Y },
       { name: 'THE MARKET WARD', x: 0, y: WARD_Y, w: W, h: H - WARD_Y },

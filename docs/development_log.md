@@ -1,5 +1,86 @@
 # Development Log
 
+## 2026-09-06 (iteration 87) - The forest errand, the spoken word, the new teleporter, the key's beacon, the seal
+
+### The gatekeeper and the forest errand
+- `ui/Dialogue.ts`: one panel for anyone with something to say - a name, a
+  role, lines, up to three choices, a promise for the answer; 1/2/3 and
+  Escape on a keyboard, thumb-sized buttons on a phone, contain-fit.
+- THE GATEKEEPER (a sentry in the guard's mail, `Villagers.keeperAt`) stands
+  beside the eastern gateway. E at the road opens his word: the road is
+  shut until the hero takes the errand (`quests.forest`: new → active →
+  done, saved in `SaveGame.quests`). Taking it walks the party east. In the
+  forest, the sim counts living beasts every tick (`tickForestQuest`); when
+  the last falls a line rises, and 110 ticks later the party is home beside
+  the keeper, every hero a hundred gold richer, the thanks on the table.
+- A cleared forest builds safe (`buildForestLayout(seed, true)`): no packs,
+  six folk in the second clearing, two sentries in the gate yard.
+- The keeper's first post (51,70) put him BEHIND the pine at 53,71 - the
+  town's occluders fade for bodies that move, not for a sentry who stands.
+  He stands in the gate yard now (50,74), in the open south-west of the
+  light; the road's prompt reads E · THE GATEKEEPER · THE EASTERN ROAD and
+  his own tile counts as the gate's, so E beside him is E at the road. The
+  party comes home to the road tile a stride from him. The dialogue head's
+  role line keeps clear of the close cross (it ran under it).
+
+### The bar on a 932x430 phone
+- The device matrix had one red row since it.86: on a touch landscape 420
+  to 480 px tall the two-column bar (it.86) ran into the thumb cluster's top
+  face (the journal at y 241-285, the fourth skill from 264). Under 480 px
+  the manager folds the bar to four across, two down (`barForm` grid4), and
+  the it.86 two-column rule applies only to the row form (`.bar-row`). 74
+  configs green.
+
+### The new teleporter
+- `assets/test-models/teleport` is a 3D teleporter (a blend and its maps).
+  Its stone disc (diffuse × ambient occlusion, cut to the outer ring) and
+  its rune ring bake to `portal_pad` and `portal_rune`, squashed 2:1 for
+  the floor. The rune bake must keep the model's alpha PREMULTIPLIED: the
+  first cut saved it opaque, and under additive blending the whole disc
+  read as a solid blue fill instead of glowing glyph lines. Every teleporter draws them now: the arenas' victory pad, the
+  coliseum's exit, the quarry's way home (`spawnTeleporterAt`) and the
+  return rift at the town's portal stone.
+
+### The key and the gates
+- A quarry key on the floor is a quarter of its icon (not two fifths) and
+  lies low; a BEACON in the top layer - a soft light column and the key's
+  own additive silhouette - shows it through any wall in front, breathing,
+  and only where the fog has lifted (`LootSystem.updateBeacons`).
+- Every gate knows its corridor's way (`MineDoor.axis`); the gate sprite is
+  a wall piece running along x (its door faces south-west), so a corridor
+  running along x gets it mirrored (`TownProp.flip`) and one along y takes
+  it as is - the bars stand across the passage instead of along it. The
+  first cut had the condition backwards; verified on both gate kinds in the
+  browser (seed 42: the x-corridor gate at 77,30 and the y-corridor pair at
+  98,50).
+
+### The seal, not the room
+- On the wardens' floors the whole chamber seized the hero at its door.
+  Now the seal at the room's heart is the way in (within a stride of it);
+  the room says so once at the door.
+
+### Every body behind a tree
+- The cutaway fades a tree in front of ANY visible body now - the local
+  hero, the party, every foe in sight - not only the camera's hero.
+
+### Verified in the browser (seed 42)
+- The gatekeeper's word at the road, the errand taken, the forest, every
+  beast down, the way home, the thanks and the hundred gold, the safe
+  forest with folk and sentries; the dialogue inside a 915x412 and a
+  412x915 simulated phone with 44 px cross and 57 px choices.
+- A quarry key by its south wall at a quarter scale with its beacon lit
+  once the fog lifts; the x-corridor gate at 77,30; the new teleporter's
+  disc and rune ring at the quarry keeper's hall.
+- A wolf parked behind a pine at 37,10: the pine settles at alpha 0.38.
+- Depth V: ninety ticks inside the warden's chamber at its west edge stay
+  on the floor; a step onto the seal enters the arena.
+- `qa75` (seed 42, warrior, deep): 210 pass, 0 fail, 0 errors, 67 s with the
+  tab kept visible; `qa66`: 74/74; `npm run build` clean.
+- Chrome trap: a tab whose viewport had shrunk to 216x158 (DevTools) makes
+  every zoom capture time out and the matrix report boss-bar overflows -
+  open a fresh tab, and run the matrix in town, never in an arena with the
+  boss bar up.
+
 ## 2026-09-06 (iteration 86) - The shortcut bar stands upright on every screen
 
 - The bar was a column only on a desktop without touch (it.80); a touch

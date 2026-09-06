@@ -81,6 +81,7 @@ import { placeTownProps, type Interactable, type Occluder, type TownDressing } f
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
 import { CrtFilter } from '@/render/CrtFilter';
+import { DialogueUI } from '@/ui/Dialogue';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { Villagers } from '@/town/Villagers';
@@ -846,6 +847,8 @@ async function boot(): Promise<void> {
     const floors: Record<number, FloorMemory> = coop ? (coop.snapshot ? { ...coop.snapshot.floors } : {}) : loaded ? { ...loaded.floors } : {};
     const memKey = (f: number, arena: boolean): number => (arena ? 1000 + f : f);
     let deepestFloor = coop ? (coop.snapshot?.deepest ?? 0) : (loaded?.deepestFloor ?? 0);
+    /** THE QUEST LEDGER (it.87): quest id → 'new' | 'active' | 'done'. */
+    const quests: Record<string, string> = { ...(loaded?.quests ?? {}) };
     // RECORDS (it.54): the dungeon and arena ledgers — global, merged with the slot's copy.
     const stats = new StatsManager();
     stats.load();
@@ -1327,9 +1330,10 @@ async function boot(): Promise<void> {
         (layer === 'ground' ? world.viewport.groundLayer : world.viewport.ambienceLayer).addChild(spr);
         return spr;
       };
-      const pad = mk('teleport_pad', 1.0, 0.5, 0xffffff, false, 'ground');
-      const rune = mk('teleport_rune', 0.92, 0.46, 0xffffff, true, 'ambience');
-      const rune2 = mk('teleport_rune', 0.62, 0.31, 0x9fd0ff, true, 'ambience');
+      // THE NEW TELEPORTER (it.87): the stone disc from the teleporter model and its rune ring.
+      const pad = mk('portal_pad', 0.62, 0.62, 0xffffff, false, 'ground');
+      const rune = mk('portal_rune', 0.66, 0.66, 0xffffff, true, 'ambience');
+      const rune2 = mk('portal_rune', 0.42, 0.42, 0x9fd0ff, true, 'ambience');
       rune2.alpha = 0.7;
       const beam = mk('glow', 1.6, 6.5, 0x6fa0ff, true, 'ambience');
       beam.anchor.set(0.5, 0.92);
@@ -1655,7 +1659,8 @@ async function boot(): Promise<void> {
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
       const minesLevel = Math.max(4, Math.min(MAX_DEPTH, deepestFloor + 2));
       const floorLevel = isForest ? forestLevel : isMines ? minesLevel : floorNum;
-      const forest = isForest ? buildForestLayout(seed) : null;
+      const forestSafe = quests.forest === 'done';
+      const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
       const layout = isHub ? buildTownLayout() : forest ? forest.layout : null;
       const memory: FloorMemory | undefined = isHub || isColiseum || isForest ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
@@ -1762,8 +1767,8 @@ async function boot(): Promise<void> {
       }
       // BOSS FLOORS (it.29): NO stairs on the base floor at all — the
       // farthest room IS the boss chamber threshold: a crimson seal burns at
-      // its heart, and stepping anywhere inside the room instantly teleports
-      // into the arena. Arena stairs sit at the hall's far east end, hidden
+      // its heart, and stepping ONTO the seal (it.87: not merely into the room)
+      // teleports into the arena. Arena stairs sit at the hall's far east end, hidden
       // until every combatant inside the seal is dead.
       const arenaRoom = dungeon.rooms[0];
       const isPortalFloor = !isArena && !isHub && isBossFloor(floorNum);
@@ -2009,8 +2014,8 @@ async function boot(): Promise<void> {
       let boss: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || isColiseum || arenaAlreadyCleared) {
-        // No enemies in town; a cleared arena stays empty with its stair open.
+      if (isHub || isColiseum || arenaAlreadyCleared || (isForest && forestSafe)) {
+        // No enemies in town; a cleared arena stays empty with its stair open; a cleared forest is a safe road (it.87).
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const cx = room.x + Math.floor(room.w * 0.68) + 0.5;
@@ -2064,8 +2069,8 @@ async function boot(): Promise<void> {
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
         const villagers = isForest
-          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null) // The forest keeps no folk (it.85).
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist);
+          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null) // A cleared forest keeps folk and sentries (it.87).
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null);
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
         const villagers2 = isForest
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
@@ -2365,6 +2370,7 @@ async function boot(): Promise<void> {
         // CO-OP (it.59): the party's stash is the LEADER's; a joiner keeps its own slot's stash.
         stash: coop && !net?.isHost ? { items: [...ownStash.items], gold: ownStash.gold } : { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
+        quests: { ...quests },
       };
       const ok = saves.write(save);
       if (ok) {
@@ -2435,12 +2441,21 @@ async function boot(): Promise<void> {
         glow.position.set(s.x, s.y - 22);
         world.viewport.ambienceLayer.addChild(glow);
         world.ambience.addGlow(glow, t.layout.portal.x, t.layout.portal.y, 0.8, 1.7);
-        const ring = new Sprite(assets.get('targetRing'));
+        // THE NEW TELEPORTER (it.87): the stone disc and its rune at the portal stone.
+        const ring = new Sprite(spriteLib.hasSingle('portal_pad') ? spriteLib.single('portal_pad') : assets.get('targetRing'));
         ring.anchor.set(0.5);
-        ring.tint = 0x8fb8ff;
-        ring.alpha = 0.8;
+        ring.scale.set(spriteLib.hasSingle('portal_pad') ? 0.62 : 1);
         ring.position.set(s.x, s.y);
         world.viewport.groundLayer.addChild(ring);
+        if (spriteLib.hasSingle('portal_rune')) {
+          const rune = new Sprite(spriteLib.single('portal_rune'));
+          rune.anchor.set(0.5);
+          rune.blendMode = 'add';
+          rune.scale.set(0.66);
+          rune.position.set(s.x, s.y);
+          world.viewport.ambienceLayer.addChild(rune);
+          world.ambience.addGlow(rune, t.layout.portal.x, t.layout.portal.y, 0.9, 0.66);
+        }
         world.lighting.addSource(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5, 2.6, 90, 140, 255, 0.6);
         portalArmed = false;
       }
@@ -3504,6 +3519,96 @@ async function boot(): Promise<void> {
         updateOrb();
       }, label);
     const goForest = (): void => goPlace(FOREST_FLOOR, 'east, into the dark forest');
+    /**
+     * THE GATEKEEPER (it.87): the sentry at the eastern road. The road is
+     * shut until the hero takes the forest's errand; open once it is taken;
+     * a thank-you and a hundred gold when the last wolf is down.
+     */
+    const gatekeeper = async (): Promise<void> => {
+      const state = quests.forest ?? 'new';
+      if (state === 'done') {
+        const v = await dialogue.open({
+          speaker: 'THE GATEKEEPER',
+          role: 'sentry of the eastern road',
+          lines: ['The road is yours, delver. The woods are quiet since you walked them - my folk have gone out to the clearings, and the quarry mouth waits at the far end.'],
+          choices: [
+            { label: 'WALK THE ROAD EAST', sub: 'into the forest, and the quarry beyond', value: 'go' },
+            { label: 'NOT NOW', value: 'stay' },
+          ],
+        });
+        if (v === 'go') goForest();
+        return;
+      }
+      if (state === 'active') {
+        const v = await dialogue.open({
+          speaker: 'THE GATEKEEPER',
+          role: 'sentry of the eastern road',
+          lines: ['Still wolves out there. Clear the woods to the last of them and come back to me - the gold is counted.'],
+          choices: [
+            { label: 'BACK INTO THE FOREST', value: 'go' },
+            { label: 'NOT NOW', value: 'stay' },
+          ],
+        });
+        if (v === 'go') goForest();
+        return;
+      }
+      const v = await dialogue.open({
+        speaker: 'THE GATEKEEPER',
+        role: 'sentry of the eastern road',
+        lines: [
+          'Hold there. The eastern road is shut - wolves in the woods, poachers with them, and a spider the size of a cart. Nobody walks it and comes back.',
+          'You look like you might. Clear the forest - every last beast - and I open the road for good. A hundred gold on your return, from the guild\'s purse.',
+        ],
+        choices: [
+          { label: 'I WILL CLEAR THE FOREST', sub: 'take the errand and walk east now', value: 'accept' },
+          { label: 'NOT YET', value: 'stay' },
+        ],
+      });
+      if (v === 'accept') {
+        quests.forest = 'active';
+        tutorial.say('The forest errand is taken: clear the woods, and the road opens.');
+        goForest();
+      }
+    };
+    /** Ticks left before the cleared forest sends the party home. */
+    let forestReturnTicks = -1;
+    /** The last beast falls: a moment, then the way home, then the gatekeeper's thanks (it.87). */
+    const tickForestQuest = (): void => {
+      if (floor !== FOREST_FLOOR || quests.forest !== 'active' || transitioning) return;
+      if (forestReturnTicks < 0) {
+        let alive = 0;
+        world.enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.action !== 'dead') alive++;
+        });
+        if (alive > 0) return;
+        forestReturnTicks = 110;
+        world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE FOREST IS QUIET · THE GATEKEEPER WAITS', 'crit');
+        audio.sfx('levelUp');
+        return;
+      }
+      if (--forestReturnTicks > 0) return;
+      forestReturnTicks = -1;
+      quests.forest = 'done';
+      for (const seat of liveSeats()) seat.player.gold += 100; // The guild's purse, every hero of the party.
+      eventBus.emit('inventory:changed', {});
+      withFade(async () => {
+        await preloadFloor(0, 'hub');
+        if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+        enterTown(false);
+        const k = world.town?.layout.gatekeeper;
+        if (k) {
+          placeParty(k.x - 0.5, k.y - 1.5, world.scene.isWalkable); // On the road, a stride from the keeper.
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        }
+        world.dmgText.show(player.pos.x, player.pos.y - 0.8, '+100 GOLD · THE FOREST ERRAND', 'crit');
+        void dialogue.open({
+          speaker: 'THE GATEKEEPER',
+          role: 'sentry of the eastern road',
+          lines: ['Every last one? Then the road is open, and the guild owes you a hundred gold - here. My folk will walk the clearings by morning.', 'The quarry mouth lies at the far end of the woods. Whatever is down there is not wolves.'],
+          choices: [{ label: 'WELL MET', value: 'ok' }],
+        });
+      }, 'back to the gate');
+    };
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
 
     // ---- PARTY HUD + WAITING VEIL (it.59) --------------------------------
@@ -3695,6 +3800,7 @@ async function boot(): Promise<void> {
         town.apply(commands); // Buy / sell / stash (it.39).
         crafting.apply(commands); // The camp forge (it.78).
         if (world.mines) tickMines(); // THE IRON GATES (it.85): a key at a gate opens it.
+        tickForestQuest(); // THE FOREST ERRAND (it.87).
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
@@ -3865,12 +3971,18 @@ async function boot(): Promise<void> {
         if (coop && localSlot !== leaderSlot && !world.isArena && !world.town && Math.hypot(player.pos.x - (world.stairs.x + 0.5), player.pos.y - (world.stairs.y + 0.5)) < 0.8) leaderOnlyNote();
         // INSTANT ARENA TELEPORT (it.29): stepping inside the boss chamber's
         // room bounds seizes the player — immediate fade-teleport.
+        // THE SEAL, NOT THE ROOM (it.87): the whole chamber used to seize the
+        // hero at its door. Now the seal at the room's heart is the way in -
+        // step onto it - and the room says so once at the door.
         if (lead.action !== 'dead' && world.arenaThreshold && !transitioning) {
           const t = world.arenaThreshold;
           const px = Math.floor(lead.pos.x);
           const py = Math.floor(lead.pos.y);
+          const sx = t.x + Math.floor(t.w / 2) + 0.5;
+          const sy = t.y + Math.floor(t.h / 2) + 0.5;
           if (px >= t.x && px < t.x + t.w && py >= t.y && py < t.y + t.h) {
-            pendingArena = true;
+            tutorial.notify('sealRoom', 'The warden\'s seal burns at the heart of this chamber. Step onto it when you are ready - the arena seals behind you.');
+            if (Math.hypot(lead.pos.x - sx, lead.pos.y - sy) < 1.1) pendingArena = true;
           }
         }
 
@@ -4105,6 +4217,10 @@ async function boot(): Promise<void> {
           const t = world.town;
           t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
           t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+        }
+        world.loot.updateBeacons((x, y) => world.lighting.isVisible(x, y), timeSec); // THE KEY BEACONS (it.87).
+        if (world.town) {
+          const t = world.town;
           // THE ZONE CHIP (it.84): which district the hero stands in.
           {
             const zx = Math.floor(player.pos.x);
@@ -4123,6 +4239,18 @@ async function boot(): Promise<void> {
           const hs = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
           const heroDepth = (cameraFocus.x + cameraFocus.y) * 16;
           const k = 1 - Math.exp(-12 * frameDt);
+          // EVERY BODY BEHIND A TREE (it.87): the other heroes and every foe in
+          // sight fade the trunk in front of them too, so nothing fights unseen.
+          const bodies: Array<{ x: number; y: number; depth: number }> = [];
+          for (const seat of liveSeats()) if (seat.player !== player && seat.player.hp > 0) {
+            const ps = worldToScreen(seat.player.pos.x, seat.player.pos.y, vec2());
+            bodies.push({ x: ps.x, y: ps.y, depth: (seat.player.pos.x + seat.player.pos.y) * 16 });
+          }
+          world.enemies.forEachActive((e) => {
+            if (e.hp <= 0 || !world.lighting.isVisible(Math.floor(e.pos.x), Math.floor(e.pos.y))) return;
+            const es = worldToScreen(e.pos.x, e.pos.y, vec2());
+            bodies.push({ x: es.x, y: es.y, depth: (e.pos.x + e.pos.y) * 16 });
+          });
           for (const o of t.occluders) {
             const spr = o.sprite;
             const w = spr.width;
@@ -4131,7 +4259,8 @@ async function boot(): Promise<void> {
             const right = left + w * 0.76;
             const top = spr.position.y - h * spr.anchor.y;
             const bottom = top + h * 0.9;
-            const behind = o.depth > heroDepth && hs.x > left && hs.x < right && hs.y - 30 > top && hs.y - 30 < bottom;
+            let behind = o.depth > heroDepth && hs.x > left && hs.x < right && hs.y - 30 > top && hs.y - 30 < bottom;
+            if (!behind) for (const b of bodies) if (o.depth > b.depth && b.x > left && b.x < right && b.y - 30 > top && b.y - 30 < bottom) { behind = true; break; }
             // INSIDE (it.40): standing in a cottage's door column — the roof
             // and front wall drop to a ghost so the room reads.
             const inside = heroTx >= o.tiles.x && heroTx < o.tiles.x + o.tiles.w && heroTy >= o.tiles.y && heroTy < o.tiles.y + o.tiles.h;
@@ -4236,6 +4365,7 @@ async function boot(): Promise<void> {
     const craftLog: Array<{ tick: number; text: string; ok: boolean }> = [];
     const codexUI = new CodexUI(() => player.recipes, () => craftLog, () => deepestFloor);
     const noticeUI = new NoticeBoardUI(); // THE BOUNTY BOARD (it.84).
+    const dialogue = new DialogueUI(); // THE SPOKEN WORD (it.87).
     subs.push(
       eventBus.on('journal:open', ({ chapter }) => codexUI.open(chapter as Parameters<CodexUI['open']>[0])),
       eventBus.on('craft:result', ({ ok, text }) => {
@@ -4248,7 +4378,7 @@ async function boot(): Promise<void> {
     // are registered here rather than at boot.
     // By id (it.66): the hero sheet and the bestiary are built a few lines
     // below this, and a registration by element silently dropped them.
-    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'codex', 'notice-board', 'leaderboard', 'level-select']) {
+    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'codex', 'notice-board', 'dialogue-panel', 'leaderboard', 'level-select']) {
       fit.addById(id, { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
@@ -4288,7 +4418,7 @@ async function boot(): Promise<void> {
       else if (it.kind === 'gateway') {
         if (it.dest === 'forest') {
           if (coop && localSlot !== leaderSlot) leaderOnlyNote();
-          else goForest();
+          else void gatekeeper();
         } else tutorial.say(it.note ?? 'The way is not open yet.');
       } else if (it.kind === 'quarry') {
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();
@@ -4311,6 +4441,7 @@ async function boot(): Promise<void> {
         const isLeader = cmd.playerId === leaderSlot;
         if (cmd.type === 'PICKUP_NEAREST') {
           // SYMMETRICAL E (it.41): an open trade / stash window closes on the same key.
+          if (isLocal && dialogue.isOpen) continue; // The word is on the table: E does nothing else (it.87).
           if (isLocal && (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen || noticeUI.isOpen || arenaModal.classList.contains('open'))) {
             shopUI.close();
             stashUI.close();
@@ -4652,7 +4783,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -4684,6 +4815,7 @@ async function boot(): Promise<void> {
         craftUI.destroy();
         codexUI.destroy();
         noticeUI.destroy();
+        dialogue.destroy();
         statsUI.destroy();
         hudBuffs.remove();
         headBuffs.remove();
@@ -4753,7 +4885,7 @@ export function isBossFloor(floor: number): boolean {
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
-  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
     const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);
@@ -4764,7 +4896,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   }
   // THE FOREST AND THE QUARRY (it.85): their own packs, the town's torches and braziers, the hydra.
   if (mode === 'forest' || mode === 'mines') {
-    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'poacher_idle', ...VFX_ANIMS]);
     for (const k of mode === 'forest' ? FOREST_POOL : [...MINES_POOL, 'hydra' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

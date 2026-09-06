@@ -4790,7 +4790,8 @@
       /* A touch landscape under 800 px tall keeps the thumb cluster in its
          bottom-right corner, where a column of eight would reach: the stack
          is two columns of four there - still upright, half the height. */
-      body.input-touch.orient-landscape:not(.tall-screen):not(.tiny-height):not(.short-screen) #system-bar { grid-template-columns: auto auto; justify-items: end; gap: 6px; }
+      /* Only when the form is the row (it.87): under 480 px the manager folds it to four across. */
+      body.input-touch.orient-landscape.bar-row:not(.tall-screen):not(.tiny-height):not(.short-screen) #system-bar { grid-template-columns: auto auto; justify-items: end; gap: 6px; }
       body:not(.tiny-height):not(.short-screen):not(.has-pad) #hud-tr,
       body.has-pad.tier-standard #hud-tr,
       body.has-pad.tier-tablet #hud-tr { align-items: flex-end; }
@@ -5074,6 +5075,21 @@
       #notice-board .nb-pin { position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffd070, #7a4a10 70%); box-shadow: 0 1px 2px #000; }
       body.orient-portrait #notice-board { width: calc(var(--app-w) - 12px); }
       body.orient-portrait #notice-board .nb-cards { grid-template-columns: 1fr; }
+
+      /* ---- 8a9. THE SPOKEN WORD (it.87) -------------------------------- */
+      #dialogue-panel { width: 520px; }
+      #dialogue-panel .tp-head .tp-vendor { margin-right: 40px; }
+      body.input-touch #dialogue-panel .tp-head .tp-vendor { margin-right: 52px; }
+      #dialogue-panel .dl-lines { padding: 6px 4px 10px; }
+      #dialogue-panel .dl-lines p { font-family: 'Crimson Pro', 'Georgia', serif; font-size: 15.5px; line-height: 1.5; color: var(--ink, #e8dfc8); margin: 0 0 8px; }
+      #dialogue-panel .dl-lines p:first-child::first-letter { font-family: 'Cinzel', 'Georgia', serif; font-size: 1.5em; color: #ffd070; }
+      #dialogue-panel .dl-choices { display: grid; gap: 8px; }
+      #dialogue-panel .dl-choice { position: relative; text-align: left; padding: 12px 14px 12px 44px; min-height: 44px; }
+      #dialogue-panel .dl-choice .dl-num { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; display: grid; place-items: center; font-size: 10px; border: 1px solid var(--frame-gold, #c8a558); border-radius: 50%; color: #ffd070; }
+      #dialogue-panel .dl-choice .mm-sub { display: block; margin-top: 2px; }
+      body.orient-portrait #dialogue-panel { width: calc(var(--app-w) - 12px); }
+      body.input-touch #dialogue-panel .dl-choice .dl-num { display: none; }
+      body.input-touch #dialogue-panel .dl-choice { padding-left: 14px; }
 
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone

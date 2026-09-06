@@ -710,6 +710,127 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       p.gold = goldBefore;
     }
 
+    // ---- THE MARKET WARD (it.84): two districts, one road, the vendors, the board, the gateways ---
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      const p = g.player;
+      const { auditTownLayout, WARD_Y } = await import('@/town/TownMap');
+      const { itemDef } = await import('@/items/instance');
+      const layout = g.town.layout;
+      const audit = auditTownLayout(layout);
+      check('the town layout audit is clean', audit.unreachable.length === 0 && audit.missing.length === 0, JSON.stringify({ u: audit.unreachable.length, m: audit.missing }));
+      check('the town has two districts', layout.districts.length === 2 && layout.map.height > WARD_Y + 20, String(layout.map.height));
+      // A road from the old quarter to the plaza: a 4-connected walk exists.
+      const W = layout.map.width;
+      const walk = (fx: number, fy: number, tx: number, ty: number): boolean => {
+        const seen = new Uint8Array(W * layout.map.height);
+        const stack = [fy * W + fx];
+        seen[stack[0]] = 1;
+        while (stack.length) {
+          const i = stack.pop()!;
+          const x = i % W;
+          const y = (i - x) / W;
+          if (x === tx && y === ty) return true;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= W || ny >= layout.map.height) continue;
+            const j = ny * W + nx;
+            if (seen[j] || !g.scene.isWalkable(nx, ny)) continue;
+            seen[j] = 1;
+            stack.push(j);
+          }
+        }
+        return false;
+      };
+      check('the south road joins the plaza', walk(30, 30, 31, 72));
+      check('the gateways stand on blocked tiles', layout.gateways.every((gw: { x: number; y: number }) => !g.scene.isWalkable(gw.x, gw.y)));
+      check('every ward prop keeps its footprint solid', layout.props.filter((pr: { kind: string; w?: number; x: number; y: number }) => ['guildhall', 'statue', 'bench', 'cart', 'lamp', 'barricade', 'dummy'].includes(pr.kind)).every((pr: { x: number; y: number }) => !g.scene.isWalkable(pr.x, pr.y)));
+      // The zone chip follows the hero.
+      p.pos.x = 31.5;
+      p.pos.y = 72.5;
+      g.lighting.updateVisibility(31, 72);
+      g.loop.step(3);
+      await wait(200);
+      check('the zone chip reads the Market Ward on the plaza', document.getElementById('zone-label')?.textContent === 'THE MARKET WARD', document.getElementById('zone-label')?.textContent ?? '');
+      // The vendors sell what the old quarter does not.
+      g.shopUI.open('jeweler');
+      await wait(60);
+      check('the jeweler opens and fits', !!document.querySelector('#shop-panel.open') && inside(document.getElementById('shop-panel')) && /JEWELER/.test(document.querySelector('#shop-panel h3')?.textContent ?? ''));
+      check('the jeweler sells rings and amulets only', g.townSystem.stockJewel.length >= 3 && g.townSystem.stockJewel.every((id: string) => itemDef(id)?.slot === 'ring'), g.townSystem.stockJewel.join());
+      check('the scribe sells recipe scrolls', g.townSystem.stockScribe.some((id: string) => id.startsWith('recipe_')), g.townSystem.stockScribe.join());
+      check('the bowyer sells bows, wands, staves and polearms', g.townSystem.stockBowyer.length >= 3 && g.townSystem.stockBowyer.every((id: string) => ['bow', 'wand', 'polearm'].includes(itemDef(id)?.weaponKind ?? '')), g.townSystem.stockBowyer.join());
+      const gold0 = p.gold;
+      p.gold = Math.max(p.gold, 5000);
+      const first = g.townSystem.stockJewel[0];
+      g.queue.enqueue({ type: 'BUY', playerId: 0, index: 0, vendor: 'jeweler' });
+      g.loop.step(2);
+      check('a purchase at the jeweler lands in the pack', p.backpack.includes(first), first);
+      p.gold = gold0;
+      g.shopUI.close();
+      // The bounty board opens, fits, closes on its cross.
+      g.noticeUI.open();
+      await wait(80);
+      check('the bounty board opens and fits', !!document.querySelector('#notice-board.open') && inside(document.getElementById('notice-board')) && document.querySelectorAll('#notice-board .nb-card').length >= 3);
+      document.querySelector<HTMLElement>('#notice-board [data-close]')?.click();
+      await wait(60);
+      check('the bounty board closes on its cross', !document.querySelector('#notice-board.open'));
+      // A gateway says the way is shut.
+      const south = layout.gateways[0];
+      p.pos.x = south.x + 0.5;
+      p.pos.y = south.y - 1.5;
+      g.lighting.updateVisibility(south.x, south.y - 2);
+      g.loop.step(3);
+      await wait(60);
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(2);
+      await wait(400);
+      check('a gateway tells the hero the road is not open', /not open yet/i.test(document.getElementById('hint-banner')?.textContent ?? ''), document.getElementById('hint-banner')?.textContent ?? '');
+      p.pos.x = 30.5;
+      p.pos.y = 30.5;
+      g.lighting.updateVisibility(30, 30);
+      g.loop.step(3);
+      await wait(200);
+      check('the zone chip reads the Old Quarter on the square', document.getElementById('zone-label')?.textContent === 'THE OLD QUARTER', document.getElementById('zone-label')?.textContent ?? '');
+    }
+
+    // ---- PLATES ON APPROACH (it.84): a foe's name, level and life show before the first blow ---
+    {
+      // An uncleared floor: depth I was emptied earlier in this run.
+      await g.travel(7);
+      await until(() => game() && game().floor === 7, 8000);
+      g = game();
+      await fadeClear();
+      const p = g.player;
+      type FoeShape = { pos: { x: number; y: number }; hp: number; hpMax: number; healthBar?: { visible: boolean }; levelText?: { text: string; visible: boolean } };
+      const box: { f: FoeShape | null } = { f: null };
+      g.state.forEach((e: { constructor: { name: string }; hp: number }) => {
+        if (!box.f && e.constructor.name === 'Enemy' && e.hp > 0 && (e as unknown as { spawned?: boolean }).spawned !== false) box.f = e as unknown as FoeShape;
+      });
+      if (box.f) {
+        const f = box.f;
+        f.pos.x = p.pos.x + 2;
+        f.pos.y = p.pos.y;
+        g.loop.step(4);
+        check('a foe near the hero shows its plate before any blow', f.hp === f.hpMax && !!f.healthBar?.visible && !!f.levelText?.visible, `${f.healthBar?.visible} ${f.levelText?.text}`);
+        check('the plate names the foe and its level', /Lv \d+/.test(f.levelText?.text ?? ''), f.levelText?.text);
+        f.pos.x = p.pos.x + 20;
+        f.pos.y = p.pos.y + 20;
+        g.loop.step(4);
+        check('the plate hides again when the hero walks away', !f.healthBar?.visible);
+      } else check('a foe stands on depth VII for the plate test', false);
+      check('the zone chip reads the depth below', /DEPTH VII/.test(document.getElementById('zone-label')?.textContent ?? ''), document.getElementById('zone-label')?.textContent ?? '');
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 8000);
+      g = game();
+      await fadeClear();
+    }
+
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
     {
       g.player.addItem('soldier_blade');

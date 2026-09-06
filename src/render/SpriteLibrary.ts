@@ -190,6 +190,9 @@ export type AnimName =
   | 'merchant_walk'
   | 'campfire'
   | 'torch'
+  | 'brazier_stand'
+  | 'banner'
+  | 'gateway'
   | 'well';
 
 export interface PaintedBounds {

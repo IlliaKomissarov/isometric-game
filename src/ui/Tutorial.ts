@@ -21,7 +21,7 @@ export class TutorialUI {
   private readonly banner: HTMLElement;
   private zones: ReadonlyArray<HintZone> = [];
   private readonly seen = new Set<string>();
-  private readonly queue: string[] = [];
+  private queue: string[] = [];
   private showTimer = 0;
   private gapTimer = 0;
 
@@ -39,6 +39,15 @@ export class TutorialUI {
   /** Replace the proximity zones (called by each floor build). */
   setZones(zones: ReadonlyArray<HintZone>): void {
     this.zones = zones;
+  }
+
+  /** A note that repeats every time (it.84): a road not yet open, a locked way. */
+  say(text: string): void {
+    // Jumps the queue and shows at once: the hero asked, the answer is now.
+    this.queue = this.queue.filter((t) => t !== text);
+    this.queue.unshift(text);
+    this.showTimer = 0;
+    this.gapTimer = 0;
   }
 
   /** Fire a one-shot event hint (item drops, first kill, …). */

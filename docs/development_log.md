@@ -1,5 +1,67 @@
 # Development Log
 
+## 2026-09-06 (iteration 84) - The Market Ward, plates on approach, the zone chip
+
+### Plates on approach
+- A foe's name, level and life bar showed only after the first blow. They
+  now show whenever a hero is within seven tiles (`PLATE_RANGE` in
+  Enemy.ts), stay while the foe is wounded, and hide again when the hero
+  walks away. The plate reads "Risen Blade · Lv 2" above the bar; a
+  champion keeps its title above and the level alone on the plate.
+
+### The Market Ward
+- The town is two districts on one 60×98 map: the old quarter (y < 52)
+  and the Market Ward below the ward gate, each a noise-carved clearing
+  with its own forest belt, joined by the south road through the woods.
+  The gate is two banner columns and two sentries on a cobbled apron.
+- The ward: a market plaza around the seated king (the statue from the
+  new pack), benches, a cart, the JEWELER (rings and amulets), the SCRIBE
+  (recipe scrolls and a scholar's brews) and the BOWYER (bows, wands,
+  staves, polearms) - three counters the old quarter does not have, each
+  a `Vendor` with its own restock table in `Town.ts` (`tableFor`). The
+  GUILDHALL (the timber-frame house from the pack, shadow cut away, 4×4
+  solid) with THE BOUNTY BOARD before it - a functional placeholder
+  (`ui/NoticeBoard.ts`): opens on E, four postings that say plainly the
+  ledger is not open yet, closes on its cross, E and Escape, fits every
+  screen. A training yard (barricades, dummies, a rack), a park (the hjm
+  trees, benches), three cottages, standing braziers as street light,
+  waving banners, jars, boxes, barrels. Two GATEWAYS to zones not built
+  yet (the marsh path south, the eastern road east): pillars, the
+  teleporter light, a plate, and a note on E ("not open yet") through a
+  new repeatable `tutorial.say`.
+- The old quarter dressed deeper: benches at the well, a cart on the
+  square, lamps on the high street, a monument at the lower plaza, big
+  trees in the lawns, stores by the stalls - every one placed by
+  `tryBlock`, which refuses a prop that would seal a route or land on
+  paint. Nine folk wander the square, eight the ward.
+- Collision: every standing thing claims its footprint before the scene
+  builds (`block`), the gateways' tiles are blocked, the audit checks the
+  new vendors, the board, the gateways and the plaza, and the harness
+  walks a 4-connected path from the spawn to the plaza.
+- The assets came from `public/assets/test-models/new town part`
+  (untracked): `Normal/sprite0.png` (the hall), `isometric-parts` (the
+  statues, barricades, dummies, jars, boxes, tables), `v3` benches,
+  `hjm-cart_parked` (one view cut from the turntable), `hjm-more_trees`,
+  `Barrel pro`, `hjm-potion_bottles`, `ISO/Standing/Loop` (the brazier,
+  16 frames), the castle sprites (the banner, 10 frames) and
+  `teleporter_effect` (25 of 100 frames). `assets84.py` bakes them into
+  atlas singles and one-row anims with painted boxes.
+
+### The zone chip
+- `#zone-label` under the chart in the top-right stack: the district
+  ("THE OLD QUARTER" / "THE MARKET WARD") from `layout.districts` by the
+  hero's tile, "DEPTH III · THE CRYPT" below, "THE COLISEUM" in the
+  arena. Sized by tier, ellipsis past the chart's width, scaled with the
+  HUD on a phone, in the matrix's HUD list.
+
+### Lessons
+- The hub's fog of war reveals on `player:tileChanged` (36-tile sight):
+  a teleported hero sees nothing until `lighting.updateVisibility` runs.
+  The harness and the screenshots call it.
+- The hub preloads a fixed anim list (`main.ts`, `animsFor('hub')`): a
+  new town anim must be added there or `hasAnim` is false and the prop
+  is silently skipped.
+
 ## 2026-09-06 (iteration 83) - The journal everywhere, the command sheet's corner, the catalogue, the craft ledger, the glass
 
 ### The journal on every road

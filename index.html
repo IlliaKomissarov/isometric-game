@@ -5017,6 +5017,49 @@
       #codex .cx-wear img { width: 22px; height: 22px; vertical-align: middle; image-rendering: pixelated; }
       #codex .cx-group[hidden], #codex [data-find][hidden] { display: none; }
 
+      /* ---- 8a8. THE ZONE CHIP AND THE BOUNTY BOARD (it.84) ----------------
+         The chip sits in the top-right stack between the chart and the
+         bar, reads the district or the depth, and steps down with the
+         tier: it never grows past the chart's width. */
+      #zone-label {
+        pointer-events: none; align-self: flex-end;
+        max-width: max(calc(var(--map-w, 120px) + 36px), 156px); box-sizing: border-box;
+        padding: 3px 9px 2px; margin-top: -2px;
+        font-family: 'Cinzel', 'Georgia', serif; font-weight: 700; font-size: 10px; letter-spacing: 0.16em; line-height: 1.2;
+        color: #e8cf8a; text-shadow: 0 1px 2px #000, 0 0 8px rgba(200, 165, 88, 0.35);
+        background: linear-gradient(180deg, rgba(24, 19, 30, 0.85), rgba(10, 8, 13, 0.9));
+        border: 1px solid rgba(200, 165, 88, 0.45); border-radius: 2px;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.6);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      #zone-label:empty { display: none; }
+      body:not(.in-run) #zone-label { display: none; }
+      body.tier-compact #zone-label, body.tier-standard #zone-label { font-size: 9px; letter-spacing: 0.12em; }
+      /* SHORT SCREENS (h < 420): the chip takes no height in the stack - it
+         would push the bar into the thumb cluster - and lies over the
+         chart's lower edge instead. A micro handset has no chart and no
+         room: the district shows on the depth label at top-left instead. */
+      body.short-screen #zone-label { position: absolute; right: 6px; top: calc(var(--map-h, 96px) - 4px); margin: 0; z-index: 9; font-size: 7.5px; letter-spacing: 0.1em; padding: 2px 6px 1px; max-width: calc(var(--map-w, 96px) + 12px); }
+      /* A landscape phone with its browser bars showing (h < 360) has the chart
+         beside the bar and no free edge: the district shows on the depth label
+         at top-left there, as on a micro handset. */
+      body.tiny-height #zone-label, body.tier-micro #zone-label { display: none; }
+      body.orient-portrait.has-pad #zone-label { transform: scale(calc(0.9 * var(--hud-scale))); transform-origin: top right; }
+      /* THE BOUNTY BOARD: the guild's postings, pinned. */
+      #notice-board { width: 560px; }
+      #notice-board .nb-lead, #notice-board .nb-foot { font-family: 'Crimson Pro', 'Georgia', serif; font-size: 14px; line-height: 1.45; color: var(--ink, #e8dfc8); margin: 8px 2px; }
+      #notice-board .nb-foot { font-style: italic; color: var(--ink-dim, #8f8677); }
+      #notice-board .nb-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+      #notice-board .nb-card { position: relative; padding: 14px 12px 10px; background: linear-gradient(180deg, #e7d9b6, #cdbb90); color: #2a2018; border: 1px solid #6a5a3a; box-shadow: inset 0 0 0 1px rgba(255, 245, 220, 0.5), 0 3px 10px rgba(0, 0, 0, 0.6); transform: rotate(-0.6deg); }
+      #notice-board .nb-card:nth-child(2n) { transform: rotate(0.7deg); background: linear-gradient(180deg, #ddd0ae, #c4b286); }
+      #notice-board .nb-card b { display: block; font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; letter-spacing: 0.14em; color: #3a2a18; margin-bottom: 4px; }
+      #notice-board .nb-card p { font-family: 'Crimson Pro', 'Georgia', serif; font-size: 13px; line-height: 1.4; margin: 0 0 8px; }
+      #notice-board .nb-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-family: 'Cinzel', 'Georgia', serif; font-size: 8.5px; letter-spacing: 0.12em; color: #5a4a30; }
+      #notice-board .nb-meta em { font-style: normal; color: #8a2a1a; }
+      #notice-board .nb-pin { position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffd070, #7a4a10 70%); box-shadow: 0 1px 2px #000; }
+      body.orient-portrait #notice-board { width: calc(var(--app-w) - 12px); }
+      body.orient-portrait #notice-board .nb-cards { grid-template-columns: 1fr; }
+
       /* ---- 8b. WINDOWS ABOVE THE THUMBS (it.71) ------------------------ */
       /* The inventory was z-index 10 under a touch layer at 24: on a phone
          the pad and the stick zone sat OVER the lower half of every window,

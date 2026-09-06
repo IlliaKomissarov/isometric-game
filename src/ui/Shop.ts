@@ -9,7 +9,7 @@
  */
 
 import { eventBus } from '@/core/EventBus';
-import type { InputQueue } from '@/core/InputQueue';
+import type { InputQueue, Vendor } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
 import type { ItemDef } from '@/items/catalog';
@@ -36,13 +36,17 @@ function clock(ticks: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** THE COUNTERS' SIGNS (it.84). */
+const VENDOR_TITLE: Record<Vendor, string> = { armorer: 'THE ARMORER', alchemist: 'THE ALCHEMIST', jeweler: 'THE JEWELER', scribe: 'THE SCRIBE', bowyer: 'THE BOWYER' };
+const VENDOR_SUB: Record<Vendor, string> = { armorer: 'arms · armor · materials', alchemist: 'draughts · scrolls', jeweler: 'rings · amulets · the Market Ward', scribe: 'recipe scrolls · brews · the Market Ward', bowyer: 'bows · wands · staves · polearms · the Market Ward' };
+
 export class ShopUI {
   private readonly panel: HTMLElement;
   private visible = false;
   private readonly offs: Array<() => void> = [];
   private readonly abort = new AbortController();
   /** Which shopkeeper the panel shows (it.48). */
-  private vendor: 'armorer' | 'alchemist' = 'armorer';
+  private vendor: Vendor = 'armorer';
   /** The left column's tab (it.78). */
   private tab: 'sale' | 'buyback' = 'sale';
   private clockTimer = 0;
@@ -93,7 +97,7 @@ export class ShopUI {
     return this.visible;
   }
 
-  open(vendor: 'armorer' | 'alchemist' = 'armorer'): void {
+  open(vendor: Vendor = 'armorer'): void {
     if (this.visible && this.vendor === vendor) return;
     this.vendor = vendor;
     this.tab = 'sale';
@@ -135,7 +139,7 @@ export class ShopUI {
   private paint(): void {
     const p = this.player;
     const vendor = this.vendor;
-    const table = vendor === 'alchemist' ? this.town.stockAlch : this.town.stock;
+    const table = this.town.tableFor(vendor);
     const tableDefs = table.map((id) => itemDef(id));
     const sale = orderIndexes(tableDefs, this.filterBuy)
       .map((i) => {
@@ -159,7 +163,7 @@ export class ShopUI {
     const left = this.tab === 'sale' ? sale || '<span class="tp-empty">Sold out — the counter restocks on the clock</span>' : buyback || '<span class="tp-empty">Nothing sold yet</span>';
     const restock = this.town.ticksToRestock(this.tickNow());
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>${vendor === 'alchemist' ? 'THE ALCHEMIST' : 'THE ARMORER'}</h3><span class="tp-vendor">${vendor === 'alchemist' ? 'draughts · scrolls' : 'arms · armor · materials'} · <i data-restock>${restock > 0 ? `restock in ${clock(restock)}` : 'restocking…'}</i></span><span class="tp-purse">◆ ${p.gold} gold</span><button class="ds-btn tp-journal" type="button" data-journal="merchants" title="The Journal (H)">JOURNAL</button><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
+      <div class="tp-head drag-handle"><h3>${VENDOR_TITLE[vendor]}</h3><span class="tp-vendor">${VENDOR_SUB[vendor]} · <i data-restock>${restock > 0 ? `restock in ${clock(restock)}` : 'restocking…'}</i></span><span class="tp-purse">◆ ${p.gold} gold</span><button class="ds-btn tp-journal" type="button" data-journal="merchants" title="The Journal (H)">JOURNAL</button><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
         <div class="tp-col">
           <div class="tp-tabs" role="tablist">

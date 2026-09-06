@@ -28,7 +28,10 @@ import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap, type Room } from 
 import { mulberry32 } from '@/utils/rng';
 
 export const TOWN_W = 60;
-export const TOWN_H = 54;
+/** Two districts since it.84: the old quarter (y < 52) and the Market Ward below the gate. */
+export const TOWN_H = 98;
+/** The row of the ward gate: everything at or below it is the Market Ward. */
+export const WARD_Y = 52;
 
 /** Ground paint per tile in the town theme. */
 export const KIND_COBBLE = 0;
@@ -74,7 +77,29 @@ export type TownPropKind =
   | 'board'
   | 'arenagate'
   | 'arenamaster'
-  | 'guard';
+  | 'guard'
+  // THE MARKET WARD (it.84): the new part's props.
+  | 'guildhall'
+  | 'statue'
+  | 'bench'
+  | 'cart'
+  | 'barricade'
+  | 'dummy'
+  | 'jar'
+  | 'box'
+  | 'trashbox'
+  | 'table'
+  | 'bigtree'
+  | 'lamp'
+  | 'banner'
+  | 'rack'
+  | 'chest_market'
+  | 'potions'
+  | 'notice'
+  | 'gateway'
+  | 'jeweler'
+  | 'scribe'
+  | 'bowyer';
 
 export interface TownProp {
   kind: TownPropKind;
@@ -116,6 +141,21 @@ export interface TownLayout {
   houses: Array<{ x: number; y: number; w: number; h: number }>;
   /** Gate guards (render-only sentries). */
   guards: Array<{ x: number; y: number }>;
+  // ---- THE MARKET WARD (it.84) ----
+  /** The ward's own vendors: rings and amulets, scrolls, bows and staves. */
+  jeweler: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
+  scribe: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
+  bowyer: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
+  /** The guild's bounty board. */
+  notice: { x: number; y: number };
+  /** Passages to zones not built yet. */
+  gateways: Array<{ x: number; y: number; label: string; note: string }>;
+  /** The ward's folk wander here. */
+  wander2: Room;
+  /** The ward gate's sentries. */
+  guards2: Array<{ x: number; y: number }>;
+  /** Named districts, by tile rectangle (first match wins). */
+  districts: Array<{ name: string; x: number; y: number; w: number; h: number }>;
 }
 
 export interface TownMap extends DungeonMap {
@@ -145,13 +185,28 @@ export function buildTownLayout(): TownLayout {
     const dy = (y + 0.5 - CY) / 0.94;
     return { r: Math.hypot(dx, dy), theta: Math.atan2(dy, dx) };
   };
+  // THE MARKET WARD'S BLOB (it.84): a second clearing south of the first,
+  // its own forest belt, joined to the old quarter by one road through
+  // the woods between them.
+  const CX2 = 31;
+  const CY2 = 75;
+  const radiusAt2 = (theta: number): number => 19.5 + 2.2 * Math.sin(2 * theta + 0.7) + 1.5 * Math.sin(5 * theta + 1.9) + 1.2 * Math.sin(3 * theta + 0.2);
+  const polar2 = (x: number, y: number): { r: number; theta: number } => {
+    const dx = (x + 0.5 - CX2) / 1.18;
+    const dy = (y + 0.5 - CY2) / 0.94;
+    return { r: Math.hypot(dx, dy), theta: Math.atan2(dy, dx) };
+  };
   const belt = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const { r, theta } = polar(x, y);
-      const R = radiusAt(theta);
-      if (r > R || x === 0 || y === 0 || x === W - 1 || y === H - 1) grid[idx(x, y)] = TILE_WALL;
-      else if (r > R - 2.6) belt[idx(x, y)] = 1;
+      const p1 = polar(x, y);
+      const R1 = radiusAt(p1.theta);
+      const p2 = polar2(x, y);
+      const R2 = radiusAt2(p2.theta);
+      const in1 = p1.r <= R1;
+      const in2 = p2.r <= R2;
+      if ((!in1 && !in2) || x === 0 || y === 0 || x === W - 1 || y === H - 1) grid[idx(x, y)] = TILE_WALL;
+      else if ((in1 && p1.r > R1 - 2.6 && !in2) || (in2 && p2.r > R2 - 2.6 && !in1)) belt[idx(x, y)] = 1;
     }
   }
 
@@ -379,6 +434,170 @@ export function buildTownLayout(): TownLayout {
     if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'torch', x, y });
   }
 
+  // ============================================================================
+  // THE MARKET WARD (it.84): the road south, the gate, the plaza and its
+  // monument, three new vendors, the guildhall and its bounty board, a
+  // training yard, a park, three cottages, and two gateways to roads that
+  // are not built yet. Every standing thing claims its footprint here, so
+  // collision, pathing and the audit all agree before the scene draws.
+  // ============================================================================
+  const tryBlock = (p: TownProp, kind = KIND_GRASS): boolean => {
+    // A prop that would seal a route, or land on paint, a door or another
+    // prop, is not placed: the roads stay open by construction.
+    const w = p.w ?? 1;
+    const h = p.h ?? 1;
+    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (!inside(x, y) || grid[idx(x, y)] !== TILE_FLOOR || (kind === KIND_GRASS && tileKind[idx(x, y)] !== KIND_GRASS) || belt[idx(x, y)]) return false;
+    block(p);
+    const seen0 = wardReach();
+    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) grid[idx(x, y)] = TILE_FLOOR;
+    const seen1 = wardReach();
+    if (seen1 - seen0 > w * h) {
+      props.pop();
+      return false;
+    }
+    block(p);
+    return true;
+  };
+  /** Reachable floor from the old spawn (a cheap flood count for tryBlock). */
+  const wardReach = (): number => {
+    const seen = new Uint8Array(W * H);
+    const stack = [idx(30, 30)];
+    seen[stack[0]] = 1;
+    let n = 1;
+    while (stack.length) {
+      const i = stack.pop()!;
+      const x = i % W;
+      const y = (i - x) / W;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!inside(nx, ny)) continue;
+        const j = idx(nx, ny);
+        if (seen[j] || grid[j] !== TILE_FLOOR) continue;
+        seen[j] = 1;
+        n++;
+        stack.push(j);
+      }
+    }
+    return n;
+  };
+
+  // THE SOUTH ROAD: from the lower plaza through the woods to the ward gate and the plaza.
+  street([[30, 45], [30, 49], [31, 53], [31, 58], [31, 63]], KIND_COBBLE, 1.4);
+  // THE WARD GATE: a cobbled apron in the woods, two pillars with banners, two sentries.
+  clearFor(27, 51, 8, 3, 0, KIND_COBBLE);
+  block({ kind: 'banner', x: 28, y: 52 });
+  block({ kind: 'banner', x: 34, y: 52 });
+  const guards2 = [
+    { x: 29, y: 55 },
+    { x: 33, y: 55 },
+  ];
+  for (const g of guards2) block({ kind: 'guard', x: g.x, y: g.y });
+  // THE PLAZA and its streets.
+  ellipse(31, 70, 10.5, 6.5, KIND_COBBLE); // The market plaza.
+  street([[31, 76], [31, 82], [31, 86]], KIND_COBBLE, 1.3); // South to the marsh gateway.
+  street([[41, 70], [46, 71], [50, 72]], KIND_COBBLE, 1.3); // East to the road gateway.
+  street([[21, 70], [16, 72]], KIND_DIRT, 1.1); // West to the training yard.
+  street([[38, 65], [39, 62]], KIND_DIRT, 1.0); // The guildhall's lane.
+  street([[43, 73], [45, 76]], KIND_DIRT, 0.9); // SE cottage.
+  street([[22, 75], [19, 78]], KIND_DIRT, 0.9); // SW cottage.
+  street([[44, 66], [46, 63]], KIND_DIRT, 0.9); // NE cottage.
+  ellipse(16, 72.5, 4.5, 3.4, KIND_DIRT); // The training yard.
+  ellipse(45.5, 68, 4.5, 3.6, KIND_GRASS); // The park (a lawn, kept open).
+  // THE GUILDHALL: the timber-frame hall (4x4, solid) and the bounty board before it.
+  clearFor(39, 57, 4, 4, 1);
+  block({ kind: 'guildhall', x: 39, y: 57, w: 4, h: 4 });
+  block({ kind: 'notice', x: 37, y: 62 });
+  block({ kind: 'lamp', x: 38, y: 58 });
+  block({ kind: 'lamp', x: 43, y: 61 });
+  block({ kind: 'banner', x: 43, y: 57 });
+  // THE MONUMENT: the seated king on the plaza, benches at his feet, banners on columns.
+  block({ kind: 'statue', x: 30, y: 69, w: 2, h: 2, variant: 'statue_a' });
+  block({ kind: 'bench', x: 27, y: 72, w: 2, h: 1, variant: 'bench_a' });
+  block({ kind: 'bench', x: 33, y: 72, w: 2, h: 1, variant: 'bench_b' });
+  block({ kind: 'banner', x: 26, y: 65 });
+  block({ kind: 'banner', x: 36, y: 65 });
+  // THE VENDORS: the jeweler (west), the scribe (east), the bowyer (south-west).
+  block({ kind: 'stall', x: 23, y: 66, w: 3, h: 2, variant: 'stall_c' });
+  block({ kind: 'jeweler', x: 24, y: 65 });
+  block({ kind: 'stall', x: 36, y: 66, w: 3, h: 2, variant: 'stall_b' });
+  block({ kind: 'scribe', x: 37, y: 65 });
+  block({ kind: 'stall', x: 23, y: 74, w: 3, h: 2, variant: 'stall_d' });
+  block({ kind: 'bowyer', x: 24, y: 73 });
+  decal({ kind: 'potions', x: 39, y: 67 });
+  block({ kind: 'crates_wood', x: 22, y: 65 });
+  block({ kind: 'rack', x: 26, y: 73 });
+  block({ kind: 'cart', x: 33, y: 77, w: 2, h: 1 });
+  block({ kind: 'jar', x: 22, y: 68, variant: 'jar_a' });
+  block({ kind: 'jar', x: 39, y: 68, variant: 'jar_b' });
+  block({ kind: 'box', x: 27, y: 66, variant: 'box_a' });
+  block({ kind: 'box', x: 35, y: 68, variant: 'box_b' });
+  block({ kind: 'trashbox', x: 40, y: 75 });
+  block({ kind: 'barrel', x: 21, y: 74, variant: 'barrel_c' });
+  block({ kind: 'barrel', x: 38, y: 76, variant: 'barrel_d' });
+  block({ kind: 'table', x: 36, y: 74 });
+  decal({ kind: 'hanging_sign', x: 26, y: 67 });
+  decal({ kind: 'hanging_sign', x: 39, y: 66 });
+  decal({ kind: 'pots', x: 27, y: 75 });
+  for (const [x, y] of [[22, 64], [40, 64], [22, 76], [40, 76]] as const) block({ kind: 'lamp', x, y });
+  for (const [x, y] of [[28, 79], [34, 79], [28, 84], [34, 84], [44, 69], [47, 74], [18, 68]] as const) if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'lamp', x, y });
+  // THE TRAINING YARD (west): barricades, dummies, a rack, kegs.
+  block({ kind: 'barricade', x: 13, y: 70, variant: 'barricade_a' });
+  block({ kind: 'barricade', x: 19, y: 69, variant: 'barricade_b' });
+  block({ kind: 'dummy', x: 14, y: 73, variant: 'dummy_a' });
+  block({ kind: 'dummy', x: 17, y: 74, variant: 'dummy_b' });
+  block({ kind: 'dummy', x: 15, y: 75, variant: 'dummy_a' });
+  block({ kind: 'rack', x: 16, y: 69 });
+  block({ kind: 'barrels_stacked', x: 12, y: 73 });
+  block({ kind: 'torch', x: 19, y: 75 });
+  // THE PARK (east): the big trees, a bench, a jar, a table.
+  block({ kind: 'bigtree', x: 43, y: 65, variant: 'bigtree_a' });
+  block({ kind: 'bigtree', x: 48, y: 66, variant: 'bigtree_b' });
+  block({ kind: 'bigtree', x: 46, y: 70, variant: 'bigtree_c' });
+  block({ kind: 'bench', x: 44, y: 68, w: 2, h: 1, variant: 'bench_a' });
+  block({ kind: 'jar', x: 48, y: 69, variant: 'jar_a' });
+  block({ kind: 'table', x: 42, y: 68 });
+  // COTTAGES of the ward.
+  house(45, 77, 'house_b');
+  house(17, 79, 'house_c');
+  house(45, 60, 'house_d');
+  for (const x of [45, 47, 48]) block({ kind: 'fence', x, y: 81 });
+  for (const x of [16, 18, 19]) block({ kind: 'fence', x, y: 83 });
+  block({ kind: 'torch', x: 44, y: 80 });
+  block({ kind: 'torch', x: 20, y: 80 });
+  // THE GATEWAYS: two passages to zones not built yet — pillars, the standing
+  // light, a plate that says so. Their tiles are blocked: no one walks into a
+  // road that is not there.
+  const gateways: TownLayout['gateways'] = [
+    { x: 31, y: 88, label: 'THE MARSH PATH', note: 'The marsh path is not open yet — the boards are still being laid.' },
+    { x: 52, y: 72, label: 'THE EASTERN ROAD', note: 'The eastern road is not open yet — the caravan waits for it.' },
+  ];
+  clearFor(29, 86, 5, 3, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 29, y: 88 });
+  block({ kind: 'pillar', x: 33, y: 88 });
+  block({ kind: 'gateway', x: 31, y: 88 });
+  clearFor(50, 70, 3, 5, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 52, y: 70 });
+  block({ kind: 'pillar', x: 52, y: 74 });
+  block({ kind: 'gateway', x: 52, y: 72 });
+
+  // THE OLD QUARTER, DRESSED DEEPER (it.84): benches by the well, a cart on
+  // the square, lamps on the high street, a monument at the lower plaza, big
+  // trees in the lawns, stores by the stalls — each placed only where it
+  // seals nothing (tryBlock).
+  tryBlock({ kind: 'bench', x: 27, y: 23, w: 2, h: 1, variant: 'bench_a' }, KIND_COBBLE);
+  tryBlock({ kind: 'bench', x: 32, y: 23, w: 2, h: 1, variant: 'bench_b' }, KIND_COBBLE);
+  tryBlock({ kind: 'cart', x: 27, y: 20, w: 2, h: 1 }, KIND_COBBLE);
+  tryBlock({ kind: 'statue', x: 33, y: 45, variant: 'statue_b' }, KIND_COBBLE);
+  tryBlock({ kind: 'jar', x: 28, y: 19, variant: 'jar_a' }, KIND_COBBLE);
+  tryBlock({ kind: 'box', x: 19, y: 15, variant: 'box_a' });
+  tryBlock({ kind: 'trashbox', x: 41, y: 13 });
+  tryBlock({ kind: 'table', x: 38, y: 24, variant: 'table_a' }, KIND_COBBLE);
+  for (const [x, y] of [[26, 30], [34, 30], [45, 29], [12, 24]] as const) tryBlock({ kind: 'lamp', x, y });
+  for (const [x, y, v] of [[42, 31, 'bigtree_a'], [18, 20, 'bigtree_c'], [40, 44, 'bigtree_b'], [12, 41, 'bigtree_a']] as const) tryBlock({ kind: 'bigtree', x, y, variant: v });
+  tryBlock({ kind: 'banner', x: 34, y: 8 });
+  tryBlock({ kind: 'banner', x: 41, y: 8 });
+
   // ---- FOREST BELT: pines and dead trees on belt tiles, brush between ----
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
@@ -496,6 +715,7 @@ export function buildTownLayout(): TownLayout {
   for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
 
   const wander: Room = { x: 21, y: 16, w: 19, h: 13 };
+  const wander2: Room = { x: 23, y: 65, w: 17, h: 11 };
   const map: TownMap = {
     width: W,
     height: H,
@@ -544,6 +764,17 @@ export function buildTownLayout(): TownLayout {
     wander,
     houses,
     guards,
+    jeweler: { x: 24, y: 65, tiles: [23, 24, 25].flatMap((x) => [{ x, y: 66 }, { x, y: 67 }]) },
+    scribe: { x: 37, y: 65, tiles: [36, 37, 38].flatMap((x) => [{ x, y: 66 }, { x, y: 67 }]) },
+    bowyer: { x: 24, y: 73, tiles: [23, 24, 25].flatMap((x) => [{ x, y: 74 }, { x, y: 75 }]) },
+    notice: { x: 37, y: 62 },
+    gateways,
+    wander2,
+    guards2,
+    districts: [
+      { name: 'THE OLD QUARTER', x: 0, y: 0, w: W, h: WARD_Y },
+      { name: 'THE MARKET WARD', x: 0, y: WARD_Y, w: W, h: H - WARD_Y },
+    ],
   };
 }
 
@@ -589,5 +820,12 @@ export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: n
   if (!touches(layout.portal.x, layout.portal.y)) missing.push('portal');
   if (!touches(layout.campfire.x, layout.campfire.y)) missing.push('campfire');
   for (const [i, h] of layout.houses.entries()) if (!seen[(h.y + 2) * width + h.x + 1]) missing.push(`house ${i} door`);
+  // THE MARKET WARD (it.84).
+  if (!layout.jeweler.tiles.some((t) => touches(t.x, t.y))) missing.push('jeweler');
+  if (!layout.scribe.tiles.some((t) => touches(t.x, t.y))) missing.push('scribe');
+  if (!layout.bowyer.tiles.some((t) => touches(t.x, t.y))) missing.push('bowyer');
+  if (!touches(layout.notice.x, layout.notice.y)) missing.push('notice board');
+  for (const [i, g] of layout.gateways.entries()) if (!touches(g.x, g.y)) missing.push(`gateway ${i}`);
+  if (!seen[(layout.wander2.y + 7) * width + layout.wander2.x + 8]) missing.push('ward plaza');
   return { unreachable, missing };
 }

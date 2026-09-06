@@ -16,6 +16,9 @@
 import type { EquipmentSlot } from '@/network/Serialization';
 
 /** All player intents. Must stay JSON-serializable for network transport. */
+/** THE COUNTERS (it.48, it.84): the old quarter's two and the Market Ward's three. */
+export type Vendor = 'armorer' | 'alchemist' | 'jeweler' | 'scribe' | 'bowyer';
+
 export type InputCommand =
   | { type: 'MOVE_TO'; playerId: number; gx: number; gy: number }
   | { type: 'DIRECT_MOVE'; playerId: number; dx: number; dy: number }
@@ -41,7 +44,7 @@ export type InputCommand =
   | { type: 'USE_QUICK'; playerId: number; kind: 'health' | 'mana' }
   | { type: 'TOWN_PORTAL'; playerId: number }
   /** Town economy (it.39). */
-  | { type: 'BUY'; playerId: number; index: number; vendor?: 'armorer' | 'alchemist' }
+  | { type: 'BUY'; playerId: number; index: number; vendor?: Vendor }
   /** Respec (it.48): refund every learned skill and passive — town only. */
   | { type: 'RESET_SKILLS'; playerId: number }
   | { type: 'SELL'; playerId: number; backpackIndex: number }

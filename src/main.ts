@@ -78,6 +78,7 @@ import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
 import { buildTownLayout, type TownLayout } from '@/town/TownMap';
 import { placeTownProps, type Interactable, type Occluder } from '@/town/TownProps';
+import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { Villagers } from '@/town/Villagers';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
@@ -161,6 +162,8 @@ interface World {
   town: {
     layout: TownLayout;
     villagers: Villagers;
+    /** THE MARKET WARD's folk and vendors (it.84). */
+    villagers2: Villagers;
     occluders: Occluder[];
     interactables: Interactable[];
     /** Label manager hook (it.50): the E-prompt's spot, so its plate stands down. */
@@ -1460,6 +1463,11 @@ async function boot(): Promise<void> {
     const deathNote = document.getElementById('death-note');
     const descendNote = document.getElementById('descend-note');
     const depthLabel = document.getElementById('depth-label');
+    /** THE ZONE CHIP (it.84): under the map — a district in town, the depth below. */
+    const setZoneLabel = (text: string): void => {
+      const el = document.getElementById('zone-label');
+      if (el && el.textContent !== text) el.textContent = text;
+    };
     const rowMove = document.getElementById('row-move');
     const rowDirect = document.getElementById('row-direct');
     const interactHint = document.getElementById('interact-hint');
@@ -1510,6 +1518,7 @@ async function boot(): Promise<void> {
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
+      setZoneLabel(floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`);
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
       if (floor > 0) stats.noteDepth(floor);
     };
@@ -1933,7 +1942,9 @@ async function boot(): Promise<void> {
       let townState: World['town'] = null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
-        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 7, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist);
+        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist);
+        // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
+        const villagers2 = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff });
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
         const audit = auditTownLayout(layout);
@@ -1943,6 +1954,7 @@ async function boot(): Promise<void> {
         townState = {
           layout,
           villagers,
+          villagers2,
           occluders: dressing.occluders,
           interactables: dressing.interactables,
           setPromptAt: dressing.setPromptAt,
@@ -2121,6 +2133,7 @@ async function boot(): Promise<void> {
     const destroyWorld = (w: World): void => {
       w.unsubscribe();
       w.town?.villagers.destroy();
+      w.town?.villagers2.destroy();
       w.town?.campHeroes.destroy();
       w.town?.destroyDressing();
       w.coliseum?.destroy();
@@ -3928,6 +3941,16 @@ async function boot(): Promise<void> {
         if (world.town) {
           const t = world.town;
           t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          // THE ZONE CHIP (it.84): which district the hero stands in.
+          {
+            const zx = Math.floor(player.pos.x);
+            const zy = Math.floor(player.pos.y);
+            const d = t.layout.districts.find((q) => zx >= q.x && zx < q.x + q.w && zy >= q.y && zy < q.y + q.h);
+            setZoneLabel(d?.name ?? 'THE TOWN');
+            // The depth label at top-left says the district too (a micro handset has no chip).
+            if (depthLabel && depthLabel.textContent !== (d?.name ?? 'THE TOWN')) depthLabel.textContent = d?.name ?? 'THE TOWN';
+          }
           t.campHeroes.update((x, y) => world.lighting.getTintAt(x, y, 0.7));
           t.update(frameDt);
           const heroTx = Math.floor(player.pos.x);
@@ -4049,6 +4072,7 @@ async function boot(): Promise<void> {
     // THE JOURNAL (it.81, it.82): H, the bar, and a button on every window that needs it.
     const craftLog: Array<{ tick: number; text: string; ok: boolean }> = [];
     const codexUI = new CodexUI(() => player.recipes, () => craftLog, () => deepestFloor);
+    const noticeUI = new NoticeBoardUI(); // THE BOUNTY BOARD (it.84).
     subs.push(
       eventBus.on('journal:open', ({ chapter }) => codexUI.open(chapter as Parameters<CodexUI['open']>[0])),
       eventBus.on('craft:result', ({ ok, text }) => {
@@ -4061,7 +4085,7 @@ async function boot(): Promise<void> {
     // are registered here rather than at boot.
     // By id (it.66): the hero sheet and the bestiary are built a few lines
     // below this, and a registration by element silently dropped them.
-    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'codex', 'leaderboard', 'level-select']) {
+    for (const id of ['inv-panel', 'skill-tree', 'char-sheet', 'bestiary', 'cheat-menu', 'shop-panel', 'stash-panel', 'craft-panel', 'codex', 'notice-board', 'leaderboard', 'level-select']) {
       fit.addById(id, { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
@@ -4096,6 +4120,9 @@ async function boot(): Promise<void> {
     const openInteractable = (it: Interactable): void => {
       if (it.kind === 'merchant') shopUI.open('armorer');
       else if (it.kind === 'alchemist') shopUI.open('alchemist');
+      else if (it.kind === 'jeweler' || it.kind === 'scribe' || it.kind === 'bowyer') shopUI.open(it.kind);
+      else if (it.kind === 'notice') noticeUI.open();
+      else if (it.kind === 'gateway') tutorial.say(it.note ?? 'The way is not open yet.');
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
       else if (it.kind === 'forge') craftUI.open();
@@ -4113,10 +4140,11 @@ async function boot(): Promise<void> {
         const isLeader = cmd.playerId === leaderSlot;
         if (cmd.type === 'PICKUP_NEAREST') {
           // SYMMETRICAL E (it.41): an open trade / stash window closes on the same key.
-          if (isLocal && (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen || arenaModal.classList.contains('open'))) {
+          if (isLocal && (shopUI.isOpen || stashUI.isOpen || statsUI.isOpen || noticeUI.isOpen || arenaModal.classList.contains('open'))) {
             shopUI.close();
             stashUI.close();
             statsUI.close();
+            noticeUI.close();
             closeArenaModal();
             continue;
           }
@@ -4453,7 +4481,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -4484,6 +4512,7 @@ async function boot(): Promise<void> {
         stashUI.destroy();
         craftUI.destroy();
         codexUI.destroy();
+        noticeUI.destroy();
         statsUI.destroy();
         hudBuffs.remove();
         headBuffs.remove();
@@ -4552,7 +4581,8 @@ export function isBossFloor(floor: number): boolean {
  * boss chains), the summoned wretches, and — for arenas — the keeper.
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
-  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
+  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
     const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 83, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 84, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -164,6 +164,18 @@ Items examined and left as they are, with reasons:
 | ARSENAL listed shapes only, with a wrong pace | Medium (docs) | THE CATALOGUE: every base, every tier, staves, uniques, armor, jewels, find box, forge badges |
 | iPhone: pinch zoom stuck, bounce, callout sheet, text boost, 100vh under the toolbar | High (mobile) | touch guards module, glass CSS, `--app-h` everywhere, 100dvh fallback, web-app metas |
 | The bar's row width was computed for seven entries | Low (layout) | eight |
+
+### Iteration 84 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| A foe's level and life were invisible until hit | Medium (UX) | plates within 7 tiles of a hero, name · level above the bar |
+| One district, no room to grow | Feature | THE MARKET WARD: a second clearing, the south road, the ward gate, districts on the layout |
+| Every counter sold the same kinds | Feature | the jeweler, the scribe, the bowyer with their own restock tables |
+| No quest surface | Feature (placeholder) | THE BOUNTY BOARD before the guildhall |
+| No exits to future zones | Feature (placeholder) | two blocked gateways with a light, a plate and a note |
+| No location indicator by the chart | Low (UX) | `#zone-label` under the chart, per tier |
+| New anims silently skipped in the hub | Medium (asset pipeline) | added to the hub's preload list; the lesson logged |
 
 ## 4. Known issues and regression log
 

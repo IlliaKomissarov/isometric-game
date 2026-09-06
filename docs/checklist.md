@@ -679,6 +679,18 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The glass: pinch, bounce, callout, text boost, 100vh, inputs (iOS Safari, Telegram)
 - [x] Device matrix; playthrough; clean build
 
+## Iteration 84 - The Market Ward (2026-09-06)
+
+- [x] Foe plates (name · level · life) on approach, before any blow
+- [x] The Market Ward: a second district, the south road, the ward gate
+- [x] Three vendors the old quarter lacks (jeweler, scribe, bowyer)
+- [x] The guildhall and THE BOUNTY BOARD (functional placeholder)
+- [x] Two gateways to future zones (placeholders with a note)
+- [x] Both districts dressed deeper; more folk
+- [x] Strict footprints; audit; a walked path in the harness
+- [x] The zone chip under the chart, every tier
+- [x] Device matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

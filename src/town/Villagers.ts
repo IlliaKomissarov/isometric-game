@@ -62,6 +62,8 @@ export class Villagers {
     merchantAt: { x: number; y: number } | null,
     guardsAt: ReadonlyArray<{ x: number; y: number }> = [],
     alchemistAt: { x: number; y: number } | null = null,
+    /** THE MARKET WARD (it.84): the ward's vendors wear their own colours. */
+    tints: { merchant?: number; alchemist?: number } = {},
   ) {
     const painted = spriteLib.paintedHeight(WALK) || 50;
     this.scale = FOLK_HEIGHT / painted;
@@ -92,6 +94,7 @@ export class Villagers {
       const s = worldToScreen(merchantAt.x + 0.5, merchantAt.y + 0.5, this.scratch);
       body.position.set(s.x, s.y + 2);
       body.zIndex = depthKey(merchantAt.x + 0.5, merchantAt.y + 0.5);
+      if (tints.merchant) body.tint = tints.merchant;
       layer.addChild(body);
       this.merchant = { body, clock: 0, scale: mscale };
     }
@@ -103,7 +106,7 @@ export class Villagers {
       const body = new Sprite(spriteLib.frame(ALCH, 6, 0));
       body.anchor.set(0.5, 0.86);
       body.scale.set(mscale);
-      body.tint = 0xb8a0ff; // Violet robes: the alchemist.
+      body.tint = tints.alchemist ?? 0xb8a0ff; // Violet robes: the alchemist (the scribe's are ice-blue).
       const s = worldToScreen(alchemistAt.x + 0.5, alchemistAt.y + 0.5, this.scratch);
       body.position.set(s.x, s.y + 2);
       body.zIndex = depthKey(alchemistAt.x + 0.5, alchemistAt.y + 0.5);

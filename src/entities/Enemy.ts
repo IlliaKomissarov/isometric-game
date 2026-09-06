@@ -792,6 +792,9 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
 };
 
 /** Dependencies injected by the pool; strike resolution lives in CombatSystem. */
+/** How close a hero must be for a foe's plate to show unbidden (tiles). */
+const PLATE_RANGE = 7;
+
 export interface EnemyAIDeps {
   pathfinder: Pathfinder;
   isWalkable: WalkableFn;
@@ -874,6 +877,8 @@ export class Enemy extends Entity {
   private readonly shadow: Sprite;
   private readonly healthBar: Graphics;
   private readonly levelText: Text;
+  /** PLATES ON APPROACH (it.84): a hero within PLATE_RANGE tiles sees the name, level and life. */
+  private plateNear = false;
   /** Creature level (it.23): floor N mobs are level N (rares N+1); bosses
    *  follow the fixed milestone matrix. Drives hp/damage/XP. */
   level = 1;
@@ -971,8 +976,8 @@ export class Enemy extends Entity {
       style: { fontFamily: 'Georgia, serif', fontSize: 8, fill: 0xcabb8a, stroke: { color: 0x0a0806, width: 2 } },
       resolution: 2,
     });
-    this.levelText.anchor.set(0, 0.5);
-    this.levelText.position.set(18, -49);
+    this.levelText.anchor.set(0.5, 1);
+    this.levelText.position.set(0, -55);
     this.levelText.visible = false;
     this.container.addChild(this.levelText);
     // STATUS MARKS (it.81): a row of coloured gems above the head while a
@@ -1016,8 +1021,9 @@ export class Enemy extends Entity {
     this.hpMax = Math.round(this.def.hp * scale);
     this.hp = this.hpMax;
     this.dmgScale = scale;
-    this.levelText.text = `Lv ${this.level}`;
+    this.levelText.text = `${this.def.name} · Lv ${this.level}`;
     this.levelText.visible = false;
+    this.plateNear = false;
     this.hitRecoveryTicks = this.def.hitRecoveryTicks;
     this.action = 'idle';
     this.actionTicks = 0;
@@ -1142,6 +1148,8 @@ export class Enemy extends Entity {
     this.body.scale.set(this.rigScale);
     const color = AFFIX_COLOR[affix];
     this.titleText.text = `${AFFIX_PREFIX[affix]} ${this.def.name}`;
+    this.titleText.position.y = -72; // Above the name plate (it.84).
+    this.levelText.text = `Lv ${this.level}`; // The title carries the name.
     this.titleText.style.fill = color;
     this.titleText.visible = true;
     this.aura.clear();
@@ -1324,6 +1332,17 @@ export class Enemy extends Entity {
             break;
           }
         }
+      }
+    }
+
+    // PLATES ON APPROACH (it.84): the name, level and life show before the
+    // first blow — whenever a hero is close — and stay while wounded.
+    if (this.ai) {
+      const hp = this.ai.getPlayerPos(this);
+      const near = this.hp > 0 && Math.hypot(hp.x - this.pos.x, hp.y - this.pos.y) < PLATE_RANGE;
+      if (near !== this.plateNear) {
+        this.plateNear = near;
+        this.redrawHealthBar();
       }
     }
 
@@ -1859,7 +1878,7 @@ export class Enemy extends Entity {
     for (let i = 1; i < 4; i++) {
       this.healthBar.rect(-w / 2 + (w * i) / 4 - 0.5, -1, 1, h + 2).fill({ color: 0x0a0a0c, alpha: 0.95 });
     }
-    const show = this.hp < this.hpMax && this.hp > 0;
+    const show = this.hp > 0 && (this.hp < this.hpMax || this.plateNear);
     this.healthBar.visible = show;
     this.levelText.visible = show;
   }

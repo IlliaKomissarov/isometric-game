@@ -58,6 +58,8 @@
   bleed, poison, burn, chill, shock and stun on hit, or a granted trait, and twelve forge
   enchantments learned from scrolls. A camp forge to salvage, forge, transmute, refine,
   enchant and reinforce to +15, with a recipe book. An assignable draught belt with cooldowns.
+  A town of two districts - the old quarter and the Market Ward, with its jeweler, scribe and
+  bowyer, the guildhall's bounty board and two gateways to zones still being built.
   Merchants with a buyback counter and a restock clock. THE JOURNAL (H, the book on the bar,
   the pause sheet, a button in every window) with a catalogue of every base in every tier,
   every recipe, every crafting rule with a worked example, a craft log and every status and

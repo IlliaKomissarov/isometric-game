@@ -18,12 +18,13 @@
  */
 
 import { eventBus } from '@/core/EventBus';
-import type { InputCommand } from '@/core/InputQueue';
+import type { InputCommand, Vendor } from '@/core/InputQueue';
 import type { Player } from '@/entities/Player';
 import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
 import { ilvlForDepth, itemDef, rollGear } from '@/items/instance';
 import { ENCHANTS } from '@/items/effects';
 import type { StashState } from '@/persist/SaveGame';
+import { gearBases } from '@/items/registry';
 import { mulberry32 } from '@/utils/rng';
 
 export const STASH_CAPACITY = 24;
@@ -39,6 +40,26 @@ export class TownSystem {
   stock: string[] = [];
   /** Item ids on the ALCHEMIST's table (it.48): draughts and scrolls. */
   stockAlch: string[] = [];
+  /** THE MARKET WARD (it.84): the jeweler's rings and amulets, the scribe's scrolls, the bowyer's bows and staves. */
+  stockJewel: string[] = [];
+  stockScribe: string[] = [];
+  stockBowyer: string[] = [];
+
+  /** The table a counter sells from. */
+  tableFor(vendor: Vendor | undefined): string[] {
+    switch (vendor) {
+      case 'alchemist':
+        return this.stockAlch;
+      case 'jeweler':
+        return this.stockJewel;
+      case 'scribe':
+        return this.stockScribe;
+      case 'bowyer':
+        return this.stockBowyer;
+      default:
+        return this.stock;
+    }
+  }
   /**
    * BUYBACK (it.40, it.78): what the hero sold, newest first. Bought back
    * for exactly what the merchant paid; the last fifteen survive a restock.
@@ -109,6 +130,25 @@ export class TownSystem {
       if (keys.length) alch.push(`recipe_${keys[Math.floor(rand() * keys.length)]}`);
     }
     this.stockAlch = alch.filter((id) => id in ITEMS);
+    // THE MARKET WARD (it.84). The JEWELER: five rolled rings and amulets, a
+    // silver band for the fresh delver. The SCRIBE: recipe scrolls the depth
+    // allows (three, distinct) and the brews a scholar keeps. The BOWYER:
+    // rolled bows, wands, staves and polearms whose band the depth has
+    // entered, and a plain short bow.
+    const jewel: string[] = ['silver_band'];
+    for (let i = 0; i < 5; i++) jewel.push(rollGear(rand, ilvl, { slot: 'ring', floor: 'uncommon', weights: { uncommon: 45, rare: 40, epic: 13, legendary: 2 } }));
+    this.stockJewel = [...new Set(jewel.filter((id) => !!itemDef(id)))];
+    const scribe: string[] = ['potion_might', 'greater_mana', 'rejuvenation'];
+    const allowed = Object.values(ENCHANTS).filter((r) => r.depth <= Math.max(2, deepestFloor)).map((r) => r.key);
+    for (let i = 0; i < 3 && allowed.length; i++) scribe.push(`recipe_${allowed.splice(Math.floor(rand() * allowed.length), 1)[0]}`);
+    this.stockScribe = scribe.filter((id) => !!itemDef(id));
+    const ranged = gearBases().filter((d) => !d.uniqueOnly && (d.weaponKind === 'bow' || d.weaponKind === 'wand' || d.weaponKind === 'polearm') && (!d.band || d.band[0] <= ilvl + 2));
+    const bowyer: string[] = ['short_bow'];
+    for (let i = 0; i < 6 && ranged.length; i++) {
+      const base = ranged[Math.floor(rand() * ranged.length)];
+      bowyer.push(rollGear(rand, ilvl, { base: base.id, floor: 'uncommon', weights: { uncommon: 50, rare: 38, epic: 10, legendary: 2 } }));
+    }
+    this.stockBowyer = [...new Set(bowyer.filter((id) => !!itemDef(id)))];
     this.restockSerial = serial;
     this.lastRestockTick = tick;
     this.bossCleared = false;
@@ -130,7 +170,7 @@ export class TownSystem {
       if (!p) continue;
       switch (cmd.type) {
         case 'BUY': {
-          const table = cmd.vendor === 'alchemist' ? this.stockAlch : this.stock;
+          const table = this.tableFor(cmd.vendor);
           const id = table[cmd.index];
           const def = itemDef(id);
           if (!def) break;

@@ -132,6 +132,15 @@ export class SystemBar {
     const stack = SystemBar.stack();
     const map = document.getElementById('minimap');
     if (map) stack.appendChild(map); // The map takes the corner; the bar sits under it.
+    // THE ZONE CHIP (it.84): the district or depth the hero stands in, under the map.
+    let zone = document.getElementById('zone-label');
+    if (!zone) {
+      zone = document.createElement('div');
+      zone.id = 'zone-label';
+      zone.className = 'hud-el';
+      zone.setAttribute('aria-live', 'polite');
+    }
+    stack.appendChild(zone);
     stack.appendChild(this.root);
   }
 

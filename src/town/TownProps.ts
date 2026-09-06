@@ -30,7 +30,9 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway';
+  /** A gateway's note (it.84): what the hero is told at a road not yet built. */
+  note?: string;
   x: number;
   y: number;
   label: string;
@@ -81,7 +83,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const animated = (
     gx: number,
     gy: number,
-    anim: 'campfire' | 'torch',
+    anim: 'campfire' | 'torch' | 'brazier_stand' | 'banner' | 'gateway',
     fps: number,
     anchorY: number,
     scale = 1,
@@ -210,7 +212,17 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const spr = standing(p, p.variant ?? 'stall_a', 0.94);
         if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
         // Vendors by POSITION (it.48): the armorer's and the alchemist's stalls.
-        if (layout.merchant.tiles.some((t) => t.x === p.x && t.y === p.y)) {
+        // THE MARKET WARD (it.84): the jeweler's, the scribe's, the bowyer's.
+        if (layout.jeweler.tiles.some((t) => t.x === p.x && t.y === p.y)) {
+          interactables.push({ id: nextId++, kind: 'jeweler', x: layout.jeweler.x + 0.5, y: layout.jeweler.y + 0.5, label: 'E · JEWELER', tiles: layout.jeweler.tiles });
+          plate(p.x + 1, p.y, 'THE JEWELER', 112);
+        } else if (layout.scribe.tiles.some((t) => t.x === p.x && t.y === p.y)) {
+          interactables.push({ id: nextId++, kind: 'scribe', x: layout.scribe.x + 0.5, y: layout.scribe.y + 0.5, label: 'E · SCRIBE', tiles: layout.scribe.tiles });
+          plate(p.x + 1, p.y, 'THE SCRIBE', 112);
+        } else if (layout.bowyer.tiles.some((t) => t.x === p.x && t.y === p.y)) {
+          interactables.push({ id: nextId++, kind: 'bowyer', x: layout.bowyer.x + 0.5, y: layout.bowyer.y + 0.5, label: 'E · BOWYER', tiles: layout.bowyer.tiles });
+          plate(p.x + 1, p.y, 'THE BOWYER', 112);
+        } else if (layout.merchant.tiles.some((t) => t.x === p.x && t.y === p.y)) {
           interactables.push({ id: nextId++, kind: 'merchant', x: layout.merchant.x + 0.5, y: layout.merchant.y + 0.5, label: 'E · ARMORER', tiles: layout.merchant.tiles });
           plate(p.x + 1, p.y, 'THE ARMORER', 112);
         } else if (layout.alchemist.tiles.some((t) => t.x === p.x && t.y === p.y)) {
@@ -367,7 +379,106 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'merchant':
       case 'alchemist':
       case 'arenamaster':
+      case 'jeweler':
+      case 'scribe':
+      case 'bowyer':
         break; // The shopkeepers and the Arena Master are drawn by Villagers.
+      // ---- THE MARKET WARD (it.84): the new part's props ----
+      case 'guildhall': {
+        // The timber-frame hall: its south corner sits a little inside its
+        // box (the eaves overhang), so the anchor is measured, not 0.5/1.
+        const spr = standing(p, 'guildhall', 0.985, 'object', 0.47);
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        lighting.addSource(p.x + 1, p.y + 3.5, 3.2, 255, 190, 110, 0.4);
+        break;
+      }
+      case 'statue': {
+        standing(p, p.variant ?? 'statue_a', 0.96);
+        if ((p.w ?? 1) > 1) {
+          glowAt(p.x + 0.5, p.y + 0.5, 0xc8a558, 0.18, 1.4, 20);
+          plate(p.x, p.y, 'THE HOLLOW KING', 150);
+        }
+        break;
+      }
+      case 'bench':
+        standing(p, p.variant ?? 'bench_a', 0.9);
+        break;
+      case 'cart':
+        standing(p, 'cart', 0.92);
+        break;
+      case 'barricade':
+        standing(p, p.variant ?? 'barricade_a', 0.9);
+        break;
+      case 'dummy':
+        standing(p, p.variant ?? 'dummy_a', 0.94);
+        break;
+      case 'jar':
+        standing(p, p.variant ?? 'jar_a', 0.85);
+        break;
+      case 'box':
+        standing(p, p.variant ?? 'box_a', 0.85);
+        break;
+      case 'trashbox':
+        standing(p, 'trashbox', 0.88);
+        break;
+      case 'table':
+        standing(p, 'table_a', 0.88);
+        break;
+      case 'chest_market':
+        standing(p, 'chest_market', 0.88);
+        break;
+      case 'potions':
+        standing(p, 'potions_decal', 0.8, 'ground');
+        break;
+      case 'rack':
+        standing(p, 'weapon_rack', 0.9);
+        break;
+      case 'bigtree': {
+        const spr = standing(p, p.variant ?? 'bigtree_a', 0.96);
+        if (spr) {
+          spr.tint = 0x8a9a8c; // Deep shade, like the oaks.
+          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        }
+        break;
+      }
+      case 'lamp': {
+        // A standing brazier from the new pack: the ward's street light.
+        animated(p.x, p.y, 'brazier_stand', 10, 0.94, 0.9, 2);
+        glowAt(p.x, p.y, 0xffa050, 0.5, 1.5, 44);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.6, 255, 160, 70, 0.6);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'banner': {
+        // A column with the guild's banner waving from its top.
+        standing(p, 'column', 0.95);
+        const b = animated(p.x, p.y, 'banner', 9, 0.92, 0.9, 74);
+        if (b) b.anchor.x = 0.12; // The pole is the sprite's left edge: it sits on the column.
+        break;
+      }
+      case 'notice': {
+        // THE BOUNTY BOARD (it.84): the guild's postings before the hall.
+        standing(p, 'signpost', 0.95);
+        interactables.push({ id: nextId++, kind: 'notice', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BOUNTY BOARD', tiles: [{ x: p.x, y: p.y }] });
+        glowAt(p.x, p.y, 0xd8a85c, 0.22, 0.8, 8);
+        plate(p.x, p.y, 'THE BOUNTY BOARD', 78);
+        break;
+      }
+      case 'gateway': {
+        // A PASSAGE NOT YET OPEN (it.84): the standing light between two
+        // pillars, a cold glow, and a note when the hero asks.
+        const g = layout.gateways.find((gw) => gw.x === p.x && gw.y === p.y);
+        const spr = animated(p.x, p.y, 'gateway', 12, 0.96, 1, 0);
+        if (spr) {
+          spr.blendMode = 'add';
+          spr.alpha = 0.85;
+        }
+        glowAt(p.x, p.y, 0x7fa8ff, 0.62, 2.2, 44);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 130, 170, 255, 0.95);
+        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: [{ x: p.x, y: p.y }], note: g?.note });
+        plate(p.x, p.y, g?.label ?? 'THE WAY', 118);
+        break;
+      }
       case 'arenagate': {
         // THE TRIAL COLISEUM (it.53): the arch on the east road.
         const spr = standing(p, 'archway', 0.96);

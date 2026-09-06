@@ -454,6 +454,7 @@ export class OrientationManager {
       b.toggle('input-touch', s.touch);
       b.toggle('has-pad', s.padH > 1);
       b.toggle('short-screen', s.h < 420);
+      b.toggle('tall-screen', s.h >= 800); // Room for a column of eight under the chart (it.86).
       b.toggle('tiny-height', s.orientation === 'landscape' && s.h < 360);
       for (const t of ['micro', 'compact', 'standard', 'tablet', 'desktop', 'huge']) b.toggle(`tier-${t}`, s.tier === t);
       // `bar-*`, not `sb-*`: the settings sheet already owns `.sb-row`.

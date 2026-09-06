@@ -85,6 +85,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
   const errors: string[] = [];
   const check = (name: string, ok: boolean, detail = ''): void => {
     (ok ? pass : fail).push(ok ? name : `${name}${detail ? ` — ${detail}` : ''}`);
+    (window as unknown as { __qaLast: string }).__qaLast = `${pass.length + fail.length} ${name}`; // Where the run is, for a watcher outside.
   };
   // Every console error and unhandled rejection during the session is a finding.
   const origErr = console.error;

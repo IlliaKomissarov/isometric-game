@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 85, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 86, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -189,6 +189,12 @@ Items examined and left as they are, with reasons:
 | Map marks would spoil the fog | Design | marks drawn only for explored tiles |
 | Arriving in the quarry raised the endgame | High (bug, found in QA) | the hidden stair on a wall tile |
 | Single-tile gates found one site | Medium (design) | gates span the corridor's cross-section |
+
+### Iteration 86 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The shortcut bar lay flat on touch laptops, tablets and wide phones | Medium (UX) | an upright stack on every layout with the height; two columns on shorter touch landscapes; `tall-screen` class |
 
 ## 4. Known issues and regression log
 

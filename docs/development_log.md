@@ -1,5 +1,19 @@
 # Development Log
 
+## 2026-09-06 (iteration 86) - The shortcut bar stands upright on every screen
+
+- The bar was a column only on a desktop without touch (it.80); a touch
+  laptop, a tablet and a wide phone got a horizontal row of eight under the
+  chart. Now the right edge carries an upright stack everywhere the height
+  allows: one column of eight on any layout without touch, on a touch
+  landscape 800 px or taller (`tall-screen`, a new layout class), and on
+  standard and tablet portrait phones; two columns of four on a touch
+  landscape under 800 px (the thumb cluster owns the bottom-right corner,
+  and the matrix caught eight in a column reaching into it on 720-748 px
+  screens); the 2x4 grid stays on compact and micro portrait handsets and
+  on a landscape phone with its browser bars showing, where eight 44 px
+  targets do not fit the edge.
+
 ## 2026-09-06 (iteration 85) - The dark forest, the quarry mines, the iron gates, the CRT, the roads kept open
 
 ### The opening zoom and the tube

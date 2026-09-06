@@ -4776,9 +4776,24 @@
       #tp-button { left: calc(50% + 254px); }
       /* On a desktop the bar is a column beside the map, not under it: the inventory may rise. */
       body:not(.input-touch):not(.tiny-height):not(.has-pad) #inv-panel:not(.fit-centred) { top: calc(var(--map-h) + 22px); max-height: calc(var(--app-h) - var(--map-h) - 34px); }
-      /* THE DESKTOP BAR (it.80): a column hugging the right edge under the chart. */
-      body:not(.input-touch):not(.tiny-height):not(.has-pad) #system-bar { grid-template-columns: auto; justify-items: end; gap: 6px; }
-      body:not(.input-touch):not(.tiny-height):not(.has-pad) #hud-tr { align-items: flex-end; }
+      /* THE BAR IS A COLUMN (it.80, every screen it.86): the shortcuts hug the
+         right edge in one vertical stack under the chart - on a desk, on a
+         touch laptop, on a tablet, and on a landscape phone with the height
+         for eight (h >= 420). Only a landscape phone with its browser bars
+         showing (tiny-height) and the small portrait phones (the pad layout
+         below the standard tier) keep a grid, because eight 44 px targets do
+         not fit their edge. */
+      body:not(.input-touch):not(.tiny-height):not(.short-screen):not(.has-pad) #system-bar,
+      body.input-touch.orient-landscape.tall-screen #system-bar,
+      body.has-pad.tier-standard #system-bar,
+      body.has-pad.tier-tablet #system-bar { grid-template-columns: auto; justify-items: end; gap: 6px; }
+      /* A touch landscape under 800 px tall keeps the thumb cluster in its
+         bottom-right corner, where a column of eight would reach: the stack
+         is two columns of four there - still upright, half the height. */
+      body.input-touch.orient-landscape:not(.tall-screen):not(.tiny-height):not(.short-screen) #system-bar { grid-template-columns: auto auto; justify-items: end; gap: 6px; }
+      body:not(.tiny-height):not(.short-screen):not(.has-pad) #hud-tr,
+      body.has-pad.tier-standard #hud-tr,
+      body.has-pad.tier-tablet #hud-tr { align-items: flex-end; }
 
       /* ---- 8a5. BORDERS, FILTERS, THE CODEX, GAUGE LABELS (it.81) ------- */
       /* Effect borders: a second, brighter edge on the special pieces. */

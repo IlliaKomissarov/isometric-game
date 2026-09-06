@@ -702,6 +702,11 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The keeper (Crimson Hydra) and the teleporter home
 - [x] Memory of gates and keys; device matrix; playthrough; clean build
 
+## Iteration 86 - The bar upright (2026-09-06)
+
+- [x] Shortcut bar a vertical stack on every layout with the height; two columns on shorter touch landscapes
+- [x] Device matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

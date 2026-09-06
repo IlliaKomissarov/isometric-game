@@ -1,5 +1,73 @@
 # Development Log
 
+## 2026-09-06 (iteration 85) - The dark forest, the quarry mines, the iron gates, the CRT, the roads kept open
+
+### The opening zoom and the tube
+- The camera starts at 1.5 (`DEFAULT_ZOOM`, Camera.ts): half again closer.
+  The wheel still ranges ZOOM_MIN..ZOOM_MAX.
+- `render/CrtFilter.ts`: a Pixi v8 GLSL filter - scanlines on the output's
+  pixel rows, a mild barrel curve with a dark bezel, colour fringing toward
+  the edges, a soft phosphor glow, a vignette and a slow flicker - toggled
+  in SETTINGS · VISUALS (`visuals.crt`, off by default), applied beside the
+  colour grade on the stage. The DOM HUD stays crisp. LESSON: the fragment
+  must declare `precision highp float;` - Pixi gives fragments mediump and
+  the default filter vertex declares `uInputSize` highp, and a uniform at
+  two precisions fails to LINK ("Could not initialize shader").
+
+### The roads kept open
+- `street()` marks road tiles; `offRoad()` finds the verge beside a street
+  tile; every torch and lamp goes through `placeLamp` (verge or nothing);
+  `tryBlock` refuses road tiles; the forest belt and the lawn fill never
+  take a road tile (the park ellipse had repainted part of the east road
+  as grass, and trees grew in it); and a final pass moves lights, columns
+  and banners off streets and removes stores, benches, carts, trees and
+  rocks that landed in one. The harness lists any clutter on a road tile.
+
+### The dark forest (floor 101, mode `forest`)
+- `scenes/Forest.ts`: a 56×40 outdoor map in the town's idiom (grass and
+  dirt paint, cliff cubes, trees as solid props), one winding road from
+  the road-to-town signpost on the west edge to the quarry mouth on the
+  east, four clearings (the spawner's "rooms") with felled camps, torches
+  on the verges, the woods everywhere else, and a flood fill that turns
+  every tile the road cannot reach into forest. Dressed by
+  `placeTownProps` through `bareLayout()` (a TownLayout with every town
+  landmark parked off the map). Wolves, poachers, spiders and orcs at the
+  hero's depth (deepest + 1). Sight 16, full light 4.
+- THE EASTERN ROAD in the ward is an open gateway now (`dest: 'forest'`):
+  E walks the party east. In the forest, E at the signpost warps home; E
+  at the quarry mouth goes down.
+
+### The quarry mines (floor 102, mode `mines`)
+- One floor, 104×88 - about 4.7 crypts of floor - from the crypt generator
+  with pillars, a stone theme, the pit's dressing (supports, kegs, crates,
+  rocks, jars, torches) placed only where it seals nothing, hearths, chests
+  and gold as any depth, fog of war as any depth. No stair: the hidden one
+  sits on a wall tile (the arrival tile touched the stair and raised the
+  endgame - fixed).
+- `scenes/Mines.ts` - THE LOCKED GATES: the way from the entrance to the
+  deepest hall is walked once (BFS); along it, corridor cross-sections
+  (one to three tiles across the way) whose removal cuts the hall off
+  become iron gates - TILE_DOOR (solid, opaque, `gate_closed`), up to
+  three spread along the way. THE KEYS: each gate's key lies in a side
+  room reachable without passing that gate (the near component with the
+  gate shut), scored away from the way - a corner of a dead-end room -
+  as a ground item (`quarry_key_1..3`, new icons). A living hero within
+  1.6 tiles of a shut gate carrying its key opens every bar of it (pure
+  sim: `tickMines`); without the key the gate says so over its bars.
+- THE KEEPER: a vampiric Crimson Hydra at the hero's depth + 3 in the
+  deepest hall, on the boss bar. When it falls the teleporter rises where
+  it stood and takes the party home (the arena's victory-portal logic,
+  branched for the mines).
+- THE MARKS on the minimap (`MinimapUI.setMarkers`): a key, a gate (red
+  shut, green open), the keeper and the way home - each drawn ONLY once
+  its tile has been explored (`lighting.getState > 0`), never before.
+- Memory (`FloorMemory.doorsOpened / keysTaken`): gates stand open and
+  taken keys stay gone across a reload; the keeper's fall is
+  `arenaCleared`, and the teleporter stands from the first tick after.
+- `modeFor(floor)` decides hub / coliseum / forest / mines / normal on
+  load, on the portal back and on travel; the level select, the deepest
+  depth and the records ignore floors past twenty.
+
 ## 2026-09-06 (iteration 84) - The Market Ward, plates on approach, the zone chip
 
 ### Plates on approach

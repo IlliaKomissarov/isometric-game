@@ -21,6 +21,8 @@ export const TILE_FLOOR = 1;
  * classic ARPG-rule (it.16): if you can't walk through it, it has collision.
  */
 export const TILE_BLOCKED = 2;
+/** THE IRON GATE (it.85): solid and opaque until its key opens it; then TILE_FLOOR. */
+export const TILE_DOOR = 3;
 
 /**
  * Deterministically pick hearth tiles (one inner room corner in ~70% of

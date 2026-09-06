@@ -27,8 +27,11 @@ export interface FloorMemory {
   killedSpawns: number[];
   /** Explored-fog bitset, base64 (see Lighting.packExplored). */
   explored: string;
-  /** Arena of a boss floor already cleared. */
+  /** Arena of a boss floor already cleared (the quarry's mini-boss too, it.85). */
   arenaCleared: boolean;
+  /** THE QUARRY (it.85): gates opened and keys taken, by key number. */
+  doorsOpened?: number[];
+  keysTaken?: number[];
 }
 
 export interface StashState {

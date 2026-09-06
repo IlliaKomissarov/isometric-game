@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 84, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 85, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -176,6 +176,19 @@ Items examined and left as they are, with reasons:
 | No exits to future zones | Feature (placeholder) | two blocked gateways with a light, a plate and a note |
 | No location indicator by the chart | Low (UX) | `#zone-label` under the chart, per tier |
 | New anims silently skipped in the hub | Medium (asset pipeline) | added to the hub's preload list; the lesson logged |
+
+### Iteration 85 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The crypt opened too far away | Low (feel) | DEFAULT_ZOOM 1.5 |
+| No retro look | Feature | `CrtFilter` (GLSL, highp), SETTINGS · VISUALS switch |
+| Lights, trees and stores stood in streets | Medium (pathing) | road tiles marked; lamps on the verge; a final sweep; no lawn or belt in a road |
+| No road east | Feature | THE DARK FOREST (floor 101), the eastern gateway open |
+| No long dungeon, no locks | Feature | THE QUARRY MINES (floor 102): 104×88, three iron gates, keys in side rooms, the keeper, the teleporter home |
+| Map marks would spoil the fog | Design | marks drawn only for explored tiles |
+| Arriving in the quarry raised the endgame | High (bug, found in QA) | the hidden stair on a wall tile |
+| Single-tile gates found one site | Medium (design) | gates span the corridor's cross-section |
 
 ## 4. Known issues and regression log
 

@@ -20,7 +20,7 @@ import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
 import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
-import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
+import { TILE_BLOCKED, TILE_DOOR, TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
 
 export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town';
 
@@ -47,7 +47,7 @@ export class SceneManager {
     for (let gy = 0; gy < height; gy++) {
       for (let gx = 0; gx < width; gx++) {
         const tile = grid[gy * width + gx];
-        if (tile === TILE_FLOOR || tile === TILE_BLOCKED) {
+        if (tile === TILE_FLOOR || tile === TILE_BLOCKED || tile === TILE_DOOR) {
           // Blocked-prop tiles (hearths) render floor UNDER the solid prop.
           this.addFloorSprite(gx, gy, viewport, lighting);
         } else if (this.bordersFloor(gx, gy)) {
@@ -69,7 +69,8 @@ export class SceneManager {
   isOpaque = (gx: number, gy: number): boolean => {
     const { width, height, grid } = this.map;
     if (gx < 0 || gy < 0 || gx >= width || gy >= height) return true;
-    return grid[gy * width + gx] === TILE_WALL;
+    const t = grid[gy * width + gx];
+    return t === TILE_WALL || t === TILE_DOOR; // A shut gate blocks sight too (it.85).
   };
 
   get dungeon(): DungeonMap {

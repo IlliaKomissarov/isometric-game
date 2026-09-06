@@ -30,9 +30,11 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad';
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
   note?: string;
+  /** Where an open gateway leads (it.85). */
+  dest?: 'forest';
   x: number;
   y: number;
   label: string;
@@ -46,6 +48,8 @@ export interface TownDressing {
   /** Label manager (it.50): where the E-prompt shows, so its plate stands down. */
   setPromptAt: (x: number | null, y?: number) => void;
   stashSprite: Sprite | null;
+  /** THE IRON GATES (it.85): the quarry's gate sprites by tile, swapped open when unlocked. */
+  gates: Map<string, Sprite>;
   /** Render-frame update: gate fog drift, brazier flicker. */
   update: (dt: number) => void;
   destroy: () => void;
@@ -58,6 +62,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const hotspots: Array<{ x: number; y: number }> = [];
   const fog: Array<{ sprite: Sprite; x: number; y: number; phase: number; speed: number }> = [];
   let stashSprite: Sprite | null = null;
+  const gates = new Map<string, Sprite>();
   const has = (name: string): boolean => spriteLib.loaded && spriteLib.hasSingle(name);
 
   /** A standing prop anchored at the south corner of its footprint. */
@@ -456,6 +461,35 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         if (b) b.anchor.x = 0.12; // The pole is the sprite's left edge: it sits on the column.
         break;
       }
+      // ---- THE FOREST AND THE QUARRY (it.85) ----
+      case 'gate': {
+        // An iron gate across a mine corridor: solid and opaque until its key.
+        const spr = standing(p, p.variant ?? 'gate_closed', 0.96);
+        if (spr) {
+          spr.scale.set(1.15);
+          gates.set(`${p.x},${p.y}`, spr);
+        }
+        break;
+      }
+      case 'quarry': {
+        // The quarry mouth: the archway into the rock, ember-lit.
+        const spr = standing(p, 'archway', 0.96);
+        if (spr) spr.scale.set(1.5);
+        glowAt(p.x, p.y, 0xff9a40, 0.45, 1.8, 30);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 150, 70, 0.7);
+        interactables.push({ id: nextId++, kind: 'quarry', x: p.x + 0.5, y: p.y + 0.5, label: 'E · DOWN INTO THE QUARRY', tiles: [{ x: p.x, y: p.y }] });
+        plate(p.x, p.y, 'THE QUARRY MINES', 132);
+        break;
+      }
+      case 'townroad': {
+        // The way back west: a signpost, a warm glow, the town's name.
+        standing(p, 'signpost', 0.95);
+        glowAt(p.x, p.y, 0xd8a85c, 0.35, 1.2, 10);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.2, 255, 190, 110, 0.5);
+        interactables.push({ id: nextId++, kind: 'townroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK TO THE MARKET WARD', tiles: [{ x: p.x, y: p.y }] });
+        plate(p.x, p.y, 'THE ROAD TO TOWN', 84);
+        break;
+      }
       case 'notice': {
         // THE BOUNTY BOARD (it.84): the guild's postings before the hall.
         standing(p, 'signpost', 0.95);
@@ -475,8 +509,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         }
         glowAt(p.x, p.y, 0x7fa8ff, 0.62, 2.2, 44);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 130, 170, 255, 0.95);
-        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: [{ x: p.x, y: p.y }], note: g?.note });
-        plate(p.x, p.y, g?.label ?? 'THE WAY', 118);
+        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: g?.dest ? `E · ${g.label}` : `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: [{ x: p.x, y: p.y }], note: g?.note, dest: g?.dest });
+        plate(p.x, p.y, g?.dest ? `${g.label} · THE FOREST` : (g?.label ?? 'THE WAY'), 118);
         break;
       }
       case 'arenagate': {
@@ -525,5 +559,5 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, update, destroy, setPromptAt };
+  return { occluders, interactables, stashSprite, gates, update, destroy, setPromptAt };
 }

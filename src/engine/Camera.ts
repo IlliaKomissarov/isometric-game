@@ -15,9 +15,12 @@ import { damp, vec2, type Vec2 } from '@/utils/Vec2';
 import { screenToWorld, worldToScreen } from '@/utils/iso';
 import type { Viewport } from './Viewport';
 
+const DEFAULT_ZOOM = 1.5;
+
 export class Camera {
-  private zoom = 1.0;
-  private targetZoom = 1.0;
+  /** THE OPENING ZOOM (it.85): half again closer than the old 1.0 — the wheel still ranges ZOOM_MIN..ZOOM_MAX. */
+  private zoom = DEFAULT_ZOOM;
+  private targetZoom = DEFAULT_ZOOM;
   /**
    * THE LAYOUT BIAS (it.66): multiplied into the wheel zoom, never added to
    * it. The wheel stays clamped to its own range, the bias follows the

@@ -831,6 +831,101 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await fadeClear();
     }
 
+    // ---- THE FOREST AND THE QUARRY (it.85): the zoom, the CRT, the roads, the gates and keys, the way home ---
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      check('the crypt opens half again closer', Math.abs(g.camera.currentZoom / (g.camera.layoutBias ?? 1) - 1.5) < 0.01 || Math.abs(g.camera.currentZoom - 1.5) < 0.2, String(g.camera.currentZoom));
+      // THE CRT: the switch on the settings sheet adds the pass and takes it away.
+      const app = (window as unknown as { __app: { stage: { filters: Array<{ constructor: { name: string } }> | null } } }).__app;
+      key('KeyO');
+      await wait(60);
+      document.querySelector<HTMLElement>('#settings-panel [data-tab=visuals]')?.click();
+      await wait(40);
+      const crtBox = document.querySelector<HTMLInputElement>('#settings-panel input[data-visual=crt]');
+      if (crtBox && !crtBox.checked) crtBox.click();
+      await wait(60);
+      check('the CRT switch adds the tube pass', !!app.stage.filters?.some((f) => f.constructor.name === 'CrtFilter'));
+      crtBox?.click();
+      await wait(40);
+      check('the CRT switch takes the tube pass away', !app.stage.filters?.some((f) => f.constructor.name === 'CrtFilter'));
+      key('KeyO');
+      await wait(40);
+      // THE ROADS STAY OPEN: no clutter on a street tile.
+      const L = g.town.layout;
+      const W = L.map.width;
+      const clutter = ['torch', 'lamp', 'barrel', 'crates', 'bench', 'cart', 'jar', 'box', 'table', 'trashbox', 'bigtree', 'pine', 'deadtree', 'tree', 'rock', 'column', 'banner', 'wood_pile', 'barrels_stacked', 'crates_wood'];
+      const onRoad = L.props.filter((pr: { kind: string; x: number; y: number }) => clutter.includes(pr.kind) && L.road[pr.y * W + pr.x]);
+      check('no clutter stands in a street', onRoad.length === 0, onRoad.map((pr: { kind: string; x: number; y: number }) => `${pr.kind}@${pr.x},${pr.y}`).join(' '));
+      check('the eastern road leads to the forest', g.town.interactables.some((i: { kind: string; dest?: string }) => i.kind === 'gateway' && i.dest === 'forest'));
+      // THE DARK FOREST.
+      await g.travel(101);
+      await until(() => game() && game().floor === 101, 10000);
+      g = game();
+      await fadeClear();
+      check('the forest stands east of the ward', g.floor === 101 && document.getElementById('zone-label')?.textContent === 'THE DARK FOREST');
+      check('the forest has the road to town and the quarry mouth', g.town.interactables.some((i: { kind: string }) => i.kind === 'townroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'quarry'));
+      const forestKinds = new Set<string>();
+      g.state.forEach((e: { constructor: { name: string }; hp: number; def?: { kind: string }; spawned?: boolean }) => {
+        if (e.constructor.name === 'Enemy' && e.hp > 0 && e.spawned !== false && e.def) forestKinds.add(e.def.kind);
+      });
+      check('wolves and poachers hunt the forest', ['wolf', 'poacher', 'spider', 'orc'].some((k) => forestKinds.has(k)), [...forestKinds].join());
+      // THE QUARRY MINES.
+      await g.travel(102);
+      await until(() => game() && game().floor === 102, 12000);
+      g = game();
+      await fadeClear();
+      const m = g.mines;
+      const D = g.dungeon;
+      check('the quarry is one floor, three to five crypts long', !!m && D.width * D.height >= 3 * 44 * 44 && D.width * D.height <= 6 * 44 * 44, `${D.width}x${D.height}`);
+      check('the quarry has locked gates and their keys', !!m && m.doors.length >= 2 && m.keys.length === m.doors.length, `${m?.doors.length} gates, ${m?.keys.length} keys`);
+      check('every gate is shut and solid', m.doors.every((d: { tiles: Array<{ x: number; y: number }> }) => d.tiles.every((t: { x: number; y: number }) => !g.scene.isWalkable(t.x, t.y))));
+      check('every key lies on the floor', m.keys.every((k: { uid: number }) => !!g.loot.getItem(k.uid)));
+      check('the keeper waits in the deepest hall', !!g.boss && g.boss.def.kind === 'hydra' && g.boss.hp > 0);
+      const k1 = m.keys[0];
+      const d1 = m.doors[0];
+      check('a key is hidden by the fog until its room is explored', g.lighting.getState(k1.x, k1.y) === 0 && g.lighting.getState(d1.x, d1.y) === 0);
+      g.player.pos.x = k1.x + 0.5;
+      g.player.pos.y = k1.y + 1.5;
+      g.lighting.updateVisibility(k1.x, k1.y + 1);
+      g.loop.step(2);
+      check('the fog lifts from the key once the hero arrives', g.lighting.getState(k1.x, k1.y) > 0);
+      // A gate without the key stays shut; with the key it opens, every bar of it.
+      const t0 = d1.tiles[0];
+      const beside = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => ({ x: t0.x + dx, y: t0.y + dy })).find((q) => g.scene.isWalkable(q.x, q.y))!;
+      g.player.pos.x = beside.x + 0.5;
+      g.player.pos.y = beside.y + 0.5;
+      g.lighting.updateVisibility(beside.x, beside.y);
+      g.loop.step(4);
+      check('a gate stays shut without its key', !d1.open && d1.tiles.every((t: { x: number; y: number }) => !g.scene.isWalkable(t.x, t.y)));
+      g.player.addItem(`quarry_key_${d1.key}`);
+      g.loop.step(4);
+      check('the key opens every bar of its gate and is spent', d1.open && d1.tiles.every((t: { x: number; y: number }) => g.scene.isWalkable(t.x, t.y)) && !g.player.backpack.includes(`quarry_key_${d1.key}`));
+      // The keeper falls: the way home rises where it stood.
+      g.player.pos.x = m.boss.x + 0.5;
+      g.player.pos.y = m.boss.y + 2.5;
+      g.lighting.updateVisibility(m.boss.x, m.boss.y + 2);
+      g.boss.hp = 0;
+      g.loop.step(5);
+      const after = game(); // The handle is a snapshot: read the world again.
+      check("the keeper's fall opens the way home", after.arenaCleared && !!after.victoryPortal && after.victoryPortal.x === m.boss.x && after.victoryPortal.y === m.boss.y, JSON.stringify(after.victoryPortal));
+      g.player.pos.x = m.boss.x + 3;
+      g.player.pos.y = m.boss.y + 0.5;
+      g.loop.step(3);
+      g.player.pos.x = m.boss.x + 0.5;
+      g.player.pos.y = m.boss.y + 0.5;
+      g.loop.step(3);
+      await until(() => game() && game().floor === 0, 10000);
+      g = game();
+      await fadeClear();
+      check('the teleporter brings the hero home', g.floor === 0);
+      check('the quarry remembers its opened gate', !!g.floors[102] && (g.floors[102].doorsOpened ?? []).includes(1) && g.floors[102].arenaCleared === true, JSON.stringify(g.floors[102] && { d: g.floors[102].doorsOpened, c: g.floors[102].arenaCleared }));
+    }
+
     // ---- the item card (it.76): a pack weapon beside the worn one -----------------------------
     {
       g.player.addItem('soldier_blade');

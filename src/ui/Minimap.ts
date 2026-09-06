@@ -24,7 +24,21 @@ const COLOR_WALL_VISIBLE = '#3a3444';
 const COLOR_STAIRS = '#d8a83c';
 const COLOR_PLAYER = '#e04a2f';
 
+/** THE QUARRY'S MARKS (it.85): drawn only once their tile has been explored. */
+export interface MapMarker {
+  x: number;
+  y: number;
+  kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal';
+}
+
 export class MinimapUI {
+  /** Marks on the map, read every frame; each shows only when its tile is out of the fog. */
+  private markers: () => ReadonlyArray<MapMarker> = () => [];
+
+  setMarkers(fn: () => ReadonlyArray<MapMarker>): void {
+    this.markers = fn;
+  }
+
   private readonly wrap: HTMLElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
@@ -172,6 +186,56 @@ export class MinimapUI {
         ctx.fill();
       }
       ctx.globalAlpha = 1;
+    }
+    // THE MARKS (it.85): keys, gates, the boss and the way home — never before the fog lifts.
+    for (const m of this.markers()) {
+      if (this.lighting.getState(m.x, m.y) === 0) continue;
+      const cx = m.x * SCALE + SCALE / 2;
+      const cy = m.y * SCALE + SCALE / 2;
+      ctx.save();
+      ctx.lineWidth = 1;
+      if (m.kind === 'key') {
+        ctx.fillStyle = '#ffd070';
+        ctx.strokeStyle = '#3a2a08';
+        ctx.beginPath();
+        ctx.arc(cx - 1.2, cy - 1.2, 1.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = '#ffd070';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + 3.2, cy + 3.2);
+        ctx.moveTo(cx + 2.2, cy + 2.2);
+        ctx.lineTo(cx + 1.2, cy + 3.2);
+        ctx.stroke();
+      } else if (m.kind === 'door' || m.kind === 'door-open') {
+        ctx.fillStyle = m.kind === 'door' ? '#d0303a' : '#5fc87f';
+        ctx.strokeStyle = '#000';
+        ctx.fillRect(cx - 3, cy - 3, 6, 6);
+        ctx.strokeRect(cx - 3, cy - 3, 6, 6);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(cx - 0.8, cy - 1.6, 1.6, 2.6);
+      } else if (m.kind === 'boss') {
+        ctx.fillStyle = '#ff5f5f';
+        ctx.strokeStyle = '#000';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 4);
+        ctx.lineTo(cx + 4, cy);
+        ctx.lineTo(cx, cy + 4);
+        ctx.lineTo(cx - 4, cy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#8fb8ff';
+        ctx.strokeStyle = '#1a2a5a';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 3 + Math.sin(time * 5) * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     // Player: pulsing dot.
     const r = 2.6 + Math.sin(time * 6) * 0.7;

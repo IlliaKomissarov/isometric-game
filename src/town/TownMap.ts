@@ -99,7 +99,11 @@ export type TownPropKind =
   | 'gateway'
   | 'jeweler'
   | 'scribe'
-  | 'bowyer';
+  | 'bowyer'
+  // THE FOREST AND THE QUARRY (it.85).
+  | 'gate'
+  | 'quarry'
+  | 'townroad';
 
 export interface TownProp {
   kind: TownPropKind;
@@ -148,8 +152,10 @@ export interface TownLayout {
   bowyer: { x: number; y: number; tiles: Array<{ x: number; y: number }> };
   /** The guild's bounty board. */
   notice: { x: number; y: number };
-  /** Passages to zones not built yet. */
-  gateways: Array<{ x: number; y: number; label: string; note: string }>;
+  /** Passages: a `dest` leads somewhere (it.85: the forest); without one the way is not built yet. */
+  gateways: Array<{ x: number; y: number; label: string; note: string; dest?: 'forest' }>;
+  /** Street tiles (it.85): the ones a standing prop must never take. */
+  road?: Uint8Array;
   /** The ward's folk wander here. */
   wander2: Room;
   /** The ward gate's sentries. */
@@ -197,6 +203,8 @@ export function buildTownLayout(): TownLayout {
     return { r: Math.hypot(dx, dy), theta: Math.atan2(dy, dx) };
   };
   const belt = new Uint8Array(W * H);
+  /** STREET TILES (it.85): a lamp or a store never stands in the road; a plaza is not a road. */
+  const road = new Uint8Array(W * H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const p1 = polar(x, y);
@@ -227,6 +235,7 @@ export function buildTownLayout(): TownLayout {
             grid[idx(tx, ty)] = TILE_FLOOR;
             belt[idx(tx, ty)] = 0;
             tileKind[idx(tx, ty)] = kind;
+            road[idx(tx, ty)] = 1;
           }
         }
       }
@@ -278,6 +287,23 @@ export function buildTownLayout(): TownLayout {
   };
   const decal = (p: TownProp): void => {
     props.push(p);
+  };
+  /**
+   * OFF THE ROAD (it.85): the nearest open grass tile beside (x, y) when
+   * (x, y) is a street tile — a lamp lights the road from its verge, it
+   * never stands in it. Null when no verge is free.
+   */
+  const offRoad = (x: number, y: number): { x: number; y: number } | null => {
+    const free = (tx: number, ty: number): boolean => inside(tx, ty) && grid[idx(tx, ty)] === TILE_FLOOR && !road[idx(tx, ty)] && !belt[idx(tx, ty)];
+    if (free(x, y)) return { x, y };
+    for (let r = 1; r <= 2; r++)
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r && free(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+    return null;
+  };
+  const placeLamp = (kind: 'torch' | 'lamp', x: number, y: number): void => {
+    const at = offRoad(x, y);
+    if (at) block({ kind, x: at.x, y: at.y });
   };
   const clearFor = (x: number, y: number, w: number, h: number, pad = 1, kind = KIND_GRASS): void => {
     for (let ty = y - pad; ty < y + h + pad; ty++) {
@@ -338,7 +364,7 @@ export function buildTownLayout(): TownLayout {
   decal({ kind: 'pots', x: 16, y: 15 });
   decal({ kind: 'hanging_sign', x: 18, y: 15 });
   decal({ kind: 'signpost', x: 13, y: 15 });
-  for (const [x, y] of [[9, 13], [13, 13], [15, 17], [20, 19]] as const) block({ kind: 'torch', x, y });
+  for (const [x, y] of [[9, 13], [13, 13], [15, 17], [20, 19]] as const) placeLamp('torch', x, y);
 
   // The tavern (NE of the square): 5×4, a stone stair and a table outside.
   clearFor(35, 9, 5, 4, 1);
@@ -347,7 +373,7 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'table_chairs', x: 40, y: 12 });
   block({ kind: 'barrels_stacked', x: 34, y: 12 });
   block({ kind: 'supports', x: 33, y: 9 });
-  block({ kind: 'torch', x: 40, y: 9 });
+  placeLamp('torch', 40, 9);
 
   // Market square: six stalls, the shopkeeper, the well, stores, signs, torches.
   block({ kind: 'stall', x: 23, y: 17, w: 3, h: 2, variant: 'stall_a' });
@@ -382,7 +408,7 @@ export function buildTownLayout(): TownLayout {
   decal({ kind: 'hanging_sign', x: 26, y: 18 });
   decal({ kind: 'hanging_sign', x: 34, y: 19 });
   decal({ kind: 'signpost', x: 30, y: 27 });
-  for (const [x, y] of [[21, 16], [39, 16], [21, 28], [39, 28]] as const) block({ kind: 'torch', x, y });
+  for (const [x, y] of [[21, 16], [39, 16], [21, 28], [39, 28]] as const) placeLamp('torch', x, y);
   block({ kind: 'column', x: 28, y: 29 });
   block({ kind: 'column', x: 32, y: 29 });
 
@@ -392,7 +418,7 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'barrel', x: 13, y: 22, variant: 'barrel_a' });
   block({ kind: 'barrel', x: 15, y: 22, variant: 'barrel_b' });
   block({ kind: 'crates', x: 12, y: 23 });
-  block({ kind: 'torch', x: 16, y: 23 });
+  placeLamp('torch', 16, 23);
 
   // Cottages (seven).
   house(9, 16, 'house_a');
@@ -404,10 +430,10 @@ export function buildTownLayout(): TownLayout {
   house(22, 9, 'house_c');
   for (const x of [8, 9, 11, 12]) block({ kind: 'fence', x, y: 19 });
   for (const x of [45, 46, 48, 49]) block({ kind: 'fence', x, y: 18 });
-  block({ kind: 'torch', x: 13, y: 33 });
-  block({ kind: 'torch', x: 46, y: 34 });
-  block({ kind: 'torch', x: 25, y: 44 });
-  block({ kind: 'torch', x: 38, y: 44 });
+  placeLamp('torch', 13, 33);
+  placeLamp('torch', 46, 34);
+  placeLamp('torch', 25, 44);
+  placeLamp('torch', 38, 44);
 
   // Campsite (SW): the fire, the heroes' spots, seats and stores.
   const campfire = { x: 17, y: 37 };
@@ -423,7 +449,7 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'wood_pile', x: 20, y: 35 });
   block({ kind: 'barrels_stacked', x: 14, y: 39 });
   decal({ kind: 'pots', x: 19, y: 39 });
-  block({ kind: 'torch', x: 21, y: 39 });
+  placeLamp('torch', 21, 39);
   // THE CAMP (it.49): a few more comforts around the fire — a keg, a crate, cookware.
   block({ kind: 'barrel', x: 13, y: 36, variant: 'barrel_a' });
   block({ kind: 'crates', x: 21, y: 37 });
@@ -431,7 +457,7 @@ export function buildTownLayout(): TownLayout {
 
   // Torch posts along the streets.
   for (const [x, y] of [[27, 32], [31, 32], [28, 36], [32, 36], [28, 41], [32, 41], [11, 26], [17, 27], [24, 27], [36, 27], [43, 26], [50, 24], [30, 8], [26, 12]] as const) {
-    if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'torch', x, y });
+    if (grid[idx(x, y)] === TILE_FLOOR) placeLamp('torch', x, y);
   }
 
   // ============================================================================
@@ -446,7 +472,7 @@ export function buildTownLayout(): TownLayout {
     // prop, is not placed: the roads stay open by construction.
     const w = p.w ?? 1;
     const h = p.h ?? 1;
-    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (!inside(x, y) || grid[idx(x, y)] !== TILE_FLOOR || (kind === KIND_GRASS && tileKind[idx(x, y)] !== KIND_GRASS) || belt[idx(x, y)]) return false;
+    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (!inside(x, y) || grid[idx(x, y)] !== TILE_FLOOR || (kind === KIND_GRASS && tileKind[idx(x, y)] !== KIND_GRASS) || belt[idx(x, y)] || road[idx(x, y)]) return false;
     block(p);
     const seen0 = wardReach();
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) grid[idx(x, y)] = TILE_FLOOR;
@@ -508,8 +534,8 @@ export function buildTownLayout(): TownLayout {
   clearFor(39, 57, 4, 4, 1);
   block({ kind: 'guildhall', x: 39, y: 57, w: 4, h: 4 });
   block({ kind: 'notice', x: 37, y: 62 });
-  block({ kind: 'lamp', x: 38, y: 58 });
-  block({ kind: 'lamp', x: 43, y: 61 });
+  placeLamp('lamp', 38, 58);
+  placeLamp('lamp', 43, 61);
   block({ kind: 'banner', x: 43, y: 57 });
   // THE MONUMENT: the seated king on the plaza, benches at his feet, banners on columns.
   block({ kind: 'statue', x: 30, y: 69, w: 2, h: 2, variant: 'statue_a' });
@@ -539,8 +565,8 @@ export function buildTownLayout(): TownLayout {
   decal({ kind: 'hanging_sign', x: 26, y: 67 });
   decal({ kind: 'hanging_sign', x: 39, y: 66 });
   decal({ kind: 'pots', x: 27, y: 75 });
-  for (const [x, y] of [[22, 64], [40, 64], [22, 76], [40, 76]] as const) block({ kind: 'lamp', x, y });
-  for (const [x, y] of [[28, 79], [34, 79], [28, 84], [34, 84], [44, 69], [47, 74], [18, 68]] as const) if (grid[idx(x, y)] === TILE_FLOOR) block({ kind: 'lamp', x, y });
+  for (const [x, y] of [[22, 64], [40, 64], [22, 76], [40, 76]] as const) placeLamp('lamp', x, y);
+  for (const [x, y] of [[28, 79], [34, 79], [28, 84], [34, 84], [44, 69], [47, 74], [18, 68]] as const) placeLamp('lamp', x, y);
   // THE TRAINING YARD (west): barricades, dummies, a rack, kegs.
   block({ kind: 'barricade', x: 13, y: 70, variant: 'barricade_a' });
   block({ kind: 'barricade', x: 19, y: 69, variant: 'barricade_b' });
@@ -549,7 +575,7 @@ export function buildTownLayout(): TownLayout {
   block({ kind: 'dummy', x: 15, y: 75, variant: 'dummy_a' });
   block({ kind: 'rack', x: 16, y: 69 });
   block({ kind: 'barrels_stacked', x: 12, y: 73 });
-  block({ kind: 'torch', x: 19, y: 75 });
+  placeLamp('torch', 19, 75);
   // THE PARK (east): the big trees, a bench, a jar, a table.
   block({ kind: 'bigtree', x: 43, y: 65, variant: 'bigtree_a' });
   block({ kind: 'bigtree', x: 48, y: 66, variant: 'bigtree_b' });
@@ -563,14 +589,14 @@ export function buildTownLayout(): TownLayout {
   house(45, 60, 'house_d');
   for (const x of [45, 47, 48]) block({ kind: 'fence', x, y: 81 });
   for (const x of [16, 18, 19]) block({ kind: 'fence', x, y: 83 });
-  block({ kind: 'torch', x: 44, y: 80 });
-  block({ kind: 'torch', x: 20, y: 80 });
+  placeLamp('torch', 44, 80);
+  placeLamp('torch', 20, 80);
   // THE GATEWAYS: two passages to zones not built yet — pillars, the standing
   // light, a plate that says so. Their tiles are blocked: no one walks into a
   // road that is not there.
   const gateways: TownLayout['gateways'] = [
     { x: 31, y: 88, label: 'THE MARSH PATH', note: 'The marsh path is not open yet — the boards are still being laid.' },
-    { x: 52, y: 72, label: 'THE EASTERN ROAD', note: 'The eastern road is not open yet — the caravan waits for it.' },
+    { x: 52, y: 72, label: 'THE EASTERN ROAD', note: 'The road runs east into the dark forest, and the quarry beyond it.', dest: 'forest' },
   ];
   clearFor(29, 86, 5, 3, 0, KIND_COBBLE);
   block({ kind: 'pillar', x: 29, y: 88 });
@@ -593,7 +619,7 @@ export function buildTownLayout(): TownLayout {
   tryBlock({ kind: 'box', x: 19, y: 15, variant: 'box_a' });
   tryBlock({ kind: 'trashbox', x: 41, y: 13 });
   tryBlock({ kind: 'table', x: 38, y: 24, variant: 'table_a' }, KIND_COBBLE);
-  for (const [x, y] of [[26, 30], [34, 30], [45, 29], [12, 24]] as const) tryBlock({ kind: 'lamp', x, y });
+  for (const [x, y] of [[26, 30], [34, 30], [45, 29], [12, 24]] as const) placeLamp('lamp', x, y);
   for (const [x, y, v] of [[42, 31, 'bigtree_a'], [18, 20, 'bigtree_c'], [40, 44, 'bigtree_b'], [12, 41, 'bigtree_a']] as const) tryBlock({ kind: 'bigtree', x, y, variant: v });
   tryBlock({ kind: 'banner', x: 34, y: 8 });
   tryBlock({ kind: 'banner', x: 41, y: 8 });
@@ -602,7 +628,7 @@ export function buildTownLayout(): TownLayout {
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
       const i = idx(x, y);
-      if (!belt[i] || grid[i] !== TILE_FLOOR) continue;
+      if (!belt[i] || grid[i] !== TILE_FLOOR || road[i]) continue; // Never a tree in a street (it.85).
       grid[i] = TILE_BLOCKED;
       const roll = rand();
       if (roll < 0.72) {
@@ -641,6 +667,38 @@ export function buildTownLayout(): TownLayout {
     }
   }
 
+  // ---- THE ROADS STAY OPEN (it.85): clutter that landed in a street steps to
+  // the verge (lights, columns, banners) or goes (stores, benches, carts,
+  // trees, rocks). Stalls, cottages and fences define the street's sides and
+  // stay; the plaza props stand on plaza paint, not road, and stay too.
+  {
+    const movable = new Set<TownPropKind>(['torch', 'lamp', 'column', 'banner']);
+    const clutter = new Set<TownPropKind>(['barrel', 'barrels_stacked', 'crates', 'crates_wood', 'wood_pile', 'bench', 'cart', 'jar', 'box', 'table', 'trashbox', 'bigtree', 'pine', 'deadtree', 'tree', 'rock', 'statue', 'table_chairs', 'supports']);
+    const onRoad = (p: TownProp): boolean => {
+      for (let y = p.y; y < p.y + (p.h ?? 1); y++) for (let x = p.x; x < p.x + (p.w ?? 1); x++) if (inside(x, y) && road[idx(x, y)]) return true;
+      return false;
+    };
+    const free = (p: TownProp): void => {
+      for (let y = p.y; y < p.y + (p.h ?? 1); y++) for (let x = p.x; x < p.x + (p.w ?? 1); x++) if (inside(x, y) && grid[idx(x, y)] === TILE_BLOCKED) grid[idx(x, y)] = TILE_FLOOR;
+    };
+    for (let i = props.length - 1; i >= 0; i--) {
+      const p = props[i];
+      if (!onRoad(p)) continue;
+      if (movable.has(p.kind) && (p.w ?? 1) === 1 && (p.h ?? 1) === 1) {
+        free(p);
+        const at = offRoad(p.x, p.y);
+        if (at) {
+          p.x = at.x;
+          p.y = at.y;
+          grid[idx(at.x, at.y)] = TILE_BLOCKED;
+        } else props.splice(i, 1);
+      } else if (clutter.has(p.kind) && !((p.kind === 'statue' && (p.w ?? 1) > 1))) {
+        free(p);
+        props.splice(i, 1);
+      }
+    }
+  }
+
   // ---- SELF-HEAL #1: any floor the hero cannot reach becomes brush ----
   const spawn = { x: 30, y: 30 };
   grid[idx(spawn.x, spawn.y)] = TILE_FLOOR;
@@ -672,7 +730,7 @@ export function buildTownLayout(): TownLayout {
   // (never beside paint, props, doors or the belt), so no route is ever cut;
   // a final flood fill re-checks and undoes any that still would.
   const openGrass = (x: number, y: number): boolean =>
-    inside(x, y) && grid[idx(x, y)] === TILE_FLOOR && tileKind[idx(x, y)] === KIND_GRASS && !belt[idx(x, y)];
+    inside(x, y) && grid[idx(x, y)] === TILE_FLOOR && tileKind[idx(x, y)] === KIND_GRASS && !belt[idx(x, y)] && !road[idx(x, y)]; // A lawn is never a street (it.85).
   const candidates: number[] = [];
   for (let y = 3; y < H - 3; y++) {
     for (let x = 3; x < W - 3; x++) {
@@ -771,6 +829,7 @@ export function buildTownLayout(): TownLayout {
     gateways,
     wander2,
     guards2,
+    road,
     districts: [
       { name: 'THE OLD QUARTER', x: 0, y: 0, w: W, h: WARD_Y },
       { name: 'THE MARKET WARD', x: 0, y: WARD_Y, w: W, h: H - WARD_Y },

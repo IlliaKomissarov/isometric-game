@@ -31,7 +31,7 @@ import { Viewport } from '@/engine/Viewport';
 import { animsForKind, Enemy, PHASE_DIE_TICKS, PHASE_RISE_TICKS, type EnemyKind } from '@/entities/Enemy';
 import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
-import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap } from '@/scenes/DungeonGenerator';
+import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
 import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
@@ -77,7 +77,11 @@ import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
 import { buildTownLayout, type TownLayout } from '@/town/TownMap';
-import { placeTownProps, type Interactable, type Occluder } from '@/town/TownProps';
+import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
+import { buildForestLayout, bareLayout } from '@/scenes/Forest';
+import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
+import { CrtFilter } from '@/render/CrtFilter';
+import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { Villagers } from '@/town/Villagers';
 import { CampHeroes } from '@/town/CampHeroes';
@@ -182,9 +186,29 @@ interface World {
   coliseum: ColiseumState | null;
   /** THE VICTORY TELEPORTER (it.57): rises at the heart of the depth XX arena once the King is dust. */
   victoryPortal: { x: number; y: number } | null;
+  /** THE QUARRY MINES (it.85); null on every other floor. */
+  mines: MinesState | null;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines';
+/** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
+const FOREST_FLOOR = 101;
+const MINES_FLOOR = 102;
+const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
+const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
+/** The mode a floor number stands for (the arena is decided by the caller). */
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : 'normal');
+
+/** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
+interface MinesState {
+  doors: MineDoor[];
+  keys: MineKey[];
+  bossRoom: Room;
+  boss: { x: number; y: number };
+  gates: Map<string, Sprite>;
+  level: number;
+  dressing: TownDressing;
+}
 
 /** THE TRIAL COLISEUM (it.53): wave state, sim-owned. */
 interface ColiseumState {
@@ -254,6 +278,7 @@ async function boot(): Promise<void> {
     autoDensity: true,
   });
   appEl.appendChild(app.canvas);
+  (window as unknown as { __app: Application }).__app = app; // Dev aid: the renderer, for the harness (it.85).
   app.ticker.stop(); // The fixed-timestep GameLoop drives rendering.
   // Every reflow frame resizes the buffer, so a rotation glides instead of
   // snapping; the camera reads `app.screen`, so centring follows for free.
@@ -279,10 +304,13 @@ async function boot(): Promise<void> {
   const grade = new ColorMatrixFilter();
   grade.contrast(0.08, true);
   grade.saturate(-0.06, true);
+  // THE RETRO CRT (it.85): a second full-screen pass, off by default, the player's switch.
+  const crt = new CrtFilter(1);
   const applyGrade = (): void => {
     const on = visuals.grade && perf.quality !== 'low';
-    app.stage.filters = on ? [grade] : null;
-    app.stage.filterArea = on ? app.screen : undefined;
+    const list = [...(on ? [grade] : []), ...(visuals.crt ? [crt] : [])];
+    app.stage.filters = list.length ? list : null;
+    app.stage.filterArea = list.length ? app.screen : undefined;
   };
   applyGrade();
   perf.onQuality(() => applyGrade());
@@ -1237,6 +1265,56 @@ async function boot(): Promise<void> {
      * knows the exit tile.
      */
     let teleporterFx: { pad: Sprite; rune: Sprite; rune2: Sprite; beam: Sprite; clock: number } | null = null;
+    /**
+     * THE IRON GATES (it.85). Pure simulation: a living hero within a stride of
+     * a shut gate, carrying its key, opens it — the key is spent, the tile is
+     * floor, the sprite swings, the fog and the map learn the corridor. Without
+     * the key the gate says so over its bars, now and then.
+     */
+    const openGate = (d: MineDoor): void => {
+      const m = world.mines;
+      if (!m || d.open) return;
+      d.open = true;
+      for (const tile of d.tiles) {
+        world.dungeon.grid[tile.y * world.dungeon.width + tile.x] = TILE_FLOOR;
+        const spr = m.gates.get(`${tile.x},${tile.y}`);
+        if (spr && spriteLib.hasSingle('gate_open')) spr.texture = spriteLib.single('gate_open');
+      }
+      world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+      minimap.markDirty();
+      world.dmgText.show(d.x + 0.5, d.y - 0.4, `GATE ${ROMAN[d.key - 1] ?? d.key} OPENS`, 'crit');
+      world.ambience.burst(d.x + 0.5, d.y + 0.5, 0xd8b060, 16);
+      audio.sfx('chest');
+      eventBus.emit('inventory:changed', {});
+    };
+    const tickMines = (): void => {
+      const m = world.mines;
+      if (!m) return;
+      for (const seat of liveSeats()) {
+        const hero = seat.player;
+        if (hero.hp <= 0) continue;
+        for (const d of m.doors) {
+          if (d.open) continue;
+          if (!d.tiles.some((tile) => Math.hypot(hero.pos.x - (tile.x + 0.5), hero.pos.y - (tile.y + 0.5)) <= 1.6)) continue;
+          const ki = hero.backpack.indexOf(`quarry_key_${d.key}`);
+          if (ki < 0) {
+            if (seat.slot === localSlot && state.tick % 120 === 0) world.dmgText.show(d.x + 0.5, d.y - 0.4, `LOCKED · KEY ${ROMAN[d.key - 1] ?? d.key} LIES ELSEWHERE`, 'miss');
+            continue;
+          }
+          hero.backpack.splice(ki, 1);
+          openGate(d);
+        }
+      }
+      // THE KEEPER FALLS: the way home rises in the hall.
+      if (world.boss && world.boss.hp <= 0 && !world.arenaCleared) {
+        world.arenaCleared = true;
+        world.victoryPortal = { x: m.boss.x, y: m.boss.y };
+        spawnTeleporterAt(m.boss.x, m.boss.y);
+        victoryPortalArmed = true;
+        world.dmgText.show(m.boss.x + 0.5, m.boss.y - 0.6, 'THE QUARRY IS QUIET · THE WAY HOME OPENS', 'crit');
+        minimap.markDirty();
+      }
+    };
     const spawnTeleporterAt = (tx: number, ty: number): void => {
       const s = worldToScreen(tx + 0.5, ty + 0.5, vec2());
       const mk = (single: string, scaleX: number, scaleY: number, tint: number, additive: boolean, layer: 'ground' | 'ambience'): Sprite => {
@@ -1517,10 +1595,12 @@ async function boot(): Promise<void> {
     /** Health changed: the corner plate is the sole readout (it.66). */
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
-      if (depthLabel) depthLabel.textContent = floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`;
-      setZoneLabel(floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`);
+      // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
+      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : null;
+      if (depthLabel) depthLabel.textContent = place ?? (floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`);
+      setZoneLabel(place ?? (floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`));
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
-      if (floor > 0) stats.noteDepth(floor);
+      if (floor > 0 && floor <= MAX_DEPTH) stats.noteDepth(floor);
     };
     updateOrb();
     updateDepth();
@@ -1567,21 +1647,28 @@ async function boot(): Promise<void> {
       const isArena = mode === 'arena';
       const isHub = mode === 'hub';
       const isColiseum = mode === 'coliseum';
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isForest = mode === 'forest';
+      const isMines = mode === 'mines';
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
-      const layout = isHub ? buildTownLayout() : null;
-      const memory: FloorMemory | undefined = isHub || isColiseum ? undefined : floors[memKey(floorNum, isArena)];
+      // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
+      const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
+      const minesLevel = Math.max(4, Math.min(MAX_DEPTH, deepestFloor + 2));
+      const floorLevel = isForest ? forestLevel : isMines ? minesLevel : floorNum;
+      const forest = isForest ? buildForestLayout(seed) : null;
+      const layout = isHub ? buildTownLayout() : forest ? forest.layout : null;
+      const memory: FloorMemory | undefined = isHub || isColiseum || isForest ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
       // BOSS ARENAS (it.28): boss floors funnel into a dedicated sealed hall —
       // one vast open room, ringed by candelabra fire, no internal clutter.
-      const dungeon = layout ? layout.map : isColiseum ? generateColiseumMap(seed) : isArena ? generateArenaMap(30, 22, seed) : generateDungeon(MAP_W, MAP_H, seed);
+      const dungeon = layout ? layout.map : isColiseum ? generateColiseumMap(seed) : isArena ? generateArenaMap(30, 22, seed) : isMines ? generateDungeon(MINES_W, MINES_H, seed, { pillars: true, minRoom: 5 }) : generateDungeon(MAP_W, MAP_H, seed);
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub || isColiseum) {
-        hearths = []; // The town and the coliseum light themselves.
+      if (isHub || isColiseum || isForest) {
+        hearths = []; // The town, the coliseum and the forest light themselves.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
@@ -1604,6 +1691,21 @@ async function boot(): Promise<void> {
       } else {
         hearths = planHearths(dungeon);
       }
+      // THE QUARRY'S PLAN (it.85): gates on the way, keys in the side rooms, the hall at the end.
+      // Remembered gates stand open before the scene builds (walls and sight read the grid).
+      const minesPlan = isMines ? planMines(dungeon, seed) : null;
+      if (minesPlan) {
+        for (const d of minesPlan.doors) {
+          if (memory?.doorsOpened?.includes(d.key)) {
+            d.open = true;
+            for (const tile of d.tiles) {
+              dungeon.grid[tile.y * dungeon.width + tile.x] = TILE_FLOOR;
+              const gp = minesPlan.props.find((pr) => pr.kind === 'gate' && pr.x === tile.x && pr.y === tile.y);
+              if (gp) gp.variant = 'gate_open';
+            }
+          }
+        }
+      }
 
       const viewport = new Viewport(app);
       const camera = new Camera(app, viewport);
@@ -1614,14 +1716,16 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : undefined);
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : undefined);
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
       const theme = !spriteLib.loaded
         ? 'stone'
-        : isHub || isColiseum
+        : isHub || isColiseum || isForest
           ? 'town'
+        : isMines
+          ? 'stone'
         : floorNum <= 2
           ? 'stone'
           : floorNum <= 9
@@ -1635,7 +1739,7 @@ async function boot(): Promise<void> {
       } else if (isColiseum) {
         audio.setMusic('boss', 5); // The trial fights to the warden's drums (it.53).
       } else {
-        audio.setBgmDeep(floorNum >= 10); // The deep bands breathe a darker drone.
+        audio.setBgmDeep(isMines || (!isForest && floorNum >= 10)); // The deep bands (and the quarry) breathe a darker drone.
         // Boss arena music (it.28): the floor's intense track fades in the
         // moment the arena builds — and back to the dungeon BGM when we leave.
         audio.setBossMusic(isArena, floorNum);
@@ -1644,7 +1748,7 @@ async function boot(): Promise<void> {
       const ambience = new Ambience(viewport);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
-      const goldPiles = isHub || isColiseum ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      const goldPiles = isHub || isColiseum || isForest ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -1696,7 +1800,9 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
+            ? { at: isForest ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
+            : isMines
+              ? { hidden: true, at: { x: 1, y: 1 } } // The quarry has no stair (a wall tile no one can touch): the way home is the teleporter after the hall (it.85).
             : isArena
               ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
               : isColiseum
@@ -1706,9 +1812,17 @@ async function boot(): Promise<void> {
       }
 
       const loot = new LootSystem(viewport, seed);
-      loot.ilvl = ilvlForDepth(Math.max(1, floorNum)); // What this floor drops (it.78).
+      loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub && !isColiseum) chests.place(dungeon, [stairs]); // The arena floors stay clean.
+      if (!isArena && !isHub && !isColiseum && !isForest) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
+      if (minesPlan) {
+        for (const k of minesPlan.keys) {
+          if (memory?.keysTaken?.includes(k.key)) continue;
+          loot.spawnId(`quarry_key_${k.key}`, k.x + 0.5, k.y + 0.5);
+          k.uid = loot.findNearest(k.x + 0.5, k.y + 0.5, 0.4)?.uid ?? -1;
+        }
+      }
       if (memory) chests.applyMemory(memory.openedChests);
       const pathfinder = new Pathfinder(dungeon.width, dungeon.height, scene.isWalkable);
       // Attack/approach range follows the wielded weapon (reach or fire range).
@@ -1918,7 +2032,12 @@ async function boot(): Promise<void> {
           if (affixRoll < 0.15) guardBody.setAffix(AFFIXES[Math.floor((affixRoll / 0.15) * 3) % 3]); // Elite honor guard (it.53).
         }
       } else {
-        spawnFloorEnemies(dungeon, enemies, floorNum, stairs, seed, killed);
+        spawnFloorEnemies(dungeon, enemies, floorLevel, stairs, seed, killed, isForest ? FOREST_POOL : isMines ? MINES_POOL : undefined);
+        // THE QUARRY'S KEEPER (it.85): the hydra in the deepest hall, until it falls.
+        if (minesPlan && !memory?.arenaCleared) {
+          boss = enemies.spawn('hydra', minesPlan.boss.x + 0.5, minesPlan.boss.y + 0.5, minesLevel + 3);
+          boss.setAffix('vampiric'); // The keeper drinks what it bites.
+        }
       }
       // A remembered-cleared arena (it.58): no stair — the teleporter rises on the first tick.
       // RITUAL CIRCLES (it.48): the wardens' sigil marks BOSS floors only —
@@ -1940,14 +2059,20 @@ async function boot(): Promise<void> {
         coliseumState = { waves: 5, wave: 0, phase: 'intermission', timer: 5 * 60, alive: 0, pads: cmap.pads, center: cmap.center, exit: null, startActive: 0, update: dressing.update, destroy: dressing.destroy };
       }
       let townState: World['town'] = null;
+      // THE QUARRY'S DRESSING (it.85): pit props, torches and the iron gates, drawn by the town's dresser.
+      const minesDressing = minesPlan ? placeTownProps(bareLayout(dungeon as TownMap, minesPlan.props, 'THE QUARRY MINES'), viewport, lighting, ambience) : null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
-        const villagers = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist);
+        const villagers = isForest
+          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null) // The forest keeps no folk (it.85).
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist);
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
-        const villagers2 = new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff });
+        const villagers2 = isForest
+          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff });
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
-        const audit = auditTownLayout(layout);
+        const audit = isHub ? auditTownLayout(layout) : { unreachable: [], missing: [] };
         if (audit.unreachable.length || audit.missing.length) {
           console.warn('[town] layout audit:', audit.unreachable.length, 'unreachable tiles', audit.unreachable.slice(0, 12), 'missing:', audit.missing);
         }
@@ -2080,6 +2205,16 @@ async function boot(): Promise<void> {
       lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
       if (memory?.explored) lighting.unpackExplored(base64ToBytes(memory.explored));
       minimap.setWorld(dungeon, lighting, stairs);
+      // THE MARKS (it.85): keys, gates, the keeper and the way home — each only once its tile is explored.
+      minimap.setMarkers(() => {
+        if (!minesPlan) return [];
+        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' }> = [];
+        for (const k of minesPlan.keys) if (k.uid >= 0 && loot.getItem(k.uid)) out.push({ x: k.x, y: k.y, kind: 'key' });
+        for (const d of minesPlan.doors) out.push({ x: d.x, y: d.y, kind: d.open ? 'door-open' : 'door' });
+        if (boss && boss.hp > 0) out.push({ x: Math.floor(boss.pos.x), y: Math.floor(boss.pos.y), kind: 'boss' });
+        if (world.victoryPortal) out.push({ x: world.victoryPortal.x, y: world.victoryPortal.y, kind: 'portal' });
+        return out;
+      });
       const unsubscribe = eventBus.on('player:tileChanged', ({ gx, gy, playerId }) => {
         if (playerId !== localSlot) return; // The fog is the LOCAL hero's eyes (it.59).
         lighting.updateVisibility(gx, gy);
@@ -2127,6 +2262,7 @@ async function boot(): Promise<void> {
         idBase,
         coliseum: coliseumState,
         victoryPortal: null,
+        mines: minesPlan ? { ...minesPlan, gates: minesDressing?.gates ?? new Map(), level: minesLevel, dressing: minesDressing! } : null,
       };
     };
 
@@ -2134,6 +2270,7 @@ async function boot(): Promise<void> {
       w.unsubscribe();
       w.town?.villagers.destroy();
       w.town?.villagers2.destroy();
+      w.mines?.dressing.destroy();
       w.town?.campHeroes.destroy();
       w.town?.destroyDressing();
       w.coliseum?.destroy();
@@ -2151,8 +2288,8 @@ async function boot(): Promise<void> {
       w.viewport.destroy();
     };
 
-    await preloadFloor(floor, floor === 0 ? 'hub' : 'normal');
-    let world = buildWorld(floor, floor === 0 ? 'hub' : (coop?.snapshot?.arena || loaded?.arena) && isBossFloor(floor) ? 'arena' : 'normal');
+    await preloadFloor(floor, modeFor(floor));
+    let world = buildWorld(floor, (coop?.snapshot?.arena || loaded?.arena) && isBossFloor(floor) ? 'arena' : modeFor(floor));
     // A rotation re-biases the camera for its new box, and a slipping frame
     // rate thins the embers — both per run, because the world is per run.
     subsOnLayout.push(layout.onReflow((s) => world.camera.setLayoutZoom(s.stageZoom)));
@@ -2171,7 +2308,10 @@ async function boot(): Promise<void> {
         takenGold,
         killedSpawns: [...world.killed],
         explored: bytesToBase64(world.lighting.packExplored()),
-        arenaCleared: world.isArena ? world.arenaCleared : (floors[key]?.arenaCleared ?? false),
+        arenaCleared: world.isArena || world.mines ? world.arenaCleared : (floors[key]?.arenaCleared ?? false),
+        // THE QUARRY (it.85): which gates stand open, which keys are taken.
+        doorsOpened: world.mines ? world.mines.doors.filter((d) => d.open).map((d) => d.key) : floors[key]?.doorsOpened,
+        keysTaken: world.mines ? world.mines.keys.filter((k) => k.uid < 0 || !world.loot.getItem(k.uid)).map((k) => k.key) : floors[key]?.keysTaken,
       };
     };
 
@@ -2332,7 +2472,7 @@ async function boot(): Promise<void> {
         const r = portalReturn;
         if (!r) return;
         portalReturn = null;
-        const mode: FloorMode = r.arena ? 'arena' : 'normal';
+        const mode: FloorMode = r.arena ? 'arena' : modeFor(r.floor);
         await preloadFloor(r.floor, mode);
         if (!swapWorld(() => buildWorld(r.floor, mode))) return;
         floor = r.floor;
@@ -2755,7 +2895,7 @@ async function boot(): Promise<void> {
       overlay?.classList.add('show');
     };
     const levelSelect = new LevelSelectUI((target) => inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'floor', n: target }));
-    levelSelect.unlock(Math.max(floor, deepestFloor));
+    levelSelect.unlock(Math.min(MAX_DEPTH, Math.max(floor, deepestFloor)));
     // DEEP SAVE (it.48): the hero stands exactly where the save was written.
     if (loaded?.pos && floor > 0 && !world.town) {
       const p = loaded.pos;
@@ -3347,6 +3487,24 @@ async function boot(): Promise<void> {
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
         enterTown(false);
       }, 'back to town');
+    /** THE ROAD EAST (it.85): out of the ward into the dark forest, and down into the quarry. */
+    const goPlace = (dest: number, label: string): void =>
+      withFade(async () => {
+        const mode = modeFor(dest);
+        await preloadFloor(dest, mode);
+        if (!world.town) captureFloor();
+        if (!swapWorld(() => buildWorld(dest, mode))) return;
+        floor = dest;
+        updateDepth();
+        floorStartTick = state.tick;
+        floorActiveTicks = 0;
+        player.action = 'idle';
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        updateOrb();
+      }, label);
+    const goForest = (): void => goPlace(FOREST_FLOOR, 'east, into the dark forest');
+    const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
 
     // ---- PARTY HUD + WAITING VEIL (it.59) --------------------------------
     const partyHud = document.createElement('div');
@@ -3536,6 +3694,7 @@ async function boot(): Promise<void> {
         for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
         town.apply(commands); // Buy / sell / stash (it.39).
         crafting.apply(commands); // The camp forge (it.78).
+        if (world.mines) tickMines(); // THE IRON GATES (it.85): a key at a gate opens it.
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
@@ -3610,9 +3769,9 @@ async function boot(): Promise<void> {
         }
         if (world.coliseum) updateColiseum();
         // A remembered-cleared arena (it.58): the teleporter stands from the first tick.
-        if (world.isArena && world.arenaCleared && !world.victoryPortal && !transitioning) {
+        if ((world.isArena || world.mines) && world.arenaCleared && !world.victoryPortal && !transitioning) {
           const room = world.dungeon.rooms[0];
-          world.victoryPortal = { x: room.x + Math.floor(room.w / 2), y: room.y + Math.floor(room.h / 2) };
+          world.victoryPortal = world.mines ? { x: world.mines.boss.x, y: world.mines.boss.y } : { x: room.x + Math.floor(room.w / 2), y: room.y + Math.floor(room.h / 2) };
           spawnTeleporterAt(world.victoryPortal.x, world.victoryPortal.y);
           victoryPortalArmed = true;
         }
@@ -3623,7 +3782,11 @@ async function boot(): Promise<void> {
           if (d > 1.6) victoryPortalArmed = true;
           else if (d < 0.9 && victoryPortalArmed && !victoryModal.classList.contains('open')) {
             victoryPortalArmed = false;
-            if (floor >= MAX_DEPTH) {
+            if (world.mines) {
+              // THE WAY HOME (it.85): the quarry's teleporter goes back to town.
+              if (localSlot === leaderSlot) goHome();
+              else leaderOnlyNote();
+            } else if (floor >= MAX_DEPTH) {
               if (localSlot === leaderSlot) {
                 victoryModal.classList.add('open');
                 audio.sfx('portal');
@@ -4122,7 +4285,15 @@ async function boot(): Promise<void> {
       else if (it.kind === 'alchemist') shopUI.open('alchemist');
       else if (it.kind === 'jeweler' || it.kind === 'scribe' || it.kind === 'bowyer') shopUI.open(it.kind);
       else if (it.kind === 'notice') noticeUI.open();
-      else if (it.kind === 'gateway') tutorial.say(it.note ?? 'The way is not open yet.');
+      else if (it.kind === 'gateway') {
+        if (it.dest === 'forest') {
+          if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+          else goForest();
+        } else tutorial.say(it.note ?? 'The way is not open yet.');
+      } else if (it.kind === 'quarry') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else goMines();
+      } else if (it.kind === 'townroad') inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
       else if (it.kind === 'forge') craftUI.open();
@@ -4464,19 +4635,19 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = Math.max(0, Math.min(target, MAX_DEPTH));
-        const mode: FloorMode = dest === 0 ? 'hub' : arena && isBossFloor(dest) ? 'arena' : 'normal';
+        const dest = target === FOREST_FLOOR || target === MINES_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+        const mode: FloorMode = arena && isBossFloor(dest) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         if (!world.town) captureFloor();
         if (!swapWorld(() => buildWorld(dest, mode))) return;
         floor = dest;
-        deepestFloor = Math.max(deepestFloor, floor);
+        if (floor <= MAX_DEPTH) deepestFloor = Math.max(deepestFloor, floor);
         if (mode === 'hub') enterTown(false);
         updateDepth();
         floorStartTick = state.tick;
         floorActiveTicks = 0;
         player.action = 'idle';
-        levelSelect.unlock(floor);
+        if (floor <= MAX_DEPTH) levelSelect.unlock(floor);
         updateOrb();
       };
       Object.defineProperty(window, '__game', {
@@ -4591,6 +4762,12 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
     for (const k of BOSS_LADDER) for (const a of animsForKind(k)) all.add(a); // Boss waves (it.54).
     return [...all];
   }
+  // THE FOREST AND THE QUARRY (it.85): their own packs, the town's torches and braziers, the hydra.
+  if (mode === 'forest' || mode === 'mines') {
+    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', ...VFX_ANIMS]);
+    for (const k of mode === 'forest' ? FOREST_POOL : [...MINES_POOL, 'hydra' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
+    return [...out];
+  }
   const kinds = new Set<EnemyKind>(kindPoolFor(floor));
   kinds.add('fallen'); // Hollow King summons; cheap (shares the knight sheets).
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);
@@ -4702,9 +4879,11 @@ function spawnFloorEnemies(
   seed: number,
   /** Roster indexes already killed (FloorMemory) — rolled but not spawned. */
   skip: ReadonlySet<number> = new Set(),
+  /** THE FOREST AND THE QUARRY (it.85): their own packs. */
+  poolOverride?: EnemyKind[],
 ): void {
   const rand = mulberry32(seed ^ 0x5e5e5e5e);
-  const kindPool = kindPoolFor(floor);
+  const kindPool = poolOverride ?? kindPoolFor(floor);
   const bossFloor = isBossFloor(floor);
   const perRoom = bossFloor ? Math.max(1, Math.min(floor, 3) - 1) : Math.min(1 + floor, 4);
   let spawnIndex = 0;

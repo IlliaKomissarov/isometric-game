@@ -47,6 +47,10 @@ export class InventorySystem {
     const id = this.player.backpack[index];
     const def = id ? itemDef(id) : undefined;
     if (!def || def.slot !== 'consumable' || !def.use) return false;
+    if (def.use.key) {
+      this.hooks.refuse?.('carry it to the iron gate');
+      return false;
+    }
     if (def.use.portal) {
       if (!this.hooks.portal()) return false; // Not castable here (already in town).
     }

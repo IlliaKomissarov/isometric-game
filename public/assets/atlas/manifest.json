@@ -5057,6 +5057,24 @@
    "w": 72,
    "h": 28,
    "nearest": false
+  },
+  "wicon_key1": {
+   "file": "single_wicon_key1.png",
+   "w": 64,
+   "h": 64,
+   "nearest": false
+  },
+  "wicon_key2": {
+   "file": "single_wicon_key2.png",
+   "w": 64,
+   "h": 64,
+   "nearest": false
+  },
+  "wicon_key3": {
+   "file": "single_wicon_key3.png",
+   "w": 64,
+   "h": 64,
+   "nearest": false
   }
  }
 }

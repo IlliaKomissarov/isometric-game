@@ -16,11 +16,13 @@ export interface VisualSettings {
   haptics: boolean;
   /** The colour grade (it.74): a touch of contrast and desaturation over the crypt. */
   grade: boolean;
+  /** THE RETRO CRT (it.85): scanlines, curvature and a phosphor glow over the crypt. */
+  crt: boolean;
 }
 
 const KEY = 'iso-arpg-visuals';
 
-export const visuals: VisualSettings = { shake: true, gore: true, flash: true, particles: true, haptics: true, grade: true };
+export const visuals: VisualSettings = { shake: true, gore: true, flash: true, particles: true, haptics: true, grade: true, crt: false };
 
 try {
   const raw = localStorage.getItem(KEY);

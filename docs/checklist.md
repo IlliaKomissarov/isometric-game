@@ -691,6 +691,17 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The zone chip under the chart, every tier
 - [x] Device matrix; playthrough; clean build
 
+## Iteration 85 - The forest, the quarry, the gates (2026-09-06)
+
+- [x] Opening zoom 1.5
+- [x] Retro CRT pass, toggled in SETTINGS · VISUALS
+- [x] Town streets cleared of clutter; lights on the verges; the harness audits it
+- [x] The dark forest east of the ward; road to town; quarry mouth
+- [x] The quarry mines: one floor ~4.7 crypts long, fog of war, three iron gates and their keys
+- [x] Minimap marks for keys, gates, the keeper and the way home - only after the fog lifts
+- [x] The keeper (Crimson Hydra) and the teleporter home
+- [x] Memory of gates and keys; device matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

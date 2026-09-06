@@ -47,7 +47,7 @@ export interface ItemDef {
   /** Merchant price in gold (derived from level/rarity when omitted). */
   value?: number;
   /** Consumables (it.39; draughts it.80): what using it does. Fractions of max; buffs in ticks; a recipe key. */
-  use?: { heal?: number; resource?: number; portal?: boolean; haste?: number; stone?: number; might?: number; recipe?: string };
+  use?: { heal?: number; resource?: number; portal?: boolean; haste?: number; stone?: number; might?: number; recipe?: string; /** THE QUARRY KEYS (it.85): opens the iron gate with this number. */ key?: number };
   /** Weapon damage roll range (classic-ARPG-style min–max, replaces bare fists). */
   minDamage?: number;
   maxDamage?: number;
@@ -197,6 +197,10 @@ export const ITEMS: Record<string, ItemDef> = {
   iron_katana: { id: 'iron_katana', name: 'Iron Katana', slot: 'mainHand', rarity: 'uncommon', weaponKind: 'katana', minDamage: 5, maxDamage: 9, color: 0xb0b8c8, icon: 'raven1508', desc: 'Fast steel with an 18% crit — the katana’s pace.' },
   falcon_edge: { id: 'falcon_edge', name: 'Falcon Edge', slot: 'mainHand', rarity: 'rare', weaponKind: 'katana', minDamage: 7, maxDamage: 12, color: 0xd8cfa0, icon: 'raven1510', desc: 'Light as a wing, and as quick.' },
   // --- Consumables (it.39): the belt's staples ------------------------------------
+  // THE QUARRY KEYS (it.85): each opens one iron gate in the mines. Carried, never drunk.
+  quarry_key_1: { id: 'quarry_key_1', name: 'Quarry Key I', slot: 'consumable', rarity: 'rare', icon: 'key1', value: 0, use: { key: 1 }, color: 0xc8803a, desc: 'Iron, pitted, warm from a dead miner’s hand. It opens the FIRST gate of the quarry. Walk up to the gate with it.' },
+  quarry_key_2: { id: 'quarry_key_2', name: 'Quarry Key II', slot: 'consumable', rarity: 'rare', icon: 'key2', value: 0, use: { key: 2 }, color: 0xc8d0d8, desc: 'Steel, cut for a heavier lock. It opens the SECOND gate of the quarry. Walk up to the gate with it.' },
+  quarry_key_3: { id: 'quarry_key_3', name: 'Quarry Key III', slot: 'consumable', rarity: 'rare', icon: 'key3', value: 0, use: { key: 3 }, color: 0xffd070, desc: 'Gilded, the foreman’s. It opens the LAST gate before the deep hall. Walk up to the gate with it.' },
   health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', icon: 'raven266', value: 30, use: { heal: 0.5 }, color: 0xc83030, desc: 'Half your life back, on a five-second cooldown shared with every healing draught.' },
   mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', icon: 'raven69', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8, desc: 'Six tenths of your mana or stamina, on a two-second cooldown.' },
   scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'uncommon', icon: 'raven309', value: 80, use: { portal: true }, color: 0xd8c890, desc: 'A rift home and back. The rite on T is free; the scroll is for collectors.' },

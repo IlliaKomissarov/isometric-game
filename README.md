@@ -59,9 +59,14 @@
   enchantments learned from scrolls. A camp forge to salvage, forge, transmute, refine,
   enchant and reinforce to +15, with a recipe book. An assignable draught belt with cooldowns.
   A town of two districts - the old quarter and the Market Ward, with its jeweler, scribe and
-  bowyer, the guildhall's bounty board, and the eastern road into THE DARK FOREST, where the
-  QUARRY MINES go down: one long floor under fog of war, three iron gates whose keys lie in
-  side rooms, the keeper at the end, and a teleporter home. A retro CRT switch in the settings.
+  bowyer, the guildhall's bounty board, and the eastern road, shut until the gatekeeper hands
+  you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
+  and the road opens for good, a hundred gold in hand, the woods a safe road with folk in the
+  clearings. Trees ghost to a whisper for anything behind them. At the far end the QUARRY MINES
+  go down: one long floor under fog of war, three iron gates whose keys lie in side rooms and
+  shine through any wall once seen (a key rises spinning in a halo when taken), a seal in the
+  deepest hall that opens the keeper's arena, and a teleporter home. NPC dialogue with a
+  portrait, choices and a reward banner. A retro CRT switch in the settings.
   Merchants with a buyback counter and a restock clock. THE JOURNAL (H, the book on the bar,
   the pause sheet, a button in every window) with a catalogue of every base in every tier,
   every recipe, every crafting rule with a worked example, a craft log and every status and
@@ -69,6 +74,18 @@
   above a foe's head while the status runs. Filters and sorting on every list, coloured
   borders on every special piece.
   A warden every fifth depth, with phases.
+- **Five measures of the dark.** Chosen with the delver and kept by the save: TOURIST (blows
+  barely scratch you; common foes fall in one hit, champions in two, wardens in four), EASY
+  (foes at 70 % damage and 80 % life), MEDIUM (the tables as printed), HARD (150 % blows, 140 %
+  life, foes that see further, run faster and swing sooner) and HARDCORE (hard's numbers with
+  one life: death wipes the slot, the stash with it, no reload). One table in
+  `src/core/Difficulty.ts`, read by the combat resolver, the spawner and the AI, printed in the
+  journal. Every rising grants a five-second spawn ward: nothing lands until it fades.
+- **A crypt that sounds like one.** Zone music for the town, the crypt, the forest, the quarry,
+  the arenas, the death sheet and the one-life end, rotating through four playlists; an ambience
+  bed under each zone; one-at-a-time stingers (a piano in the dark, a barrel rolling in the pit);
+  recorded takes with pitch jitter for every blow, spell, gate, key and page, capped at four
+  voices a bank so a pack of ten never stacks ten hits.
 - **Four-player co-op with no server.** WebRTC data channels brokered by PeerJS. Deterministic
   lockstep carries only intent; the Party Leader is the authority for every creature, hero and
   fallen item, ten times a second, so screens never drift apart. Room codes, a lobby with

@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 73-91 checks) | 0 failures | 10 sessions, seeds 1-10, all classes: 0 failures after fixes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 244 checks at it.89) | 0 failures | 244/244 on seed 42 (warrior, deep); 10 earlier sessions, seeds 1-10, all classes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -51,6 +51,9 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `ui/TouchControls` / `SystemBar` / `StatusFrame` / `Minimap` | layout, queue, player | commands, HUD | act on pointerup for windows |
 | `core/PerformanceScaler` | rAF timing | buffer resolution, `quality`, particle budget, colour grade gate | hysteresis, 2 s cooldown |
 | `persist/SaveGame` | player, floors, stash, stats | slots 1–3, co-op slots 11–14 | versioned schema |
+| `core/Difficulty` (it.89) | the class screen's pick, the save, the party's start | `Combat.dealDamage` (blows on heroes, tourist hits-to-kill), `Enemy` (life, sight, pace, cadence), the journal | one table; part of the run, never read from a clock or the DOM |
+| `ui/Dialogue` + the quest ledger (it.87) | `Villagers` (the gatekeeper), `quests` in the save | choices as promises; the forest errand's states | the sim counts the forest's foes; the panel only speaks |
+| `engine/AudioManager` (it.89) | `MusicState` from main, the SFX calls, the bundle under `public/assets/audio` | one music bed and one ambience bed per zone, capped SFX voices | render-side only; `claimVoice` caps 4 a bank, 24 total |
 
 ## 3. Audit log and refactoring summary (iteration 74)
 
@@ -254,7 +257,7 @@ lost while a joiner built its world (it.73).
 | 0.2 | Snapshot completeness | summons and projectiles in flight in the snapshot; Coliseum wave state; a periodic state hash with an automatic resync on mismatch |
 | 0.2 | HUD placement presets | player-chosen corner layout for the plate, chart and bar on PC and mobile |
 | 0.3 | Content | depths 21+, two new wardens, set items, a second town district |
-| 0.3 | Audio | per-floor ambience beds, positional SFX pan by screen position |
+| 0.3 | Audio | positional SFX pan by screen position (per-zone beds shipped in it.89) |
 | 0.4 | Rendering | a dedicated glow layer for additive light without touching text; light-source shadows on walls |
 | 0.4 | Tooling | automated device-matrix run in CI (headless Chrome), bundle-size budget check |
 | 1.0 | Release | account-less cloud saves via shareable codes, spectator seats, replay files from the command stream |

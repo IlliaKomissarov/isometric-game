@@ -106,6 +106,14 @@ export type TownPropKind =
   | 'townroad'
   | 'gatekeeper';
 
+/**
+ * SMALL CLUTTER (it.88): decoration that stands in no one's way. A jar, a
+ * pot, a box, a bin, a wood pile, a grass clump, a sign on a wall - drawn,
+ * never a blocked tile. Every placer (the town, the forest, the quarry)
+ * asks this before it claims a tile.
+ */
+export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile']);
+
 export interface TownProp {
   kind: TownPropKind;
   /** Top-left tile of the footprint (or the tile itself for 1×1 props). */
@@ -286,6 +294,7 @@ export function buildTownLayout(): TownLayout {
   const houses: TownLayout['houses'] = [];
   const block = (p: TownProp): void => {
     props.push(p);
+    if (CLUTTER_KINDS.has(p.kind)) return; // Small clutter never blocks (it.88).
     const w = p.w ?? 1;
     const h = p.h ?? 1;
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;
@@ -478,6 +487,10 @@ export function buildTownLayout(): TownLayout {
     const w = p.w ?? 1;
     const h = p.h ?? 1;
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (!inside(x, y) || grid[idx(x, y)] !== TILE_FLOOR || (kind === KIND_GRASS && tileKind[idx(x, y)] !== KIND_GRASS) || belt[idx(x, y)] || road[idx(x, y)]) return false;
+    if (CLUTTER_KINDS.has(p.kind)) {
+      props.push(p); // Drawn on its tile, the tile stays open (it.88).
+      return true;
+    }
     block(p);
     const seen0 = wardReach();
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) grid[idx(x, y)] = TILE_FLOOR;

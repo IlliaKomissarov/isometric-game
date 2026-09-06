@@ -22,7 +22,7 @@
  * Pure and seeded: every peer, and a reload, builds the same quarry.
  */
 
-import type { TownProp } from '@/town/TownMap';
+import { CLUTTER_KINDS, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { TILE_BLOCKED, TILE_DOOR, TILE_FLOOR, type DungeonMap, type Room } from './DungeonGenerator';
 
@@ -252,6 +252,11 @@ export function planMines(map: DungeonMap, seed: number): MinesPlan {
     // Never beside a gate or in a corridor: rooms only.
     if (isCorridor(p.x, p.y)) return;
     if (doors.some((d) => Math.abs(d.x - p.x) + Math.abs(d.y - p.y) <= 2)) return;
+    if (CLUTTER_KINDS.has(p.kind)) {
+      props.push(p); // Small clutter is drawn on an open tile (it.88).
+      reserved.add(i);
+      return;
+    }
     grid[i] = TILE_BLOCKED;
     if (!reaches()) {
       grid[i] = TILE_FLOOR;

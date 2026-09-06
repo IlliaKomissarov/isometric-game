@@ -717,6 +717,16 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The gatekeeper in the open; the road's prompt names him; the 932x430 bar fold
 - [x] Phone-fit dialogue; matrix (74/74); playthrough; clean build
 
+## Iteration 88 - The key held high, the quarry arena, the keeper's face (2026-09-06)
+
+- [x] A key's own pickup: the rise, the halo, the sparks, the banner
+- [x] Trees ghost to 0.12 for any body behind them
+- [x] The quarry arena past the hall's seal; the way home; the remembered clear
+- [x] Small clutter never blocks a tile (town, forest, quarry)
+- [x] The keeper's portrait; plain words; the gold (100) on the page; the reward banner
+- [x] ENEMIES REMAINING · X / Y in the forest
+- [x] Matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

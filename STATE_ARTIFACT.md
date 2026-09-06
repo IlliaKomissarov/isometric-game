@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 87, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 88, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -208,6 +208,17 @@ Items examined and left as they are, with reasons:
 | A tree hid a foe or a partner | Medium (UX) | the cutaway fades for every visible body |
 | The gatekeeper stood behind a pine | Medium (UX) | moved into the gate yard; the road's prompt names him, his tile counts as the gate's |
 | The bar met the thumb cluster on a 932x430 phone (since it.86) | Low (layout) | four-across bar on touch landscapes under 480 px; matrix 74/74 |
+
+### Iteration 88 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| A key picked up like a coin | Low (feel) | `Ambience.playRise`: the key rises spinning in a halo; sparks, hold, note, banner |
+| A trunk at 0.38 still hid a wolf | Medium (UX) | trees ghost to 0.12 for any body behind them |
+| The quarry had no arena; the hydra stood in a hall | Feature | the hall's seal opens THE QUARRY ARENA (`buildWorld(102,'arena')`), the way home, the remembered clear |
+| Jars, pots, boxes and bins blocked tiles | Medium (UX) | `CLUTTER_KINDS` never block, in every placer |
+| A faceless keeper with long lines | Low (UX) | portrait from his own frame, plain words, the gold (100) on the page, `REWARD RECEIVED · 100 GOLD` |
+| No count of the forest's beasts | Low (UX) | `ENEMIES REMAINING · X / Y` under the plate |
 
 ## 4. Known issues and regression log
 

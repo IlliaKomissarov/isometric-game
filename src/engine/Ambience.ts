@@ -24,6 +24,17 @@ interface GlintPlay {
   clock: number;
 }
 
+/** A QUEST ITEM RISES (it.88): the icon lifts spinning in a gold halo and fades above the head. */
+interface RisePlay {
+  active: boolean;
+  icon: Sprite;
+  halo: Sprite;
+  clock: number;
+  x: number;
+  y: number;
+}
+const RISE_SECONDS = 1.5;
+
 /** Looping fog-gated frame animation pinned to a tile (gold piles). */
 interface LoopingAnim {
   sprite: Sprite;
@@ -109,6 +120,7 @@ export class Ambience {
   private readonly glows: Glow[] = [];
   private readonly bursts: BurstParticle[] = [];
   private readonly glints: GlintPlay[] = [];
+  private readonly rises: RisePlay[] = [];
   private readonly loops: LoopingAnim[] = [];
   private readonly fx: FxSprite[] = [];
   private glintFrames: Texture[] | null = null;
@@ -278,6 +290,39 @@ export class Ambience {
   /** Provide the glint VFX frames (Lords of Pain pack, set after load). */
   setGlintFrames(frames: Texture[]): void {
     this.glintFrames = frames;
+  }
+
+  /**
+   * A QUEST ITEM RISES (it.88): the key lifts out of the hero's hands,
+   * turning on its axis inside a gold halo, and fades out above the head.
+   * Render-only: nothing in the simulation reads it.
+   */
+  playRise(texture: Texture, wx: number, wy: number, tint = 0xffe8a0): void {
+    let r = this.rises.find((it) => !it.active);
+    if (!r) {
+      const halo = new Sprite(assets.get('glow'));
+      halo.anchor.set(0.5);
+      halo.blendMode = 'add';
+      halo.visible = false;
+      const icon = new Sprite(texture);
+      icon.anchor.set(0.5);
+      icon.visible = false;
+      this.viewport.ambienceLayer.addChild(halo);
+      this.viewport.ambienceLayer.addChild(icon);
+      r = { active: false, icon, halo, clock: 0, x: 0, y: 0 };
+      this.rises.push(r);
+    }
+    const s = worldToScreen(wx, wy, this.scratch);
+    r.icon.texture = texture;
+    r.halo.tint = tint;
+    r.x = s.x;
+    r.y = s.y;
+    r.clock = 0;
+    r.active = true;
+    r.icon.visible = true;
+    r.halo.visible = true;
+    r.icon.alpha = 1;
+    r.halo.alpha = 0.55;
   }
 
   /** Play a one-shot treasure glint at a world point (chest open, rare drop). */
@@ -463,6 +508,28 @@ export class Ambience {
         continue;
       }
       g.sprite.texture = this.glintFrames![frame];
+    }
+
+    // A rising quest item (it.88): up, a slow turn, a halo, then gone.
+    for (const r of this.rises) {
+      if (!r.active) continue;
+      r.clock += dt;
+      const t = r.clock / RISE_SECONDS;
+      if (t >= 1) {
+        r.active = false;
+        r.icon.visible = false;
+        r.halo.visible = false;
+        continue;
+      }
+      const ease = 1 - (1 - t) * (1 - t);
+      const y = r.y - 22 - ease * 54;
+      const size = 0.55 * (0.7 + 0.3 * Math.min(1, t * 4));
+      r.icon.position.set(r.x, y);
+      r.icon.scale.set(size * Math.cos(r.clock * 7.5), size);
+      r.icon.alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      r.halo.position.set(r.x, y);
+      r.halo.scale.set(1.1 + 0.25 * Math.sin(r.clock * 9));
+      r.halo.alpha = 0.55 * (1 - t);
     }
 
     // Looping tile-pinned animations (gold piles), fog-gated + scene-lit.

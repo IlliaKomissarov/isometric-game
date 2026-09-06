@@ -53,7 +53,7 @@ const DEVICES: Array<[string, number, number]> = [
 ];
 
 /** HUD furniture: the things that must stay in a corner. */
-const HUD_IDS = ['status-frame', 'hud-buffs', 'char-stats', 'depth-label', 'timer', 'minimap', 'boss-bar', 'zone-label'];
+const HUD_IDS = ['status-frame', 'hud-buffs', 'char-stats', 'depth-label', 'timer', 'quest-hud', 'minimap', 'boss-bar', 'zone-label'];
 
 const visible = (el: Element | null): el is HTMLElement => {
   if (!el || !el.getClientRects().length) return false;

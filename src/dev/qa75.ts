@@ -862,6 +862,11 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       const clutter = ['torch', 'lamp', 'barrel', 'crates', 'bench', 'cart', 'jar', 'box', 'table', 'trashbox', 'bigtree', 'pine', 'deadtree', 'tree', 'rock', 'column', 'banner', 'wood_pile', 'barrels_stacked', 'crates_wood'];
       const onRoad = L.props.filter((pr: { kind: string; x: number; y: number }) => clutter.includes(pr.kind) && L.road[pr.y * W + pr.x]);
       check('no clutter stands in a street', onRoad.length === 0, onRoad.map((pr: { kind: string; x: number; y: number }) => `${pr.kind}@${pr.x},${pr.y}`).join(' '));
+      // SMALL CLUTTER (it.88) never blocks a tile.
+      // (The town's grass clumps and pots are decals that may sit on a belt or a cliff tile; the placed clutter is what must stay open.)
+      const small = ['jar', 'box', 'trashbox', 'crates_wood', 'wood_pile'];
+      const blockers = L.props.filter((pr: { kind: string; x: number; y: number }) => small.includes(pr.kind) && !g.scene.isWalkable(pr.x, pr.y));
+      check('small clutter never blocks a tile in town', blockers.length === 0 && L.props.some((pr: { kind: string }) => small.includes(pr.kind)), blockers.map((pr: { kind: string; x: number; y: number }) => `${pr.kind}@${pr.x},${pr.y}`).join(' '));
       check('the eastern road leads to the forest', g.town.interactables.some((i: { kind: string; dest?: string }) => i.kind === 'gateway' && i.dest === 'forest'));
       // THE DARK FOREST.
       await g.travel(101);
@@ -870,11 +875,49 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await fadeClear();
       check('the forest stands east of the ward', g.floor === 101 && document.getElementById('zone-label')?.textContent === 'THE DARK FOREST');
       check('the forest has the road to town and the quarry mouth', g.town.interactables.some((i: { kind: string }) => i.kind === 'townroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'quarry'));
+      {
+        // A grass clump is a decal: a thicket may grow over its tile later. The placed clutter is what must stay open.
+        const small = ['jar', 'pots', 'box', 'trashbox', 'potions', 'crates_wood', 'wood_pile'];
+        const blocked = g.town.layout.props.filter((pr: { kind: string; x: number; y: number }) => small.includes(pr.kind) && !g.scene.isWalkable(pr.x, pr.y));
+        check('small clutter never blocks a tile in the forest', blocked.length === 0, blocked.map((pr: { kind: string; x: number; y: number }) => `${pr.kind}@${pr.x},${pr.y}`).join(' '));
+      }
       const forestKinds = new Set<string>();
       g.state.forEach((e: { constructor: { name: string }; hp: number; def?: { kind: string }; spawned?: boolean }) => {
         if (e.constructor.name === 'Enemy' && e.hp > 0 && e.spawned !== false && e.def) forestKinds.add(e.def.kind);
       });
       check('wolves and poachers hunt the forest', ['wolf', 'poacher', 'spider', 'orc'].some((k) => forestKinds.has(k)), [...forestKinds].join());
+      // ENEMIES REMAINING (it.88): the tally under the plate.
+      g.loop.callbacks.render(1);
+      const tally = document.getElementById('quest-hud');
+      check('the forest counts its beasts on the HUD', !!tally?.classList.contains('show') && /^ENEMIES REMAINING · \d+ \/ \d+$/.test(tally.textContent ?? ''), tally?.textContent ?? '');
+      // A TREE IS A GHOST (it.88): a foe parked behind a pine reads through it.
+      {
+        let picked: { o: { sprite: { alpha: number } }; bx: number; by: number; px: number; py: number } | null = null;
+        for (const o of g.town.occluders as Array<{ tree?: boolean; tiles: { x: number; y: number; w: number }; sprite: { alpha: number } }>) {
+          if (!o.tree || o.tiles.w > 1) continue;
+          const bx = o.tiles.x - 1, by = o.tiles.y - 1, px = o.tiles.x + 1, py = o.tiles.y + 1;
+          if (g.scene.isWalkable(bx, by) && g.scene.isWalkable(px, py)) {
+            picked = { o, bx, by, px, py };
+            break;
+          }
+        }
+        let foe: { pos: { x: number; y: number }; prevPos?: { x: number; y: number }; hp: number } | null = null;
+        g.enemies.forEachActive((e: { pos: { x: number; y: number }; hp: number }) => {
+          if (!foe && e.hp > 0) foe = e;
+        });
+        if (picked && foe) {
+          const f = foe as { pos: { x: number; y: number }; prevPos?: { x: number; y: number } };
+          f.pos.x = picked.bx + 0.5;
+          f.pos.y = picked.by + 0.5;
+          if (f.prevPos) { f.prevPos.x = f.pos.x; f.prevPos.y = f.pos.y; }
+          g.player.pos.x = picked.px + 0.5;
+          g.player.pos.y = picked.py + 0.5;
+          g.lighting.updateVisibility(picked.px, picked.py);
+          g.loop.step(1);
+          for (let i = 0; i < 40; i++) g.loop.callbacks.render(1);
+          check('a tree fades to a ghost for a foe behind it', picked.o.sprite.alpha < 0.16, picked.o.sprite.alpha.toFixed(2));
+        } else check('a tree fades to a ghost for a foe behind it', false, 'no tree with open tiles, or no foe');
+      }
       // THE QUARRY MINES.
       await g.travel(102);
       await until(() => game() && game().floor === 102, 12000);
@@ -886,7 +929,12 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the quarry has locked gates and their keys', !!m && m.doors.length >= 2 && m.keys.length === m.doors.length, `${m?.doors.length} gates, ${m?.keys.length} keys`);
       check('every gate is shut and solid', m.doors.every((d: { tiles: Array<{ x: number; y: number }> }) => d.tiles.every((t: { x: number; y: number }) => !g.scene.isWalkable(t.x, t.y))));
       check('every key lies on the floor', m.keys.every((k: { uid: number }) => !!g.loot.getItem(k.uid)));
-      check('the keeper waits in the deepest hall', !!g.boss && g.boss.def.kind === 'hydra' && g.boss.hp > 0);
+      {
+        const small = ['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'crates_wood', 'wood_pile'];
+        const blocked = m.props.filter((pr: { kind: string; x: number; y: number }) => small.includes(pr.kind) && !g.scene.isWalkable(pr.x, pr.y));
+        check('small clutter never blocks a tile in the quarry', blocked.length === 0 && m.props.some((pr: { kind: string }) => small.includes(pr.kind)), blocked.map((pr: { kind: string; x: number; y: number }) => `${pr.kind}@${pr.x},${pr.y}`).join(' '));
+      }
+      check('the keeper\'s seal burns in the deepest hall', !g.boss && !!g.arenaThreshold && !g.arenaCleared, JSON.stringify(g.arenaThreshold));
       const k1 = m.keys[0];
       const d1 = m.doors[0];
       check('a key is hidden by the fog until its room is explored', g.lighting.getState(k1.x, k1.y) === 0 && g.lighting.getState(d1.x, d1.y) === 0);
@@ -895,6 +943,16 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.lighting.updateVisibility(k1.x, k1.y + 1);
       g.loop.step(2);
       check('the fog lifts from the key once the hero arrives', g.lighting.getState(k1.x, k1.y) > 0);
+      // A KEY IS TAKEN (it.88): the rise, the banner, the note. (The tile south of a key is a wall as often as not: stand on the key.)
+      g.player.pos.x = k1.x + 0.5;
+      g.player.pos.y = k1.y + 0.5;
+      g.loop.step(2);
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(90);
+      const keyId = `quarry_key_${k1.key}`;
+      const rewardEl = document.getElementById('reward-note');
+      check('a taken key rises with its banner', g.player.backpack.includes(keyId) && !g.loot.getItem(k1.uid) && !!rewardEl?.classList.contains('show') && /QUEST ITEM · QUARRY KEY/i.test(rewardEl.textContent ?? ''), `${g.player.backpack.includes(keyId)} ${rewardEl?.textContent}`);
+      g.player.backpack.splice(g.player.backpack.indexOf(keyId), 1); // The gate test below hands the key out itself.
       // A gate without the key stays shut; with the key it opens, every bar of it.
       const t0 = d1.tiles[0];
       const beside = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dy]) => ({ x: t0.x + dx, y: t0.y + dy })).find((q) => g.scene.isWalkable(q.x, q.y))!;
@@ -906,25 +964,58 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.player.addItem(`quarry_key_${d1.key}`);
       g.loop.step(4);
       check('the key opens every bar of its gate and is spent', d1.open && d1.tiles.every((t: { x: number; y: number }) => g.scene.isWalkable(t.x, t.y)) && !g.player.backpack.includes(`quarry_key_${d1.key}`));
-      // The keeper falls: the way home rises where it stood.
-      g.player.pos.x = m.boss.x + 0.5;
-      g.player.pos.y = m.boss.y + 2.5;
-      g.lighting.updateVisibility(m.boss.x, m.boss.y + 2);
-      g.boss.hp = 0;
+      // THE QUARRY ARENA (it.88): a step onto the hall's seal seals the hero in with the keeper.
+      const sealT = g.arenaThreshold;
+      const sealX = sealT.x + Math.floor(sealT.w / 2);
+      const sealY = sealT.y + Math.floor(sealT.h / 2);
+      g.player.pos.x = sealX + 0.5;
+      g.player.pos.y = sealY + 0.5;
+      g.lighting.updateVisibility(sealX, sealY);
       g.loop.step(5);
+      await until(() => game() && game().isArena, 12000);
+      g = game();
+      await fadeClear();
+      check('the seal opens the quarry arena', g.floor === 102 && g.isArena && !!g.boss && g.boss.def.kind === 'hydra' && g.boss.hp > 0, `${g.floor} ${g.isArena} ${g.boss?.def?.kind}`);
+      check('the quarry arena fights at the quarry\'s level', !!g.boss && g.boss.level <= (g.mines?.level ?? 30) + 3 && g.loot.ilvl < 80, `${g.boss?.level} ilvl ${g.loot.ilvl}`);
+      // Every combatant falls: the way home rises at the arena's heart.
+      const ids: number[] = [];
+      g.enemies.forEachActive((e: { id: number; hp: number }) => {
+        if (e.hp > 0 && e !== g.boss) ids.push(e.id);
+      });
+      for (const id of ids) g.combat.dealDamage({ sourceId: g.player.id, targetId: id, amount: 999999 });
+      g.loop.step(5);
+      for (let i = 0; i < 4; i++) {
+        const w = game();
+        if (!w.boss || (w.boss.hp <= 0 && w.boss.action !== 'transition')) break;
+        if (w.boss.hp > 0) w.combat.dealDamage({ sourceId: w.player.id, targetId: w.boss.id, amount: 999999 });
+        w.loop.step(140);
+      }
+      g.loop.step(520);
       const after = game(); // The handle is a snapshot: read the world again.
-      check("the keeper's fall opens the way home", after.arenaCleared && !!after.victoryPortal && after.victoryPortal.x === m.boss.x && after.victoryPortal.y === m.boss.y, JSON.stringify(after.victoryPortal));
-      g.player.pos.x = m.boss.x + 3;
-      g.player.pos.y = m.boss.y + 0.5;
+      check("the keeper's fall raises the way home", after.arenaCleared && !!after.victoryPortal, JSON.stringify(after.victoryPortal));
+      const vp = after.victoryPortal;
+      g.player.pos.x = vp.x + 3;
+      g.player.pos.y = vp.y + 0.5;
       g.loop.step(3);
-      g.player.pos.x = m.boss.x + 0.5;
-      g.player.pos.y = m.boss.y + 0.5;
+      g.player.pos.x = vp.x + 0.5;
+      g.player.pos.y = vp.y + 0.5;
       g.loop.step(3);
       await until(() => game() && game().floor === 0, 10000);
       g = game();
       await fadeClear();
       check('the teleporter brings the hero home', g.floor === 0);
-      check('the quarry remembers its opened gate', !!g.floors[102] && (g.floors[102].doorsOpened ?? []).includes(1) && g.floors[102].arenaCleared === true, JSON.stringify(g.floors[102] && { d: g.floors[102].doorsOpened, c: g.floors[102].arenaCleared }));
+      check('the quarry remembers its opened gate and the keeper\'s fall', !!g.floors[102] && (g.floors[102].doorsOpened ?? []).includes(1) && g.floors[1102]?.arenaCleared === true, JSON.stringify({ d: g.floors[102]?.doorsOpened, c: g.floors[1102]?.arenaCleared }));
+      await g.travel(102);
+      await until(() => game() && game().floor === 102, 12000);
+      g = game();
+      await fadeClear();
+      g.loop.step(2);
+      g = game();
+      check('a cleared hall holds the way home and no seal', !g.arenaThreshold && g.arenaCleared && !!g.victoryPortal && !g.boss, `${!!g.arenaThreshold} ${g.arenaCleared} ${!!g.victoryPortal}`);
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 8000);
+      g = game();
+      await fadeClear();
     }
 
     // ---- THE FOREST ERRAND (it.87): the gatekeeper, the errand, the clearing, the thanks, the safe road ---
@@ -946,6 +1037,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.loop.step(3);
       await wait(80);
       check('E at the shut road opens the gatekeeper\'s word', !!document.querySelector('#dialogue-panel.open') && /clear the forest/i.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
+      check('the gatekeeper shows his face and names the gold (100)', !!document.querySelector('#dialogue-panel .dl-portrait canvas') && /\(100\)/.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
       check('the dialogue fits the screen', inside(document.getElementById('dialogue-panel')));
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=accept]')?.click();
       await until(() => game() && game().floor === 101, 12000);
@@ -968,6 +1060,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(120);
       check('the last beast\'s fall sends the hero back to the gatekeeper', g.floor === 0 && g.quests.forest === 'done' && Math.hypot(p.pos.x - (keeper!.x + 0.5), p.pos.y - (keeper!.y + 0.5)) < 3, `${g.floor} ${g.quests.forest} ${p.pos.x},${p.pos.y}`);
       check('the gatekeeper pays a hundred gold', p.gold === gold0 + 100, `${gold0} → ${p.gold}`);
+      const paid = document.getElementById('reward-note');
+      check('the reward note says a hundred gold', !!paid?.classList.contains('show') && /REWARD RECEIVED · 100 GOLD/.test(paid.textContent ?? ''), paid?.textContent ?? '');
       check('the thanks are on the table', !!document.querySelector('#dialogue-panel.open') && /hundred gold/i.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=ok]')?.click();
       await wait(40);
@@ -989,7 +1083,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await until(() => game() && game().floor === 102, 12000);
       g = game();
       await fadeClear();
-      const k = g.mines.keys[0];
+      // The first key still on the floor (the quarry block above took key I, it.88).
+      const k = g.mines.keys.find((kk: { uid: number }) => kk.uid >= 0 && !!g.loot.getItem(kk.uid)) ?? g.mines.keys[0];
       const item = g.loot.getItem(k.uid);
       check('a quarry key lies small on the floor with a beacon above the walls', !!item && item.glyph.scale.x <= 0.31 && !!item.beacon && !item.beacon.visible);
       g.player.pos.x = k.x + 0.5;

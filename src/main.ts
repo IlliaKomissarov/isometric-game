@@ -16,7 +16,7 @@
  */
 
 import { installTouchGuards } from '@/core/touchGuards';
-import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter, type Texture } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
@@ -59,7 +59,7 @@ import { TutorialUI } from '@/ui/Tutorial';
 import { MainMenuUI } from '@/ui/MainMenu';
 import { RunMenusUI } from '@/ui/RunMenus';
 import type { Entity } from '@/entities/Entity';
-import { ITEMS, overlayTextureFor, statLine } from '@/items/catalog';
+import { ITEMS, overlayTextureFor, statLine, type ItemDef } from '@/items/catalog';
 import { ilvlForDepth, itemDef, powerScale } from '@/items/instance';
 import { CraftingEngine } from '@/systems/Crafting';
 import { StatusSystem } from '@/systems/Status';
@@ -72,7 +72,7 @@ import { DamageTextSystem } from '@/render/DamageText';
 import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
 import { ChestSystem } from '@/systems/Chests';
 import { CheatMenuUI } from '@/ui/CheatMenu';
-import { itemIconHtml } from '@/ui/itemIcons';
+import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
@@ -189,6 +189,8 @@ interface World {
   victoryPortal: { x: number; y: number } | null;
   /** THE QUARRY MINES (it.85); null on every other floor. */
   mines: MinesState | null;
+  /** ENEMIES REMAINING (it.88): how many foes the floor woke with, for the forest's tally. */
+  foesAtStart: number;
 }
 
 type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines';
@@ -1308,15 +1310,7 @@ async function boot(): Promise<void> {
           openGate(d);
         }
       }
-      // THE KEEPER FALLS: the way home rises in the hall.
-      if (world.boss && world.boss.hp <= 0 && !world.arenaCleared) {
-        world.arenaCleared = true;
-        world.victoryPortal = { x: m.boss.x, y: m.boss.y };
-        spawnTeleporterAt(m.boss.x, m.boss.y);
-        victoryPortalArmed = true;
-        world.dmgText.show(m.boss.x + 0.5, m.boss.y - 0.6, 'THE QUARRY IS QUIET · THE WAY HOME OPENS', 'crit');
-        minimap.markDirty();
-      }
+      // THE KEEPER (it.88) falls in its arena past the seal; a cleared hall raises the way home on its first tick.
     };
     const spawnTeleporterAt = (tx: number, ty: number): void => {
       const s = worldToScreen(tx + 0.5, ty + 0.5, vec2());
@@ -1658,7 +1652,8 @@ async function boot(): Promise<void> {
       // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
       const minesLevel = Math.max(4, Math.min(MAX_DEPTH, deepestFloor + 2));
-      const floorLevel = isForest ? forestLevel : isMines ? minesLevel : floorNum;
+      const isMinesArena = isArena && floorNum === MINES_FLOOR; // THE QUARRY ARENA (it.88): past the hall's seal.
+      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
       const layout = isHub ? buildTownLayout() : forest ? forest.layout : null;
@@ -1729,7 +1724,7 @@ async function boot(): Promise<void> {
         ? 'stone'
         : isHub || isColiseum || isForest
           ? 'town'
-        : isMines
+        : isMines || isMinesArena
           ? 'stone'
         : floorNum <= 2
           ? 'stone'
@@ -1772,9 +1767,14 @@ async function boot(): Promise<void> {
       // until every combatant inside the seal is dead.
       const arenaRoom = dungeon.rooms[0];
       const isPortalFloor = !isArena && !isHub && isBossFloor(floorNum);
+      // THE QUARRY'S SEAL (it.88): the keeper's hall carries a seal like the
+      // wardens' floors; past it lies the hydra's own arena. Once that arena
+      // is cleared the hall holds the way home instead (the remembered clear).
+      const minesHallCleared = isMines && !!floors[memKey(floorNum, true)]?.arenaCleared;
       let arenaThreshold: World['arenaThreshold'] = null;
       let bossSigil: { x: number; y: number } | null = null;
       let stairs: { x: number; y: number; sprite: Sprite };
+      let sealRoom: { x: number; y: number; w: number; h: number } | null = null;
       if (isPortalFloor) {
         let best = dungeon.rooms[dungeon.rooms.length - 1];
         let bestDist = -1;
@@ -1785,6 +1785,12 @@ async function boot(): Promise<void> {
             best = room;
           }
         }
+        sealRoom = best;
+      } else if (isMines && minesPlan && !minesHallCleared) {
+        sealRoom = minesPlan.bossRoom;
+      }
+      if (sealRoom) {
+        const best = sealRoom;
         arenaThreshold = { x: best.x, y: best.y, w: best.w, h: best.h };
         const gx = best.x + Math.floor(best.w / 2);
         const gy = best.y + Math.floor(best.h / 2);
@@ -1798,7 +1804,8 @@ async function boot(): Promise<void> {
         ambience.addGlow(seal, gx, gy, 0.55, 3.4);
         lighting.addSource(gx, gy, 3.2, 210, 60, 60, 0.55);
         bossSigil = { x: gx + 0.5, y: gy + 0.5 }; // BOSS SIGIL (it.48): drawn once the VFX layer exists.
-        stairs = { x: gx, y: gy, sprite: seal };
+        // The quarry keeps its untouchable stair (it.85): its seal is the threshold, never the stair.
+        stairs = isMines ? placeStairs(dungeon, viewport, lighting, { hidden: true, at: { x: 1, y: 1 } }) : { x: gx, y: gy, sprite: seal };
       } else {
         stairs = placeStairs(
           dungeon,
@@ -2020,9 +2027,11 @@ async function boot(): Promise<void> {
         const room = dungeon.rooms[0];
         const cx = room.x + Math.floor(room.w * 0.68) + 0.5;
         const cy = room.y + Math.floor(room.h / 2) + 0.5;
-        const kind = BOSS_LADDER[Math.min(Math.floor(floorNum / 5), BOSS_LADDER.length) - 1];
-        boss = enemies.spawn(kind, cx, cy, BOSS_LEVELS[floorNum] ?? floorNum + 2);
-        const pool = kindPoolFor(floorNum);
+        // THE QUARRY'S KEEPER (it.88): the hydra holds its own arena past the seal, with a pit guard.
+        const kind: EnemyKind = isMinesArena ? 'hydra' : BOSS_LADDER[Math.min(Math.floor(floorNum / 5), BOSS_LADDER.length) - 1];
+        boss = enemies.spawn(kind, cx, cy, isMinesArena ? minesLevel + 3 : (BOSS_LEVELS[floorNum] ?? floorNum + 2));
+        if (isMinesArena) boss.setAffix('vampiric'); // The keeper drinks what it bites.
+        const pool = isMinesArena ? MINES_POOL : kindPoolFor(floorNum);
         const rand = mulberry32(seed ^ 0x9a7e0a);
         const guardRing = [
           { dx: -2.6, dy: -2.1 },
@@ -2032,18 +2041,19 @@ async function boot(): Promise<void> {
           { dx: -4.2, dy: 0 },
         ];
         for (const off of guardRing) {
-          const guardBody = enemies.spawn(pool[Math.floor(rand() * pool.length)], cx + off.dx, cy + off.dy, floorNum);
+          const guardBody = enemies.spawn(pool[Math.floor(rand() * pool.length)], cx + off.dx, cy + off.dy, isMinesArena ? minesLevel : floorNum);
           const affixRoll = rand();
           if (affixRoll < 0.15) guardBody.setAffix(AFFIXES[Math.floor((affixRoll / 0.15) * 3) % 3]); // Elite honor guard (it.53).
         }
       } else {
         spawnFloorEnemies(dungeon, enemies, floorLevel, stairs, seed, killed, isForest ? FOREST_POOL : isMines ? MINES_POOL : undefined);
-        // THE QUARRY'S KEEPER (it.85): the hydra in the deepest hall, until it falls.
-        if (minesPlan && !memory?.arenaCleared) {
-          boss = enemies.spawn('hydra', minesPlan.boss.x + 0.5, minesPlan.boss.y + 0.5, minesLevel + 3);
-          boss.setAffix('vampiric'); // The keeper drinks what it bites.
-        }
+        // THE QUARRY'S KEEPER (it.88) waits in its arena past the hall's seal, not in the hall.
       }
+      // ENEMIES REMAINING (it.88): what the floor woke with.
+      let foesAtStart = 0;
+      enemies.forEachActive((e) => {
+        if (e.hp > 0) foesAtStart++;
+      });
       // A remembered-cleared arena (it.58): no stair — the teleporter rises on the first tick.
       // RITUAL CIRCLES (it.48): the wardens' sigil marks BOSS floors only —
       // the arena's heart and the seal room on depths V / X / XV / XX.
@@ -2216,7 +2226,7 @@ async function boot(): Promise<void> {
         const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' }> = [];
         for (const k of minesPlan.keys) if (k.uid >= 0 && loot.getItem(k.uid)) out.push({ x: k.x, y: k.y, kind: 'key' });
         for (const d of minesPlan.doors) out.push({ x: d.x, y: d.y, kind: d.open ? 'door-open' : 'door' });
-        if (boss && boss.hp > 0) out.push({ x: Math.floor(boss.pos.x), y: Math.floor(boss.pos.y), kind: 'boss' });
+        if (!world.arenaCleared) out.push({ x: minesPlan.boss.x, y: minesPlan.boss.y, kind: 'boss' }); // The seal (it.88).
         if (world.victoryPortal) out.push({ x: world.victoryPortal.x, y: world.victoryPortal.y, kind: 'portal' });
         return out;
       });
@@ -2250,7 +2260,7 @@ async function boot(): Promise<void> {
         input,
         stairs,
         isArena,
-        arenaCleared: arenaAlreadyCleared, // SOFTLOCK FIX (it.44): a remembered clear stays cleared.
+        arenaCleared: arenaAlreadyCleared || minesHallCleared, // SOFTLOCK FIX (it.44): a remembered clear stays cleared.
         arenaThreshold,
         goldPiles,
         status,
@@ -2268,6 +2278,7 @@ async function boot(): Promise<void> {
         coliseum: coliseumState,
         victoryPortal: null,
         mines: minesPlan ? { ...minesPlan, gates: minesDressing?.gates ?? new Map(), level: minesLevel, dressing: minesDressing! } : null,
+        foesAtStart,
       };
     };
 
@@ -3139,6 +3150,49 @@ async function boot(): Promise<void> {
       audio.sfx('step');
     };
 
+    /** THE REWARD NOTE (it.88): a banner under the boss bar - a quest item taken, a purse paid. */
+    const rewardNote = document.createElement('div');
+    rewardNote.id = 'reward-note';
+    document.body.appendChild(rewardNote);
+    let rewardTimer = 0;
+    const showReward = (text: string): void => {
+      rewardNote.textContent = text;
+      rewardNote.classList.add('show');
+      window.clearTimeout(rewardTimer);
+      rewardTimer = window.setTimeout(() => rewardNote.classList.remove('show'), 3400);
+    };
+    /** ENEMIES REMAINING (it.88): the forest's tally, in the corner column under the plate. */
+    const questHud = document.createElement('div');
+    questHud.id = 'quest-hud';
+    (document.getElementById('hud-tl') ?? document.body).appendChild(questHud);
+    subs.push(() => {
+      window.clearTimeout(rewardTimer);
+      rewardNote.remove();
+      questHud.remove();
+    });
+    /**
+     * A KEY IS TAKEN (it.88): a quest item is not a coin. The hero holds it
+     * up - it rises turning in a gold halo, sparks fly, the world holds its
+     * breath for four ticks, a bell and a chime, a note over the head and
+     * the banner at the top.
+     */
+    const keyTaken = (hero: Player, def: ItemDef): void => {
+      const x = hero.pos.x;
+      const y = hero.pos.y;
+      world.ambience.burst(x, y, 0xffd070, 26);
+      world.ambience.playGlint(x, y);
+      const tex = def.icon && spriteLib.loaded && spriteLib.hasSingle(`wicon_${def.icon}`) ? spriteLib.single(`wicon_${def.icon}`) : itemIconTexture(def);
+      world.ambience.playRise(tex, x, y, 0xffe8a0);
+      world.camera.addKick(3);
+      hitStop(4);
+      if (hero === player) {
+        audio.sfx('rarePickup');
+        audio.sfx('chest');
+        world.dmgText.show(x, y - 1.5, `${def.name.toUpperCase()} · TAKEN`, 'crit');
+        showReward(`QUEST ITEM · ${def.name.toUpperCase()}`);
+      }
+    };
+
     on('item:dropped', ({ itemId, x, y }) => {
       tutorial.notify('loot', screenLayout.state.touch ? 'A treasure has fallen — tap it, or press the open hand beside it.' : 'A treasure has fallen — press E near it, or click to claim it.');
       // Rare finds announce themselves with the pack's treasure glint.
@@ -3167,6 +3221,11 @@ async function boot(): Promise<void> {
       const itemId = world.loot.pickup(uid);
       if (itemId) {
         seat.player.addItem(itemId);
+        const keyDef = itemDef(itemId);
+        if (keyDef?.use?.key) {
+          keyTaken(seat.player, keyDef);
+          return;
+        }
         if (seat.player === player) {
           audio.sfx(['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '') ? 'rarePickup' : 'pickup');
           tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
@@ -3287,6 +3346,7 @@ async function boot(): Promise<void> {
           // the treasure erupt — a clear, earned pause before the reward.
           // Tick-clocked (it.59): loot is sim state, so the beat counts ticks.
           bossLoot = { x: bx, y: by, ticks: 198, world: w };
+          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88).
           bossNote?.classList.add('show');
           later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
@@ -3488,8 +3548,9 @@ async function boot(): Promise<void> {
       victoryPortalArmed = true;
       w.ambience.burst(px + 0.5, py + 0.5, 0xffd9a0, 20);
       w.ambience.playGlint(px + 0.5, py + 0.5);
-      w.dmgText.show(px + 0.5, py + 0.2, floor >= MAX_DEPTH ? 'THE TELEPORTER RISES · HOME, OR THE CROWN' : 'THE TELEPORTER RISES · STEP ON TO DESCEND', 'crit');
-      if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
+      w.dmgText.show(px + 0.5, py + 0.2, floor === MINES_FLOOR ? 'THE QUARRY IS QUIET · THE WAY HOME OPENS' : floor >= MAX_DEPTH ? 'THE TELEPORTER RISES · HOME, OR THE CROWN' : 'THE TELEPORTER RISES · STEP ON TO DESCEND', 'crit');
+      if (floor === MINES_FLOOR) tutorial.notify('quarryTeleporter', 'The keeper is down. Take the spoils, then step onto the teleporter at the heart of the arena to go home.');
+      else if (floor >= MAX_DEPTH) tutorial.notify('lastStair', 'The Hollow King is dust. Claim his spoils, then step onto the teleporter at the heart of the arena \u2014 home, or the crown.');
       else tutorial.notify('arenaTeleporter', 'The warden is down. Take the spoils, then step onto the teleporter at the heart of the arena to go deeper.');
       audio.sfx('gateOpen');
       audio.setBossMusic(false);
@@ -3524,15 +3585,60 @@ async function boot(): Promise<void> {
      * shut until the hero takes the forest's errand; open once it is taken;
      * a thank-you and a hundred gold when the last wolf is down.
      */
+    /** THE KEEPER'S FACE (it.88): his own idle frame, cropped to the head, for the dialogue's portrait. */
+    const portraitFromTexture = (tex: Texture, tint: number): HTMLCanvasElement | null => {
+      const spr = new Sprite(tex);
+      spr.tint = tint;
+      const raw = app.renderer.extract.canvas({ target: spr, resolution: 1 }) as HTMLCanvasElement;
+      spr.destroy();
+      const ctx = raw.getContext('2d');
+      if (!ctx || raw.width === 0) return null;
+      const img = ctx.getImageData(0, 0, raw.width, raw.height);
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < raw.height; y++) {
+        for (let x = 0; x < raw.width; x++) {
+          if (img.data[(y * raw.width + x) * 4 + 3] > 24) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < 0) return null;
+      const bw = maxX - minX + 1;
+      const bh = maxY - minY + 1;
+      // The head: a square a little wider than the shoulders, from the crown down.
+      const side = Math.max(8, Math.round(Math.min(bw * 1.25, bh * 0.5)));
+      const sx = Math.round(minX + bw / 2 - side / 2);
+      const sy = Math.max(0, minY - 2);
+      const out = document.createElement('canvas');
+      out.width = 96;
+      out.height = 96;
+      const octx = out.getContext('2d');
+      if (!octx) return null;
+      octx.imageSmoothingEnabled = true;
+      octx.imageSmoothingQuality = 'high';
+      octx.drawImage(raw, sx, sy, side, side, 0, 0, 96, 96);
+      return out;
+    };
+    let keeperFace: HTMLCanvasElement | null | undefined;
+    const keeperPortrait = (): HTMLCanvasElement | null => {
+      if (keeperFace === undefined) keeperFace = spriteLib.loaded && spriteLib.hasAnim('guard_idle') ? portraitFromTexture(spriteLib.frame('guard_idle', 5, 0), 0xd8c8a8) : null;
+      return keeperFace;
+    };
     const gatekeeper = async (): Promise<void> => {
       const state = quests.forest ?? 'new';
+      const who = { speaker: 'THE GATEKEEPER', role: 'sentry of the eastern road', portrait: keeperPortrait() };
       if (state === 'done') {
         const v = await dialogue.open({
-          speaker: 'THE GATEKEEPER',
-          role: 'sentry of the eastern road',
-          lines: ['The road is yours, delver. The woods are quiet since you walked them - my folk have gone out to the clearings, and the quarry mouth waits at the far end.'],
+          ...who,
+          lines: ['Road\'s open, delver. My people walk the clearings now. The quarry is at the far end of the woods.'],
           choices: [
-            { label: 'WALK THE ROAD EAST', sub: 'into the forest, and the quarry beyond', value: 'go' },
+            { label: 'WALK THE ROAD EAST', sub: 'the forest, and the quarry beyond', value: 'go' },
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
@@ -3541,11 +3647,10 @@ async function boot(): Promise<void> {
       }
       if (state === 'active') {
         const v = await dialogue.open({
-          speaker: 'THE GATEKEEPER',
-          role: 'sentry of the eastern road',
-          lines: ['Still wolves out there. Clear the woods to the last of them and come back to me - the gold is counted.'],
+          ...who,
+          lines: ['Still beasts out there. Finish the job and come back - the gold (100) is waiting.'],
           choices: [
-            { label: 'BACK INTO THE FOREST', value: 'go' },
+            { label: 'BACK TO THE FOREST', value: 'go' },
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
@@ -3553,20 +3658,19 @@ async function boot(): Promise<void> {
         return;
       }
       const v = await dialogue.open({
-        speaker: 'THE GATEKEEPER',
-        role: 'sentry of the eastern road',
+        ...who,
         lines: [
-          'Hold there. The eastern road is shut - wolves in the woods, poachers with them, and a spider the size of a cart. Nobody walks it and comes back.',
-          'You look like you might. Clear the forest - every last beast - and I open the road for good. A hundred gold on your return, from the guild\'s purse.',
+          'Road\'s closed. Wolves in the woods, poachers with them, and something bigger than either.',
+          'Clear the forest and I open the road for good. The guild pays a hundred gold (100) when it\'s done.',
         ],
         choices: [
-          { label: 'I WILL CLEAR THE FOREST', sub: 'take the errand and walk east now', value: 'accept' },
-          { label: 'NOT YET', value: 'stay' },
+          { label: 'I\'LL CLEAR THE FOREST', sub: 'take the job and walk east now', value: 'accept' },
+          { label: 'NOT NOW', value: 'stay' },
         ],
       });
       if (v === 'accept') {
         quests.forest = 'active';
-        tutorial.say('The forest errand is taken: clear the woods, and the road opens.');
+        tutorial.say('Job taken: clear the forest, and the road opens.');
         goForest();
       }
     };
@@ -3591,6 +3695,8 @@ async function boot(): Promise<void> {
       quests.forest = 'done';
       for (const seat of liveSeats()) seat.player.gold += 100; // The guild's purse, every hero of the party.
       eventBus.emit('inventory:changed', {});
+      showReward('REWARD RECEIVED · 100 GOLD');
+      audio.sfx('levelUp');
       withFade(async () => {
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
@@ -3604,7 +3710,8 @@ async function boot(): Promise<void> {
         void dialogue.open({
           speaker: 'THE GATEKEEPER',
           role: 'sentry of the eastern road',
-          lines: ['Every last one? Then the road is open, and the guild owes you a hundred gold - here. My folk will walk the clearings by morning.', 'The quarry mouth lies at the far end of the woods. Whatever is down there is not wolves.'],
+          portrait: keeperPortrait(),
+          lines: ['All of them? Then the road\'s open. Your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever\'s down there isn\'t wolves.'],
           choices: [{ label: 'WELL MET', value: 'ok' }],
         });
       }, 'back to the gate');
@@ -3888,8 +3995,8 @@ async function boot(): Promise<void> {
           if (d > 1.6) victoryPortalArmed = true;
           else if (d < 0.9 && victoryPortalArmed && !victoryModal.classList.contains('open')) {
             victoryPortalArmed = false;
-            if (world.mines) {
-              // THE WAY HOME (it.85): the quarry's teleporter goes back to town.
+            if (world.mines || floor === MINES_FLOOR) {
+              // THE WAY HOME (it.85): the quarry's teleporter goes back to town (from its arena too, it.88).
               if (localSlot === leaderSlot) goHome();
               else leaderOnlyNote();
             } else if (floor >= MAX_DEPTH) {
@@ -3981,7 +4088,8 @@ async function boot(): Promise<void> {
           const sx = t.x + Math.floor(t.w / 2) + 0.5;
           const sy = t.y + Math.floor(t.h / 2) + 0.5;
           if (px >= t.x && px < t.x + t.w && py >= t.y && py < t.y + t.h) {
-            tutorial.notify('sealRoom', 'The warden\'s seal burns at the heart of this chamber. Step onto it when you are ready - the arena seals behind you.');
+            if (world.mines) tutorial.notify('sealQuarry', 'The keeper\'s seal burns at the heart of the hall. Step onto it when you are ready - the arena seals behind you.');
+            else tutorial.notify('sealRoom', 'The warden\'s seal burns at the heart of this chamber. Step onto it when you are ready - the arena seals behind you.');
             if (Math.hypot(lead.pos.x - sx, lead.pos.y - sy) < 1.1) pendingArena = true;
           }
         }
@@ -4219,6 +4327,16 @@ async function boot(): Promise<void> {
           t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
         }
         world.loot.updateBeacons((x, y) => world.lighting.isVisible(x, y), timeSec); // THE KEY BEACONS (it.87).
+        // ENEMIES REMAINING (it.88): the forest's tally under the plate.
+        if (floor === FOREST_FLOOR && world.foesAtStart > 0) {
+          let alive = 0;
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead') alive++;
+          });
+          const tally = `ENEMIES REMAINING · ${alive} / ${world.foesAtStart}`;
+          if (questHud.textContent !== tally) questHud.textContent = tally;
+          questHud.classList.add('show');
+        } else if (questHud.classList.contains('show')) questHud.classList.remove('show');
         if (world.town) {
           const t = world.town;
           // THE ZONE CHIP (it.84): which district the hero stands in.
@@ -4264,7 +4382,8 @@ async function boot(): Promise<void> {
             // INSIDE (it.40): standing in a cottage's door column — the roof
             // and front wall drop to a ghost so the room reads.
             const inside = heroTx >= o.tiles.x && heroTx < o.tiles.x + o.tiles.w && heroTy >= o.tiles.y && heroTy < o.tiles.y + o.tiles.h;
-            const target = inside ? 0.2 : behind ? 0.38 : 1;
+            // A TREE IS A GHOST (it.88): whatever stands behind a trunk reads through it.
+            const target = inside ? 0.2 : behind ? (o.tree ? 0.12 : 0.38) : 1;
             spr.alpha += (target - spr.alpha) * k;
           }
           if (t.stashSprite && spriteLib.hasSingle('stash_open')) {
@@ -4767,7 +4886,7 @@ async function boot(): Promise<void> {
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
         const dest = target === FOREST_FLOOR || target === MINES_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
-        const mode: FloorMode = arena && isBossFloor(dest) ? 'arena' : modeFor(dest);
+        const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         if (!world.town) captureFloor();
         if (!swapWorld(() => buildWorld(dest, mode))) return;
@@ -4895,7 +5014,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
     return [...all];
   }
   // THE FOREST AND THE QUARRY (it.85): their own packs, the town's torches and braziers, the hydra.
-  if (mode === 'forest' || mode === 'mines') {
+  if (mode === 'forest' || mode === 'mines' || (mode === 'arena' && floor === MINES_FLOOR)) {
     const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'poacher_idle', ...VFX_ANIMS]);
     for (const k of mode === 'forest' ? FOREST_POOL : [...MINES_POOL, 'hydra' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];

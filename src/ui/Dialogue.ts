@@ -22,6 +22,8 @@ export interface DialogueSpec {
   role?: string;
   lines: string[];
   choices: DialogueChoice[];
+  /** THE FACE (it.88): a portrait beside the lines - the speaker's own frame, cropped to the head. */
+  portrait?: HTMLCanvasElement | null;
 }
 
 export class DialogueUI {
@@ -71,8 +73,9 @@ export class DialogueUI {
     const choices = spec.choices.map((c, i) => `<button class="menu-btn dl-choice" type="button" data-choice="${c.value}"><span class="dl-num">${i + 1}</span>${c.label}${c.sub ? `<span class="mm-sub">${c.sub}</span>` : ''}</button>`).join('');
     this.panel.innerHTML = `
       <div class="tp-head drag-handle"><h3>${spec.speaker}</h3><span class="tp-vendor">${spec.role ?? ''}</span><button class="tp-close" data-close title="Walk away (ESC)"><i></i></button></div>
-      <div class="dl-lines">${lines}</div>
+      ${spec.portrait ? `<div class="dl-body"><div class="dl-portrait"></div><div class="dl-lines">${lines}</div></div>` : `<div class="dl-lines">${lines}</div>`}
       <div class="dl-choices">${choices}</div>`;
+    if (spec.portrait) this.panel.querySelector('.dl-portrait')?.appendChild(spec.portrait);
     this.panel.dataset.last = spec.choices[spec.choices.length - 1]?.value ?? '';
     this.panel.querySelector<HTMLElement>('[data-close]')?.addEventListener('click', (e) => {
       e.stopPropagation();

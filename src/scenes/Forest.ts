@@ -14,7 +14,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type Room } from '@/scenes/DungeonGenerator';
-import { KIND_COBBLE, KIND_DIRT, KIND_GRASS, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { CLUTTER_KINDS, KIND_COBBLE, KIND_DIRT, KIND_GRASS, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 
 export const FOREST_W = 56;
@@ -139,6 +139,7 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
   const props: TownProp[] = [];
   const block = (p: TownProp): void => {
     props.push(p);
+    if (CLUTTER_KINDS.has(p.kind)) return; // Small clutter never blocks (it.88).
     const w = p.w ?? 1;
     const h = p.h ?? 1;
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;

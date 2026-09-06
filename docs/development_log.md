@@ -1,5 +1,79 @@
 # Development Log
 
+## 2026-09-06 (iteration 88) - The key held high, ghost trees, the quarry arena, clutter out of the way, the keeper's face, the tally
+
+### A key is taken
+- A quest item is not a coin. `Ambience.playRise` (render-only) lifts the
+  key's icon out of the hero's hands, turning on its axis inside a gold
+  halo, and fades it above the head; sparks, a glint, a four-tick hold, a
+  camera kick, the bell and the chime, `QUARRY KEY I · TAKEN` over the head
+  and the banner `QUEST ITEM · QUARRY KEY I` at the top (`#reward-note`).
+  Wired in `item:pickupArrived` for any item with `use.key`.
+
+### A tree is a ghost
+- The forest's fade left a trunk at 0.38, and a wolf behind it was a
+  rumour. `Occluder.tree` marks pines, oaks, dead trees and the big trees;
+  a tree with any visible body behind it settles at 0.12 now (cottages keep
+  0.38, the inside-a-door ghost keeps 0.2).
+
+### The quarry arena
+- The hydra used to stand in the mines' deepest hall. The hall carries a
+  SEAL now, like the wardens' floors (`sealRoom` = `minesPlan.bossRoom`);
+  a step onto it seals the party into THE QUARRY ARENA - `buildWorld(102,
+  'arena')`: the arena map in the quarry's stone, the hydra (vampiric, at
+  the quarry's level + 3) with a pit guard from `MINES_POOL` at the
+  quarry's level, the loot at the quarry's item level (a plain arena at
+  floor 102 would have rolled level-203 drops). When the last combatant
+  falls the teleporter rises at the heart: `THE QUARRY IS QUIET · THE WAY
+  HOME OPENS`, and a step onto it goes home (the arena knows it is the
+  quarry's by `floor === MINES_FLOOR`; without that it would have offered
+  the crown, since 102 >= MAX_DEPTH).
+- The clear is remembered in `floors[1102]` (memKey of 102 + arena); the
+  hall then builds without a seal, `arenaCleared` true from the first tick,
+  the teleporter home standing where the seal was. `tickMines` lost its
+  keeper-fell block. The quarry keeps its untouchable stair at (1,1): the
+  seal is the threshold, never the stair (a stair at the seal would have
+  run the endgame - the stair-contact handler ends the run at
+  `floor >= MAX_DEPTH`).
+- `devTravel(102, true)` and `animsForFloor(102, 'arena')` know the
+  quarry's arena.
+
+### Clutter out of the way
+- `CLUTTER_KINDS` (TownMap): grass clumps, jars, pots, boxes, bins, potion
+  decals, wall signs, the small wooden crates and the wood piles are drawn
+  on their tile and the tile stays open - in the town (`block`, `tryBlock`),
+  the forest (`block`) and the quarry (`tryProp`). Rocks, barrels, benches,
+  carts and crates keep their tiles: they are waist-high or taller.
+
+### The keeper's face and plainer words
+- `DialogueSpec.portrait`: a canvas beside the lines. The keeper's is his
+  own idle frame extracted through Pixi, cropped to the head by its alpha
+  bounds (`portraitFromTexture`), 96 px, cached.
+- The lines are shorter and plainer, and the pay is on the page: "The
+  guild pays a hundred gold (100) when it's done." When the purse is
+  handed over the banner reads `REWARD RECEIVED · 100 GOLD`.
+
+### Enemies remaining
+- `World.foesAtStart` counts what a floor woke with; in the forest the
+  corner column carries `ENEMIES REMAINING · X / Y` (`#quest-hud`, under
+  the plate, scaling with `--tl-scale`), refreshed each frame and hidden
+  everywhere else. `qa66` measures it (`HUD_IDS`).
+
+### Verified (seed 42)
+- `qa75` (warrior, deep): 221 pass, 0 fail, 0 errors, 78 s; `qa66`: 74/74;
+  `npm run build` clean. New checks: the taken key's rise and banner, the
+  seal opening the quarry arena at the quarry's level, the keeper's fall
+  raising the way home, the remembered clear (no seal, the teleporter
+  standing), clutter open in town / forest / quarry, a pine at 0.12 with a
+  wolf behind it, the tally on the HUD, the face and the (100) on the page,
+  the reward note.
+- Harness traps: the tile south of a quarry key is a wall as often as not -
+  stand ON the key before a PICKUP_NEAREST; grass clumps are decals that a
+  thicket or a belt may cover, so a clutter check names the placed kinds;
+  after a quarry clear `floors[1102]` holds it, so the it.87 key checks
+  take the first key still on the floor. The boss banner names the quarry's
+  keeper (`THE KEEPER FALLS`).
+
 ## 2026-09-06 (iteration 87) - The forest errand, the spoken word, the new teleporter, the key's beacon, the seal
 
 ### The gatekeeper and the forest errand

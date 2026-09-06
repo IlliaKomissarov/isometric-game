@@ -24,6 +24,8 @@ import type { TownLayout, TownProp } from './TownMap';
 export interface Occluder {
   sprite: Sprite;
   depth: number;
+  /** A tree (it.88): fades to a ghost for whatever stands behind it, not a cottage's 0.38. */
+  tree?: boolean;
   /** Blocked footprint (tiles) — standing inside it means "indoors". */
   tiles: { x: number; y: number; w: number; h: number };
 }
@@ -309,7 +311,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         if (spr && p.variant?.startsWith('tree_')) spr.tint = 0x8e9c86; // The oaks stand in deeper shade (it.57).
         // A tree on a cliff tile (it.50) stands in front of that tile's cube.
         if (spr && layout.map.grid[p.y * layout.map.width + p.x] === 0) spr.zIndex += 40;
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p), tree: true });
         break;
       }
       case 'column':
@@ -360,7 +362,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       case 'tree': {
         const spr = standing(p, p.variant ?? 'tree_a', 0.94);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p), tree: true });
         break;
       }
       case 'barrel':
@@ -443,7 +445,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const spr = standing(p, p.variant ?? 'bigtree_a', 0.96);
         if (spr) {
           spr.tint = 0x8a9a8c; // Deep shade, like the oaks.
-          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p), tree: true });
         }
         break;
       }

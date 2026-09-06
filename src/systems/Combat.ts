@@ -19,6 +19,7 @@
  * `dealDamage` remains the ONLY hp mutator in the codebase.
  */
 
+import { difficulty } from '@/core/Difficulty';
 import { eventBus } from '@/core/EventBus';
 import type { InputCommand } from '@/core/InputQueue';
 import { state } from '@/core/StateManager';
@@ -557,6 +558,11 @@ export class CombatSystem {
     if (!target || target.hp <= 0 || target.action === 'dead') return;
     const targetHero = this.players[this.seatOf(target)] ?? null;
     if (this.godMode && targetHero) return; // Cheat: untouchable.
+    // THE SPAWN WARD (it.89): five seconds after rising, nothing lands.
+    if (targetHero && targetHero.wardTicks > 0) {
+      eventBus.emit('entity:warded', { entityId: target.id });
+      return;
+    }
 
     // Skill buffs (it.32): War Cry / Arcane Intellect amplify the hero's
     // outgoing damage; Stone Skin absorbs a fraction of what comes in.
@@ -566,6 +572,11 @@ export class CombatSystem {
     if (targetHero && targetHero.damageReduction > 0) {
       rolled = Math.round(rolled * (1 - targetHero.damageReduction));
     }
+    // THE DARK'S MEASURE (it.89): a blow on a hero is scaled before armor -
+    // the hero's own multiplier, and the foe's when a foe struck (a hero's
+    // reflected steel is not a foe's blow).
+    const measure = difficulty.current;
+    if (targetHero) rolled = Math.round(rolled * measure.heroTaken * (sourceHero || event.reflected ? 1 : measure.foeDamage));
     // Armor turns a share of the blow (it.78); a landed hit always deals at least 1.
     // Thorns (it.53) bites past armor — it is the hero's own steel coming back.
     const sourceEntity = state.getEntity(event.sourceId) as (Entity & { powerTier?: number }) | null;
@@ -573,6 +584,13 @@ export class CombatSystem {
     const armorAmt = event.reflected || event.pure ? 0 : target.armor;
     const reduction = armorAmt > 0 ? armorAmt / (armorAmt + ARMOR_K * attackerTier) : 0;
     let amount = Math.max(1, Math.round(rolled * (1 - reduction)));
+    // TOURIST (it.89): every hero blow is at least a fixed share of the foe's
+    // life - a common foe falls in one, a champion in two, a warden in four.
+    if (measure.hitsToKill && sourceHero && !targetHero && !event.pure && !event.reflected) {
+      const foe = target as Entity & { affix?: string | null; isWarden?: boolean };
+      const hits = foe.isWarden ? measure.hitsToKill.boss : foe.affix ? measure.hitsToKill.elite : measure.hitsToKill.normal;
+      amount = Math.max(amount, Math.ceil(target.hpMax / hits));
+    }
     // LEGENDARY UNIQUES (it.78): echo doubles a tenth of the strikes; cull ends a foe under 15%.
     const fx = sourceHero?.uniqueEffects;
     if (fx?.has('echo') && !event.reflected && !event.pure && this.rand() < 0.1) amount *= 2;

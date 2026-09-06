@@ -77,6 +77,8 @@ export interface HistoryPayload {
   seed: number;
   members: MemberInfo[];
   stash: StashState;
+  /** THE DARK'S MEASURE (it.89): the leader's difficulty id. */
+  difficulty?: string;
   /** Last executed tick the frames cover. */
   upto: number;
   /** Non-empty frames only: [tick, commands]. */
@@ -101,6 +103,8 @@ export interface ResyncPayload {
  */
 export interface SnapshotPayload {
   seed: number;
+  /** THE DARK'S MEASURE (it.89): the leader's difficulty id. */
+  difficulty?: string;
   /** The tick the world below was taken at (the leader's last executed). */
   tick: number;
   floor: number;
@@ -132,7 +136,7 @@ export type NetMsg =
   | { t: 'set'; cls?: ClassArchetype; ready?: boolean; hero?: PlayerSave | null }
   | { t: 'chat'; slot: number; text: string }
   | { t: 'sys'; text: string }
-  | { t: 'start'; seed: number; members: MemberInfo[]; stash: StashState }
+  | { t: 'start'; seed: number; members: MemberInfo[]; stash: StashState; difficulty?: string }
   | { t: 'hist'; i: number; n: number; s: string }
   | { t: 'resync'; p: ResyncPayload }
   | { t: 'in'; k: number; c: InputCommand[] }

@@ -18,3 +18,12 @@ Thumbs.db
 
 # Raw asset uploads: bake into atlas/ui, never commit (1 GB+).
 public/assets/test-models/
+
+# it.89: audio sources that have a shipped MP3 / downmix twin, and archives
+public/assets/audio/Hope is Lost.wav
+public/assets/audio/Ambience_samples/*.wav
+public/assets/audio/SPX_samples/*.wav
+public/assets/audio/FantasySFXSamples/
+public/assets/audio/Wizards 2/*.zip
+public/assets/audio/Wizards 2/*.png
+public/assets/audio/*.mid

@@ -81,6 +81,7 @@ import { placeTownProps, type Interactable, type Occluder, type TownDressing } f
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
 import { CrtFilter } from '@/render/CrtFilter';
+import { asDifficultyId, DIFFICULTIES, DIFFICULTY_KEY, DIFFICULTY_ORDER, difficulty, readPreferredDifficulty, SPAWN_WARD_TICKS, type DifficultyId } from '@/core/Difficulty';
 import { DialogueUI } from '@/ui/Dialogue';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
@@ -471,6 +472,35 @@ async function boot(): Promise<void> {
         }
       };
       paint();
+      // THE DARK'S MEASURE (it.89): five settings under the delvers; the choice is kept for the next run.
+      const diffRow = overlay.querySelector<HTMLElement>('#difficulty-cards');
+      let chosenDifficulty = readPreferredDifficulty();
+      if (diffRow) {
+        diffRow.innerHTML = DIFFICULTY_ORDER.map((id) => {
+          const d = DIFFICULTIES[id];
+          return `<button type="button" class="diff-card" data-diff="${id}"><b>${d.name}</b><span class="dc-tag">${d.tag}</span><span class="dc-blurb">${d.blurb}</span></button>`;
+        }).join('');
+        const paintDiff = (): void => diffRow.querySelectorAll<HTMLElement>('.diff-card').forEach((b) => b.classList.toggle('selected', b.dataset.diff === chosenDifficulty));
+        paintDiff();
+        diffRow.querySelectorAll<HTMLButtonElement>('.diff-card').forEach((b) => {
+          b.addEventListener('mouseenter', () => audio.sfx('uiHover'), { signal: ac.signal });
+          b.addEventListener(
+            'click',
+            () => {
+              audio.sfx('uiClick');
+              chosenDifficulty = asDifficultyId(b.dataset.diff);
+              try {
+                localStorage.setItem(DIFFICULTY_KEY, chosenDifficulty);
+              } catch {
+                /* ignore */
+              }
+              paintDiff();
+            },
+            { signal: ac.signal },
+          );
+        });
+        fit.schedule(); // The row is in the screen now: contain-fit again (it.89).
+      }
       confirmBtn?.addEventListener(
         'click',
         () => {
@@ -635,7 +665,7 @@ async function boot(): Promise<void> {
     document.body.classList.remove('in-run');
     audio.setMusic('menu');
     const latest = saves.latest();
-    mainMenu.setContinue(latest ? { cls: latest.player.archetype, level: latest.player.level, floor: latest.pos && latest.floor > 0 ? latest.floor : 0 } : null);
+    mainMenu.setContinue(latest ? { cls: latest.player.archetype, level: latest.player.level, floor: latest.pos && latest.floor > 0 ? latest.floor : 0, difficulty: DIFFICULTIES[asDifficultyId(latest.difficulty)].name } : null);
     titleScreen.show();
     mainMenu.show();
     fit.schedule(); // The stack was display:none until now — measure it (it.64).
@@ -674,6 +704,8 @@ async function boot(): Promise<void> {
     stash?: StashState;
     /** CO-OP (it.59): the party this run belongs to. */
     coop?: CoopStart;
+    /** THE DARK'S MEASURE (it.89): a new run's difficulty (a loaded run keeps its own). */
+    difficulty?: DifficultyId;
   }
 
   /**
@@ -685,6 +717,11 @@ async function boot(): Promise<void> {
     ensurePreviews: () => spriteLib.ensure(VALID_CLASSES.map((c) => PREVIEW_IDLE[c])),
     previewFor: (cls) => classPreviewFrames(cls),
     heroFor: (cls) => saves.read(COOP_SLOT[cls])?.player ?? null,
+    // One life is a solo vow (it.89): a party never runs hardcore.
+    difficulty: () => {
+      const d = readPreferredDifficulty();
+      return d === 'hardcore' ? 'hard' : d;
+    },
     stashFor: (cls) => saves.read(COOP_SLOT[cls])?.stash ?? { items: [], gold: 0 },
     start: (cfg) => {
       const me = cfg.members.find((m) => m.slot === cfg.localSlot);
@@ -782,6 +819,16 @@ async function boot(): Promise<void> {
     let alive = true;
     const loaded = opts.save ?? null;
     const slot = opts.slot;
+    // THE DARK'S MEASURE (it.89): a run keeps its difficulty - the save's, else the
+    // picker's; a party takes the leader's, and one life is a solo vow.
+    const difficultyId: DifficultyId = opts.coop
+      ? (asDifficultyId(opts.coop.difficulty) === 'hardcore' ? 'hard' : asDifficultyId(opts.coop.difficulty))
+      : loaded?.difficulty !== undefined
+        ? asDifficultyId(loaded.difficulty)
+        : (opts.difficulty ?? readPreferredDifficulty());
+    difficulty.set(difficultyId);
+    /** HARDCORE (it.89): the one life is spent - the slot is wiped and nothing writes it again. */
+    let hardcoreOver = false;
     const subs: Array<() => void> = [];
     const subsOnLayout: Array<() => void> = [];
     const on = <K extends keyof GameEvents>(event: K, handler: (payload: GameEvents[K]) => void): void => {
@@ -1289,7 +1336,7 @@ async function boot(): Promise<void> {
       minimap.markDirty();
       world.dmgText.show(d.x + 0.5, d.y - 0.4, `GATE ${ROMAN[d.key - 1] ?? d.key} OPENS`, 'crit');
       world.ambience.burst(d.x + 0.5, d.y + 0.5, 0xd8b060, 16);
-      audio.sfx('chest');
+      audio.sfx('gateIron'); // Iron and the gate's groan (it.89).
       eventBus.emit('inventory:changed', {});
     };
     const tickMines = (): void => {
@@ -1734,12 +1781,17 @@ async function boot(): Promise<void> {
               ? 'frost'
               : 'ember';
       scene.build(dungeon, viewport, lighting, theme);
+      // THE ZONES SING (it.89): the forest and the quarry carry their own beds.
       if (isHub) {
         audio.setMusic('town'); // The title theme keeps the town (Tristram rule).
       } else if (isColiseum) {
         audio.setMusic('boss', 5); // The trial fights to the warden's drums (it.53).
+      } else if (isForest) {
+        audio.setMusic('forest', floorNum);
+      } else if (isMines) {
+        audio.setMusic('mines', floorNum);
       } else {
-        audio.setBgmDeep(isMines || (!isForest && floorNum >= 10)); // The deep bands (and the quarry) breathe a darker drone.
+        audio.setBgmDeep(!isMinesArena && floorNum >= 10); // The deep bands breathe a darker drone.
         // Boss arena music (it.28): the floor's intense track fades in the
         // moment the arena builds — and back to the dungeon BGM when we leave.
         audio.setBossMusic(isArena, floorNum);
@@ -2361,7 +2413,7 @@ async function boot(): Promise<void> {
       };
     };
     const saveNow = (): boolean => {
-      if (!alive) return false;
+      if (!alive || hardcoreOver) return false; // A spent life is never written back (it.89).
       if (!world.town) captureFloor();
       const save: SaveGame = {
         version: SAVE_VERSION,
@@ -2382,6 +2434,7 @@ async function boot(): Promise<void> {
         stash: coop && !net?.isHost ? { items: [...ownStash.items], gold: ownStash.gold } : { items: [...town.stash.items], gold: town.stash.gold },
         floors: { ...floors },
         quests: { ...quests },
+        difficulty: difficultyId,
       };
       const ok = saves.write(save);
       if (ok) {
@@ -3186,12 +3239,20 @@ async function boot(): Promise<void> {
       world.camera.addKick(3);
       hitStop(4);
       if (hero === player) {
-        audio.sfx('rarePickup');
-        audio.sfx('chest');
+        audio.sfx('keyTaken'); // Iron in the hand (it.89).
         world.dmgText.show(x, y - 1.5, `${def.name.toUpperCase()} · TAKEN`, 'crit');
         showReward(`QUEST ITEM · ${def.name.toUpperCase()}`);
       }
     };
+
+    // THE SPAWN WARD (it.89): a blow broke on the ward - say so, not every tick.
+    let lastWardNote = -100;
+    on('entity:warded', ({ entityId }) => {
+      const e = state.getEntity(entityId);
+      if (!e || state.tick - lastWardNote < 20) return;
+      lastWardNote = state.tick;
+      world.dmgText.show(e.pos.x, e.pos.y - 1.0, 'WARDED', 'miss');
+    });
 
     on('item:dropped', ({ itemId, x, y }) => {
       tutorial.notify('loot', screenLayout.state.touch ? 'A treasure has fallen — tap it, or press the open hand beside it.' : 'A treasure has fallen — press E near it, or click to claim it.');
@@ -3427,11 +3488,19 @@ async function boot(): Promise<void> {
       }
     });
 
+    /** The bed that played before the death sheet's lament (it.89). */
+    let musicBeforeDeath = audio.currentMusic;
     const respawnPlayer = (): void => {
       player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
       player.hp = player.hpMax;
       player.action = 'idle';
+      // THE SPAWN WARD (it.89): five seconds in which no blow can land.
+      player.wardTicks = SPAWN_WARD_TICKS;
       world.lighting.updateVisibility(world.dungeon.spawn.x, world.dungeon.spawn.y);
+      world.ambience.burst(player.pos.x, player.pos.y, 0x9fd0ff, 22);
+      world.dmgText.show(player.pos.x, player.pos.y - 1.2, `WARDED · ${SPAWN_WARD_TICKS / 60} s`, 'crit');
+      audio.sfx('ward');
+      audio.setMusic(musicBeforeDeath === 'death' || musicBeforeDeath === 'gameover' || musicBeforeDeath === 'none' ? 'dungeon' : musicBeforeDeath, floor);
       minimap.markDirty();
       updateOrb();
     };
@@ -3451,13 +3520,15 @@ async function boot(): Promise<void> {
       hero.hp = Math.max(1, Math.round(hero.hpMax * 0.5));
       hero.action = 'idle';
       hero.actionTicks = 0;
+      hero.wardTicks = SPAWN_WARD_TICKS; // THE SPAWN WARD (it.89), the party too.
       world.ambience.burst(hero.pos.x, hero.pos.y, 0xffd98a, 18);
       if (hero === player) {
         world.lighting.updateVisibility(Math.floor(hero.pos.x), Math.floor(hero.pos.y));
         minimap.markDirty();
         updateOrb();
         deathNote?.classList.remove('show');
-        world.dmgText.show(hero.pos.x, hero.pos.y - 1.2, 'YOU RISE AGAIN', 'crit');
+        world.dmgText.show(hero.pos.x, hero.pos.y - 1.2, `YOU RISE AGAIN · WARDED ${SPAWN_WARD_TICKS / 60} s`, 'crit');
+        audio.sfx('ward');
       } else {
         chat?.system(`${seat.name} rises again.`);
       }
@@ -3687,7 +3758,8 @@ async function boot(): Promise<void> {
         if (alive > 0) return;
         forestReturnTicks = 110;
         world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE FOREST IS QUIET · THE GATEKEEPER WAITS', 'crit');
-        audio.sfx('levelUp');
+        audio.sfx('questDone');
+        audio.sfx('depart'); // Footsteps down the road home (it.89).
         return;
       }
       if (--forestReturnTicks > 0) return;
@@ -3696,7 +3768,7 @@ async function boot(): Promise<void> {
       for (const seat of liveSeats()) seat.player.gold += 100; // The guild's purse, every hero of the party.
       eventBus.emit('inventory:changed', {});
       showReward('REWARD RECEIVED · 100 GOLD');
-      audio.sfx('levelUp');
+      audio.sfx('questDone'); // The fanfare (it.89).
       withFade(async () => {
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
@@ -3976,6 +4048,7 @@ async function boot(): Promise<void> {
             }
             world.ambience.playGlint(bl.x, bl.y);
             world.ambience.burst(bl.x, bl.y, 0xffd9a0, 20);
+            audio.sfx('barrelBreak'); // The hoard bursts (it.89).
             world.camera.addKick(7);
             world.camera.addShake(0.4);
           }
@@ -4024,8 +4097,18 @@ async function boot(): Promise<void> {
             if (hero.actionTicks >= COOP_REVIVE_TICKS) reviveSeat(seat);
           } else if (hero.actionTicks >= PLAYER_DEATH_TICKS && !runMenus.isDeathShown) {
             haptics.death();
+            // HARDCORE (it.89): the one life is spent. The slot is wiped before the
+            // sheet shows, so no reload and no closing tab can raise the delver again.
+            const hardcore = difficulty.current.lives === 1;
+            if (hardcore && !hardcoreOver) {
+              hardcoreOver = true;
+              saves.remove(slot);
+            }
+            if (audio.currentMusic !== 'death' && audio.currentMusic !== 'gameover') musicBeforeDeath = audio.currentMusic;
+            audio.setMusic(hardcore ? 'gameover' : 'death', floor);
             runMenus.showDeath(
-              `${floor < 0 ? 'The Coliseum' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark`,
+              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
+              hardcore,
             );
           }
         }
@@ -4235,7 +4318,18 @@ async function boot(): Promise<void> {
         // The hero's warm halo rides his interpolated position, breathing gently.
         const halo = worldToScreen(cameraFocus.x, cameraFocus.y, pickRingScratch);
         world.playerHalo.position.set(halo.x, halo.y - 22);
-        world.playerHalo.alpha = 0.3 + Math.sin(timeSec * 3.1) * 0.05;
+        // THE SPAWN WARD (it.89): the halo turns pale blue and breathes fast while no blow can land.
+        if (player.wardTicks > 0) {
+          world.playerHalo.tint = 0x9fd0ff;
+          world.playerHalo.alpha = 0.42 + Math.sin(timeSec * 12) * 0.16;
+          world.playerHalo.scale.set(3.2 + Math.sin(timeSec * 12) * 0.25);
+        } else {
+          if (world.playerHalo.tint !== 0xffa050) {
+            world.playerHalo.tint = 0xffa050;
+            world.playerHalo.scale.set(2.8);
+          }
+          world.playerHalo.alpha = 0.3 + Math.sin(timeSec * 3.1) * 0.05;
+        }
         if (timerLabel) {
           const t = formatTime(activeTicks); // The active clock (it.54).
           if (timerLabel.textContent !== t) timerLabel.textContent = t;
@@ -4746,7 +4840,7 @@ async function boot(): Promise<void> {
       if (net.isHost) {
         // What a late joiner replays (it.60): the seed, the opening roster and stash, every frame since.
         const base = net.historyProvider;
-        net.historyProvider = () => ({ ...(base ? base() : { upto: -1, frames: [] }), seed: baseSeed, members: roster.map((m) => ({ ...m })), stash: { items: [...startStash.items], gold: startStash.gold } });
+        net.historyProvider = () => ({ ...(base ? base() : { upto: -1, frames: [] }), seed: baseSeed, difficulty: difficultyId, members: roster.map((m) => ({ ...m })), stash: { items: [...startStash.items], gold: startStash.gold } });
         net.onJoin = (m) => lockstep.addMember(m.slot, { type: 'JOIN', playerId: m.slot, name: m.name, cls: m.cls, hero: m.hero });
         // THE WORLD AS IT STANDS (it.73): what a joiner gets instead of the
         // history. Null while a floor is being raised (the joiner waits a
@@ -4759,6 +4853,7 @@ async function boot(): Promise<void> {
           const seated = liveSeats();
           return {
             seed: baseSeed,
+            difficulty: difficultyId,
             tick: state.tick,
             floor,
             arena: world.isArena,
@@ -4902,14 +4997,14 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
     return {
       archetype: chosenClass,
       slot,
-      stash: () => ({ items: [...town.stash.items], gold: town.stash.gold }),
+      stash: () => (hardcoreOver ? { items: [], gold: 0 } : { items: [...town.stash.items], gold: town.stash.gold }), // A spent life takes the stash with it (it.89).
       save: saveNow,
       returnToTown: () => inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' }),
       destroy: () => {

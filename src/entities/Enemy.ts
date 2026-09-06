@@ -19,6 +19,7 @@
  */
 
 import { Container, Graphics, Sprite, Text } from 'pixi.js';
+import { difficulty } from '@/core/Difficulty';
 import { assets } from '@/core/AssetManager';
 import { COMBAT_SPEED, PLAYER_SPEED } from '@/core/config';
 import { eventBus } from '@/core/EventBus';
@@ -834,6 +835,8 @@ export const AFFIX_COLOR: Record<EnemyAffix, number> = { frost: 0x7fd8ff, thorns
 export const FROST_AURA_RADIUS = 3;
 
 const AGGRO_RADIUS = 6.5;
+/** The wardens and the quarry's keeper (it.89): four tourist hits, never one. */
+const BOSS_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['boss', 'bossFrost', 'bossEmber', 'bossHollow', 'bossHollowKnight', 'bossHollowLich', 'hydra']);
 const REPATH_TICKS = 30;
 /** 4-neighbors first, then diagonals — for the wall-unstick snap. */
 const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
@@ -1018,7 +1021,7 @@ export class Enemy extends Entity {
     this.level = Math.max(1, Math.round(level));
     const scale = levelHpScale(this.level);
     this.warpTo(x, y);
-    this.hpMax = Math.round(this.def.hp * scale);
+    this.hpMax = Math.round(this.def.hp * scale * difficulty.current.foeHp); // THE DARK'S MEASURE (it.89).
     this.hp = this.hpMax;
     this.dmgScale = scale;
     this.levelText.text = `${this.def.name} · Lv ${this.level}`;
@@ -1301,7 +1304,13 @@ export class Enemy extends Entity {
   }
 
   private get recover(): number {
-    return Math.max(4, Math.round(this.def.recoverTicks / COMBAT_SPEED));
+    // The gap between swings shrinks with the measure's cadence (it.89); the telegraph keeps its length.
+    return Math.max(4, Math.round(this.def.recoverTicks / COMBAT_SPEED / difficulty.current.foeRate));
+  }
+
+  /** A warden or the quarry's keeper (it.89): the tourist's blade counts four hits on these. */
+  get isWarden(): boolean {
+    return BOSS_KINDS.has(this.def.kind);
   }
 
   override update(dt: number): void {
@@ -1370,7 +1379,7 @@ export class Enemy extends Entity {
       if (this.actionTicks >= PHASE_DIE_TICKS + PHASE_RISE_TICKS) {
         // Reborn: a fresh, full 100% hp pool for the new phase.
         this.phase++;
-        this.hpMax = Math.round(this.def.hp * levelHpScale(this.level));
+        this.hpMax = Math.round(this.def.hp * levelHpScale(this.level) * difficulty.current.foeHp);
         this.hp = this.hpMax;
         this.hitRecoveryTicks = this.def.hitRecoveryTicks;
         this.action = 'idle';
@@ -1428,7 +1437,7 @@ export class Enemy extends Entity {
 
     switch (this.aiState) {
       case 'idle':
-        if (dist <= AGGRO_RADIUS && los) {
+        if (dist <= AGGRO_RADIUS * difficulty.current.aggro && los) {
           this.aiState = 'chase';
           this.losLostTicks = 0;
           // Something in the dark has noticed you (growl audio hook).
@@ -1440,7 +1449,7 @@ export class Enemy extends Entity {
         // blind marathon into map corners); a CORNERED flee-er (no room to
         // retreat) snaps into desperation and fights to the death instead
         // of grinding into the wall.
-        if (dist > AGGRO_RADIUS + 2) {
+        if (dist > AGGRO_RADIUS * difficulty.current.aggro + 2) {
           this.aiState = 'idle';
         } else if (!this.moveDirect(-dx, -dy, dt)) {
           this.desperation = true; // Latched: never flees again.
@@ -1558,7 +1567,7 @@ export class Enemy extends Entity {
   private moveDirect(dx: number, dy: number, dt: number): boolean {
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) return false;
-    const step = PLAYER_SPEED * this.def.speedMult * (this.chillTicks > 0 ? this.chillFactor : 1) * dt;
+    const step = PLAYER_SPEED * this.def.speedMult * difficulty.current.foeSpeed * (this.chillTicks > 0 ? this.chillFactor : 1) * dt;
     this.facing.x = dx / len;
     this.facing.y = dy / len;
     // Walk cycle advances WITH the ground covered — no foot-sliding.
@@ -1577,7 +1586,7 @@ export class Enemy extends Entity {
       this.pathIndex++;
       return;
     }
-    const step = Math.min(PLAYER_SPEED * this.def.speedMult * (this.chillTicks > 0 ? this.chillFactor : 1) * dt, dist);
+    const step = Math.min(PLAYER_SPEED * this.def.speedMult * difficulty.current.foeSpeed * (this.chillTicks > 0 ? this.chillFactor : 1) * dt, dist);
     this.facing.x = dx / dist;
     this.facing.y = dy / dist;
     this.walkPhase += step * (this.def.sprite?.stride ?? 0.4);

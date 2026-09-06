@@ -10,6 +10,7 @@
  */
 
 import { Container, Sprite, type ContainerChild } from 'pixi.js';
+import { SPAWN_WARD_TICKS } from '@/core/Difficulty';
 import { assets } from '@/core/AssetManager';
 import { eventBus } from '@/core/EventBus';
 import { overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type UniqueEffect, type WeaponKind } from '@/items/catalog';
@@ -178,6 +179,14 @@ const SLASH_FRAMES = 11;
 // the catalog) — the same numbers the CombatSystem simulates with.
 
 export class Player extends Entity {
+  /** THE SPAWN WARD (it.89): ticks left in which no blow can land (sim state, counted down each tick). */
+  wardTicks = 0;
+
+  override beginTick(): void {
+    super.beginTick();
+    if (this.wardTicks > 0) this.wardTicks--;
+  }
+
   readonly archetype: ClassArchetype;
   /** Equipped itemIds by slot (simulation state — serialized). */
   private readonly equipped = new Map<EquipmentSlot, string>();
@@ -260,6 +269,7 @@ export class Player extends Entity {
     const push = (id: string, name: string, icon: string | null, glyph: string, ticks: number, max: number, debuff = false): void => {
       if (ticks > 0) out.push({ id, name, icon, glyph, ticks, max: Math.max(max, ticks), debuff });
     };
+    push('ward', 'Spawn Ward', null, '✧', this.wardTicks, SPAWN_WARD_TICKS);
     push('dmg', this.archetype === 'mage' ? 'Arcane Intellect' : 'War Cry', this.archetype === 'mage' ? 'intellect' : 'warcry', '♜', this.dmgBuffTicks, this.buffMax.dmg);
     push('dr', 'Stone Skin', 'stoneskin', '⛨', this.drTicks, this.buffMax.dr);
     push('haste', 'Haste', 'shadowstep', '➟', this.hasteTicks, this.buffMax.haste);

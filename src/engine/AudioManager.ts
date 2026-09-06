@@ -85,10 +85,21 @@ export type SfxName =
   | 'portal'
   | 'save'
   | 'goreKill'
-  | 'goreHit';
+  | 'goreHit'
+  // ---- THE NEW BUNDLE (it.89): the SPX samples, the books, the ward ----
+  | 'keyTaken'
+  | 'questDone'
+  | 'gateIron'
+  | 'depart'
+  | 'barrelBreak'
+  | 'dialogueOpen'
+  | 'dialogueClose'
+  | 'ward';
 
 /** Which music bed is wanted (main drives; crossfades happen here). */
-export type MusicState = 'none' | 'menu' | 'town' | 'dungeon' | 'boss' | 'victory';
+export type MusicState = 'none' | 'menu' | 'town' | 'dungeon' | 'boss' | 'victory' | 'forest' | 'mines' | 'death' | 'gameover';
+/** The beds that rotate through a playlist (it.89: the forest and the quarry joined). */
+type PlaylistKey = 'town' | 'dungeon' | 'forest' | 'mines';
 
 // Base-aware root (it.31): '/' in dev, '/isometric-game/' on GitHub Pages.
 const AUDIO_BASE = `${import.meta.env.BASE_URL}assets/audio`;
@@ -112,6 +123,8 @@ const PACK = `${AUDIO_BASE}/Free Fantasy SFX Pack By TomMusic/OGG Files/SFX`;
 const SWORDS = `${PACK}/Attacks/Sword Attacks Hits and Blocks`;
 const BOWS = `${PACK}/Attacks/Bow Attacks Hits and Blocks`;
 const GORE = `${AUDIO_BASE}/gore`;
+/** THE SPX SAMPLES (it.89): iron, wood, departing steps and a fanfare. */
+const SPX = `${AUDIO_BASE}/SPX_samples`;
 const VARIANTS: Record<string, string[]> = {
   // Gore vol 1 (it.43): bone and viscera on kills and heavy hits.
   goreCrack: ['S_Bone_crack.wav', 'S_Bone_crack_002.wav', 'S_Bone_crack_003.wav', 'S_Bone_snap.wav', 'S_Bone_snap_002.wav'].map((f) => `${GORE}/${f}`),
@@ -141,6 +154,12 @@ const VARIANTS: Record<string, string[]> = {
   firespray: [1, 2].map((n) => `${PACK}/Spells/Firespray ${n}.ogg`),
   bowBlocked: [1, 2, 3].map((n) => `${BOWS}/Bow Blocked ${n}.ogg`),
   unsheath: [1, 2].map((n) => `${SWORDS}/Sword Unsheath ${n}.ogg`),
+  // THE SPX SAMPLES (it.89).
+  metalClank: [`${SPX}/Metal_Clank.mp3`],
+  barrelBreak: [`${SPX}/Barrel_Break.mp3`],
+  barrelRoll: [`${SPX}/Barrel_Roll.mp3`],
+  footstepsDeparting: [`${SPX}/Footsteps_Departing.mp3`],
+  success: [`${SPX}/Success.mp3`],
   // Ambient stinger material: distant doors and gates groaning in the dark.
   creak: [
     `${PACK}/Doors Gates and Chests/Door Open 1.ogg`,
@@ -151,8 +170,9 @@ const VARIANTS: Record<string, string[]> = {
   ],
 };
 
-/** Looping ambient bed: the pack's cave atmosphere, under everything. */
+/** Looping ambient beds: the pack's cave under the quarry, the dungeon recording under the crypt (it.89). */
 const AMBIENT_BED = `${PACK.replace('/SFX', '')}/BGS Loops/Cave/Cave.ogg`;
+const DUNGEON_BED = `${AUDIO_BASE}/Ambience_samples/Ambience_Inside_the_Dungeon_01.mp3`;
 
 /**
  * BOSS FIGHT MUSIC (it.28, exact path public/assets/audio/boss fight):
@@ -167,6 +187,11 @@ const BOSS_TRACKS: Record<number, string> = {
   20: `${BOSS_MUSIC_DIR}/5. Dread March .mp3`, // (Filename really has the space.)
 };
 const BOSS_TRACK_DEFAULT = `${BOSS_MUSIC_DIR}/2. Shadowforge Convergence.mp3`;
+/** THE WIZARDS II ALBUM (it.89): twenty-seven tracks, unpacked to Wizards 2/tracks. */
+const WIZARDS = `${AUDIO_BASE}/Wizards 2/tracks`;
+const wz = (name: string): string => `${WIZARDS}/${name}.mp3`;
+/** The quarry's keeper fights to its own drums; the coliseum's trial keeps depth V's. */
+BOSS_TRACKS[102] = wz('Wizards Warfront');
 /** Title screen theme (it.36) and the epilogue theme. */
 const MENU_TRACK = `${BOSS_MUSIC_DIR}/1. Whispers of the Abyss.mp3`;
 /**
@@ -174,8 +199,18 @@ const MENU_TRACK = `${BOSS_MUSIC_DIR}/1. Whispers of the Abyss.mp3`;
  * of looping one file — the next track starts when one ends, and every
  * floor change steps the dungeon playlist forward.
  */
-const TOWN_PLAYLIST = [MENU_TRACK, FILES.magic6, FILES.chant];
-const DUNGEON_PLAYLIST = [FILES.bgm, FILES.doom, FILES.bgmDeep, FILES.beast];
+const TOWN_PLAYLIST = [MENU_TRACK, wz('The Mystic Meadows'), FILES.magic6, wz('The Serene Horizons'), wz('Serenity of the Enchanter'), FILES.chant, wz('The Tranquil Expedition'), wz('The Soothing Sorcery')];
+const DUNGEON_PLAYLIST = [FILES.bgm, `${AUDIO_BASE}/dungeon_tomb.mp3`, FILES.doom, wz('The Labyrinth of Dark Rites'), FILES.bgmDeep, wz('The Shrouded Enigma'), FILES.beast, `${AUDIO_BASE}/dungeon_castle.mp3`, wz('The Secrets of the Haunted Grimoire'), wz('The Silent Mysteries')];
+/** THE DARK FOREST and THE QUARRY MINES (it.89): their own beds. */
+const FOREST_PLAYLIST = [`${AUDIO_BASE}/dungeon_forest.mp3`, wz('The Harmony of the Enchanted Grove'), wz('Exploring the Unknown Paths'), wz('The Witching Hour s Secret')];
+const MINES_PLAYLIST = [`${AUDIO_BASE}/Secret Underground Cave.mp3`, wz('The Sorcerer s Omen'), wz('The Wizard s Magical Lab'), wz('The Arcane Lights')];
+const PLAYLISTS: Record<PlaylistKey, string[]> = { town: TOWN_PLAYLIST, dungeon: DUNGEON_PLAYLIST, forest: FOREST_PLAYLIST, mines: MINES_PLAYLIST };
+/** The death sheet's lament, and the one-life ending (Hope is Lost, downmixed to 22 kHz mono). */
+const DEATH_TRACK = wz('The Tragic Spell');
+const GAMEOVER_TRACK = `${AUDIO_BASE}/hope-is-lost-22k.wav`;
+/** POLYPHONY (it.89): a bank never stacks past this many live takes, the mix never past the total. */
+const MAX_PER_BANK = 4;
+const MAX_VOICES = 24;
 const VICTORY_TRACK = `${BOSS_MUSIC_DIR}/4. Cursed Citadel .mp3`; // (Filename really has the space.)
 
 /**
@@ -252,11 +287,18 @@ export class AudioManager {
     dungeon: null,
     boss: null,
     victory: null,
+    forest: null,
+    mines: null,
+    death: null,
+    gameover: null,
   };
   private musicState: MusicState = 'none';
   private musicFloor = 0;
   /** Playlist cursors (it.45). */
-  private readonly playlistIndex = { town: 0, dungeon: 0 };
+  private readonly playlistIndex: Record<PlaylistKey, number> = { town: 0, dungeon: 0, forest: 0, mines: 0 };
+  /** Live takes per bank and in total (it.89): the caps that stop a pack of ten from stacking ten hits. */
+  private readonly live = new Map<string, number>();
+  private liveTotal = 0;
   private musicTimer: number | null = null;
   /** Pause-menu ducking: music/ambience sink while a modal owns the screen. */
   private ducked = false;
@@ -317,10 +359,14 @@ export class AudioManager {
       // The town shares the title theme (Tristram plays in the menu too).
       this.music.town = this.hookMediaElement(TOWN_PLAYLIST[0], false);
       this.music.dungeon = this.hookMediaElement(DUNGEON_PLAYLIST[0], false);
+      this.music.forest = this.hookMediaElement(FOREST_PLAYLIST[0], false);
+      this.music.mines = this.hookMediaElement(MINES_PLAYLIST[0], false);
       // Rotation: when a bed ends, step its playlist and keep playing.
-      for (const key of ['town', 'dungeon'] as const) {
+      for (const key of ['town', 'dungeon', 'forest', 'mines'] as const) {
         this.music[key]?.addEventListener('ended', () => this.advancePlaylist(key));
       }
+      this.music.death = this.hookMediaElement(DEATH_TRACK, true);
+      this.music.gameover = this.hookMediaElement(GAMEOVER_TRACK, true);
       this.music.boss = this.hookMediaElement(BOSS_TRACK_DEFAULT, true);
       this.music.victory = this.hookMediaElement(VICTORY_TRACK, false);
       for (const el of Object.values(this.music)) if (el) el.volume = 0;
@@ -395,14 +441,18 @@ export class AudioManager {
    */
   private maybeStinger(): void {
     if (!this.ctx || this.settings.muted) return;
-    if (this.musicState !== 'dungeon' && this.musicState !== 'boss') return; // The crypt only.
+    if (this.musicState !== 'dungeon' && this.musicState !== 'boss' && this.musicState !== 'mines' && this.musicState !== 'forest') return; // Never in town or on a sheet.
     if (this.ducked) return;
     const now = performance.now();
     if (now < this.stingerQuietUntil) return;
     if (Math.random() < 0.25) return; // Unpredictable, but rarely silent long.
     let played = false;
     const roll = Math.random();
-    if (this.voicePools.has('ambient') && roll < 0.2) {
+    if (this.musicState === 'mines' && roll < 0.35) {
+      // THE PIT SPEAKS (it.89): a barrel rolls somewhere, iron clanks, wood gives.
+      const r2 = Math.random();
+      played = this.playVariant(r2 < 0.45 ? 'barrelRoll' : r2 < 0.8 ? 'metalClank' : 'barrelBreak', 0.22, 0.85 + Math.random() * 0.2, 0.05, 0, this.ambGain);
+    } else if (this.voicePools.has('ambient') && roll < 0.2) {
       played = this.playPool('ambient', 0.85, 0.14);
     } else if (roll < 0.4) {
       // HORROR ambient dread: a long creepy soundscape, very low (it.25).
@@ -513,12 +563,35 @@ export class AudioManager {
   }
 
   /** Play a decoded file buffer through the SFX bus. Returns false if absent. */
+  /**
+   * POLYPHONY (it.89): claim a voice for a bank. False when the bank already
+   * has MAX_PER_BANK takes ringing or the mix is full - the caller drops the
+   * take (a tenth simultaneous sword-hit adds nothing but clipping).
+   */
+  private claimVoice(group: string, src: AudioBufferSourceNode): boolean {
+    const n = this.live.get(group) ?? 0;
+    if (n >= MAX_PER_BANK || this.liveTotal >= MAX_VOICES) return false;
+    this.live.set(group, n + 1);
+    this.liveTotal++;
+    src.onended = () => {
+      this.live.set(group, Math.max(0, (this.live.get(group) ?? 1) - 1));
+      this.liveTotal = Math.max(0, this.liveTotal - 1);
+    };
+    return true;
+  }
+
+  /** Live voices right now (QA). */
+  get liveVoices(): number {
+    return this.liveTotal;
+  }
+
   private playBuffer(key: string, vol = 1): boolean {
     if (!this.ctx) return false;
     const buf = this.buffers.get(key);
     if (!buf) return false;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
+    if (!this.claimVoice(key, src)) return true; // Full: the take is dropped, not stacked.
     const g = this.ctx.createGain();
     g.gain.value = vol;
     src.connect(g).connect(this.sfxGain);
@@ -547,6 +620,7 @@ export class AudioManager {
     const t = this.ctx.currentTime;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
+    if (!this.claimVoice(key, src)) return true;
     src.playbackRate.value = rate * (1 + (Math.random() * 2 - 1) * jitter);
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
@@ -576,6 +650,7 @@ export class AudioManager {
     const t = this.ctx.currentTime + delay;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
+    if (!this.claimVoice(group, src)) return true; // The bank is full: no stacking (it.89).
     src.playbackRate.value = rate * (1 + (Math.random() * 2 - 1) * jitter);
     const g = this.ctx.createGain();
     g.gain.value = vol;
@@ -936,6 +1011,37 @@ export class AudioManager {
       case 'skillVanish':
         this.playVariant('iceFreeze', 0.45, 1.5, 0.08); // A cold shimmer out of sight.
         break;
+      // ---- THE NEW BUNDLE (it.89) ----
+      case 'keyTaken':
+        // Iron in the hand, then the gem's chime: a quest item, not a coin.
+        if (!this.playVariant('metalClank', 0.7, 1.05, 0.04)) this.playVariant('coin', 0.5, 1.2, 0.05);
+        this.playVariant('gemCollect', 0.55, 1.0, 0.04, 0.12);
+        break;
+      case 'questDone':
+        if (!this.playVariant('success', 0.8, 1.0, 0.0)) this.playVariant('firebuff', 0.85);
+        break;
+      case 'gateIron':
+        this.playVariant('metalClank', 0.8, 0.9, 0.05);
+        this.playVariant('gateOpen', 0.6, 1.0, 0.02, 0.08);
+        break;
+      case 'depart':
+        // The party is drawn home: footsteps fade down the road, on the ambient bus.
+        this.playVariant('footstepsDeparting', 0.5, 1.0, 0.02, 0.3, this.ambGain);
+        break;
+      case 'barrelBreak':
+        if (!this.playVariant('barrelBreak', 0.75, 1.0, 0.06)) this.playVariant('chestOpen', 0.8);
+        break;
+      case 'dialogueOpen':
+        this.playVariant('bookOpen', 0.5, 1.0, 0.03);
+        break;
+      case 'dialogueClose':
+        this.playVariant('bookClose', 0.5, 1.0, 0.03);
+        break;
+      case 'ward':
+        // A cold shimmer and a warm glow: the spawn ward closes around the delver.
+        this.playVariant('iceFreeze', 0.45, 1.25, 0.05);
+        this.playVariant('firebuff', 0.4, 1.15, 0.05, 0.15);
+        break;
     }
   }
 
@@ -947,8 +1053,8 @@ export class AudioManager {
    * the dungeon bed; ducking sinks everything while a modal owns the screen.
    */
   /** Step a playlist (track ended / floor changed) and, if it is the live bed, keep it playing. */
-  private advancePlaylist(key: 'town' | 'dungeon'): void {
-    const list = key === 'town' ? TOWN_PLAYLIST : DUNGEON_PLAYLIST;
+  private advancePlaylist(key: PlaylistKey): void {
+    const list = PLAYLISTS[key];
     this.playlistIndex[key] = (this.playlistIndex[key] + 1) % list.length;
     const el = this.music[key];
     if (!el) return;
@@ -958,8 +1064,8 @@ export class AudioManager {
   }
 
   /** The playlist track a bed is on (QA). */
-  playlistTrack(key: 'town' | 'dungeon'): string {
-    const list = key === 'town' ? TOWN_PLAYLIST : DUNGEON_PLAYLIST;
+  playlistTrack(key: PlaylistKey): string {
+    const list = PLAYLISTS[key];
     return list[this.playlistIndex[key]].split('/').pop() ?? '';
   }
 
@@ -971,7 +1077,7 @@ export class AudioManager {
       this.advancePlaylist('dungeon');
       return;
     }
-    if (state === 'dungeon' || state === 'boss') this.preloadRunBanks();
+    if (state === 'dungeon' || state === 'boss' || state === 'forest' || state === 'mines') this.preloadRunBanks();
     if (state === this.musicState && !trackChanged) return;
     this.musicState = state;
     this.musicFloor = floor;
@@ -998,16 +1104,26 @@ export class AudioManager {
       const want = encodeURI(url);
       if (!el.src.endsWith(want.split('/').pop() ?? '')) {
         el.src = want;
-        el.loop = el === this.music.boss || el === this.music.menu;
+        el.loop = el === this.music.boss || el === this.music.menu || el === this.music.death || el === this.music.gameover;
       }
     };
     if (this.musicState === 'dungeon') retarget(this.music.dungeon, DUNGEON_PLAYLIST[this.playlistIndex.dungeon]);
     if (this.musicState === 'town') retarget(this.music.town, TOWN_PLAYLIST[this.playlistIndex.town]);
+    if (this.musicState === 'forest') retarget(this.music.forest, FOREST_PLAYLIST[this.playlistIndex.forest]);
+    if (this.musicState === 'mines') retarget(this.music.mines, MINES_PLAYLIST[this.playlistIndex.mines]);
     if (this.musicState === 'boss') retarget(this.music.boss, BOSS_TRACKS[this.musicFloor] ?? BOSS_TRACK_DEFAULT);
     const duckMul = this.ducked ? 0.25 : 1;
-    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0 };
+    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0, forest: 0, mines: 0, death: 0, gameover: 0 };
     if (this.musicState !== 'none') targets[this.musicState] = duckMul;
-    const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'boss' ? 0.16 : 0) * duckMul;
+    // ONE BED UNDER EACH ZONE (it.89): the dungeon recording under the crypt, the cave under the quarry, silence under the forest.
+    const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'mines' ? 0.5 : this.musicState === 'boss' ? 0.16 : this.musicState === 'death' ? 0.2 : 0) * duckMul;
+    if (this.ambEl && ambTarget > 0) {
+      const bed = encodeURI(this.musicState === 'mines' ? AMBIENT_BED : DUNGEON_BED);
+      if (!this.ambEl.src.endsWith(bed.split('/').pop() ?? '')) {
+        this.ambEl.src = bed;
+        this.ambEl.loop = true;
+      }
+    }
     // Kick the wanted bed (autoplay-safe: retried by the crossfade ticker).
     for (const key of Object.keys(targets) as Array<Exclude<MusicState, 'none'>>) {
       const el = this.music[key];

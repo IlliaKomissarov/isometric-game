@@ -142,12 +142,18 @@ export class RunMenusUI {
   }
 
   /** Death overlay: shown by main once the death animation has played out. */
-  showDeath(stats: string): void {
+  showDeath(stats: string, hardcore = false): void {
     if (this.dead) return;
     this.dead = true;
     this.shownAt = performance.now();
     const el = this.deathEl.querySelector('.dm-stats');
     if (el) el.textContent = stats;
+    // HARDCORE (it.89): no rising, no other class - the sheet says THE END.
+    this.deathEl.classList.toggle('hardcore', hardcore);
+    const h2 = this.deathEl.querySelector('h2');
+    if (h2) h2.textContent = hardcore ? 'THE END' : 'YOU HAVE FALLEN';
+    const sub = this.deathEl.querySelector('.modal-sub');
+    if (sub) sub.textContent = hardcore ? 'one life, and it is spent - the slot is wiped, the stash with it' : 'the dark takes what it is owed';
     this.deathEl.classList.add('show');
     audio.duck(true);
     this.hooks.pause();

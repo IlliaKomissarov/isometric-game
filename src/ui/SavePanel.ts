@@ -8,6 +8,7 @@
 
 import { audio } from '@/engine/AudioManager';
 import { saves, SAVE_SLOTS, type SaveMeta } from '@/persist/SaveGame';
+import { asDifficultyId, DIFFICULTIES } from '@/core/Difficulty';
 
 export interface SavePanelHooks {
   load: (slot: number) => void;
@@ -73,7 +74,7 @@ export class SavePanelUI {
         return `<div class="sv-row empty"><div class="sv-slot">SLOT ${slot}</div><div class="sv-desc">Empty</div>
           ${this.mode === 'new' ? `<button class="menu-btn sv-btn" data-new="${slot}">BEGIN HERE</button>` : ''}</div>`;
       }
-      const desc = `${m.archetype.toUpperCase()} · LVL ${m.level} · DEPTH ${ROMAN[Math.max(0, m.deepestFloor - 1)] ?? m.deepestFloor} · ◆ ${m.gold} · ${fmtTime(m.playtimeTicks)}`;
+      const desc = `${m.archetype.toUpperCase()} · LVL ${m.level} · DEPTH ${ROMAN[Math.max(0, m.deepestFloor - 1)] ?? m.deepestFloor} · ◆ ${m.gold} · ${fmtTime(m.playtimeTicks)} · ${DIFFICULTIES[asDifficultyId(m.difficulty)].name}`;
       const when = new Date(m.updatedAt).toLocaleString();
       return `<div class="sv-row"><div class="sv-slot">SLOT ${slot}</div><div class="sv-desc">${desc}<span class="sv-when">${when}</span></div>
         ${this.mode === 'load' ? `<button class="menu-btn sv-btn" data-load="${slot}">LOAD</button><button class="menu-btn sv-btn danger" data-delete="${slot}">DELETE</button>` : `<button class="menu-btn sv-btn danger" data-new="${slot}">OVERWRITE</button>`}</div>`;

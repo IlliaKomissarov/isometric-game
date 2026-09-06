@@ -22,6 +22,8 @@ export interface GameEvents {
   'entity:damaged': { entityId: number; amount: number; dirX?: number; dirY?: number };
   /** Vampiric champions drink (it.53). */
   'entity:healed': { entityId: number; amount: number };
+  /** THE SPAWN WARD (it.89): a blow broke on a risen hero's ward. */
+  'entity:warded': { entityId: number };
   /** An entity died and was released back to its pool. */
   'entity:died': { entityId: number };
   /** An idle enemy noticed the player (growl audio / alert feedback). */

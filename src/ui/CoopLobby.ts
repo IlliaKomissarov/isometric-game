@@ -45,11 +45,15 @@ export interface CoopStart {
   snapshot?: SnapshotPayload;
   /** The local hero's sheet (the seat a mid-run joiner brings). */
   hero: PlayerSave | null;
+  /** THE DARK'S MEASURE (it.89): the leader's difficulty id (medium when absent). */
+  difficulty?: string;
 }
 
 export interface CoopLobbyHooks {
   /** Stream the four idle atlases (portraits need them; the title may not have them yet). */
   ensurePreviews: () => Promise<void>;
+  /** THE DARK'S MEASURE (it.89): the difficulty the host's delve runs at. */
+  difficulty: () => string;
   /** Idle frames of the class (south-facing) for portraits and the preview. */
   previewFor: (cls: ClassArchetype) => HTMLCanvasElement[];
   /** The hero sheet this class keeps for co-op (null = fresh). */
@@ -482,20 +486,20 @@ export class CoopLobbyUI {
         } else if (msg.t === 'sys') {
           this.log(`[System] ${msg.text}`, '#a89c80');
         } else if (msg.t === 'start' && !net.isHost) {
-          this.launch({ net, seed: msg.seed, members: msg.members, localSlot: net.localSlot, stash: msg.stash, hero: this.hooks.heroFor(this.cls) });
+          this.launch({ net, seed: msg.seed, members: msg.members, localSlot: net.localSlot, stash: msg.stash, hero: this.hooks.heroFor(this.cls), difficulty: msg.difficulty });
         }
       }),
     );
     this.offNet.push(
       net.onHistory((h) => {
         // A delve in progress: replay it, then step in.
-        this.launch({ net, seed: h.seed, members: net.members, localSlot: net.localSlot, stash: h.stash, history: h, hero: this.hooks.heroFor(this.cls) });
+        this.launch({ net, seed: h.seed, members: net.members, localSlot: net.localSlot, stash: h.stash, history: h, hero: this.hooks.heroFor(this.cls), difficulty: h.difficulty });
       }),
     );
     this.offNet.push(
       net.onSnapshot((s) => {
         // A delve in progress (it.73): the world as it stands — no replay.
-        this.launch({ net, seed: s.seed, members: net.members, localSlot: net.localSlot, stash: s.stash, snapshot: s, hero: this.hooks.heroFor(this.cls) });
+        this.launch({ net, seed: s.seed, members: net.members, localSlot: net.localSlot, stash: s.stash, snapshot: s, hero: this.hooks.heroFor(this.cls), difficulty: s.difficulty });
       }),
     );
     net.onHostLost((reason) => {
@@ -613,8 +617,9 @@ export class CoopLobbyUI {
     net.phase = 'run';
     const members = online.map((m) => ({ ...m }));
     const stash = this.hooks.stashFor(this.cls);
-    net.broadcast({ t: 'start', seed, members, stash });
-    this.launch({ net, seed, members, localSlot: 0, stash, hero: this.hooks.heroFor(this.cls) });
+    const difficulty = this.hooks.difficulty();
+    net.broadcast({ t: 'start', seed, members, stash, difficulty });
+    this.launch({ net, seed, members, localSlot: 0, stash, hero: this.hooks.heroFor(this.cls), difficulty });
   }
 
   private launch(cfg: CoopStart): void {

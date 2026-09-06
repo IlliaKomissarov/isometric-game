@@ -92,6 +92,8 @@ export interface SaveGame {
   floors: Record<number, FloorMemory>;
   /** THE QUEST LEDGER (it.87): quest id → state ('new' | 'active' | 'done'). */
   quests?: Record<string, string>;
+  /** THE DARK'S MEASURE (it.89): the run's difficulty id; medium when absent. */
+  difficulty?: string;
 }
 
 export interface SaveMeta {
@@ -102,6 +104,7 @@ export interface SaveMeta {
   gold: number;
   updatedAt: number;
   playtimeTicks: number;
+  difficulty?: string;
 }
 
 export function emptyFloorMemory(): FloorMemory {
@@ -179,6 +182,7 @@ export const saves = {
               gold: s.player.gold + s.stash.gold,
               updatedAt: s.updatedAt,
               playtimeTicks: s.playtimeTicks,
+              difficulty: s.difficulty,
             }
           : null,
       );

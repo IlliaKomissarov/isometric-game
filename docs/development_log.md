@@ -1,5 +1,97 @@
 # Development Log
 
+## 2026-09-06 (iteration 89) - The dark's measure, the spawn ward, the new bundle in every zone
+
+### The dark's measure (`src/core/Difficulty.ts`)
+- Five settings in one table the simulation reads (`difficulty.current`),
+  chosen on the class screen (THE DARK'S MEASURE row, remembered in
+  `iso-arpg-difficulty`), kept by the save (`SaveGame.difficulty`, shown on
+  CONTINUE and the slot panel), sent with a party's start, history and
+  snapshot (a party runs the leader's; hardcore becomes hard there - one
+  life is a solo vow). Exposed as `__game.difficulty`.
+- The maths, applied in `Combat.dealDamage` before armor: a blow on a hero
+  = rolled × heroTaken × foeDamage (the foe multiplier only when a foe
+  struck; a hero's reflected steel is not a foe's blow). Foe life at spawn
+  and per boss phase × foeHp (`Enemy.spawn`); sight = AGGRO_RADIUS × aggro;
+  chase speed × foeSpeed; the recovery between swings ÷ foeRate (the
+  telegraph keeps its length so a harder foe swings sooner, not faster).
+
+  | Mode | Blows on you | Foe life | Sight · pace · cadence | Rule |
+  | --- | --- | --- | --- | --- |
+  | Tourist | 10 % × 50 % = 5 % | 100 % | 100 % | every hero blow ≥ ceil(hpMax ÷ N): common 1, champion 2, warden 4 (per phase) |
+  | Easy | 100 % × 70 % = 70 % | 80 % | 90 · 100 · 90 | — |
+  | Medium | 100 % | 100 % | 100 | — |
+  | Hard | 125 % × 120 % = 150 % | 140 % | 135 · 110 · 115 | — |
+  | Hardcore | 115 % × 115 % = 132 % | 125 % | 125 · 105 · 110 | one life |
+
+- Tourist's rule (`hitsToKill`) skips pure damage (statuses) and reflected
+  blows; wardens are `Enemy.isWarden` (the four wardens, the Hollow King's
+  forms, the hydra); champions are the affixed. The minimum-1 rule keeps
+  every landed blow at least a scratch, so "almost zero" is 1-2 points.
+- HARDCORE: when the death animation ends the slot is wiped BEFORE the sheet
+  shows (`saves.remove(slot)`, `hardcoreOver` gates `saveNow` and the
+  pagehide save), the sheet says THE END with no rising and no other class,
+  `RunHandle.stash()` returns nothing so a restart starts clean, and the
+  Hope-is-Lost lament plays.
+
+### The spawn ward
+- `Player.wardTicks` (sim state, counted down in `beginTick`) is set to
+  `SPAWN_WARD_TICKS` (300 = five seconds) by `respawnPlayer` and the co-op
+  `reviveSeat`. `dealDamage` returns before anything while it stands and
+  emits `entity:warded` (a WARDED note at most every 20 ticks). The halo
+  turns pale blue and breathes fast, the buff bar carries a ✧ Spawn Ward
+  with its clock, `WARDED · 5 s` rises with the delver, a shimmer sounds.
+
+### The new bundle
+- `public/assets/audio` grew: the Wizards II album (27 zips, unpacked to
+  `Wizards 2/tracks/*.mp3` by a script), three dungeon suites
+  (`dungeon_forest/tomb/castle.mp3`), `Secret Underground Cave.mp3`, the
+  `SPX_samples` (Metal_Clank, Barrel_Break, Barrel_Roll,
+  Footsteps_Departing, Success), `Ambience_Inside_the_Dungeon_01`, and
+  `Hope is Lost.wav` (24-bit 48 kHz stereo, 28 MB - downmixed by numpy to
+  `hope-is-lost-22k.wav`, 16-bit 22 kHz mono, 4.3 MB; the source and the
+  98 MB ambience WAV are not shipped, the MP3 twins are).
+- MUSIC: `MusicState` gained `forest`, `mines`, `death`, `gameover`; four
+  playlists (`PLAYLISTS`): town (the title theme + four calm album tracks +
+  the two rites), dungeon (mystery, tomb, doom, dark rites, drone, enigma,
+  beast, castle, grimoire, mysteries), forest (the forest suite, the grove,
+  the unknown paths, the witching hour), mines (the cave, the omen, the lab,
+  the arcane lights). The quarry arena drums to Wizards' Warfront
+  (`BOSS_TRACKS[102]`). The death sheet plays The Tragic Spell; the
+  one-life end plays Hope is Lost; rising restores the bed that played.
+- AMBIENCE: one bed element retargeted per zone - the dungeon recording
+  under the crypt (0.55), the cave under the quarry (0.5), silence under the
+  forest, a murmur under the death sheet. Stingers now also speak in the
+  quarry (barrels roll, iron clanks, wood gives - on the ambient bus, one at
+  a time inside the quiet window) and the forest.
+- SFX: `keyTaken` (iron then the gem), `questDone` (the fanfare),
+  `gateIron` (iron then the gate's groan), `depart` (footsteps down the
+  road, when the forest falls quiet), `barrelBreak` (the hoard bursts),
+  `dialogueOpen/Close` (the book), `ward` (the shimmer).
+- NO OVERLAPS: `claimVoice` caps every bank at 4 live takes and the mix at
+  24 (`playVariant`, `playBuffer`, `playSlice`); a full bank drops the take
+  instead of stacking it - and returns true so no synth fallback stacks
+  either. The 60 ms per-name throttle, the single stinger window and the
+  one-bed crossfade stand as before.
+
+### Verified (seed 42)
+- `qa75` (warrior, deep): 244 pass, 0 fail, 0 errors, 99 s; `qa66` 74/74
+  inside it; `npm run build` clean; no console errors. New checks: tourist
+  5 % blows and 1 / 2 hits, hard 150 % blows and 140 % life, easy 80 %
+  life, the five-second ward (300 ticks, a blow breaks on it, the buff, the
+  fade), the sheet naming the measure, the journal's table, and - last of
+  all - hardcore: THE END, no rising, the slot wiped, nothing writes it
+  again, the lament, the run ending at the menu. All 29 new audio paths
+  answer HEAD with an audio type.
+- The class screen with its new row overflowed a 639 px viewport: the fit
+  scaled about the centre and cut the buttons. `#class-select.show` is
+  `justify-content: safe center` and `.cs-fit` scales from its top now (the
+  rule must sit after the 8a block that pins the origin). `fit.schedule()`
+  runs again once the row is in the DOM.
+- Not shipped: `Hope is Lost.wav` (28 MB source), the 98 MB ambience WAV,
+  the SPX WAV twins, the Unreal sample project, the album zips and the
+  MIDI files (ignored); the MP3s and the 22 kHz downmix are.
+
 ## 2026-09-06 (iteration 88) - The key held high, ghost trees, the quarry arena, clutter out of the way, the keeper's face, the tally
 
 ### A key is taken

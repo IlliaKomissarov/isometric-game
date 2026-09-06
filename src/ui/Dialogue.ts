@@ -68,7 +68,7 @@ export class DialogueUI {
     if (this.resolve) this.resolve(this.lastValue());
     this.visible = true;
     this.panel.classList.add('open');
-    audio.sfx('invOpen');
+    audio.sfx('dialogueOpen');
     const lines = spec.lines.map((l) => `<p>${l}</p>`).join('');
     const choices = spec.choices.map((c, i) => `<button class="menu-btn dl-choice" type="button" data-choice="${c.value}"><span class="dl-num">${i + 1}</span>${c.label}${c.sub ? `<span class="mm-sub">${c.sub}</span>` : ''}</button>`).join('');
     this.panel.innerHTML = `
@@ -111,7 +111,7 @@ export class DialogueUI {
   private choose(value: string): void {
     this.visible = false;
     this.panel.classList.remove('open');
-    audio.sfx('invClose');
+    audio.sfx('dialogueClose');
     const r = this.resolve;
     this.resolve = null;
     r?.(value);

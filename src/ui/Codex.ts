@@ -20,6 +20,7 @@
  */
 
 import { COMBAT_SPEED } from '@/core/config';
+import { DIFFICULTIES, DIFFICULTY_ORDER, SPAWN_WARD_TICKS } from '@/core/Difficulty';
 import { audio } from '@/engine/AudioManager';
 import { AFFIXES, AFFIX_KEYS } from '@/items/affixes';
 import { RARITY_AFFIX_COUNT, RARITY_COLOR, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, WEAPON_FAMILY, WEAPON_TIMING, itemValue, type ItemDef, type Rarity, type WeaponKind } from '@/items/catalog';
@@ -514,6 +515,19 @@ export class CodexUI {
       </section>`;
   }
 
+  /** THE DARK'S MEASURE (it.89): the five settings, straight from the table the simulation reads. */
+  private difficultyRows(): string {
+    const pct = (x: number): string => `${Math.round(x * 100)}%`;
+    const rows = DIFFICULTY_ORDER.map((id) => {
+      const d = DIFFICULTIES[id];
+      const rule = d.hitsToKill ? `foes fall in ${d.hitsToKill.normal} / ${d.hitsToKill.elite} / ${d.hitsToKill.boss} hits (common / champion / warden)` : d.lives === 1 ? 'one life: the slot is wiped on death' : '—';
+      return `<tr><td><b>${d.name}</b></td><td>${pct(d.heroTaken * d.foeDamage)}</td><td>${pct(d.foeHp)}</td><td>${pct(d.aggro)} · ${pct(d.foeSpeed)} · ${pct(d.foeRate)}</td><td>${rule}</td></tr>`;
+    }).join('');
+    return `<h4>The dark's measure</h4>
+      <p>Chosen with the delver, kept by the save. <b>Blows on you</b> are scaled before armor (your multiplier × the foe's); <b>foe life</b> at spawn; <b>sight · pace · cadence</b> are a foe's aggro radius, chase speed and the gap between its swings. Every mode wards a risen delver for <b>${SPAWN_WARD_TICKS / 60} seconds</b>: nothing lands until the ward fades.</p>
+      <table class="cx-table"><thead><tr><th>Mode</th><th>Blows on you</th><th>Foe life</th><th>Sight · pace · cadence</th><th>Rule</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
   private combat(): string {
     return `
       <section><h4>COMBAT</h4>
@@ -524,6 +538,7 @@ export class CodexUI {
       <p><b>Foes</b> climb the same 1.08 curve per item level as your gear: life and damage both, two item levels a depth. Their armor grows half a point a level. A champion (an affix) is worth half again the XP. <b>Your</b> max life is (class base + 4 a level) × 1.05 per level, plus every "+life" line.</p>
       <p><b>Statuses</b> are pure: no armor, no crit, no echo (${this.goto('statuses', 'STATUSES')}). <b>Cleave</b> and the sweep do not roll procs at full chance; the arc rolls them at half.</p>
       <p><b>Wardens</b> shrug off chill and take half a stun (none mid-blow); bleed, burn, poison and shock bite them like anything else, and they cannot be culled.</p>
+      ${this.difficultyRows()}
       </section>`;
   }
 

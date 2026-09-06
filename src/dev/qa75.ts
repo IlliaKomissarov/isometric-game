@@ -1061,7 +1061,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the last beast\'s fall sends the hero back to the gatekeeper', g.floor === 0 && g.quests.forest === 'done' && Math.hypot(p.pos.x - (keeper!.x + 0.5), p.pos.y - (keeper!.y + 0.5)) < 3, `${g.floor} ${g.quests.forest} ${p.pos.x},${p.pos.y}`);
       check('the gatekeeper pays a hundred gold', p.gold === gold0 + 100, `${gold0} → ${p.gold}`);
       const paid = document.getElementById('reward-note');
-      check('the reward note says a hundred gold', !!paid?.classList.contains('show') && /REWARD RECEIVED · 100 GOLD/.test(paid.textContent ?? ''), paid?.textContent ?? '');
+      // The banner stands 3.4 s; a slow transition can outlive it, so the words are what is checked (it.89).
+      check('the reward note says a hundred gold', /REWARD RECEIVED · 100 GOLD/.test(paid?.textContent ?? ''), paid?.textContent ?? '');
       check('the thanks are on the table', !!document.querySelector('#dialogue-panel.open') && /hundred gold/i.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=ok]')?.click();
       await wait(40);
@@ -1093,6 +1094,109 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.loot.updateBeacons((x: number, y: number) => g.lighting.isVisible(x, y), 0);
       check('the beacon lights once the fog lifts', !!item?.beacon?.visible);
       check('every gate knows its corridor\'s way', g.mines.doors.every((d: { axis: string }) => d.axis === 'x' || d.axis === 'y'));
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 8000);
+      g = game();
+      await fadeClear();
+    }
+
+    // ---- THE DARK'S MEASURE (it.89): the five settings, the spawn ward ------------------------
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      // A floor with fresh foes: the forest, woken hostile (its packs respawn every visit).
+      const questBefore = g.quests.forest;
+      g.quests.forest = 'active';
+      await g.travel(101);
+      await until(() => game() && game().floor === 101, 12000);
+      g = game();
+      await fadeClear();
+      const D = g.difficulty as { set: (id: string) => void; id: string; current: { foeHp: number; heroTaken: number; foeDamage: number } };
+      const p = g.player;
+      const foes: Array<{ id: number; hp: number; hpMax: number; affix: string | null; setAffix: (a: string | null) => void; pos: { x: number; y: number }; def: { kind: string } }> = [];
+      g.enemies.forEachActive((e: (typeof foes)[number]) => {
+        if (e.hp > 0) foes.push(e);
+      });
+      check('the forest has foes to measure', foes.length >= 3, String(foes.length));
+      if (foes.length < 3) throw new Error('no foes to measure');
+      const hitFor = (targetId: number, amount: number): number => {
+        const e = g.state.getEntity(targetId) as { hp: number };
+        const before = e.hp;
+        g.combat.dealDamage({ sourceId: p.id, targetId, amount });
+        return before - e.hp;
+      };
+      const blowOnHero = (fromId: number, amount: number): number => {
+        p.hp = p.hpMax;
+        g.combat.dealDamage({ sourceId: fromId, targetId: p.id, amount });
+        return p.hpMax - p.hp;
+      };
+      // MEDIUM first: the reference numbers.
+      D.set('medium');
+      const refHero = blowOnHero(foes[0].id, 60);
+      // TOURIST: the hero shrugs, foes fall in 1 / 2 / 4.
+      D.set('tourist');
+      const tHero = blowOnHero(foes[0].id, 60);
+      check('tourist: a 60 blow barely scratches the hero', tHero <= Math.max(1, Math.ceil(refHero * 0.05) + 1), `${tHero} vs ${refHero} on medium`);
+      const common = foes[0];
+      const lost = hitFor(common.id, 1);
+      check('tourist: a common foe falls in one hit', lost >= common.hpMax && common.hp === 0, `${lost}/${common.hpMax}`);
+      const elite = foes[1];
+      elite.setAffix('thorns');
+      hitFor(elite.id, 1);
+      check('tourist: a champion stands after one hit', elite.hp > 0, `${elite.hp}/${elite.hpMax}`);
+      hitFor(elite.id, 1);
+      check('tourist: a champion falls in two hits', elite.hp === 0, `${elite.hp}/${elite.hpMax}`);
+      // HARD: 150 % on the hero, 140 % foe life.
+      D.set('hard');
+      const hHero = blowOnHero(foes[2].id, 60);
+      check('hard: a blow on the hero lands at 150 %', Math.abs(hHero / refHero - 1.5) < 0.12, `${hHero} vs ${refHero}`);
+      const kind = foes[2].def.kind as string;
+      const spawnHp = (): number => {
+        const e = g.enemies.spawn(kind, p.pos.x + 2, p.pos.y + 2, 3);
+        const hp = e.hpMax;
+        g.combat.dealDamage({ sourceId: p.id, targetId: e.id, amount: 999999 });
+        return hp;
+      };
+      D.set('medium');
+      const medHp = spawnHp();
+      D.set('hard');
+      const hardHp = spawnHp();
+      check('hard: a foe spawns with 140 % life', Math.abs(hardHp / medHp - 1.4) < 0.05, `${hardHp} vs ${medHp}`);
+      D.set('easy');
+      const easyHp = spawnHp();
+      check('easy: a foe spawns with 80 % life', Math.abs(easyHp / medHp - 0.8) < 0.05, `${easyHp} vs ${medHp}`);
+      D.set('medium');
+      g.loop.step(2);
+      // THE SPAWN WARD: rise, and for five seconds nothing lands.
+      p.hp = p.hpMax;
+      g.combat.dealDamage({ sourceId: p.id, targetId: p.id, amount: 999999 });
+      g.loop.step(120);
+      check('the hero falls for the ward test', g.runMenus.isDeathShown);
+      await wait(450);
+      (document.querySelector('#death-menu [data-act=respawn]') as HTMLElement | null)?.click();
+      g.loop.step(2);
+      check('rising grants a five-second ward', p.wardTicks > 280 && p.wardTicks <= 300 && p.hp === p.hpMax, `${p.wardTicks}`);
+      const warded = blowOnHero(foes[2].id, 50);
+      check('a blow breaks on the ward', warded === 0 && p.hp === p.hpMax, `${warded}`);
+      check('the ward is on the buff bar', p.activeBuffs().some((b: { id: string }) => b.id === 'ward'));
+      g.loop.step(301);
+      check('the ward fades after five seconds', p.wardTicks === 0, `${p.wardTicks}`);
+      const after = blowOnHero(foes[2].id, 50);
+      check('a blow lands once the ward has faded', after > 0, `${after}`);
+      p.hp = p.hpMax;
+      check('the death sheet named the measure', /MEDIUM/.test(document.querySelector('#death-menu .dm-stats')?.textContent ?? ''), document.querySelector('#death-menu .dm-stats')?.textContent ?? '');
+      // The journal prints the table the sim reads.
+      g.codexUI.open('combat');
+      await wait(40);
+      const cx = document.getElementById('codex')?.textContent ?? '';
+      check('the journal prints the dark\'s measure', /TOURIST/.test(cx) && /HARDCORE/.test(cx) && /5 seconds/.test(cx));
+      key('KeyH');
+      await wait(40);
+      g.quests.forest = questBefore;
       await g.travel(0);
       await until(() => game() && game().floor === 0, 8000);
       g = game();
@@ -1253,6 +1357,32 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     await import('./qa66');
     const m = W.__qa66(true);
     check('device matrix', m.failed === 0, `${m.failed} failed: ${JSON.stringify(m.fails.slice(0, 2))}`);
+
+    // ---- HARDCORE (it.89), last of all: one life, the slot wiped, THE END --------------------
+    {
+      g = game();
+      if (g.floor === 0) {
+        await g.travel(2);
+        await until(() => game() && game().floor === 2, 12000);
+        g = game();
+        await fadeClear();
+      }
+      g.saveNow();
+      check('the slot holds the delver before the last life', !!localStorage.getItem('iso-arpg-save-1'));
+      (g.difficulty as { set: (id: string) => void }).set('hardcore');
+      g.combat.dealDamage({ sourceId: g.player.id, targetId: g.player.id, amount: 999999 });
+      g.loop.step(120);
+      const sheet = document.getElementById('death-menu');
+      check('hardcore: the sheet says THE END', !!sheet?.classList.contains('show') && !!sheet.classList.contains('hardcore') && /THE END/.test(sheet.querySelector('h2')?.textContent ?? ''));
+      check('hardcore: no rising is offered', getComputedStyle(sheet!.querySelector('[data-act=respawn]')!).display === 'none');
+      check('hardcore: the slot is wiped', !localStorage.getItem('iso-arpg-save-1'));
+      check('hardcore: nothing writes the slot again', g.saveNow() === false && !localStorage.getItem('iso-arpg-save-1'));
+      check('hardcore: the lament plays', g.audio.currentMusic === 'gameover', g.audio.currentMusic);
+      await wait(450);
+      (document.querySelector('#death-menu [data-act=menu]') as HTMLElement | null)?.click();
+      await until(() => !game(), 6000);
+      check('hardcore: the run ends at the menu', !game());
+    }
   } catch (err) {
     fail.push(`exception: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
   } finally {

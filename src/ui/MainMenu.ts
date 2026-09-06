@@ -35,6 +35,8 @@ export interface ContinueInfo {
   level: number;
   /** 0 = the town. */
   floor: number;
+  /** THE DARK'S MEASURE (it.89): the run's difficulty name. */
+  difficulty?: string;
 }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX'];
@@ -135,7 +137,7 @@ export class MainMenuUI {
     if (!btn) return;
     btn.disabled = !info;
     btn.classList.toggle('muted', !info);
-    if (pill) pill.textContent = info ? `${info.cls.toUpperCase()} · LVL ${info.level} · ${info.floor <= 0 ? 'THE TOWN' : `DEPTH ${ROMAN[info.floor - 1] ?? info.floor}`}` : 'no delver yet';
+    if (pill) pill.textContent = info ? `${info.cls.toUpperCase()} · LVL ${info.level} · ${info.floor <= 0 ? 'THE TOWN' : `DEPTH ${ROMAN[info.floor - 1] ?? info.floor}`}${info.difficulty ? ` · ${info.difficulty}` : ''}` : 'no delver yet';
   }
 
   /** Kept for callers from earlier iterations: the class screen remembers the hero itself. */

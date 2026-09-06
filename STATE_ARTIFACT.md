@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 88, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 89, 2026-09-06)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -219,6 +219,15 @@ Items examined and left as they are, with reasons:
 | Jars, pots, boxes and bins blocked tiles | Medium (UX) | `CLUTTER_KINDS` never block, in every placer |
 | A faceless keeper with long lines | Low (UX) | portrait from his own frame, plain words, the gold (100) on the page, `REWARD RECEIVED · 100 GOLD` |
 | No count of the forest's beasts | Low (UX) | `ENEMIES REMAINING · X / Y` under the plate |
+
+### Iteration 89 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| One difficulty for everyone | Feature | `core/Difficulty.ts`: tourist / easy / medium / hard / hardcore, chosen with the delver, kept by the save, sent to the party |
+| A risen delver could be killed on the spot | Medium (design) | `Player.wardTicks` = 300: nothing lands for five seconds, halo, buff, note |
+| The new audio bundle unused | Asset | zone playlists, per-zone beds, quarry stingers, SPX effects, the books, the lament |
+| Sound effects could stack without limit | Low (audio) | `claimVoice`: 4 per bank, 24 total, full banks drop the take |
 
 ## 4. Known issues and regression log
 

@@ -727,6 +727,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] ENEMIES REMAINING · X / Y in the forest
 - [x] Matrix; playthrough; clean build
 
+## Iteration 89 - The dark's measure, the spawn ward, the new bundle (2026-09-06)
+
+- [x] Five difficulties in one table; the picker; the save; the party's start
+- [x] Tourist 1 / 2 / 4 hits; hard 150 % / 140 %; hardcore one life, the slot wiped
+- [x] Five-second spawn ward on every rising, halo, buff, note
+- [x] Zone music: forest, mines, death, game over; four playlists; the album unpacked
+- [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
+- [x] Journal table; matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

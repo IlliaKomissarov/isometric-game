@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 90, 2026-09-07)
+- **Project version:** 0.1.0 (iteration 91, 2026-09-07)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -55,6 +55,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `ui/Dialogue` + the quest ledger (it.87) | `Villagers` (the gatekeeper), `quests` in the save | choices as promises; the forest errand's states | the sim counts the forest's foes; the panel only speaks |
 | `engine/AudioManager` (it.89) | `MusicState` from main, the SFX calls, the bundle under `public/assets/audio` | one music bed and one ambience bed per zone, capped SFX voices | render-side only; `claimVoice` caps 4 a bank, 24 total |
 | `tutorial/TutorialSystem` (it.90) | `TutorialHooks` (hero, dummies, panels, viewport, world-to-page), the command stream, `entity:damaged` | the spotlight, arrow, card and chapter overlay; panels opened on cue | render-side only; steps are data; `shouldAutoStart` is the onboarding switch |
+| `town/Reclaim` (it.91) | the barricade's sprites, the ambience, a grid-open hook, a camera-focus hook | `GateFx` (a cart aside, carts toppling) and `ReclaimScene` (the letterboxed procession) | render-side only; the grid opens through main's hook on the QUEST tick |
 
 ## 3. Audit log and refactoring summary (iteration 74)
 
@@ -242,6 +243,17 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 91 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| No third district | Feature | `TownMap`: the map grown to 116 tiles, the Eastern Quarter behind a barricade, `EastState` builds |
+| No errand past the forest | Feature | the innkeeper's errand: twenty human looters, a tally, pips, pointers, the `QUEST` command |
+| No cutscene machinery | Feature | `town/Reclaim.ts`: letterbox, camera focus, carts toppling, the procession |
+| No enterable inn, no room, no bed | Feature | The Gilded Stag with a walkable hall; `REST` + `Player.lieDown` on the death sheet's last frame; the room's chest and bench |
+| Silent townsfolk | Low (feel) | word bubbles over every peaceful head, five banks by district and role |
+| Looters drew as placeholder markers in town | Medium (render) | the hub's roster preloads the looters' sheets and the villager coat |
 
 ## 4. Known issues and regression log
 

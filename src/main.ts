@@ -37,7 +37,7 @@ import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
 import { StatsManager } from '@/systems/StatsManager';
 import { dressColiseum, generateColiseumMap, type ColiseumMap } from '@/scenes/Coliseum';
-import { AFFIXES, FROST_AURA_RADIUS } from '@/entities/Enemy';
+import { AFFIXES, FROST_AURA_RADIUS, LOOTER_KINDS } from '@/entities/Enemy';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
@@ -60,7 +60,7 @@ import { MainMenuUI } from '@/ui/MainMenu';
 import { RunMenusUI } from '@/ui/RunMenus';
 import type { Entity } from '@/entities/Entity';
 import { ITEMS, overlayTextureFor, statLine, type ItemDef } from '@/items/catalog';
-import { ilvlForDepth, itemDef, powerScale } from '@/items/instance';
+import { ilvlForDepth, itemDef, powerScale, rollGear } from '@/items/instance';
 import { CraftingEngine } from '@/systems/Crafting';
 import { StatusSystem } from '@/systems/Status';
 import { QUAFF_COOLDOWN, quaffCategory } from '@/systems/Inventory';
@@ -76,7 +76,8 @@ import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
-import { buildTownLayout, type TownLayout } from '@/town/TownMap';
+import { buildTownLayout, LOOTER_COUNT, type EastState, type TownLayout } from '@/town/TownMap';
+import { GateFx, ReclaimScene } from '@/town/Reclaim';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
@@ -87,7 +88,7 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { Villagers } from '@/town/Villagers';
+import { RECLAIMED_WORDS, REFUGEE_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
@@ -172,10 +173,16 @@ interface World {
     villagers: Villagers;
     /** THE MARKET WARD's folk and vendors (it.84). */
     villagers2: Villagers;
+    /** THE EASTERN QUARTER (it.91): the refugees at the gate, or the folk come home; the innkeeper among them. */
+    villagers3: Villagers | null;
+    /** The barricade's carts by tile (it.91), from the dresser's gate map. */
+    gates: Map<string, Sprite>;
     occluders: Occluder[];
     interactables: Interactable[];
     /** Label manager hook (it.50): the E-prompt's spot, so its plate stands down. */
     setPromptAt: (x: number | null, y?: number) => void;
+    /** A plate re-titled or hidden (it.91). */
+    setPlate: (x: number, y: number, label: string | null) => void;
     stashSprite: Sprite | null;
     /** The three unpicked heroes resting at the fire (it.40). */
     campHeroes: CampHeroes;
@@ -857,7 +864,7 @@ async function boot(): Promise<void> {
     // THE VIRTUAL CONTROLS (it.63): live for this run, silent behind a modal.
     touchControls.attach(inputQueue, {
       blocked: () =>
-        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #cheat-menu.open, #level-select.open, #minimap.expanded, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open') || transitioning,
+        !!document.querySelector('#inv-panel.open, #skill-tree.open, #char-sheet.open, #bestiary.open, .town-panel.open, #leaderboard.open, #settings-panel.open, #cheat-menu.open, #level-select.open, #minimap.expanded, #pause-menu.show, #death-menu.show, #arena-modal.open, #victory-modal.open, #exit-modal.open, #cine-layer.show') || transitioning,
     });
     // A rotation must never leave a thumb "held" on the old layout.
     subsOnLayout.push(layout.onChange(() => touchControls.releaseAll()));
@@ -1694,6 +1701,17 @@ async function boot(): Promise<void> {
     // SYNCHRONOUS world construction (it.37): no await between the old
     // floor's teardown and the new floor's first tick — the freeze was the
     // loop touching a destroyed world during the old async gap.
+    /** THE EASTERN QUARTER (it.91): how the town is built from the errand's state. */
+    const eastStateOf = (): EastState => (quests.east === 'done' || quests.east === 'cleared' ? 'cleared' : quests.east === 'open' ? 'open' : 'sealed');
+    const LOOTER_LEVEL = 5;
+    /** The looters at their posts, the first `killed` of them already counted dead; two champions among the twenty. */
+    const spawnLooters = (pool: EnemyPool, posts: ReadonlyArray<{ x: number; y: number; kind: 'bandit' | 'brigand' }>, killed: number): void => {
+      posts.forEach((b, i) => {
+        if (i < killed) return;
+        const e = pool.spawn(b.kind, b.x + 0.5, b.y + 0.5, LOOTER_LEVEL);
+        if (i === 7 || i === 15) e.setAffix(AFFIXES[i % AFFIXES.length]);
+      });
+    };
     const buildWorld = (floorNum: number, mode: FloorMode = 'normal'): World => {
       const isArena = mode === 'arena';
       const isHub = mode === 'hub';
@@ -1709,7 +1727,7 @@ async function boot(): Promise<void> {
       const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
-      const layout = isHub ? buildTownLayout() : forest ? forest.layout : null;
+      const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : null;
       const memory: FloorMemory | undefined = isHub || isColiseum || isForest ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
@@ -2136,16 +2154,27 @@ async function boot(): Promise<void> {
       const minesDressing = minesPlan ? placeTownProps(bareLayout(dungeon as TownMap, minesPlan.props, 'THE QUARRY MINES'), viewport, lighting, ambience) : null;
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
+        // AMBIENT CHATTER (it.91): every peaceful head in town speaks a word now and then.
         const villagers = isForest
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null) // A cleared forest keeps folk and sentries (it.87).
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null);
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
         const villagers2 = isForest
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff });
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS });
+        // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
+        // them - or, the quarter reclaimed, ten of the folk on the burnt square and the keeper behind her counter.
+        const east = layout.east;
+        const villagers3 = isHub && east
+          ? east.state === 'cleared'
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 10, null, [], null, {}, east.innkeeper, { chatter: RECLAIMED_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
+            : new Villagers(viewport.objectLayer, scene.isWalkable, east.refuge, 4, null, [], null, {}, east.innkeeper, { chatter: REFUGEE_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
+          : null;
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // THE TRAINING GROUND (it.90): a passive foe stands on every dummy tile - struck, it flinches and heals.
         if (isHub) for (const p of layout.props) if (p.kind === 'dummy') enemies.spawn(p.variant === 'dummy_b' ? 'dummyB' : 'dummy', p.x + 0.5, p.y + 0.5, 1);
+        // THE LOOTERS (it.91): while the errand is open, the quarter's posts hold what the militia has not yet counted dead.
+        if (isHub && east && east.state === 'open') spawnLooters(enemies, east.banditPosts, Number(quests.looters ?? 0));
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
         const audit = isHub ? auditTownLayout(layout) : { unreachable: [], missing: [] };
         if (audit.unreachable.length || audit.missing.length) {
@@ -2155,9 +2184,12 @@ async function boot(): Promise<void> {
           layout,
           villagers,
           villagers2,
+          villagers3,
+          gates: dressing.gates,
           occluders: dressing.occluders,
           interactables: dressing.interactables,
           setPromptAt: dressing.setPromptAt,
+          setPlate: dressing.setPlate,
           stashSprite: dressing.stashSprite,
           campHeroes,
           update: dressing.update,
@@ -2282,12 +2314,25 @@ async function boot(): Promise<void> {
       minimap.setWorld(dungeon, lighting, stairs);
       // THE MARKS (it.85): keys, gates, the keeper and the way home — each only once its tile is explored.
       minimap.setMarkers(() => {
-        if (!minesPlan) return [];
-        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' }> = [];
-        for (const k of minesPlan.keys) if (k.uid >= 0 && loot.getItem(k.uid)) out.push({ x: k.x, y: k.y, kind: 'key' });
-        for (const d of minesPlan.doors) out.push({ x: d.x, y: d.y, kind: d.open ? 'door-open' : 'door' });
-        if (!world.arenaCleared) out.push({ x: minesPlan.boss.x, y: minesPlan.boss.y, kind: 'boss' }); // The seal (it.88).
-        if (world.victoryPortal) out.push({ x: world.victoryPortal.x, y: world.victoryPortal.y, kind: 'portal' });
+        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe'; always?: boolean }> = [];
+        if (minesPlan) {
+          for (const k of minesPlan.keys) if (k.uid >= 0 && loot.getItem(k.uid)) out.push({ x: k.x, y: k.y, kind: 'key' });
+          for (const d of minesPlan.doors) out.push({ x: d.x, y: d.y, kind: d.open ? 'door-open' : 'door' });
+          if (!world.arenaCleared) out.push({ x: minesPlan.boss.x, y: minesPlan.boss.y, kind: 'boss' }); // The seal (it.88).
+          if (world.victoryPortal) out.push({ x: world.victoryPortal.x, y: world.victoryPortal.y, kind: 'portal' });
+        }
+        // THE EASTERN QUARTER (it.91): every looter a red pip while the errand is open; the inn's door once it is cleared.
+        const east = isHub ? layout?.east : undefined;
+        if (east) {
+          if (quests.east === 'open') enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead' && LOOTER_KINDS.has(e.def.kind)) out.push({ x: Math.floor(e.pos.x), y: Math.floor(e.pos.y), kind: 'foe', always: true });
+          });
+          else if (quests.east === 'cleared') out.push({ x: east.door.x, y: east.door.y + 1, kind: 'portal', always: true });
+        }
+        // THE FOREST ERRAND (it.91): its beasts marked the same way.
+        if (isForest && quests.forest === 'active') enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.action !== 'dead') out.push({ x: Math.floor(e.pos.x), y: Math.floor(e.pos.y), kind: 'foe', always: true });
+        });
         return out;
       });
       const unsubscribe = eventBus.on('player:tileChanged', ({ gx, gy, playerId }) => {
@@ -2346,6 +2391,7 @@ async function boot(): Promise<void> {
       w.unsubscribe();
       w.town?.villagers.destroy();
       w.town?.villagers2.destroy();
+      w.town?.villagers3?.destroy();
       w.mines?.dressing.destroy();
       w.town?.campHeroes.destroy();
       w.town?.destroyDressing();
@@ -3765,6 +3811,189 @@ async function boot(): Promise<void> {
         goForest();
       }
     };
+    // ---- THE EASTERN QUARTER (it.91): the barricade, the errand, the looters, the reclaiming, the inn ----
+    /** The innkeeper's face: the peasant body's front frame in her warm coat. */
+    let innFace: HTMLCanvasElement | null | undefined;
+    const innPortrait = (): HTMLCanvasElement | null => {
+      if (innFace === undefined) innFace = spriteLib.loaded && spriteLib.hasAnim('villager_walk') ? portraitFromTexture(spriteLib.frame('villager_walk', 6, 0), 0xf0c890) : null;
+      return innFace;
+    };
+    let refugeeFace: HTMLCanvasElement | null | undefined;
+    const refugeePortrait = (): HTMLCanvasElement | null => {
+      if (refugeeFace === undefined) refugeeFace = spriteLib.loaded && spriteLib.hasAnim('folk_walk') ? portraitFromTexture(spriteLib.frame('folk_walk', 6, 0), 0xffffff) : null;
+      return refugeeFace;
+    };
+    /** Looters still standing in the quarter. */
+    const lootersAlive = (): number => {
+      let n = 0;
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead' && LOOTER_KINDS.has(e.def.kind)) n++;
+      });
+      return n;
+    };
+    /** The barricade's carts as the dresser drew them, by gate tile. */
+    const eastCarts = (): Array<{ sprite: Sprite; x: number; y: number }> => {
+      const t = world.town;
+      const east = t?.layout.east;
+      if (!t || !east) return [];
+      const out: Array<{ sprite: Sprite; x: number; y: number }> = [];
+      for (const g of east.gateTiles) {
+        const spr = t.gates.get(`${g.x},${g.y}`);
+        if (spr && !spr.destroyed) out.push({ sprite: spr, x: g.x, y: g.y });
+      }
+      return out;
+    };
+    /** A QUEST command's step, applied on every peer on the same tick. */
+    const applyEastStep = (step: string): void => {
+      const t = world.town;
+      const east = t?.layout.east;
+      if (!t || !east || floor !== 0) return;
+      if (step === 'accept' && (quests.east ?? 'new') === 'new') {
+        quests.east = 'open';
+        quests.looters = '0';
+        // The militia drags the gap's cart aside: the tile is road, the sprite slides to the verge.
+        world.dungeon.grid[east.gap.y * world.dungeon.width + east.gap.x] = TILE_FLOOR;
+        const cart = t.gates.get(`${east.gap.x},${east.gap.y}`);
+        if (cart && !cart.destroyed) gateFx.pullAside(cart, east.gap.x, east.gap.y);
+        t.setPlate(east.gap.x, east.gap.y, 'THE EAST GATE');
+        spawnLooters(world.enemies, east.banditPosts, 0);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        audio.sfx('gateOpen');
+        world.ambience.burst(east.gap.x + 0.5, east.gap.y + 0.5, 0xb0a088, 18);
+        world.dmgText.show(east.gap.x + 0.5, east.gap.y - 0.6, 'THE CART IS PULLED ASIDE · GO EAST', 'crit');
+        tutorial.say(`Job taken: clear the Eastern Quarter of its ${LOOTER_COUNT} looters.`);
+        saveNow();
+      } else if (step === 'reward' && quests.east === 'cleared') {
+        quests.east = 'done';
+        // The purse and the steel under the floorboards: two hundred gold, a bow and a sword to every hero of the party.
+        for (const seat of liveSeats()) {
+          seat.player.gold += 200;
+          const rand = mulberry32(((state.tick * 31 + seat.player.id * 7) ^ 0x91e) >>> 0);
+          const ilvl = Math.max(4, ilvlForDepth(Math.max(1, deepestFloor)));
+          seat.player.addItem(rollGear(rand, ilvl, { base: 'hunters_bow', floor: 'rare' }));
+          seat.player.addItem(rollGear(rand, ilvl, { base: 'soldier_blade', floor: 'rare' }));
+        }
+        eventBus.emit('inventory:changed', {});
+        showReward('REWARD RECEIVED · 200 GOLD · A BOW · A SWORD');
+        world.dmgText.show(player.pos.x, player.pos.y - 0.9, '+200 GOLD · THE CORNER ROOM IS YOURS', 'crit');
+        audio.sfx('questDone');
+        world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 26);
+        world.ambience.playGlint(player.pos.x, player.pos.y);
+        saveNow();
+      }
+    };
+    /** E at the barricade, or at the inn's counter: the refugees, then the keeper. */
+    const innkeeperTalk = async (): Promise<void> => {
+      const st = quests.east ?? 'new';
+      const who = { speaker: 'MARGO', role: 'keeper of the Gilded Stag', portrait: innPortrait() };
+      if (st === 'new') {
+        const first = await dialogue.open({
+          speaker: 'A REFUGEE',
+          role: 'of the eastern quarter',
+          portrait: refugeePortrait(),
+          lines: ['They came over the east wall at night. By morning the quarter was fire and the streets were theirs.', `Looters - men, not beasts. Twenty of them, the militia counted. They hold our homes still.`],
+          choices: [
+            { label: 'THE INNKEEPER', sub: 'she has an errand', value: 'next' },
+            { label: 'NOT NOW', value: 'stay' },
+          ],
+        });
+        if (first !== 'next') return;
+        const v = await dialogue.open({
+          ...who,
+          lines: ['My inn stands in there with looters drinking my cellar dry. Clear the quarter - all twenty - and these people go home.', 'Two hundred gold (200) when it is done, and a bow and a sword from under my floorboards. The militia will pull a cart aside for you.'],
+          choices: [
+            { label: 'TAKE THE ERRAND', sub: 'the cart is pulled aside', value: 'go' },
+            { label: 'NOT YET', value: 'stay' },
+          ],
+        });
+        if (v === 'go') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'accept' });
+        return;
+      }
+      if (st === 'open') {
+        await dialogue.open({
+          ...who,
+          lines: [`Still looters in the quarter - ${lootersAlive()} left by the militia's count. Mind the bowmen; they run when you close.`],
+          choices: [{ label: 'BACK TO IT', value: 'ok' }],
+        });
+        return;
+      }
+      if (st === 'cleared') {
+        const v = await dialogue.open({
+          ...who,
+          lines: ['You did it. The streets are ours again, and the Stag pours tonight.', 'Two hundred gold (200), the bow and the sword - yours. And the corner room: the bed, the chest, the bench. Yours too, for as long as you like.'],
+          choices: [{ label: 'TAKE THE REWARD', sub: 'gold, bow, sword - and the room', value: 'reward' }],
+        });
+        if (v === 'reward') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'reward' });
+        return;
+      }
+      await dialogue.open({
+        ...who,
+        lines: ['Rest whenever you like - the corner room is yours. The quarter breathes again because of you.'],
+        choices: [{ label: 'THANKS', value: 'ok' }],
+      });
+    };
+    /** The last looter falls: the letterboxed reclaiming, then the town rebuilt with the carts gone and the folk home. */
+    let reclaim: ReclaimScene | null = null;
+    const startReclaim = (): void => {
+      const t = world.town;
+      const east = t?.layout.east;
+      if (!t || !east || reclaim) return;
+      audio.sfx('questDone');
+      reclaim = new ReclaimScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: eastCarts(),
+        open: () => {
+          for (const g of east.gateTiles) world.dungeon.grid[g.y * world.dungeon.width + g.x] = TILE_FLOOR;
+          t.setPlate(east.gap.x, east.gap.y, null);
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          minimap.markDirty();
+        },
+        from: east.approach,
+        route: [east.gap, east.inside, { x: 72, y: 34 }, { x: 80, y: 38 }, { x: 84, y: 37 }],
+        isWalkable: world.scene.isWalkable,
+        focus: (x, y) => {
+          if (!cineFocus) {
+            cineCur.x = cameraFocus.x;
+            cineCur.y = cameraFocus.y;
+          }
+          cineFocus = { x, y };
+        },
+        release: () => {
+          cineFocus = null;
+        },
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          withFade(async () => {
+            await preloadFloor(0, 'hub');
+            const at = { x: player.pos.x, y: player.pos.y };
+            if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+            enterTown(false);
+            placeParty(at.x, at.y, world.scene.isWalkable);
+            world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+            minimap.markDirty();
+            tutorial.say('The quarter is yours. The innkeeper waits at THE GILDED STAG with your pay.');
+            saveNow();
+          }, 'the quarter reclaimed');
+        },
+      });
+    };
+    /** Each tick in town: the count, and the reclaiming when it reaches zero. */
+    const tickEastQuest = (): void => {
+      if (floor !== 0 || quests.east !== 'open' || transitioning || !world.town?.layout.east) return;
+      const alive = lootersAlive();
+      const killed = String(LOOTER_COUNT - alive);
+      if (quests.looters !== killed) quests.looters = killed;
+      if (alive === 0) {
+        quests.east = 'cleared';
+        world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE LAST LOOTER FALLS · THE QUARTER IS QUIET', 'crit');
+        startReclaim();
+      }
+    };
     /** Ticks left before the cleared forest sends the party home. */
     let forestReturnTicks = -1;
     /** The last beast falls: a moment, then the way home, then the gatekeeper's thanks (it.87). */
@@ -3895,6 +4124,66 @@ async function boot(): Promise<void> {
 
     // --- Loop ---------------------------------------------------------------
     const cameraFocus = vec2();
+    /** THE RECLAIMING (it.91): where the camera looks instead of the hero, and its eased position. */
+    let cineFocus: { x: number; y: number } | null = null;
+    let cineBlend = false;
+    const cineCur = vec2();
+    const gateFx = new GateFx(() => world.ambience);
+    /**
+     * TARGET POINTERS (it.91): chevrons on the screen's edge toward the
+     * nearest three quest targets off it - the quarter's looters, the
+     * forest's beasts - each with its distance in strides.
+     */
+    const foePointers = document.createElement('div');
+    foePointers.id = 'foe-pointers';
+    for (let i = 0; i < 3; i++) {
+      const p = document.createElement('div');
+      p.className = 'foe-ptr';
+      p.innerHTML = '<i></i><b></b>';
+      foePointers.appendChild(p);
+    }
+    document.body.appendChild(foePointers);
+    subs.push(() => foePointers.remove());
+    const ptrScratch = vec2();
+    const updateFoePointers = (targets: Array<{ x: number; y: number }> | null): void => {
+      const els = foePointers.children;
+      if (!targets || !targets.length || reclaim) {
+        for (let i = 0; i < els.length; i++) (els[i] as HTMLElement).classList.remove('show');
+        return;
+      }
+      const W = screenLayout.state.w;
+      const H = screenLayout.state.h;
+      const rect = app.canvas.getBoundingClientRect();
+      const margin = screenLayout.state.touch ? 34 : 28;
+      const sorted = targets
+        .map((t) => ({ t, d: Math.hypot(t.x - player.pos.x, t.y - player.pos.y) }))
+        .sort((a, b) => a.d - b.d);
+      let shown = 0;
+      for (const { t, d } of sorted) {
+        if (shown >= els.length) break;
+        const c = world.camera.worldToCanvas(t.x, t.y, ptrScratch);
+        const px = rect.left + c.x;
+        const py = rect.top + c.y;
+        const inside = px > 40 && px < W - 40 && py > 40 && py < H - 40;
+        if (inside) continue; // On the screen: the body itself is the mark.
+        const cx = W / 2;
+        const cy = H / 2;
+        const dx = px - cx;
+        const dy = py - cy;
+        // Clamp the ray to the padded screen rectangle.
+        const sx = (W / 2 - margin) / Math.max(1e-3, Math.abs(dx));
+        const sy = (H / 2 - margin) / Math.max(1e-3, Math.abs(dy));
+        const s = Math.min(sx, sy, 1);
+        const ex = cx + dx * s;
+        const ey = cy + dy * s;
+        const el = els[shown++] as HTMLElement;
+        el.style.transform = `translate(${ex.toFixed(1)}px, ${ey.toFixed(1)}px)`;
+        (el.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;
+        el.lastElementChild!.textContent = `${Math.round(d)}`;
+        el.classList.add('show');
+      }
+      for (let i = shown; i < els.length; i++) (els[i] as HTMLElement).classList.remove('show');
+    };
     const pickRingScratch = vec2();
     let lastRenderTime = performance.now();
 
@@ -3955,6 +4244,7 @@ async function boot(): Promise<void> {
         state.forEach((entity) => entity.beginTick());
         // THE COMMAND STREAM (it.59): solo drains the local queue; co-op ships
         // it and executes the party's merged frame for this tick.
+        if (reclaim?.running) inputQueue.clear(); // THE RECLAIMING (it.91): the hero watches.
         const local = inputQueue.drain();
         const commands = lockstep ? lockstep.frame(tick, local) : local;
         if (leaderNoteCooldown > 0) leaderNoteCooldown--;
@@ -3967,6 +4257,10 @@ async function boot(): Promise<void> {
             removeSeat(cmd.playerId);
           } else if (cmd.type === 'JOIN') {
             addSeat(cmd.playerId, cmd.name, cmd.cls, cmd.hero);
+          } else if (cmd.type === 'QUEST') {
+            // THE EASTERN QUARTER (it.91): the leader's word, everyone's tick.
+            if (coop && cmd.playerId !== leaderSlot) continue;
+            if (cmd.id === 'east') applyEastStep(cmd.step);
           } else if (cmd.type === 'WARP') {
             if (coop && cmd.playerId !== leaderSlot) {
               if (cmd.playerId === localSlot) leaderOnlyNote();
@@ -4001,6 +4295,7 @@ async function boot(): Promise<void> {
         crafting.apply(commands); // The camp forge (it.78).
         if (world.mines) tickMines(); // THE IRON GATES (it.85): a key at a gate opens it.
         tickForestQuest(); // THE FOREST ERRAND (it.87).
+        tickEastQuest(); // THE EASTERN QUARTER (it.91).
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
@@ -4257,6 +4552,16 @@ async function boot(): Promise<void> {
 
         state.forEach((entity) => entity.syncRender(alpha));
         lerpVec(cameraFocus, player.prevPos, player.pos, alpha);
+        // THE RECLAIMING (it.91): the camera crosses to the gate and back on its own clock.
+        if (cineFocus || cineBlend) {
+          const goal = cineFocus ?? cameraFocus;
+          const k = 1 - Math.exp(-2.4 * frameDt);
+          cineCur.x += (goal.x - cineCur.x) * k;
+          cineCur.y += (goal.y - cineCur.y) * k;
+          cineBlend = !!cineFocus || Math.hypot(goal.x - cineCur.x, goal.y - cineCur.y) > 0.05;
+          cameraFocus.x = cineCur.x;
+          cameraFocus.y = cineCur.y;
+        }
 
         world.lighting.updateRender(cameraFocus.x, cameraFocus.y, frameDt, timeSec);
         world.ambience.update(
@@ -4440,18 +4745,37 @@ async function boot(): Promise<void> {
           const t = world.town;
           t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
           t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          t.villagers3?.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          gateFx.update(frameDt); // THE BARRICADE (it.91): a cart aside, or every cart down.
+          reclaim?.update(frameDt);
         }
         world.loot.updateBeacons((x, y) => world.lighting.isVisible(x, y), timeSec); // THE KEY BEACONS (it.87).
-        // ENEMIES REMAINING (it.88): the forest's tally under the plate.
+        // ENEMIES REMAINING (it.88): the forest's tally under the plate. LOOTERS REMAINING (it.91): the quarter's.
+        let questTargets: Array<{ x: number; y: number }> | null = null;
         if (floor === FOREST_FLOOR && world.foesAtStart > 0) {
           let alive = 0;
+          const targets: Array<{ x: number; y: number }> = [];
           world.enemies.forEachActive((e) => {
-            if (e.hp > 0 && e.action !== 'dead') alive++;
+            if (e.hp > 0 && e.action !== 'dead') {
+              alive++;
+              targets.push({ x: e.pos.x, y: e.pos.y });
+            }
           });
+          if (quests.forest === 'active') questTargets = targets;
           const tally = `ENEMIES REMAINING · ${alive} / ${world.foesAtStart}`;
           if (questHud.textContent !== tally) questHud.textContent = tally;
           questHud.classList.add('show');
+        } else if (floor === 0 && quests.east === 'open' && world.town?.layout.east) {
+          const targets: Array<{ x: number; y: number }> = [];
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead' && LOOTER_KINDS.has(e.def.kind)) targets.push({ x: e.pos.x, y: e.pos.y });
+          });
+          questTargets = targets;
+          const tally = `LOOTERS REMAINING · ${targets.length} / ${LOOTER_COUNT}`;
+          if (questHud.textContent !== tally) questHud.textContent = tally;
+          questHud.classList.add('show');
         } else if (questHud.classList.contains('show')) questHud.classList.remove('show');
+        updateFoePointers(questTargets);
         if (world.town) {
           const t = world.town;
           // THE ZONE CHIP (it.84): which district the hero stands in.
@@ -4721,6 +5045,20 @@ async function boot(): Promise<void> {
       return best;
     };
     const openInteractable = (it: Interactable): void => {
+      // THE CORNER ROOM (it.91): the keeper's until the errand is paid.
+      if (it.room && quests.east !== 'done') {
+        tutorial.say('The keeper\'s room - not yours yet. Ask at the bar.');
+        return;
+      }
+      if (it.kind === 'innkeeper') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else void innkeeperTalk();
+        return;
+      }
+      if (it.kind === 'bed') {
+        inputQueue.enqueue({ type: 'REST', playerId: localSlot, x: it.x, y: it.y });
+        return;
+      }
       if (it.kind === 'merchant') shopUI.open('armorer');
       else if (it.kind === 'alchemist') shopUI.open('alchemist');
       else if (it.kind === 'jeweler' || it.kind === 'scribe' || it.kind === 'bowyer') shopUI.open(it.kind);
@@ -4829,7 +5167,8 @@ async function boot(): Promise<void> {
         const d = interactableDist(it);
         if (d < bestD) {
           bestD = d;
-          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${it.label.replace('E · ', '')}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : 54 };
+          const label = it.kind === 'bed' && player.resting ? 'RISE' : it.label.replace('E · ', '');
+          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${label}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : it.kind === 'innkeeper' ? 74 : it.kind === 'bed' ? 44 : 54 };
         }
       }
       const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
@@ -5095,7 +5434,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -5198,7 +5537,8 @@ export function isBossFloor(floor: number): boolean {
  */
 function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
-  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
+  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
     const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);
@@ -5285,6 +5625,8 @@ function voiceProfile(kind: EnemyKind): { pitch: number; bank: string } {
     case 'lizard': return { pitch: 1.2, bank: 'hHiss' };
     case 'skelMage': return { pitch: 0.9, bank: 'hMoan' };
     case 'guard': return { pitch: 1.05, bank: 'hGrunt' };
+    case 'bandit': return { pitch: 1.15, bank: 'hGrunt' }; // Men, not monsters (it.91).
+    case 'brigand': return { pitch: 1.0, bank: 'hGrunt' };
     case 'graveGuard': return { pitch: 0.95, bank: 'hGrunt' };
     case 'skeleton': return { pitch: 1.12, bank: 'hGrunt' };
     case 'archer': return { pitch: 1.18, bank: 'hGrunt' };

@@ -32,7 +32,9 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed';
+  /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
+  room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
   note?: string;
   /** Where an open gateway leads (it.85). */
@@ -50,8 +52,10 @@ export interface TownDressing {
   /** Label manager (it.50): where the E-prompt shows, so its plate stands down. */
   setPromptAt: (x: number | null, y?: number) => void;
   stashSprite: Sprite | null;
-  /** THE IRON GATES (it.85): the quarry's gate sprites by tile, swapped open when unlocked. */
+  /** THE IRON GATES (it.85): the quarry's gate sprites by tile, swapped open when unlocked. THE BARRICADE (it.91) lives here too. */
   gates: Map<string, Sprite>;
+  /** A plate re-titled, or hidden (it.91: the east gate's, once the carts are gone). */
+  setPlate: (x: number, y: number, label: string | null) => void;
   /** Render-frame update: gate fog drift, brazier flicker. */
   update: (dt: number) => void;
   destroy: () => void;
@@ -181,6 +185,17 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     viewport.objectLayer.addChild(node);
     plates.push({ node, baseY: s.y - lift, phase: plates.length * 1.7, wx: x + 0.5, wy: y + 0.5, w, h, alpha: 1 });
   };
+  const setPlate = (x: number, y: number, label: string | null): void => {
+    const pl = plates.find((q) => q.wx === x + 0.5 && q.wy === y + 0.5);
+    if (!pl) return;
+    if (label === null) {
+      pl.node.visible = false;
+      return;
+    }
+    const text = pl.node.children[1] as Text | undefined;
+    if (text) text.text = label;
+    pl.node.visible = true;
+  };
   /**
    * LABEL MANAGER (it.50): no two plates may overlap on screen — sorted by
    * screen Y, any plate whose box meets a lower one is lifted clear — and a
@@ -239,19 +254,24 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'stash': {
-        stashSprite = standing(p, 'stash_closed', 0.82);
-        interactables.push({ id: nextId++, kind: 'stash', x: p.x + 0.5, y: p.y + 0.5, label: 'E · STASH', tiles: [{ x: p.x, y: p.y }] });
-        glowAt(p.x, p.y, 0xd8a85c, 0.35, 0.9, 10);
-        plate(p.x, p.y, 'TOWN STASH', 64);
+        // THE ROOM'S CHEST (it.91): the same stash, opened from the inn.
+        const room = p.variant === 'room';
+        const spr = standing(p, 'stash_closed', 0.82);
+        if (!room) stashSprite = spr;
+        interactables.push({ id: nextId++, kind: 'stash', x: p.x + 0.5, y: p.y + 0.5, label: room ? 'E · YOUR CHEST' : 'E · STASH', tiles: [{ x: p.x, y: p.y }], room });
+        glowAt(p.x, p.y, 0xd8a85c, room ? 0.22 : 0.35, 0.9, 10);
+        if (!room) plate(p.x, p.y, 'TOWN STASH', 64);
         break;
       }
       case 'forge': {
         // THE CAMP FORGE (it.78, it.80): the weapon rack from the town's own
         // prop set — the camp's arms bench, ember-lit by the fire beside it.
+        // THE ROOM'S BENCH (it.91): the same rack in the inn's corner room.
+        const room = p.variant === 'room';
         standing(p, 'weapon_rack', 0.9);
-        glowAt(p.x, p.y, 0xff9a40, 0.32, 0.9, 8);
-        interactables.push({ id: nextId++, kind: 'forge', x: p.x + 0.5, y: p.y + 0.5, label: 'E · CAMP FORGE', tiles: [{ x: p.x, y: p.y }] });
-        plate(p.x, p.y, 'THE CAMP FORGE', 60);
+        glowAt(p.x, p.y, 0xff9a40, room ? 0.2 : 0.32, 0.9, 8);
+        interactables.push({ id: nextId++, kind: 'forge', x: p.x + 0.5, y: p.y + 0.5, label: room ? 'E · YOUR BENCH' : 'E · CAMP FORGE', tiles: [{ x: p.x, y: p.y }], room });
+        if (!room) plate(p.x, p.y, 'THE CAMP FORGE', 60);
         break;
       }
       case 'campfire': {
@@ -259,7 +279,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         glowAt(p.x, p.y, 0xff9040, 0.75, 2.6, 18);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 5.5, 255, 150, 60, 0.85);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
-        plate(p.x, p.y, 'THE HEROES\u2019 CAMP', 92);
+        if (!p.variant) plate(p.x, p.y, 'THE HEROES\u2019 CAMP', 92); // The looters' fires (it.91) carry no plate.
         break;
       }
       case 'torch': {
@@ -417,6 +437,113 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'barricade':
         standing(p, p.variant ?? 'barricade_a', 0.9);
         break;
+      // ---- THE EASTERN QUARTER (it.91) ----
+      case 'gatebar': {
+        // THE BARRICADE: carts and timber across the east road, kept by tile
+        // so the errand can pull one aside and the reclaiming topple them all.
+        const spr = standing(p, p.variant ?? 'barricade_a', 0.9);
+        if (spr) {
+          spr.scale.set(1.3);
+          gates.set(`${p.x},${p.y}`, spr);
+        }
+        break;
+      }
+      case 'ruin': {
+        // A burnt shell: an occluder like a cottage, ashen.
+        const spr = standing(p, p.variant ?? 'ruin_a', 0.95, 'object', 0.5);
+        if (spr) {
+          spr.tint = 0xc4b8aa;
+          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        }
+        break;
+      }
+      case 'heap':
+        standing(p, p.variant ?? 'heap_a', 0.88);
+        break;
+      case 'ruinwall':
+        standing(p, p.variant ?? 'ruinwall_a', 0.94);
+        break;
+      case 'rubble':
+      case 'debris':
+        standing(p, p.variant ?? 'rubble_a', 0.72, 'ground');
+        break;
+      case 'slab':
+        standing(p, p.variant ?? 'slab_a', 0.8, 'ground');
+        break;
+      case 'corpse': {
+        // THE FALLEN: a looter's or a militiaman's death frame, lying where
+        // it fell, dark, over a pool - render-only paint, never a body.
+        const v = p.variant ?? 'p3';
+        const animName = v[0] === 'g' ? 'guard_death' : 'poacher_death';
+        if (!spriteLib.loaded || !spriteLib.hasAnim(animName)) break;
+        const a = spriteLib.anim(animName);
+        const dir = (Number(v.slice(1)) || 0) % a.dirCount;
+        const s = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+        const pool = new Sprite(assets.get('glow'));
+        pool.anchor.set(0.5);
+        pool.tint = 0x4a0e12;
+        pool.alpha = 0.55;
+        pool.scale.set(1.15, 0.5);
+        pool.position.set(s.x, s.y + 2);
+        pool.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 40;
+        viewport.objectLayer.addChild(pool);
+        lighting.registerProp(p.x, p.y, pool);
+        const body = new Sprite(a.frames[dir][a.frameCount - 1]);
+        body.anchor.set(0.5, v[0] === 'g' ? 0.72 : 0.9);
+        body.scale.set(v[0] === 'g' ? 0.42 : 0.44);
+        body.tint = 0x8c8078;
+        body.position.set(s.x, s.y + 4);
+        body.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 30;
+        viewport.objectLayer.addChild(body);
+        lighting.registerProp(p.x, p.y, body);
+        break;
+      }
+      case 'embers': {
+        // A cellar still breathing: a low red glow and a warm, dim light.
+        glowAt(p.x, p.y, 0xff6a28, 0.26, 1.3, 6);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 2.8, 255, 110, 40, 0.32);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'tavern2': {
+        // THE GILDED STAG: the inn the hero walks into. The hall inside its
+        // footprint is floor; standing there ghosts the whole building.
+        const spr = standing(p, 'tavern_east', 0.975, 'object', 0.5);
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        const east = layout.east;
+        const dx = east ? east.door.x + 0.5 : p.x + 2.5;
+        const dy = east ? east.door.y + 1.5 : p.y + 5.5;
+        lighting.addSource(dx, dy, 3.6, 255, 190, 110, 0.5);
+        glowAt(Math.floor(dx), Math.floor(dy) - 1, 0xffb060, 0.22, 1.2, 40);
+        plate(p.x + 2, p.y + 2, 'THE GILDED STAG', 250);
+        break;
+      }
+      case 'innkeeper': {
+        // Drawn by Villagers. At the gate the keeper's tiles are the barricade's
+        // too, so E anywhere along it opens the word; in the inn, the counter.
+        const east = layout.east;
+        const atGate = east && east.state !== 'cleared';
+        const tiles = atGate ? [{ x: p.x, y: p.y }, ...east.gateTiles] : [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }];
+        interactables.push({ id: nextId++, kind: 'innkeeper', x: p.x + 0.5, y: p.y + 0.5, label: atGate ? 'E · THE INNKEEPER · THE EAST GATE' : 'E · THE INNKEEPER', tiles });
+        if (atGate && east) {
+          const mid = east.gap;
+          plate(mid.x, mid.y, east.state === 'sealed' ? 'THE EAST GATE · BARRICADED' : 'THE EAST GATE', 110);
+          glowAt(mid.x, mid.y, 0xff9a40, 0.3, 1.6, 30);
+          lighting.addSource(mid.x + 0.5, mid.y + 0.5, 3.4, 255, 160, 80, 0.5);
+        }
+        break;
+      }
+      case 'bed': {
+        standing(p, 'bed', 0.86);
+        interactables.push({ id: nextId++, kind: 'bed', x: p.x + 0.5, y: p.y + 0.5, label: 'E · REST', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }], room: true });
+        break;
+      }
+      case 'smithy':
+      case 'barracks': {
+        const spr = standing(p, p.kind, 0.96);
+        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        break;
+      }
       case 'dummy':
         break; // A body now (it.90): main spawns a passive foe on the tile; the prop only keeps it solid.
       case 'trainpost': {
@@ -572,5 +699,5 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, gates, update, destroy, setPromptAt };
+  return { occluders, interactables, stashSprite, gates, update, destroy, setPromptAt, setPlate };
 }

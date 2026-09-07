@@ -736,6 +736,16 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
 - [x] Journal table; matrix; playthrough; clean build
 
+## Iteration 91 - The Eastern Quarter (2026-09-07)
+
+- [x] The map grown east; the largest district; three shut gateways; ruins, rubble, the fallen, embers
+- [x] The barricade, the refugees, the innkeeper's errand; QUEST command for the party
+- [x] Twenty looters - men only - a HUD tally, minimap pips, screen-edge pointers
+- [x] The reclaiming: letterbox, carts toppling, the folk walking home, the town rebuilt cleared
+- [x] The Gilded Stag: an inn to walk into, the reward (200, a bow, a sword), the room, the chest, the bench, the bed with the lying frame
+- [x] Ambient chatter over every peaceful head in every district
+- [x] Assets baked from the 3rd town part; matrix; playthrough; clean build
+
 ## Iteration 90 - The training ground (2026-09-07)
 
 - [x] Three dummies as passive bodies: rooted, flinching, healing; no blood, no bestiary, never culled

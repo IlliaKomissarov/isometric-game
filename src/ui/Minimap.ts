@@ -28,7 +28,9 @@ const COLOR_PLAYER = '#e04a2f';
 export interface MapMarker {
   x: number;
   y: number;
-  kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal';
+  kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe';
+  /** A quest mark (it.91): drawn before the fog lifts. */
+  always?: boolean;
 }
 
 export class MinimapUI {
@@ -189,7 +191,7 @@ export class MinimapUI {
     }
     // THE MARKS (it.85): keys, gates, the boss and the way home — never before the fog lifts.
     for (const m of this.markers()) {
-      if (this.lighting.getState(m.x, m.y) === 0) continue;
+      if (!m.always && this.lighting.getState(m.x, m.y) === 0) continue;
       const cx = m.x * SCALE + SCALE / 2;
       const cy = m.y * SCALE + SCALE / 2;
       ctx.save();
@@ -216,6 +218,14 @@ export class MinimapUI {
         ctx.strokeRect(cx - 3, cy - 3, 6, 6);
         ctx.fillStyle = '#000';
         ctx.fillRect(cx - 0.8, cy - 1.6, 1.6, 2.6);
+      } else if (m.kind === 'foe') {
+        // A LOOTER (it.91): a red pip, pulsing, wherever it stands.
+        ctx.fillStyle = '#ff4a3a';
+        ctx.strokeStyle = '#3a0808';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.2 + Math.sin(time * 6 + m.x) * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       } else if (m.kind === 'boss') {
         ctx.fillStyle = '#ff5f5f';
         ctx.strokeStyle = '#000';

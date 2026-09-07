@@ -58,9 +58,14 @@
   bleed, poison, burn, chill, shock and stun on hit, or a granted trait, and twelve forge
   enchantments learned from scrolls. A camp forge to salvage, forge, transmute, refine,
   enchant and reinforce to +15, with a recipe book. An assignable draught belt with cooldowns.
-  A town of two districts - the old quarter and the Market Ward, with its jeweler, scribe and
-  bowyer, the guildhall's bounty board, and the eastern road, shut until the gatekeeper hands
-  you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
+  A town of three districts - the old quarter, the Market Ward with its jeweler, scribe and
+  bowyer and the guildhall's bounty board, and THE EASTERN QUARTER: the largest of the three,
+  burnt and barricaded, its refugees huddled at the carts until the innkeeper's errand sends you
+  in after twenty looters (men, not monsters - a tally on the HUD, pips on the map, chevrons on
+  the screen's edge). The last one down, the carts topple in a letterboxed scene and the people
+  walk home; the Gilded Stag pays two hundred gold, a bow and a sword, and the corner room is
+  yours - a chest, a bench, and a bed to lie on. Every villager has a word for you. The eastern
+  road out of the Market Ward stays shut until the gatekeeper hands you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
   and the road opens for good, a hundred gold in hand, the woods a safe road with folk in the
   clearings. Trees ghost to a whisper for anything behind them. At the far end the QUARRY MINES
   go down: one long floor under fog of war, three iron gates whose keys lie in side rooms and

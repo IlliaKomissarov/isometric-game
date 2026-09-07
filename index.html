@@ -5111,6 +5111,28 @@
       #hud-tl > #quest-hud { display: none; position: static; font: 700 11px/1.2 'Cinzel', 'Georgia', serif; letter-spacing: 0.16em; color: #ffd070; text-shadow: 0 1px 3px #000; padding: 3px 8px; border: 1px solid var(--ds-gold-line, #6a5630); background: rgba(10, 8, 12, 0.72); white-space: nowrap; }
       #hud-tl > #quest-hud.show { display: block; }
 
+      /* ---- 8b1. THE EASTERN QUARTER (it.91): the reclaiming's letterbox, the target pointers ---- */
+      #cine-layer { position: fixed; inset: 0; z-index: 45; pointer-events: auto; }
+      #cine-layer .cine-bar { position: absolute; left: 0; right: 0; height: 0; background: #050307; transition: height 0.9s cubic-bezier(0.2, 0.7, 0.2, 1); }
+      #cine-layer .cine-bar.top { top: 0; }
+      #cine-layer .cine-bar.bottom { bottom: 0; }
+      #cine-layer.show .cine-bar { height: 11vh; }
+      #cine-layer .cine-title { position: absolute; left: 0; right: 0; top: 15vh; text-align: center; opacity: 0; transform: translateY(8px); transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none; }
+      #cine-layer.titled .cine-title { opacity: 1; transform: none; }
+      #cine-layer .cine-title b { display: block; font: 700 26px/1.1 'Cinzel', 'Georgia', serif; letter-spacing: 0.34em; color: #ffd070; text-shadow: 0 0 22px rgba(255, 208, 112, 0.55), 0 2px 6px #000; }
+      #cine-layer .cine-title i { display: block; margin-top: 8px; font: italic 15px/1.2 'Crimson Pro', 'Georgia', serif; letter-spacing: 0.12em; color: #e8dcc0; text-shadow: 0 1px 4px #000; }
+      body.orient-portrait #cine-layer .cine-title b, body.short-screen #cine-layer .cine-title b, body.tier-micro #cine-layer .cine-title b { font-size: 17px; letter-spacing: 0.22em; }
+      body.orient-portrait #cine-layer .cine-title i, body.short-screen #cine-layer .cine-title i, body.tier-micro #cine-layer .cine-title i { font-size: 12px; }
+      body.short-screen #cine-layer.show .cine-bar { height: 8vh; }
+      body.short-screen #cine-layer .cine-title { top: 11vh; }
+      #foe-pointers { position: fixed; inset: 0; pointer-events: none; z-index: 7; }
+      #foe-pointers .foe-ptr { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0; transition: opacity 0.25s ease; }
+      #foe-pointers .foe-ptr.show { opacity: 1; }
+      #foe-pointers .foe-ptr i { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; background: linear-gradient(90deg, transparent 0 45%, #ff5a48 45%); clip-path: polygon(0 20%, 100% 50%, 0 80%, 30% 50%); filter: drop-shadow(0 0 6px rgba(255, 90, 72, 0.7)) drop-shadow(0 1px 2px #000); animation: foe-ptr 0.9s ease-in-out infinite alternate; }
+      #foe-pointers .foe-ptr b { position: absolute; left: -12px; top: 14px; min-width: 24px; text-align: center; font: 700 10px/1 'Cinzel', 'Georgia', serif; color: #ffd0c8; text-shadow: 0 1px 3px #000, 0 0 6px rgba(255, 90, 72, 0.6); letter-spacing: 0.06em; }
+      @keyframes foe-ptr { from { transform: scale(0.92); } to { transform: scale(1.08); } }
+      body.tier-micro #foe-pointers .foe-ptr b { display: none; }
+      body:not(.in-run) #foe-pointers { display: none; }
       /* ---- 8c. THE TRAINING GROUND (it.90): spotlight, arrow, card, chapter ---- */
       #tut-layer { position: fixed; inset: 0; z-index: 46; pointer-events: none; display: none; }
       #tut-layer.show { display: block; }

@@ -27,9 +27,15 @@
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
 import { mulberry32 } from '@/utils/rng';
 
-export const TOWN_W = 60;
+/** THE EASTERN QUARTER (it.91): the map grew east; everything at x >= EAST_X is the burnt quarter. */
+export const TOWN_W = 116;
 /** Two districts since it.84: the old quarter (y < 52) and the Market Ward below the gate. */
 export const TOWN_H = 98;
+export const EAST_X = 60;
+/** The barricade's column: the east road crosses it at x 61. */
+export const EAST_GATE_X = 61;
+/** Looters that hold the quarter (it.91). */
+export const LOOTER_COUNT = 20;
 /** The row of the ward gate: everything at or below it is the Market Ward. */
 export const WARD_Y = 52;
 
@@ -106,7 +112,48 @@ export type TownPropKind =
   | 'townroad'
   | 'gatekeeper'
   // THE TRAINING GROUND (it.90): the sign that starts the tutorial.
-  | 'trainpost';
+  | 'trainpost'
+  // THE EASTERN QUARTER (it.91): ruins, rubble, the fallen, the inn, its bed, the barricade.
+  | 'ruin'
+  | 'heap'
+  | 'ruinwall'
+  | 'rubble'
+  | 'slab'
+  | 'debris'
+  | 'corpse'
+  | 'embers'
+  | 'tavern2'
+  | 'innkeeper'
+  | 'bed'
+  | 'gatebar'
+  | 'smithy'
+  | 'barracks';
+
+/** THE EASTERN QUARTER (it.91): how the barricade stands when the town is built. */
+export type EastState = 'sealed' | 'open' | 'cleared';
+
+export interface EastQuarter {
+  state: EastState;
+  /** The barricade's tiles (all in one column); `gap` is the one pulled aside when the errand is taken. */
+  gateTiles: Array<{ x: number; y: number }>;
+  gap: { x: number; y: number };
+  /** A road tile before the gate (the refugees' side) and one past it. */
+  approach: { x: number; y: number };
+  inside: { x: number; y: number };
+  /** Where the innkeeper stands: at the gate until the quarter is cleared, then behind the inn's counter. */
+  innkeeper: { x: number; y: number };
+  /** The refugees huddle here before the gate; the returned folk wander the square. */
+  refuge: Room;
+  wander3: Room;
+  /** Twenty posts the looters hold, in the order they are counted. */
+  banditPosts: Array<{ x: number; y: number; kind: 'bandit' | 'brigand' }>;
+  tavern: { x: number; y: number; w: number; h: number };
+  door: { x: number; y: number };
+  bed: { x: number; y: number };
+  roomStash: { x: number; y: number };
+  roomForge: { x: number; y: number };
+  square: { x: number; y: number };
+}
 
 /**
  * SMALL CLUTTER (it.88): decoration that stands in no one's way. A jar, a
@@ -114,7 +161,7 @@ export type TownPropKind =
  * never a blocked tile. Every placer (the town, the forest, the quarry)
  * asks this before it claims a tile.
  */
-export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile']);
+export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers']);
 
 export interface TownProp {
   kind: TownPropKind;
@@ -179,6 +226,8 @@ export interface TownLayout {
   guards2: Array<{ x: number; y: number }>;
   /** Named districts, by tile rectangle (first match wins). */
   districts: Array<{ name: string; x: number; y: number; w: number; h: number }>;
+  /** THE EASTERN QUARTER (it.91): the town only; the forest and the quarry have none. */
+  east?: EastQuarter;
 }
 
 export interface TownMap extends DungeonMap {
@@ -186,7 +235,8 @@ export interface TownMap extends DungeonMap {
 }
 
 /** Build the town: grid + footprints + prop list. Pure and deterministic. */
-export function buildTownLayout(): TownLayout {
+export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
+  const eastState: EastState = opts.east ?? 'sealed';
   const W = TOWN_W;
   const H = TOWN_H;
   const rand = mulberry32(0x70712);
@@ -219,6 +269,20 @@ export function buildTownLayout(): TownLayout {
     const dy = (y + 0.5 - CY2) / 0.94;
     return { r: Math.hypot(dx, dy), theta: Math.atan2(dy, dx) };
   };
+  // THE EASTERN QUARTER'S BLOB (it.91): a third clearing east of the old
+  // quarter, the largest of the three, dented toward the barricade so the
+  // woods between the gate and the ruins stay two tiles deep.
+  const CX3 = 87;
+  const CY3 = 40;
+  const radiusAt3 = (theta: number): number => {
+    const dent = 2.5 * Math.exp(-((Math.PI - Math.abs(theta)) ** 2) / 0.3);
+    return 25 + 2.2 * Math.sin(2 * theta + 0.9) + 1.5 * Math.sin(5 * theta + 2.1) + 1.1 * Math.sin(3 * theta + 0.5) - dent;
+  };
+  const polar3 = (x: number, y: number): { r: number; theta: number } => {
+    const dx = (x + 0.5 - CX3) / 0.92;
+    const dy = (y + 0.5 - CY3) / 1.35;
+    return { r: Math.hypot(dx, dy), theta: Math.atan2(dy, dx) };
+  };
   const belt = new Uint8Array(W * H);
   /** STREET TILES (it.85): a lamp or a store never stands in the road; a plaza is not a road. */
   const road = new Uint8Array(W * H);
@@ -228,10 +292,13 @@ export function buildTownLayout(): TownLayout {
       const R1 = radiusAt(p1.theta);
       const p2 = polar2(x, y);
       const R2 = radiusAt2(p2.theta);
-      const in1 = p1.r <= R1;
+      const p3 = polar3(x, y);
+      const R3 = radiusAt3(p3.theta);
+      const in1 = p1.r <= R1 && x <= EAST_X - 2; // The old quarter ends where its border wall stood before the map grew (it.91).
       const in2 = p2.r <= R2;
-      if ((!in1 && !in2) || x === 0 || y === 0 || x === W - 1 || y === H - 1) grid[idx(x, y)] = TILE_WALL;
-      else if ((in1 && p1.r > R1 - 2.6 && !in2) || (in2 && p2.r > R2 - 2.6 && !in1)) belt[idx(x, y)] = 1;
+      const in3 = p3.r <= R3 && x >= EAST_X + 4;
+      if ((!in1 && !in2 && !in3) || x === 0 || y === 0 || x === W - 1 || y === H - 1) grid[idx(x, y)] = TILE_WALL;
+      else if ((in1 && p1.r > R1 - 2.6 && !in2) || (in2 && p2.r > R2 - 2.6 && !in1) || (in3 && p3.r > R3 - 2.6)) belt[idx(x, y)] = 1;
     }
   }
 
@@ -292,6 +359,22 @@ export function buildTownLayout(): TownLayout {
   street([[20, 13], [24, 16]], KIND_DIRT, 0.9); // N cottage.
   ellipse(17.5, 37.5, 4.5, 3.6, KIND_DIRT); // Camp clearing.
   ellipse(43.5, 37.5, 2.5, 2, KIND_DIRT); // Portal stone yard.
+  // THE EASTERN QUARTER'S STREETS (it.91): the east road from the portal yard
+  // through the woods to the barricade; past it the burnt avenue to the
+  // square, three roads to the gateways, and the lanes of the ruined rows.
+  street([[46, 38], [52, 36], [57, 34], [61, 32], [66, 31]], KIND_COBBLE, 1.3); // The east road: portal yard -> the east gate.
+  ellipse(87, 40, 7.5, 5, KIND_COBBLE); // The burnt square.
+  street([[66, 31], [72, 34], [80, 38]], KIND_COBBLE, 1.4); // The gate avenue -> the square.
+  street([[87, 35], [88, 24], [88, 10]], KIND_COBBLE, 1.3); // North to the north road.
+  street([[87, 45], [87, 56], [88, 66]], KIND_COBBLE, 1.3); // South to the south fields.
+  street([[94, 40], [102, 40], [110, 40]], KIND_COBBLE, 1.3); // East to the river gate.
+  street([[80, 38], [76, 44], [72, 54]], KIND_DIRT, 1.0); // The inn's lane (south-west).
+  street([[88, 24], [98, 20], [104, 14]], KIND_DIRT, 1.0); // The north-east lane.
+  street([[87, 56], [96, 58], [104, 62]], KIND_DIRT, 1.0); // The south-east lane.
+  street([[88, 24], [78, 20], [72, 14]], KIND_DIRT, 0.9); // The north-west lane.
+  street([[94, 40], [100, 30]], KIND_DIRT, 0.9); // The alley.
+  street([[102, 40], [104, 50]], KIND_DIRT, 0.9); // The tanners' alley.
+  ellipse(76.5, 52.5, 4, 3, KIND_DIRT); // The inn's yard.
 
   // ---- PROPS ----
   const props: TownProp[] = [];
@@ -641,6 +724,164 @@ export function buildTownLayout(): TownLayout {
   const gatekeeper = { x: 50, y: 74 };
   block({ kind: 'gatekeeper', x: gatekeeper.x, y: gatekeeper.y });
 
+  // ==== THE EASTERN QUARTER (it.91) ====================================
+  // The barricade: every road tile in the gate's column is a wall of
+  // carts and timber; the militia's apron before it holds the refugees.
+  const gateTiles: EastQuarter['gateTiles'] = [];
+  for (let y = 26; y <= 38; y++) if (grid[idx(EAST_GATE_X, y)] === TILE_FLOOR) gateTiles.push({ x: EAST_GATE_X, y });
+  const gap = gateTiles[Math.floor(gateTiles.length / 2)] ?? { x: EAST_GATE_X, y: 32 };
+  clearFor(56, 30, 4, 6, 0, KIND_COBBLE); // The militia's apron.
+  const approach = { x: 58, y: gap.y };
+  const eastIn = { x: 65, y: 31 };
+  const refuge: Room = { x: 55, y: 30, w: 5, h: 6 };
+  const innAtGate = { x: 57, y: 31 };
+  if (eastState !== 'cleared') {
+    for (const t of gateTiles) {
+      if (eastState === 'open' && t.x === gap.x && t.y === gap.y) continue; // The cart pulled aside.
+      block({ kind: 'gatebar', x: t.x, y: t.y, variant: (t.y & 1) === 0 ? 'barricade_a' : 'barricade_b' });
+    }
+    block({ kind: 'innkeeper', x: innAtGate.x, y: innAtGate.y });
+    block({ kind: 'crates', x: 56, y: 35 });
+    block({ kind: 'barrel', x: 59, y: 35, variant: 'barrel_c' });
+    block({ kind: 'wood_pile', x: 56, y: 30 });
+    placeLamp('torch', 59, 30);
+  } else {
+    // THE QUARTER RECLAIMED: banners on the road where the carts stood.
+    for (const [x, y] of [[62, gateTiles[0]?.y ?? 30], [62, gateTiles[gateTiles.length - 1]?.y ?? 34]] as const) {
+      const at = offRoad(x, y);
+      if (at) block({ kind: 'banner', x: at.x, y: at.y });
+    }
+    placeLamp('torch', 59, 30);
+    placeLamp('torch', 59, 35);
+  }
+  // THE GILDED STAG: the inn on its lane south-west of the square. The
+  // footprint's rim is wall; the hall inside is floor, the door is the
+  // south face's middle column; the keeper's counter, the corner room's
+  // bed, chest and bench stand inside.
+  const tavern = { x: 74, y: 46, w: 6, h: 5 };
+  const door = { x: tavern.x + 2, y: tavern.y + tavern.h - 1 };
+  clearFor(tavern.x, tavern.y, tavern.w, tavern.h, 1);
+  block({ kind: 'tavern2', x: tavern.x, y: tavern.y, w: tavern.w, h: tavern.h });
+  for (let y = tavern.y + 1; y < tavern.y + tavern.h - 1; y++)
+    for (let x = tavern.x + 1; x < tavern.x + tavern.w - 1; x++) {
+      grid[idx(x, y)] = TILE_FLOOR;
+      tileKind[idx(x, y)] = KIND_COBBLE;
+    }
+  grid[idx(door.x, door.y)] = TILE_FLOOR;
+  tileKind[idx(door.x, door.y)] = KIND_COBBLE;
+  grid[idx(door.x, door.y + 1)] = TILE_FLOOR;
+  tileKind[idx(door.x, door.y + 1)] = KIND_DIRT;
+  houses.push({ ...tavern });
+  const keeperInn = { x: tavern.x + 1, y: tavern.y + 1 };
+  const bed = { x: tavern.x + 4, y: tavern.y + 1 };
+  const roomStash = { x: tavern.x + 4, y: tavern.y + 3 };
+  const roomForge = { x: tavern.x + 1, y: tavern.y + 3 };
+  if (eastState === 'cleared') block({ kind: 'innkeeper', x: keeperInn.x, y: keeperInn.y });
+  else grid[idx(keeperInn.x, keeperInn.y)] = TILE_BLOCKED; // The counter stands whether or not the keeper is behind it.
+  block({ kind: 'table', x: tavern.x + 2, y: tavern.y + 1, variant: 'table_a' });
+  block({ kind: 'bed', x: bed.x, y: bed.y });
+  block({ kind: 'stash', x: roomStash.x, y: roomStash.y, variant: 'room' });
+  block({ kind: 'forge', x: roomForge.x, y: roomForge.y, variant: 'room' });
+  block({ kind: 'barrels_stacked', x: tavern.x + tavern.w, y: tavern.y + 3 });
+  block({ kind: 'cart', x: tavern.x - 2, y: tavern.y + 4, w: 2, h: 1 });
+  placeLamp('lamp', door.x + 2, door.y + 2);
+  placeLamp('lamp', door.x - 2, door.y + 2);
+  // THE RUINED ROWS: shells of houses along every street, heaps where
+  // houses were, wall stubs, columns, the fallen in the streets, embers
+  // still breathing in a few cellars.
+  const ruin = (x: number, y: number, w: number, h: number, variant: string, ember = false): void => {
+    clearFor(x, y, w, h, 1);
+    block({ kind: 'ruin', x, y, w, h, variant });
+    if (ember) decal({ kind: 'embers', x: x + Math.floor(w / 2), y: y + h - 1 });
+  };
+  ruin(68, 26, 3, 3, 'ruin_a');
+  ruin(70, 35, 3, 3, 'ruin_f', true);
+  ruin(76, 28, 3, 3, 'ruin_b');
+  ruin(80, 44, 3, 3, 'ruin_g');
+  ruin(93, 32, 3, 3, 'ruin_c', true);
+  ruin(94, 45, 3, 3, 'ruin_h');
+  ruin(82, 18, 3, 3, 'ruin_i');
+  ruin(92, 15, 3, 3, 'ruin_d', true);
+  ruin(98, 24, 3, 3, 'ruin_j');
+  ruin(104, 34, 3, 3, 'ruin_e');
+  ruin(100, 45, 3, 3, 'ruin_k', true);
+  ruin(79, 58, 3, 3, 'ruin_l');
+  ruin(94, 61, 3, 3, 'ruin_f', true);
+  ruin(72, 60, 3, 3, 'ruin_i');
+  ruin(105, 54, 3, 3, 'ruin_j');
+  ruin(80, 10, 3, 3, 'ruin_k');
+  ruin(96, 8, 3, 3, 'ruin_g', true);
+  // The square's centrepiece: the burnt fountain ring.
+  clearFor(86, 39, 3, 3, 0, KIND_COBBLE);
+  block({ kind: 'ruin', x: 86, y: 39, w: 3, h: 3, variant: 'ruin_ring' });
+  // Houses that stood: the smithy, the old barracks, three cottages, the tall house.
+  clearFor(90, 50, 3, 3, 1);
+  block({ kind: 'smithy', x: 90, y: 50, w: 3, h: 3 });
+  clearFor(70, 18, 4, 4, 1);
+  block({ kind: 'barracks', x: 70, y: 18, w: 4, h: 4 });
+  house(68, 44, 'house_e');
+  house(82, 50, 'house_f');
+  house(98, 55, 'house_g');
+  clearFor(96, 30, 4, 4, 1);
+  block({ kind: 'house', x: 96, y: 30, w: 4, h: 4, variant: 'house_h' });
+  grid[idx(97, 32)] = TILE_FLOOR; // The tall house's door column, two deep like a cottage's.
+  grid[idx(97, 33)] = TILE_FLOOR;
+  tileKind[idx(97, 32)] = KIND_DIRT;
+  tileKind[idx(97, 33)] = KIND_DIRT;
+  houses.push({ x: 96, y: 30, w: 4, h: 4 });
+  // Heaps and stubs where the fire went through.
+  for (const [x, y, v] of [[74, 24, 'heap_a'], [90, 28, 'heap_b'], [84, 30, 'heap_c'], [78, 54, 'heap_d'], [100, 38, 'heap_e'], [88, 52, 'heap_a'], [76, 40, 'heap_c'], [104, 44, 'heap_b'], [92, 66, 'heap_d'], [84, 64, 'heap_e']] as const) {
+    if (grid[idx(x, y)] === TILE_FLOOR && !road[idx(x, y)]) block({ kind: 'heap', x, y, variant: v });
+  }
+  for (const [x, y, v] of [[67, 33, 'ruinwall_a'], [67, 34, 'ruinwall_b'], [73, 31, 'ruinwall_c'], [74, 31, 'ruinwall_d'], [90, 36, 'ruinwall_e'], [91, 36, 'ruinwall_f'], [83, 46, 'ruinwall_g'], [97, 42, 'ruinwall_a'], [98, 42, 'ruinwall_b'], [75, 63, 'ruinwall_c'], [102, 18, 'ruinwall_d'], [88, 16, 'ruinwall_e'], [78, 33, 'ruinwall_h'], [95, 52, 'ruinwall_h']] as const) {
+    if (grid[idx(x, y)] === TILE_FLOOR && !road[idx(x, y)]) block({ kind: 'ruinwall', x, y, variant: v });
+  }
+  for (const [x, y, v] of [[84, 36, 'ruincol_a'], [90, 43, 'ruincol_b'], [82, 43, 'ruincol_a'], [92, 37, 'ruincol_b']] as const) {
+    if (grid[idx(x, y)] === TILE_FLOOR && !road[idx(x, y)]) block({ kind: 'ruinwall', x, y, variant: v });
+  }
+  // The fallen: bodies in the streets, each a death frame lying where it fell - buried once the quarter is reclaimed.
+  if (eastState !== 'cleared') for (const [x, y, v] of [[66, 32, 'p3'], [70, 33, 'g1'], [78, 37, 'p6'], [85, 42, 'g5'], [89, 38, 'p0'], [87, 30, 'g2'], [88, 50, 'p4'], [97, 40, 'g7'], [73, 56, 'p2'], [93, 20, 'p5'], [100, 41, 'g3'], [86, 58, 'p1'], [104, 40, 'g6'], [72, 40, 'p7'], [83, 25, 'g0']] as const) {
+    if (grid[idx(x, y)] === TILE_FLOOR) decal({ kind: 'corpse', x, y, variant: v });
+  }
+  // Blocked gateways: the north road, the river gate, the south fields.
+  const eastGateways: TownLayout['gateways'] = [
+    { x: 88, y: 10, label: 'THE NORTH ROAD', note: 'The north road is choked with the fallen and their carts - not open yet.' },
+    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut; the bridge beyond it burned.' },
+    { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: 'The south fields lie fallow - the way is not open yet.' },
+  ];
+  clearFor(86, 9, 5, 3, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 86, y: 10 });
+  block({ kind: 'pillar', x: 90, y: 10 });
+  block({ kind: 'gateway', x: 88, y: 10 });
+  clearFor(108, 38, 3, 5, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 110, y: 38 });
+  block({ kind: 'pillar', x: 110, y: 42 });
+  block({ kind: 'gateway', x: 110, y: 40 });
+  clearFor(86, 65, 5, 3, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 86, y: 66 });
+  block({ kind: 'pillar', x: 90, y: 66 });
+  block({ kind: 'gateway', x: 88, y: 66 });
+  gateways.push(...eastGateways);
+  // Lights that still burn, and the looters' own fires.
+  for (const [x, y] of [[68, 30], [74, 36], [80, 40], [93, 40], [88, 34], [88, 46], [82, 55], [96, 26], [100, 52], [86, 20], [90, 60], [104, 42]] as const) placeLamp('torch', x, y);
+  for (const [x, y] of [[92, 42], [70, 30]] as const) {
+    if (grid[idx(x, y)] === TILE_FLOOR && !road[idx(x, y)]) block({ kind: 'campfire', x, y, variant: 'looters' });
+  }
+  // Rubble, slabs and debris everywhere the fire went: on the streets too.
+  for (let y = 6; y < 72; y++) {
+    for (let x = EAST_X + 5; x < W - 1; x++) {
+      const i = idx(x, y);
+      if (grid[i] !== TILE_FLOOR || belt[i]) continue;
+      if (x >= tavern.x - 1 && x < tavern.x + tavern.w + 1 && y >= tavern.y - 1 && y < tavern.y + tavern.h + 2) continue;
+      const roll = rand();
+      if (roll < 0.035) decal({ kind: 'rubble', x, y, variant: `rubble_${'abcdefg'[Math.floor(rand() * 7)]}` });
+      else if (roll < 0.055) decal({ kind: 'debris', x, y, variant: `debris_${'abcd'[Math.floor(rand() * 4)]}` });
+      else if (roll < 0.075 && road[i]) decal({ kind: 'slab', x, y, variant: `slab_${'abcdefgh'[Math.floor(rand() * 8)]}` });
+    }
+  }
+  const wander3: Room = { x: 80, y: 35, w: 15, h: 11 };
+  const square = { x: 87, y: 40 };
+
   // THE OLD QUARTER, DRESSED DEEPER (it.84): benches by the well, a cart on
   // the square, lamps on the high street, a monument at the lower plaza, big
   // trees in the lawns, stores by the stalls — each placed only where it
@@ -658,6 +899,8 @@ export function buildTownLayout(): TownLayout {
   tryBlock({ kind: 'banner', x: 34, y: 8 });
   tryBlock({ kind: 'banner', x: 41, y: 8 });
 
+  /** THE GATE'S EAST FLANK (it.91): no tree may stand just past the barricade, where it would draw over the carts. */
+  const gateFlank = (x: number, y: number): boolean => x > EAST_GATE_X && x <= EAST_GATE_X + 4 && Math.abs(y - gap.y) <= 3;
   // ---- FOREST BELT: pines and dead trees on belt tiles, brush between ----
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
@@ -665,7 +908,7 @@ export function buildTownLayout(): TownLayout {
       if (!belt[i] || grid[i] !== TILE_FLOOR || road[i]) continue; // Never a tree in a street (it.85).
       grid[i] = TILE_BLOCKED;
       const roll = rand();
-      if (roll < 0.72) {
+      if (roll < 0.72 && !gateFlank(x, y)) {
         // DENSER (it.50): three tiles in four carry a tree, the rest a bush.
         // Dark pines, twisted oaks and dead wood (it.57).
         const v = roll < 0.22 ? 'pine_a' : roll < 0.38 ? 'pine_b' : roll < 0.5 ? 'pine_c' : roll < 0.58 ? 'tree_a' : roll < 0.64 ? 'tree_b' : rand() < 0.5 ? 'dead_a' : 'dead_b';
@@ -692,7 +935,7 @@ export function buildTownLayout(): TownLayout {
         }
       if (!nearOpen) continue;
       const roll = rand();
-      if (roll < 0.62) {
+      if (roll < 0.62 && !gateFlank(x, y)) {
         const v = roll < 0.24 ? 'pine_a' : roll < 0.42 ? 'pine_b' : roll < 0.52 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
         props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
       } else if (roll < 0.9) {
@@ -736,10 +979,14 @@ export function buildTownLayout(): TownLayout {
   // ---- SELF-HEAL #1: any floor the hero cannot reach becomes brush ----
   const spawn = { x: 30, y: 30 };
   grid[idx(spawn.x, spawn.y)] = TILE_FLOOR;
+  grid[idx(eastIn.x, eastIn.y)] = TILE_FLOOR;
   const reachable = (): Uint8Array => {
     const seen = new Uint8Array(W * H);
-    const stack = [idx(spawn.x, spawn.y)];
+    // THE EASTERN QUARTER (it.91) is sealed behind its barricade: the flood
+    // starts on both sides of it, so the ruins are healed like the rest.
+    const stack = [idx(spawn.x, spawn.y), idx(eastIn.x, eastIn.y)];
     seen[stack[0]] = 1;
+    seen[stack[1]] = 1;
     while (stack.length) {
       const i = stack.pop()!;
       const x = i % W;
@@ -805,6 +1052,55 @@ export function buildTownLayout(): TownLayout {
   }
   seen = reachable();
   for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
+  // THE STREETS' CLUTTER (it.91): a body or a slab whose tile the healing took (a tree, brush) goes with it.
+  for (let i = props.length - 1; i >= 0; i--) {
+    const q = props[i];
+    if ((q.kind === 'corpse' || q.kind === 'rubble' || q.kind === 'slab' || q.kind === 'debris' || q.kind === 'embers') && grid[idx(q.x, q.y)] !== TILE_FLOOR) props.splice(i, 1);
+  }
+
+  // THE LOOTERS' POSTS (it.91): twenty open tiles of the quarter, well past
+  // the gate and out of the inn, no two within four strides - rolled from
+  // the same seed so every peer counts the same twenty.
+  const banditPosts: EastQuarter['banditPosts'] = [];
+  {
+    const pool: number[] = [];
+    for (let y = 6; y < 72; y++)
+      for (let x = EAST_X + 8; x < W - 2; x++) {
+        const i = idx(x, y);
+        if (grid[i] !== TILE_FLOOR || belt[i]) continue;
+        if (x >= tavern.x - 1 && x < tavern.x + tavern.w + 1 && y >= tavern.y - 1 && y < tavern.y + tavern.h + 3) continue;
+        pool.push(i);
+      }
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    for (const i of pool) {
+      if (banditPosts.length >= LOOTER_COUNT) break;
+      const x = i % W;
+      const y = (i - x) / W;
+      if (banditPosts.some((b) => Math.hypot(b.x - x, b.y - y) < 4)) continue;
+      const n = banditPosts.length;
+      banditPosts.push({ x, y, kind: n % 5 < 3 ? 'bandit' : 'brigand' });
+    }
+  }
+  const east: EastQuarter = {
+    state: eastState,
+    gateTiles,
+    gap,
+    approach,
+    inside: eastIn,
+    innkeeper: eastState === 'cleared' ? keeperInn : innAtGate,
+    refuge,
+    wander3,
+    banditPosts,
+    tavern,
+    door,
+    bed,
+    roomStash,
+    roomForge,
+    square,
+  };
 
   const wander: Room = { x: 21, y: 16, w: 19, h: 13 };
   const wander2: Room = { x: 23, y: 65, w: 17, h: 11 };
@@ -867,9 +1163,11 @@ export function buildTownLayout(): TownLayout {
     gatekeeper,
     training,
     districts: [
-      { name: 'THE OLD QUARTER', x: 0, y: 0, w: W, h: WARD_Y },
-      { name: 'THE MARKET WARD', x: 0, y: WARD_Y, w: W, h: H - WARD_Y },
+      { name: 'THE EASTERN QUARTER', x: EAST_X, y: 0, w: W - EAST_X, h: H },
+      { name: 'THE OLD QUARTER', x: 0, y: 0, w: EAST_X, h: WARD_Y },
+      { name: 'THE MARKET WARD', x: 0, y: WARD_Y, w: EAST_X, h: H - WARD_Y },
     ],
+    east,
   };
 }
 
@@ -882,7 +1180,8 @@ export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: n
   const { width, height, grid } = layout.map;
   const seen = new Uint8Array(width * height);
   const stack = [layout.map.spawn.y * width + layout.map.spawn.x];
-  seen[stack[0]] = 1;
+  if (layout.east) stack.push(layout.east.inside.y * width + layout.east.inside.x); // Past the barricade (it.91).
+  for (const s of stack) seen[s] = 1;
   while (stack.length) {
     const i = stack.pop()!;
     const x = i % width;

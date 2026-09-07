@@ -1,5 +1,96 @@
 # Development Log
 
+## 2026-09-07 (iteration 91) - The Eastern Quarter: the barricade, the looters, the reclaiming, the inn
+
+### The map grew east (`src/town/TownMap.ts`)
+- `TOWN_W` 60 -> 116. A third blob (centre 87,40; `radiusAt3`, dented
+  toward the gate) carves the largest district of the three (~2 800 open
+  tiles against the old quarter's ~2 000); the old quarter is clipped at
+  x 58 where its border wall used to stand. `districts` gains THE EASTERN
+  QUARTER (x >= `EAST_X` 60, first match). The east road leaves the portal
+  yard, crosses the woods, and meets the barricade at `EAST_GATE_X` 61;
+  past it the gate avenue, the burnt square (the fountain ring), three
+  roads to three shut gateways (THE NORTH ROAD, THE RIVER GATE, THE SOUTH
+  FIELDS) and the lanes of the ruined rows.
+- `buildTownLayout({ east })` takes an `EastState` (`sealed` | `open` |
+  `cleared`) and returns `layout.east: EastQuarter`: the gate tiles and
+  the `gap`, the approach and the inside, the innkeeper's tile (at the
+  gate, or behind the counter once cleared), the refugees' huddle and the
+  square's wander room, twenty `banditPosts` rolled from the map's seed
+  (no two within four strides, out of the inn), the inn's footprint, door,
+  bed, chest and bench. Sealed and open builds place the carts (`gatebar`,
+  the open build leaves the gap); the cleared build places banners, buries
+  the fallen and puts the keeper in the inn.
+- The self-heal flood and `auditTownLayout` seed from both sides of the
+  barricade, so the sealed quarter is healed like the rest.
+- New prop kinds: `ruin` (occluders, ashen), `heap`, `ruinwall`, the
+  clutter `rubble` / `slab` / `debris` / `corpse` / `embers` (never a
+  blocked tile), `tavern2`, `innkeeper`, `bed`, `gatebar`, `smithy`,
+  `barracks`. `house_h` is the tall half-timber house (4x4, a door column
+  two deep). A `corpse` is a looter's or militiaman's death frame lying over
+  a pool - paint, never a body. No tree stands on the gate's east flank
+  (`gateFlank`), where it would draw over the carts.
+- Assets baked from `3rd town part` (`assets91.py`): the inn (the 30000
+  corner render), twelve ruin shells, the ring, two columns, five heaps,
+  eight wall stubs, seven rubble piles, eight slabs, four debris clusters,
+  three pixel cottages, the tall house, the smithy, the barracks, the bed
+  (the `bed01.jpg` render keyed off its grey ground). The mossy renders are
+  warmed to burnt stone.
+
+### The errand (`src/main.ts`)
+- `quests.east`: `new` -> `open` (the errand taken) -> `cleared` (the last
+  looter down) -> `done` (paid); `quests.looters` counts the dead for a
+  rebuild. Steps that change the party's state travel as a `QUEST` command
+  (`{ id: 'east', step: 'accept' | 'reward' }`) so every peer applies them
+  on the same tick; the cleared step follows from the kill count, which is
+  deterministic already.
+- E at the barricade (the innkeeper's tiles are the carts' too): a refugee's
+  word, then MARGO's - two hundred gold (200), a bow and a sword. Accept:
+  the gap tile is floor, the cart slides to the verge (`GateFx.pullAside`),
+  twenty looters spawn at their posts (`bandit` = the poacher's body in
+  rags, ranged; `brigand` = the halberdier in stolen mail; level 5, two
+  champions), the plate reads THE EAST GATE.
+- The HUD tally reads LOOTERS REMAINING · X / 20 anywhere in town while
+  the errand is open; the minimap marks every looter as a red pip before
+  the fog lifts (`MapMarker.always`); `#foe-pointers` puts a chevron with
+  the distance in strides on the screen's edge toward the nearest three
+  off-screen targets - the forest's beasts too, while that errand runs.
+- The last looter falls: `ReclaimScene` (`src/town/Reclaim.ts`) - a
+  letterboxed, render-only cutscene: the camera crosses to the gate
+  (`cineFocus` eased in the render loop), the carts tremble and topple in
+  dust, the grid opens, THE PEOPLE RETURN, eight of the folk walk the road
+  through the gap to the square under drifting gold light, the bars lift.
+  Then a fade rebuilds the town cleared: carts gone for good, banners on the
+  road, ten folk on the square, the keeper behind her counter.
+- E at the counter: the reward - 200 gold, `hunters_bow` and `soldier_blade`
+  at rare or better, to every hero of the party - and the corner room.
+- THE GILDED STAG: a 6x5 footprint whose rim is wall and whose hall is
+  floor, the door in the south face; the roof ghosts when the hero is
+  inside (the cottage rule). The room's chest is the town stash, its bench
+  the camp forge (`Interactable.room`, the keeper's until paid).
+- THE BED: a `REST` command. `Player.lieDown` carries the body onto the
+  bed's tile (`restFrom` remembers the floor), `syncKnight` plays the death
+  sheet as the lying-down and holds its last frame; a bed mends a percent
+  of life and resource every six ticks. Any order to move, strike or pick
+  up `rise`s first. E on the bed toggles.
+
+### Ambient chatter (`src/town/Villagers.ts`)
+- Every peaceful head speaks a word now and then: a tiny bubble (Pixi
+  Text at 9 px in a dark rounded plate with a tail) fades in over the head,
+  holds 2.2 s and fades out, the next 6-18 s later. Banks: `TOWN_WORDS`
+  for the folk, `VENDOR_WORDS`, `GUARD_WORDS`, `REFUGEE_WORDS` at the
+  barricade, `RECLAIMED_WORDS` on the square. `VillagerOptions` also
+  dresses the keeper (`keeperAnim: 'villager_walk'`, a warm tint).
+
+### QA
+- qa75 grew the Eastern Quarter block (36 checks): the map, the sealed
+  gate, the posts, the dialogues, the open gap, twenty men and no beast,
+  the tally and the pointers, the room refused, the reclaiming driven over
+  a fake clock, the rebuilt town, the reward, the bed, the chest, the save,
+  the words. The tab may be occluded: page timers there are frozen, so the
+  harness is started with `window.setTimeout` pointed at the worker clock
+  and the cutscene is driven by `driveRender` (performance.now stubbed).
+
 ## 2026-09-07 (iteration 90) - The training ground: dummies that take a blow, a sign, a tutorial that points
 
 ### The yard and its dummies

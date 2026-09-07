@@ -181,10 +181,46 @@ const SLASH_FRAMES = 11;
 export class Player extends Entity {
   /** THE SPAWN WARD (it.89): ticks left in which no blow can land (sim state, counted down each tick). */
   wardTicks = 0;
+  /**
+   * THE INN'S BED (it.91): lying on the bed. Simulation state: set by the
+   * REST command, cleared by any order to move or strike; the body is
+   * carried onto the bed's tile and put back on the floor tile it rose from.
+   */
+  resting = false;
+  private readonly restFrom = { x: 0, y: 0 };
+  /** Ticks spent lying (the lying-down animation, and a slow mend). */
+  restTicks = 0;
 
   override beginTick(): void {
     super.beginTick();
     if (this.wardTicks > 0) this.wardTicks--;
+    if (this.resting) {
+      this.restTicks++;
+      // A bed mends what the road took: a tenth of a hero's life every second, and the well-spring with it.
+      if (this.restTicks % 6 === 0) {
+        this.hp = Math.min(this.hpMax, this.hp + Math.max(1, Math.round(this.hpMax * 0.01)));
+        this.resource = Math.min(this.resourceMax, this.resource + Math.max(1, Math.round(this.resourceMax * 0.01)));
+      }
+    }
+  }
+
+  /** Lie down on the bed's tile (it.91): the body moves onto it; `rise` puts it back. */
+  lieDown(x: number, y: number): void {
+    if (this.resting) return;
+    this.restFrom.x = this.pos.x;
+    this.restFrom.y = this.pos.y;
+    this.resting = true;
+    this.restTicks = 0;
+    this.warpTo(x - 0.12, y - 0.12); // A shade up the mattress, so the body reads on the bed, not at its foot.
+    this.facing.x = 0;
+    this.facing.y = -1;
+  }
+
+  rise(): void {
+    if (!this.resting) return;
+    this.resting = false;
+    this.restTicks = 0;
+    this.warpTo(this.restFrom.x, this.restFrom.y);
   }
 
   readonly archetype: ClassArchetype;
@@ -814,6 +850,12 @@ export class Player extends Entity {
       animName = rig.death;
       const fc = fcOf(animName);
       frame = Math.min(fc - 1, Math.floor((this.actionTicks / PLAYER_DEATH_TICKS) * fc));
+    } else if (this.resting) {
+      // THE INN'S BED (it.91): the death sheet's fall is the lying-down, and
+      // its last frame - the body at rest - is the sleep.
+      animName = rig.death;
+      const fc = fcOf(animName);
+      frame = Math.min(fc - 1, Math.floor((this.restTicks / 36) * fc));
     } else if (this.action === 'attack') {
       const profile = this.weaponProfile;
       const total = profile.windupTicks + profile.recoverTicks;

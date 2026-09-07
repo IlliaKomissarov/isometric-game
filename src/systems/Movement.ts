@@ -94,12 +94,30 @@ export class MovementSystem {
       if (cmd.playerId !== this.playerId) continue;
       switch (cmd.type) {
         case 'MOVE_TO':
+          this.wake();
           this.attackTarget = null;
           this.pickupTarget = null;
           this.chestTarget = null;
           this.startPathTo(cmd.gx, cmd.gy);
           break;
+        case 'REST': {
+          // THE INN'S BED (it.91): lie down on the bed's tile, or rise from it.
+          if (this.player.resting) {
+            this.wake();
+            break;
+          }
+          if (this.player.action !== 'idle') break;
+          this.attackTarget = null;
+          this.pickupTarget = null;
+          this.chestTarget = null;
+          this.directDir.x = 0;
+          this.directDir.y = 0;
+          this.clearPath();
+          this.player.lieDown(cmd.x, cmd.y);
+          break;
+        }
         case 'DIRECT_MOVE':
+          if (cmd.dx !== 0 || cmd.dy !== 0) this.wake();
           this.attackTarget = null;
           this.pickupTarget = null;
           this.chestTarget = null;
@@ -161,6 +179,7 @@ export class MovementSystem {
           break;
         }
         case 'ATTACK': {
+          this.wake();
           const target = state.getEntity(cmd.targetId);
           if (target && target.kind === 'enemy' && target.hp > 0) {
             this.pickupTarget = null;
@@ -190,9 +209,18 @@ export class MovementSystem {
   }
 
   /** Fixed-tick advance. */
+  /** Rise from the inn's bed (it.91): any order to move, strike or pick up stands the hero up first. */
+  private wake(): void {
+    if (this.player.resting) this.player.rise();
+  }
+
   update(dt: number): void {
     const prevTileX = Math.floor(this.player.pos.x);
     const prevTileY = Math.floor(this.player.pos.y);
+    if (this.player.resting) {
+      this.detectTileChange(prevTileX, prevTileY);
+      return;
+    }
 
     // Rooted while swinging, flinching, or dead — but tile-change detection
     // below still runs so knockback repositioning updates the fog.

@@ -59,7 +59,13 @@ export type EnemyKind =
   | 'spider'
   // THE TRAINING GROUND (it.90): rooted, wordless practice targets.
   | 'dummy'
-  | 'dummyB';
+  | 'dummyB'
+  // THE EASTERN QUARTER (it.91): the looters who hold it - men, not monsters.
+  | 'bandit'
+  | 'brigand';
+
+/** THE LOOTERS (it.91): the two human kinds the east quarter's errand counts. */
+export const LOOTER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['bandit', 'brigand']);
 
 export interface EnemyTypeDef {
   kind: EnemyKind;
@@ -817,6 +823,61 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
   },
   dummy: { ...DUMMY_BASE, kind: 'dummy', single: 'dummy_a' },
   dummyB: { ...DUMMY_BASE, kind: 'dummyB', single: 'dummy_b' },
+  // THE LOOTERS (it.91): the poacher's body in a looter's rags, the
+  // halberdier's in stolen mail. Men with bows and polearms; nothing risen.
+  bandit: {
+    kind: 'bandit',
+    name: 'Looter',
+    hp: 46,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.74,
+    speedMult: 0.62,
+    windupTicks: 32,
+    recoverTicks: 30,
+    reach: 0,
+    hitRecoveryTicks: 18,
+    markerTexture: 'marker_archer',
+    ranged: { range: 6.5, kiteMin: 3.2 },
+    sprite: {
+      walk: 'poacher_run',
+      idle: 'poacher_idle',
+      death: 'poacher_death',
+      attack: 'poacher_attack',
+      anchorY: 0.9,
+      scale: 0.44,
+      tint: 0xd8c4a0,
+      stride: 0.4,
+      ownShadow: true,
+    },
+  },
+  brigand: {
+    kind: 'brigand',
+    armor: 1,
+    name: 'Brigand',
+    hp: 62,
+    minDamage: 8,
+    maxDamage: 13,
+    toHit: 0.72,
+    speedMult: 0.6,
+    windupTicks: 34,
+    recoverTicks: 34,
+    reach: 1.7,
+    hitRecoveryTicks: 14,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'guard_walk',
+      idle: 'guard_idle',
+      death: 'guard_death',
+      attack: 'guard_attack',
+      hitAnim: 'guard_hit',
+      anchorY: 0.72,
+      scale: 0.42,
+      tint: 0xc8a888,
+      stride: 0.52,
+      ownShadow: true,
+    },
+  },
 };
 
 /** Dependencies injected by the pool; strike resolution lives in CombatSystem. */

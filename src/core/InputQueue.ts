@@ -71,7 +71,11 @@ export type InputCommand =
   /** CO-OP (it.59): the leader's frame says this hero left the party. */
   | { type: 'LEAVE'; playerId: number }
   /** CO-OP (it.60): a hero joins mid-run — every peer seats them on this tick. */
-  | { type: 'JOIN'; playerId: number; name: string; cls: import('@/network/Serialization').ClassArchetype; hero: import('@/persist/SaveGame').PlayerSave | null };
+  | { type: 'JOIN'; playerId: number; name: string; cls: import('@/network/Serialization').ClassArchetype; hero: import('@/persist/SaveGame').PlayerSave | null }
+  /** THE INN'S BED (it.91): lie down on the tile (x, y), or rise if already lying. */
+  | { type: 'REST'; playerId: number; x: number; y: number }
+  /** A QUEST STEP (it.91): the errand taken or paid - decided by the leader, applied by every peer on the same tick. */
+  | { type: 'QUEST'; playerId: number; id: string; step: string };
 
 export class InputQueue {
   private queue: InputCommand[] = [];

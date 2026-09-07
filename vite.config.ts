@@ -58,7 +58,8 @@ function atlasBakePlugin(): Plugin {
 
 export default defineConfig({
   base: process.env.PAGES ? '/isometric-game/' : '/',
-  publicDir: 'public',
+  // A Pages build copies nothing from public/ (2.5 GB of raw uploads); the deploy script adds the git-tracked subset (it.91).
+  publicDir: process.env.PAGES ? false : 'public',
   plugins: [atlasBakePlugin()],
   resolve: {
     alias: {

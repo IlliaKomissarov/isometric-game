@@ -84,6 +84,7 @@ import { CrtFilter } from '@/render/CrtFilter';
 import { asDifficultyId, DIFFICULTIES, DIFFICULTY_KEY, DIFFICULTY_ORDER, difficulty, readPreferredDifficulty, SPAWN_WARD_TICKS, type DifficultyId } from '@/core/Difficulty';
 import { DialogueUI } from '@/ui/Dialogue';
 import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/TutorialSystem';
+import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { Villagers } from '@/town/Villagers';
@@ -835,14 +836,18 @@ async function boot(): Promise<void> {
     const on = <K extends keyof GameEvents>(event: K, handler: (payload: GameEvents[K]) => void): void => {
       subs.push(eventBus.on(event, handler));
     };
-    const timers = new Set<number>();
-    /** setTimeout that dies with the run (boss sequences, banners). */
+    const timers = new Set<() => void>();
+    /**
+     * A timeout that dies with the run (boss sequences, banners, the fades).
+     * On a worker's clock (it.90): a hidden tab throttles the page's timers
+     * to once a minute, which stalled every floor transition.
+     */
     const later = (fn: () => void, ms: number): void => {
-      const id = window.setTimeout(() => {
-        timers.delete(id);
+      const cancel = unthrottledTimeout(() => {
+        timers.delete(cancel);
         if (alive) fn();
       }, ms);
-      timers.add(id);
+      timers.add(cancel);
     };
     const ac = new AbortController();
 
@@ -5135,7 +5140,7 @@ async function boot(): Promise<void> {
         charSheetUI.destroy();
         bestiaryUI.destroy();
         for (const off of undrag) off();
-        for (const id of timers) clearTimeout(id);
+        for (const cancel of timers) cancel();
         timers.clear();
         for (const off of subs) off();
         for (const off of subsOnLayout) off();

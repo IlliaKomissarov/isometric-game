@@ -5169,6 +5169,15 @@
       body.tier-micro #tut-card .tut-text, body.tier-compact #tut-card .tut-text { font-size: 13.5px; }
       body.tier-micro #tut-chapter b, body.tier-compact #tut-chapter b, body.orient-portrait #tut-chapter b { font-size: 20px; letter-spacing: 0.26em; }
       body.tier-micro .tut-hero, body.tier-compact .tut-hero { min-height: 80px; }
+      /* Thumbs (it.90): every tutorial target is 44 px on touch; the smallest screens drop the demo box. */
+      body.input-touch #tut-card .tut-btn { min-height: 46px; }
+      body.input-touch #tut-card .tut-x { width: 46px; height: 46px; }
+      body.tier-micro #tut-card .tut-demo, body.tier-micro #tut-card .tut-hero { display: none; }
+      body.tier-micro #tut-card { padding: 8px 9px; }
+      body.tier-micro #tut-card .tut-text { font-size: 12.5px; line-height: 1.4; }
+      body.tier-micro #tut-card .tut-title { font-size: 12px; letter-spacing: 0.14em; }
+      body.tier-micro #tut-card .tut-head { margin-bottom: 5px; padding-bottom: 5px; }
+      body.tier-micro #tut-card .tut-foot { margin-top: 6px; }
       /* A taller class screen (it.89): when it overflows, it starts at the top and the fit scales from there
          (this sits after the 8a rule that pins the origin to the centre). */
       #class-select.show { justify-content: safe center; }

@@ -741,7 +741,7 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Three dummies as passive bodies: rooted, flinching, healing; no blood, no bestiary, never culled
 - [x] The sign and its dialogue; the party placed at the yard
 - [x] Sixteen-step tutorial: spotlight, arrow, card, chapter flashes, demos, doing-conditions, auto-opening panels
-- [x] Desktop and touch readings; cards inside the layout viewport
+- [x] Desktop and touch readings; cards inside the layout viewport; 46 px touch targets; eleven-device sweep in qa75
 - [x] `shouldAutoStart` switch for the mandatory onboarding
 - [x] tryBlock's double push fixed
 - [x] Matrix; playthrough; clean build

@@ -914,7 +914,12 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           g.player.pos.y = picked.py + 0.5;
           g.lighting.updateVisibility(picked.px, picked.py);
           g.loop.step(1);
-          for (let i = 0; i < 40; i++) g.loop.callbacks.render(1);
+          // The fade is a wall-clock lerp: give the frames real milliseconds (a tight loop hands them none).
+          for (let i = 0; i < 120; i++) {
+            const t0 = performance.now();
+            while (performance.now() - t0 < 8) { /* spin */ }
+            g.loop.callbacks.render(1);
+          }
           check('a tree fades to a ghost for a foe behind it', picked.o.sprite.alpha < 0.16, picked.o.sprite.alpha.toFixed(2));
         } else check('a tree fades to a ghost for a foe behind it', false, 'no tree with open tiles, or no foe');
       }
@@ -1201,6 +1206,36 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(80);
       check('E at the sign offers the training', !!document.querySelector('#dialogue-panel.open') && /TRAINING GROUND/.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=stay]')?.click();
+      await wait(40);
+      // THE TUTORIAL ON EVERY PHONE (it.90): all sixteen cards inside eleven simulated boxes, thumb-sized buttons.
+      const L = W.__layout.layout;
+      const devices: Array<[number, number]> = [[915, 412], [412, 915], [932, 430], [430, 932], [640, 360], [360, 640], [240, 320], [320, 240], [1024, 768], [768, 1024], [1280, 800]];
+      for (const [w, h] of devices) {
+        L.simulate(w, h, { touch: true });
+        W.__layout.fit.refresh();
+        T.start();
+        g.loop.step(1);
+        const bad: string[] = [];
+        for (let i = 0; i < 16; i++) {
+          if (i) T.next();
+          W.__layout.fit.refresh(); // A panel that opened on this step is scaled now, not next frame.
+          T.update(0.016);
+          const card = document.getElementById('tut-card')!;
+          const cl = parseFloat(card.style.left);
+          const ct = parseFloat(card.style.top);
+          const cw = card.offsetWidth;
+          const ch = card.offsetHeight;
+          if (cl < 0 || ct < 0 || cl + cw > w + 1 || ct + ch > h + 1) bad.push(`${T.stepId} card ${Math.round(cl)},${Math.round(ct)} ${cw}x${ch}`);
+          for (const b of card.querySelectorAll<HTMLElement>('.tut-btn:not([hidden]), .tut-x')) {
+            const r = b.getBoundingClientRect();
+            if (r.height < 43.5 || r.width < 43.5) bad.push(`${T.stepId} small ${b.className} ${Math.round(r.width)}x${Math.round(r.height)}`);
+          }
+        }
+        T.end(false);
+        check(`the tutorial fits ${w}x${h}`, bad.length === 0, bad.slice(0, 3).join(' | '));
+      }
+      L.clearSimulation();
+      localStorage.removeItem('iso-arpg-tutorial-done');
       await wait(40);
     }
 

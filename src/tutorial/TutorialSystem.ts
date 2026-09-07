@@ -473,6 +473,7 @@ export class TutorialSystem {
   /** Frame the target, aim the arrow, seat the card beside it. */
   private place(step: TutorialStep, jump = false): void {
     const t = step.target?.(this.ctx) ?? null;
+    const { w: vw, h: vh } = this.hooks.viewport();
     let rect: { left: number; top: number; width: number; height: number } | null = null;
     if (t?.selector) {
       const el = document.querySelector<HTMLElement>(t.selector);
@@ -484,9 +485,13 @@ export class TutorialSystem {
     } else if (t?.world) {
       const p = this.hooks.worldToPage(t.world.x, t.world.y);
       const pad = t.pad ?? 26;
-      rect = { left: p.x - pad, top: p.y - pad * 2.2, width: pad * 2, height: pad * 2.8 };
+      // Off the screen (the crypt gate seen from the yard): the mark sits at the
+      // viewport's edge on the way there and the arrow points the direction.
+      const m = pad + 8;
+      const px = Math.max(m, Math.min(vw - m, p.x));
+      const py = Math.max(m + pad, Math.min(vh - m, p.y));
+      rect = { left: px - pad, top: py - pad * 2.2, width: pad * 2, height: pad * 2.8 };
     }
-    const { w: vw, h: vh } = this.hooks.viewport();
     this.spot.classList.toggle('jump', jump);
     if (rect) {
       this.spot.classList.add('on');
@@ -527,6 +532,9 @@ export class TutorialSystem {
       }
       if (side === 'bottom' || side === 'top') cx = Math.max(12, Math.min(vw - cw - 12, rect.left + rect.width / 2 - cw / 2));
     }
+    // Whatever the target did, the card stays inside the viewport.
+    cx = Math.max(12, Math.min(vw - cw - 12, cx));
+    cy = Math.max(12, Math.min(vh - ch - 12, cy));
     this.card.style.width = `${Math.round(cw)}px`;
     this.card.style.left = `${Math.round(cx)}px`;
     this.card.style.top = `${Math.round(cy)}px`;

@@ -68,6 +68,30 @@
   Chrome discarded the tab; the same path ran clean by hand and on the
   rerun.
 
+### Mobile pass (same day)
+- Touch targets: the card's buttons and cross are 46 px on touch (44 was
+  measured at 43 mid-entrance, the card rises from scale 0.98); micro
+  screens (240x320, 320x240) drop the demo box and tighten the card.
+- `qa75` gained THE TUTORIAL ON EVERY PHONE: eleven simulated boxes
+  (915x412, 412x915, 932x430, 430x932, 640x360, 360x640, 240x320, 320x240,
+  1024x768, 768x1024, 1280x800), all sixteen cards placed inside each box
+  (the card's own left/top/size, not a mid-transition rect) with every
+  button at least 44 px. The sweep is slow in a hidden tab (timers throttle
+  to a second): start it detached and poll.
+- The run's timers moved to a worker clock (`core/workerTimer.ts`,
+  `unthrottledTimeout`): `later()` - the fade beats, the loading step, the
+  20 s watchdog, boss sequences and banners - no longer waits on the page's
+  `setTimeout`. A hidden tab throttles that to one a second, and after five
+  minutes to one a MINUTE: an alt-tabbed delver came back to a stalled
+  fade, and two harness runs tripped the watchdog in the quarry (the arena
+  built, then nothing moved while `transitioning` waited on a throttled
+  timer). Workers keep their clock.
+- Verified after the pass: `qa75` 280 pass, 0 fail, 0 errors (39 s with
+  the worker clock on a fresh tab, 127 s once the page's own `wait()` was
+  throttled); the eleven-device tutorial sweep green; `qa66` 74/74; build
+  clean; no console errors. The tree-fade check now renders over real
+  milliseconds (a tight loop hands `frameDt` nothing).
+
 ## 2026-09-06 (iteration 89) - The dark's measure, the spawn ward, the new bundle in every zone
 
 ### The dark's measure (`src/core/Difficulty.ts`)

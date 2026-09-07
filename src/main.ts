@@ -83,6 +83,7 @@ import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scen
 import { CrtFilter } from '@/render/CrtFilter';
 import { asDifficultyId, DIFFICULTIES, DIFFICULTY_KEY, DIFFICULTY_ORDER, difficulty, readPreferredDifficulty, SPAWN_WARD_TICKS, type DifficultyId } from '@/core/Difficulty';
 import { DialogueUI } from '@/ui/Dialogue';
+import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/TutorialSystem';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { Villagers } from '@/town/Villagers';
@@ -2138,6 +2139,8 @@ async function boot(): Promise<void> {
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
           : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff });
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
+        // THE TRAINING GROUND (it.90): a passive foe stands on every dummy tile - struck, it flinches and heals.
+        if (isHub) for (const p of layout.props) if (p.kind === 'dummy') enemies.spawn(p.variant === 'dummy_b' ? 'dummyB' : 'dummy', p.x + 0.5, p.y + 0.5, 1);
         // COLLISION AUDIT (it.40): no walkable pocket may be sealed off by props.
         const audit = isHub ? auditTownLayout(layout) : { unreachable: [], missing: [] };
         if (audit.unreachable.length || audit.missing.length) {
@@ -3076,6 +3079,18 @@ async function boot(): Promise<void> {
     on('entity:damaged', ({ entityId, amount, dirX, dirY }) => {
       const entity = state.getEntity(entityId);
       if (!entity) return;
+      tutor.noteDamage(entityId, amount);
+      if (entity instanceof Enemy && entity.def.passive) {
+        // A TRAINING DUMMY (it.90): wood, not flesh - chips fly, the post knocks, the number reads.
+        world.ambience.burst(entity.pos.x, entity.pos.y, 0xb08a55, Math.min(14, 5 + amount));
+        world.dmgText.show(entity.pos.x, entity.pos.y, `${amount}`, entityId === lastCritTarget ? 'crit' : 'enemy');
+        audio.sfx('hit');
+        audio.sfx(amount >= 8 ? 'chest' : 'skillTrapSet');
+        entity.onDamaged();
+        if (!player.weaponProfile.ranged) audio.sfx('swing');
+        world.camera.addKick(amount >= 12 ? 3.5 : 2);
+        return;
+      }
       // Visceral directional blood — heavier hits bleed harder.
       world.ambience.bloodSpray(entity.pos.x, entity.pos.y, dirX, dirY, Math.min(18, 7 + amount));
       if (amount >= 5) {
@@ -3938,6 +3953,7 @@ async function boot(): Promise<void> {
         const local = inputQueue.drain();
         const commands = lockstep ? lockstep.frame(tick, local) : local;
         if (leaderNoteCooldown > 0) leaderNoteCooldown--;
+        for (const cmd of commands) if (cmd.playerId === localSlot) tutor.noteCommand(cmd.type); // THE TRAINING GROUND (it.90).
         for (const cmd of commands) {
           if (cmd.type === 'AIM') {
             const seat = party[cmd.playerId];
@@ -4556,6 +4572,7 @@ async function boot(): Promise<void> {
 
         updateSkillHud(); // Cooldown sweeps + resource bar (it.32).
         tutorial.update(cameraFocus.x, cameraFocus.y, frameDt);
+        tutor.update(frameDt); // THE TRAINING GROUND (it.90).
         minimap.update(cameraFocus.x, cameraFocus.y, timeSec);
         world.camera.follow(cameraFocus, frameDt);
         // OFF-SCREEN CULLING (it.74): only what the camera sees is handed
@@ -4596,6 +4613,81 @@ async function boot(): Promise<void> {
     }
     const charSheetUI = new CharacterSheetUI(player);
     const bestiaryUI = new BestiaryUI(player);
+    /**
+     * THE TRAINING GROUND (it.90): the interactive tutorial over the live
+     * game. Its hooks are the only thing it knows about the run.
+     */
+    const panelOf = (kind: PanelKind): { open: () => void; close: () => void; isOpen: () => boolean } => {
+      switch (kind) {
+        case 'inventory':
+          return { open: () => { if (!document.getElementById('inv-panel')?.classList.contains('open')) inventoryUI.toggle(); }, close: () => { if (document.getElementById('inv-panel')?.classList.contains('open')) inventoryUI.toggle(); }, isOpen: () => !!document.getElementById('inv-panel')?.classList.contains('open') };
+        case 'character':
+          return { open: () => charSheetUI.open(), close: () => charSheetUI.close(), isOpen: () => charSheetUI.isOpen };
+        case 'talents':
+          return { open: () => skillTreeUI.open(), close: () => skillTreeUI.close(), isOpen: () => skillTreeUI.isOpen };
+        case 'crafting':
+          return { open: () => craftUI.open(), close: () => craftUI.close(), isOpen: () => craftUI.isOpen };
+        case 'journal':
+          return { open: () => codexUI.open('combat'), close: () => codexUI.close(), isOpen: () => codexUI.isOpen };
+      }
+    };
+    const pageScratch = vec2();
+    const tutor = new TutorialSystem({
+      touch: () => screenLayout.state.touch,
+      hero: () => ({ x: player.pos.x, y: player.pos.y, hp: player.hp, hpMax: player.hpMax }),
+      dummies: () => {
+        const out: Array<{ id: number; x: number; y: number; hp: number; hpMax: number }> = [];
+        world.enemies.forEachActive((e) => {
+          if (e.def.passive) out.push({ id: e.id, x: e.pos.x, y: e.pos.y, hp: e.hp, hpMax: e.hpMax });
+        });
+        return out;
+      },
+      worldToPage: (x, y) => {
+        // `worldToCanvas` answers in CSS pixels of the canvas box (app.screen), not backing pixels.
+        const c = world.camera.worldToCanvas(x, y, pageScratch);
+        const r = app.canvas.getBoundingClientRect();
+        return { x: r.left + c.x, y: r.top + c.y };
+      },
+      panels: {
+        open: (k) => panelOf(k).open(),
+        close: (k) => panelOf(k).close(),
+        isOpen: (k) => panelOf(k).isOpen(),
+      },
+      warpToYard: () => {
+        const t = world.town?.layout.training;
+        if (!t) return;
+        TutorialSystem.yardPost = { x: t.post.x + 0.5, y: t.post.y + 0.5 };
+        placeParty(t.mark.x + 0.5, t.mark.y + 0.5, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+      },
+      gate: () => {
+        const g = world.town?.layout.gate ?? { x: player.pos.x, y: player.pos.y };
+        return { x: g.x + 0.5, y: g.y + 0.5 };
+      },
+      heroFrames: () => (spriteLib.loaded ? classPreviewFrames(chosenClass) : null),
+      className: () => chosenClass,
+      viewport: () => ({ w: screenLayout.state.w, h: screenLayout.state.h }),
+      onFinish: () => {
+        world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE YARD IS DONE · THE GATE WAITS', 'crit');
+        audio.sfx('questDone');
+      },
+    });
+    /** The sign at the yard (it.90): the word, then the tutorial. */
+    const offerTraining = async (): Promise<void> => {
+      if (tutor.isRunning) return;
+      const v = await dialogue.open({
+        speaker: 'THE TRAINING GROUND',
+        role: 'three dummies and a sign',
+        lines: ['A yard to learn the crypt\'s ways in: walking, striking, skills, draughts, the pack, the forge, the book. Two minutes, no one watching.'],
+        choices: [
+          { label: 'BEGIN THE TRAINING', sub: 'the yard walks you through it', value: 'go' },
+          { label: 'NOT NOW', value: 'stay' },
+        ],
+      });
+      if (v === 'go') tutor.start();
+    };
+    if (shouldAutoStart() && world.town) later(() => tutor.start(), 600); // The mandatory onboarding, when it is switched on.
     // DUNGEON RECORDS (it.48): the board's tallies come straight from the run.
     // THE HALL OF RECORDS (it.54): the board opens the two-tab leaderboard.
     const statsUI = new LeaderboardUI(stats, () => ({ cls: player.archetype, playtimeTicks: playtimeBase + state.tick, gold: player.goldCollected }));
@@ -4640,6 +4732,7 @@ async function boot(): Promise<void> {
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
       else if (it.kind === 'forge') craftUI.open();
+      else if (it.kind === 'training') void offerTraining();
       else stashUI.open();
     };
     /** E in town / a click on the stall or stash: walk up, then open. */
@@ -4997,7 +5090,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -5030,6 +5123,7 @@ async function boot(): Promise<void> {
         codexUI.destroy();
         noticeUI.destroy();
         dialogue.destroy();
+        tutor.destroy();
         statsUI.destroy();
         hudBuffs.remove();
         headBuffs.remove();

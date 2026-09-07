@@ -32,7 +32,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training';
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
   note?: string;
   /** Where an open gateway leads (it.85). */
@@ -418,8 +418,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         standing(p, p.variant ?? 'barricade_a', 0.9);
         break;
       case 'dummy':
-        standing(p, p.variant ?? 'dummy_a', 0.94);
+        break; // A body now (it.90): main spawns a passive foe on the tile; the prop only keeps it solid.
+      case 'trainpost': {
+        // THE TRAINING GROUND (it.90): the sign that offers the tutorial.
+        standing(p, 'signpost', 0.95);
+        interactables.push({ id: nextId++, kind: 'training', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE TRAINING GROUND', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }] });
+        plate(p.x, p.y, 'THE TRAINING GROUND', 70);
         break;
+      }
       case 'jar':
         standing(p, p.variant ?? 'jar_a', 0.85);
         break;

@@ -736,6 +736,16 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
 - [x] Journal table; matrix; playthrough; clean build
 
+## Iteration 90 - The training ground (2026-09-07)
+
+- [x] Three dummies as passive bodies: rooted, flinching, healing; no blood, no bestiary, never culled
+- [x] The sign and its dialogue; the party placed at the yard
+- [x] Sixteen-step tutorial: spotlight, arrow, card, chapter flashes, demos, doing-conditions, auto-opening panels
+- [x] Desktop and touch readings; cards inside the layout viewport
+- [x] `shouldAutoStart` switch for the mandatory onboarding
+- [x] tryBlock's double push fixed
+- [x] Matrix; playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

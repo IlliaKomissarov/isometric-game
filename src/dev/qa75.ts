@@ -1100,6 +1100,110 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await fadeClear();
     }
 
+    // ---- THE TRAINING GROUND (it.90): the dummies, the sign, the tutorial end to end -------
+    {
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+      }
+      const dummies: Array<{ id: number; hp: number; hpMax: number; pos: { x: number; y: number }; def: { kind: string; passive?: boolean }; action: string }> = [];
+      g.enemies.forEachActive((e: (typeof dummies)[number]) => {
+        if (e.def.passive) dummies.push(e);
+      });
+      check('three dummies stand in the yard', dummies.length === 3 && dummies.every((d) => !g.scene.isWalkable(Math.floor(d.pos.x), Math.floor(d.pos.y))), String(dummies.length));
+      check('the yard has its sign', g.town.interactables.some((i: { kind: string }) => i.kind === 'training') && !!g.town.layout.training);
+      const d0 = dummies[0];
+      const hp0 = d0.hp;
+      g.combat.dealDamage({ sourceId: g.player.id, targetId: d0.id, amount: 50 });
+      g.loop.step(1);
+      check('a dummy takes the blow and flinches, rooted', d0.hp < hp0 && d0.action === 'hit' && d0.pos.x === Math.floor(d0.pos.x) + 0.5, `${d0.hp}/${hp0} ${d0.action}`);
+      g.loop.step(200);
+      check('a dummy is whole again a breath after the blow', d0.hp === d0.hpMax, `${d0.hp}/${d0.hpMax}`);
+      (g.difficulty as { set: (id: string) => void }).set('tourist');
+      g.combat.dealDamage({ sourceId: g.player.id, targetId: d0.id, amount: 1 });
+      check('the tourist\'s blade does not fell a dummy', d0.hp > 0, `${d0.hp}`);
+      (g.difficulty as { set: (id: string) => void }).set('medium');
+      // The tutorial, step by step.
+      const T = g.tutor as { start: () => void; next: () => void; end: (f: boolean) => void; update: (dt: number) => void; readonly isRunning: boolean; readonly stepId: string; readonly stepIndex: number };
+      T.start();
+      g.loop.step(2);
+      T.update(0.016);
+      const layer = document.getElementById('tut-layer');
+      check('the tutorial opens at the yard', T.isRunning && !!layer?.classList.contains('show') && T.stepId === 'welcome' && Math.hypot(g.player.pos.x - 16.5, g.player.pos.y - 72.5) < 2.5, `${T.stepId} ${g.player.pos.x},${g.player.pos.y}`);
+      check('the welcome card shows the hero', !!document.querySelector('#tut-card .tut-hero canvas') || !g.sprites.loaded);
+      check('the card fits the screen', inside(document.getElementById('tut-card')));
+      T.next(); // move
+      check('the move step waits for four tiles', T.stepId === 'move' && /walked 0/.test(document.querySelector('#tut-card .tut-progress')?.textContent ?? ''));
+      for (let i = 0; i < 5; i++) {
+        g.player.pos.x += 1;
+        g.loop.step(1);
+        T.update(0.016);
+      }
+      T.update(0.016);
+      await wait(1000);
+      T.update(0.016);
+      check('walking four tiles advances the tutorial', T.stepId === 'strike', T.stepId);
+      check('the strike step frames a dummy', !!document.getElementById('tut-spot')?.classList.contains('on') && !!document.getElementById('tut-arrow')?.classList.contains('on'));
+      for (let i = 0; i < 3; i++) {
+        g.combat.dealDamage({ sourceId: g.player.id, targetId: d0.id, amount: 6 });
+        g.loop.step(1);
+      }
+      T.update(0.016);
+      await wait(1000);
+      T.update(0.016);
+      check('three blows on a dummy advance the tutorial', T.stepId === 'damage', T.stepId);
+      check('the damage step reads the blows', /last blow 6/.test(document.querySelector('#tut-card .tut-progress')?.textContent ?? ''));
+      T.next(); // skill
+      g.queue.enqueue({ type: 'SKILL', playerId: 0, slot: 0 });
+      g.loop.step(2);
+      T.update(0.016);
+      await wait(1000);
+      T.update(0.016);
+      check('a cast advances the skill step', T.stepId === 'quaff', T.stepId);
+      g.queue.enqueue({ type: 'USE_QUICK', playerId: 0, kind: 'health' });
+      g.loop.step(2);
+      T.update(0.016);
+      await wait(1000);
+      T.update(0.016);
+      check('a quaff advances the draught step', T.stepId === 'inventory', T.stepId);
+      check('the pack opens itself', !!document.getElementById('inv-panel')?.classList.contains('open'));
+      T.next();
+      check('the pack closes and the hero sheet opens', !document.getElementById('inv-panel')?.classList.contains('open') && T.stepId === 'character' && !!document.getElementById('char-sheet')?.classList.contains('open'));
+      T.next();
+      check('the talents open', T.stepId === 'talents' && !!document.getElementById('skill-tree')?.classList.contains('open'));
+      T.next();
+      check('the forge opens', T.stepId === 'crafting' && !!document.getElementById('craft-panel')?.classList.contains('open'));
+      T.next();
+      check('the journal opens', T.stepId === 'journal' && !!document.getElementById('codex')?.classList.contains('open'));
+      T.next();
+      check('the plate step closes the book and frames the plate', T.stepId === 'plate' && !document.getElementById('codex')?.classList.contains('open') && !!document.getElementById('tut-spot')?.classList.contains('on'));
+      T.next();
+      T.next(); // interact
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(2);
+      T.update(0.016);
+      await wait(1000);
+      T.update(0.016);
+      check('an interaction advances the tutorial', T.stepId === 'portal', T.stepId);
+      T.next();
+      check('the last step points at the crypt gate', T.stepId === 'gate' && !!document.getElementById('tut-spot')?.classList.contains('on'));
+      T.next();
+      check('the tutorial ends and is remembered', !T.isRunning && !layer?.classList.contains('show') && localStorage.getItem('iso-arpg-tutorial-done') === '1');
+      localStorage.removeItem('iso-arpg-tutorial-done');
+      // The sign's word.
+      g.player.pos.x = 16.5;
+      g.player.pos.y = 71.5;
+      g.lighting.updateVisibility(16, 71);
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(3);
+      await wait(80);
+      check('E at the sign offers the training', !!document.querySelector('#dialogue-panel.open') && /TRAINING GROUND/.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
+      document.querySelector<HTMLElement>('#dialogue-panel [data-choice=stay]')?.click();
+      await wait(40);
+    }
+
     // ---- THE DARK'S MEASURE (it.89): the five settings, the spawn ward ------------------------
     {
       if (g.floor !== 0) {

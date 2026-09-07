@@ -84,7 +84,7 @@ export class BestiaryUI {
   /** Move the selection through the KNOWN entries (wrapping). */
   private step(dir: number): void {
     const p = this.player;
-    const kinds = (Object.keys(ENEMY_TYPES) as EnemyKind[]).filter((k) => p.bestiaryRevealed || p.bestiary.has(k));
+    const kinds = (Object.keys(ENEMY_TYPES) as EnemyKind[]).filter((k) => !ENEMY_TYPES[k].passive && (p.bestiaryRevealed || p.bestiary.has(k))); // No dummies in the book (it.90).
     if (!kinds.length) return;
     const i = this.selected ? kinds.indexOf(this.selected) : -1;
     this.selected = kinds[(i + dir + kinds.length) % kinds.length];
@@ -141,7 +141,7 @@ export class BestiaryUI {
     // The list keeps its scroll across a re-render (it.49): picking an entry no longer snaps to the top.
     const keepScroll = this.panel.querySelector<HTMLElement>('.bs-list')?.scrollTop ?? 0;
     const p = this.player;
-    const kinds = Object.keys(ENEMY_TYPES) as EnemyKind[];
+    const kinds = (Object.keys(ENEMY_TYPES) as EnemyKind[]).filter((k) => !ENEMY_TYPES[k].passive);
     const revealed = p.bestiaryRevealed;
     const isKnown = (k: EnemyKind): boolean => revealed || p.bestiary.has(k);
     const seenKinds = kinds.filter(isKnown);

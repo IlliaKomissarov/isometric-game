@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 89, 2026-09-06)
+- **Project version:** 0.1.0 (iteration 90, 2026-09-07)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -54,6 +54,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `core/Difficulty` (it.89) | the class screen's pick, the save, the party's start | `Combat.dealDamage` (blows on heroes, tourist hits-to-kill), `Enemy` (life, sight, pace, cadence), the journal | one table; part of the run, never read from a clock or the DOM |
 | `ui/Dialogue` + the quest ledger (it.87) | `Villagers` (the gatekeeper), `quests` in the save | choices as promises; the forest errand's states | the sim counts the forest's foes; the panel only speaks |
 | `engine/AudioManager` (it.89) | `MusicState` from main, the SFX calls, the bundle under `public/assets/audio` | one music bed and one ambience bed per zone, capped SFX voices | render-side only; `claimVoice` caps 4 a bank, 24 total |
+| `tutorial/TutorialSystem` (it.90) | `TutorialHooks` (hero, dummies, panels, viewport, world-to-page), the command stream, `entity:damaged` | the spotlight, arrow, card and chapter overlay; panels opened on cue | render-side only; steps are data; `shouldAutoStart` is the onboarding switch |
 
 ## 3. Audit log and refactoring summary (iteration 74)
 
@@ -231,6 +232,14 @@ Items examined and left as they are, with reasons:
 | A risen delver could be killed on the spot | Medium (design) | `Player.wardTicks` = 300: nothing lands for five seconds, halo, buff, note |
 | The new audio bundle unused | Asset | zone playlists, per-zone beds, quarry stingers, SPX effects, the books, the lament |
 | Sound effects could stack without limit | Low (audio) | `claimVoice`: 4 per bank, 24 total, full banks drop the take |
+
+### Iteration 90 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| No onboarding | Feature | `tutorial/TutorialSystem.ts`: sixteen visual steps over the live game, from the yard's sign |
+| The yard's dummies were paint | Feature | passive foes that flinch, heal and never die; wood, not blood |
+| Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 
 ## 4. Known issues and regression log
 

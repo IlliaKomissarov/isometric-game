@@ -586,7 +586,8 @@ export class CombatSystem {
     let amount = Math.max(1, Math.round(rolled * (1 - reduction)));
     // TOURIST (it.89): every hero blow is at least a fixed share of the foe's
     // life - a common foe falls in one, a champion in two, a warden in four.
-    if (measure.hitsToKill && sourceHero && !targetHero && !event.pure && !event.reflected) {
+    const passiveTarget = !!(target as Entity & { def?: { passive?: boolean } }).def?.passive; // A training dummy (it.90): never felled in one, never culled.
+    if (measure.hitsToKill && sourceHero && !targetHero && !passiveTarget && !event.pure && !event.reflected) {
       const foe = target as Entity & { affix?: string | null; isWarden?: boolean };
       const hits = foe.isWarden ? measure.hitsToKill.boss : foe.affix ? measure.hitsToKill.elite : measure.hitsToKill.normal;
       amount = Math.max(amount, Math.ceil(target.hpMax / hits));
@@ -594,7 +595,7 @@ export class CombatSystem {
     // LEGENDARY UNIQUES (it.78): echo doubles a tenth of the strikes; cull ends a foe under 15%.
     const fx = sourceHero?.uniqueEffects;
     if (fx?.has('echo') && !event.reflected && !event.pure && this.rand() < 0.1) amount *= 2;
-    if (fx?.has('cull') && !targetHero && !event.reflected && !event.pure && target.hp < target.hpMax * 0.15) amount = Math.max(amount, target.hp);
+    if (fx?.has('cull') && !targetHero && !passiveTarget && !event.reflected && !event.pure && target.hp < target.hpMax * 0.15) amount = Math.max(amount, target.hp);
     target.hp = Math.max(0, target.hp - amount);
     if (fx?.has('lifesteal') && sourceHero && !event.reflected && sourceHero.hp > 0 && !targetHero) {
       const heal = Math.max(1, Math.ceil(amount * 0.08));

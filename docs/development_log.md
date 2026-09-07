@@ -1,5 +1,73 @@
 # Development Log
 
+## 2026-09-07 (iteration 90) - The training ground: dummies that take a blow, a sign, a tutorial that points
+
+### The yard and its dummies
+- The Market Ward's training yard (west of the Bowyer) had three dummy
+  props. They are BODIES now: `ENEMY_TYPES.dummy` / `dummyB` (`passive`,
+  `single: 'dummy_a' | 'dummy_b'`, hp 400, no blow of their own), spawned
+  by the hub build on the prop tiles (the prop keeps the tile solid, draws
+  nothing). `Enemy.updateDummy` roots the body on its home tile (no shove,
+  no knockback), lets it flinch, and heals it 4 % a tick once 90 ticks have
+  passed since the last blow. `applyRig` grew a single-texture path
+  (`rigScale` from `singleHeight`), and the marker render keeps that scale.
+  The damaged handler throws wood chips and a knock instead of blood; the
+  bestiary hides passive kinds; `dealDamage` never culls a dummy and the
+  tourist's 1-hit rule skips it.
+- A sign (`trainpost`, the `signpost` single) at the yard's head is the
+  `training` interactable: E opens a dialogue that offers THE TRAINING
+  GROUND; BEGIN starts the tutorial. `layout.training = { post, mark }`.
+- `tryBlock` pushed every placed prop TWICE (the second `block` after the
+  route check): every tryBlock prop was drawn over itself and its plate and
+  interactable doubled. The re-claim is a grid loop now; the town has 1601
+  props instead of ~1900 and the sign's interactable is one.
+
+### The tutorial (`src/tutorial/TutorialSystem.ts`)
+- Data-driven: `tutorialSteps` (three chapters, sixteen beats), each a
+  title, a line or two (a desktop and a touch reading), a target (a CSS
+  selector or a world point), a moving demo (keycaps that press themselves,
+  a stick, a tap ripple, a mouse, the hero's idle frames), `enter`/`exit`
+  (a panel opens itself and closes when the step ends), and either a `done`
+  condition met by doing (walk 4 tiles, land 3 blows, cast, quaff, interact)
+  or a NEXT button. The engine is `TutorialSystem` with `TutorialHooks` as
+  its whole view of the game.
+- The overlay: `#tut-spot` (a rounded frame whose 9999 px box-shadow dims
+  everything else, pulsing gold, gliding between targets), `#tut-arrow`
+  (a bobbing chevron between the card and the target, rotated to point at
+  it), `#tut-card` (step counter, title, text, demo, progress, BACK / NEXT
+  or SKIP STEP, a cross; rises on every step; glows green when the deed is
+  done and advances 0.9 s later), `#tut-chapter` (a 1.5 s title flash).
+  The card seats itself below, above, beside, or - for a panel as big as
+  the screen - low and centred, always inside the LAYOUT viewport
+  (`screenLayout.state.w/h`, so the phone simulator is honoured).
+- Feeds from main: `noteCommand` from the local hero's command stream
+  (SKILL, USE_QUICK, PICKUP_NEAREST), `noteDamage` from `entity:damaged`
+  (only the dummies count), `update(dt)` each render frame. `start()` warps
+  the party to the yard's mark. Finishing sets `iso-arpg-tutorial-done`.
+- `shouldAutoStart()` + `AUTO_ONBOARD` (false): the one switch a mandatory
+  first-time onboarding needs - main already calls it after the town
+  builds. `__game.tutor` for QA.
+- Trap found: `Camera.worldToCanvas` answers in CSS pixels of the canvas
+  box, not backing pixels - scaling by `canvas.width` put the first
+  spotlight on a barrel.
+
+### Verified (seed 42)
+- `qa75` (warrior, deep): 269 pass, 0 fail, 0 errors, 125 s; `qa66` 74/74
+  inside it; `npm run build` clean; no console errors. New checks: three
+  rooted dummies that take a blow, flinch and heal, and shrug off the
+  tourist's blade; the sign and its offer; the tutorial end to end (the
+  yard placement, the hero on the welcome card, the card inside the screen,
+  walking four tiles, three blows on a dummy with the spotlight and arrow
+  up, the damage readout, a cast, a quaff, the pack / hero / talents /
+  forge / journal opening and closing on cue, the plate, an interaction,
+  the gate, the remembered finish).
+- Seen by eye: desktop cards below, above and beside their targets; the
+  phone landscape and portrait boxes (915x412, 412x915) with the cards
+  inside the simulated viewport; the book step seating its card low.
+- One harness run froze mid-quarry with the tab's automation group gone -
+  Chrome discarded the tab; the same path ran clean by hand and on the
+  rerun.
+
 ## 2026-09-06 (iteration 89) - The dark's measure, the spawn ward, the new bundle in every zone
 
 ### The dark's measure (`src/core/Difficulty.ts`)

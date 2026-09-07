@@ -104,7 +104,9 @@ export type TownPropKind =
   | 'gate'
   | 'quarry'
   | 'townroad'
-  | 'gatekeeper';
+  | 'gatekeeper'
+  // THE TRAINING GROUND (it.90): the sign that starts the tutorial.
+  | 'trainpost';
 
 /**
  * SMALL CLUTTER (it.88): decoration that stands in no one's way. A jar, a
@@ -169,6 +171,8 @@ export interface TownLayout {
   road?: Uint8Array;
   /** THE GATEKEEPER (it.87): the sentry at the eastern road who hands out the forest's first errand. */
   gatekeeper?: { x: number; y: number };
+  /** THE TRAINING GROUND (it.90): the sign at the yard, and the mark the party is placed on. */
+  training?: { post: { x: number; y: number }; mark: { x: number; y: number } };
   /** The ward's folk wander here. */
   wander2: Room;
   /** The ward gate's sentries. */
@@ -499,7 +503,10 @@ export function buildTownLayout(): TownLayout {
       props.pop();
       return false;
     }
-    block(p);
+    // Re-claim the tiles WITHOUT pushing the prop again (it.90): the first
+    // `block` already listed it - a second push drew every placed prop twice
+    // and doubled its plate and interactable.
+    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;
     return true;
   };
   /** Reachable floor from the old spawn (a cheap flood count for tryBlock). */
@@ -588,9 +595,14 @@ export function buildTownLayout(): TownLayout {
   // THE TRAINING YARD (west): barricades, dummies, a rack, kegs.
   block({ kind: 'barricade', x: 13, y: 70, variant: 'barricade_a' });
   block({ kind: 'barricade', x: 19, y: 69, variant: 'barricade_b' });
+  // THE TRAINING GROUND (it.90): the dummies are BODIES now (main spawns a
+  // passive foe on each tile; the prop keeps the tile solid and draws nothing),
+  // and a sign at the yard's head offers the tutorial.
   block({ kind: 'dummy', x: 14, y: 73, variant: 'dummy_a' });
   block({ kind: 'dummy', x: 17, y: 74, variant: 'dummy_b' });
   block({ kind: 'dummy', x: 15, y: 75, variant: 'dummy_a' });
+  const training = { post: { x: 16, y: 70 }, mark: { x: 16, y: 72 } };
+  if (!tryBlock({ kind: 'trainpost', x: training.post.x, y: training.post.y }, KIND_DIRT)) decal({ kind: 'trainpost', x: training.post.x, y: training.post.y });
   block({ kind: 'rack', x: 16, y: 69 });
   block({ kind: 'barrels_stacked', x: 12, y: 73 });
   placeLamp('torch', 19, 75);
@@ -853,6 +865,7 @@ export function buildTownLayout(): TownLayout {
     guards2,
     road,
     gatekeeper,
+    training,
     districts: [
       { name: 'THE OLD QUARTER', x: 0, y: 0, w: W, h: WARD_Y },
       { name: 'THE MARKET WARD', x: 0, y: WARD_Y, w: W, h: H - WARD_Y },

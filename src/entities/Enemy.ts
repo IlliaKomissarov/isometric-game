@@ -56,7 +56,10 @@ export type EnemyKind =
   | 'bossHollowLich'
   | 'orc'
   | 'poacher'
-  | 'spider';
+  | 'spider'
+  // THE TRAINING GROUND (it.90): rooted, wordless practice targets.
+  | 'dummy'
+  | 'dummyB';
 
 export interface EnemyTypeDef {
   kind: EnemyKind;
@@ -73,6 +76,12 @@ export interface EnemyTypeDef {
   reach: number;
   hitRecoveryTicks: number;
   markerTexture: string;
+  /** THE TRAINING DUMMY (it.90): never thinks, never moves, never dies - stands on its tile and heals a breath after the last blow. */
+  passive?: boolean;
+  /** A single atlas texture instead of an animation set (the dummies). */
+  single?: string;
+  /** On-screen height for a `single` body. */
+  singleHeight?: number;
   /** Flee when hp falls below this fraction (melee cowards). */
   fleeBelowFrac?: number;
   /** Ranged behavior (archers). */
@@ -138,6 +147,22 @@ function mixColors(a: number, b: number, t: number): number {
   return (r << 16) | (g << 8) | bl;
 }
 export const MOB_HEIGHT = 56;
+/** THE TRAINING DUMMIES (it.90): hp 400, no blow of their own, a wooden body from the town's prop set. */
+const DUMMY_BASE = {
+  name: 'Training Dummy',
+  hp: 400,
+  minDamage: 0,
+  maxDamage: 0,
+  toHit: 0,
+  speedMult: 0,
+  windupTicks: 999,
+  recoverTicks: 999,
+  reach: 0,
+  hitRecoveryTicks: 6,
+  markerTexture: 'marker_fallen',
+  passive: true,
+  singleHeight: 72,
+} as const;
 export const BOSS_HEIGHT = 128;
 
 /**
@@ -790,6 +815,8 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       ownShadow: true,
     },
   },
+  dummy: { ...DUMMY_BASE, kind: 'dummy', single: 'dummy_a' },
+  dummyB: { ...DUMMY_BASE, kind: 'dummyB', single: 'dummy_b' },
 };
 
 /** Dependencies injected by the pool; strike resolution lives in CombatSystem. */
@@ -835,6 +862,8 @@ export const AFFIX_COLOR: Record<EnemyAffix, number> = { frost: 0x7fd8ff, thorns
 export const FROST_AURA_RADIUS = 3;
 
 const AGGRO_RADIUS = 6.5;
+/** The dummies heal 4 % a tick once no blow has landed for this long (it.90). */
+const DUMMY_QUIET_TICKS = 90;
 /** The wardens and the quarry's keeper (it.89): four tourist hits, never one. */
 const BOSS_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['boss', 'bossFrost', 'bossEmber', 'bossHollow', 'bossHollowKnight', 'bossHollowLich', 'hydra']);
 const REPATH_TICKS = 30;
@@ -887,6 +916,10 @@ export class Enemy extends Entity {
   level = 1;
   /** Elite affix (it.53) — null for the common dead. */
   affix: EnemyAffix | null = null;
+  /** THE TRAINING DUMMY (it.90): where it was planted, and how long since the last blow. */
+  private readonly home = vec2();
+  private quietTicks = 0;
+  private lastHp = 0;
   /** CHILL (it.80): while ticks remain the foe moves at `chillFactor`. */
   chillTicks = 0;
   chillFactor = 1;
@@ -1023,6 +1056,10 @@ export class Enemy extends Entity {
     this.warpTo(x, y);
     this.hpMax = Math.round(this.def.hp * scale * difficulty.current.foeHp); // THE DARK'S MEASURE (it.89).
     this.hp = this.hpMax;
+    this.home.x = x;
+    this.home.y = y;
+    this.quietTicks = 0;
+    this.lastHp = this.hp;
     this.dmgScale = scale;
     this.levelText.text = `${this.def.name} · Lv ${this.level}`;
     this.levelText.visible = false;
@@ -1117,6 +1154,16 @@ export class Enemy extends Entity {
       this.rigScale = painted > 0 ? target / painted : sprite.scale;
       this.body.scale.set(this.rigScale);
       this.shadow.visible = !!sprite.ownShadow;
+    } else if (this.def.single && spriteLib.loaded && spriteLib.hasSingle(this.def.single)) {
+      // A SINGLE (it.90): one painted texture, scaled to its height, feet on the tile.
+      this.currentAnim = null;
+      const tex = spriteLib.single(this.def.single);
+      this.body.texture = tex;
+      this.body.anchor.set(0.5, 0.96);
+      this.body.position.set(0, 6);
+      this.rigScale = tex.height > 0 ? (this.def.singleHeight ?? MOB_HEIGHT) / tex.height : 1;
+      this.body.scale.set(this.rigScale);
+      this.shadow.visible = true;
     } else {
       this.rigScale = 1;
       this.currentAnim = null;
@@ -1308,6 +1355,32 @@ export class Enemy extends Entity {
     return Math.max(4, Math.round(this.def.recoverTicks / COMBAT_SPEED / difficulty.current.foeRate));
   }
 
+  /**
+   * THE TRAINING DUMMY (it.90): rooted on its tile (no shove, no knockback
+   * moves it), flinches like anything else, and is whole again a breath and
+   * a half after the last blow. Deterministic: ticks, not clocks.
+   */
+  private updateDummy(): void {
+    this.pos.x = this.home.x;
+    this.pos.y = this.home.y;
+    if (this.hp < this.lastHp) this.quietTicks = 0;
+    this.lastHp = this.hp;
+    if (this.action === 'hit') {
+      if (--this.actionTicks <= 0) this.action = 'idle';
+    } else if (this.action !== 'dead') {
+      this.action = 'idle';
+    }
+    if (this.hp > 0 && this.hp < this.hpMax) {
+      if (this.quietTicks < DUMMY_QUIET_TICKS) this.quietTicks++;
+      else {
+        const heal = Math.min(this.hpMax - this.hp, Math.ceil(this.hpMax * 0.04));
+        this.hp += heal;
+        this.lastHp = this.hp;
+        if (this.hp === this.hpMax) eventBus.emit('entity:healed', { entityId: this.id, amount: heal });
+      }
+    }
+  }
+
   /** A warden or the quarry's keeper (it.89): the tourist's blade counts four hits on these. */
   get isWarden(): boolean {
     return BOSS_KINDS.has(this.def.kind);
@@ -1319,6 +1392,11 @@ export class Enemy extends Entity {
     if (this.riseTicks > 0) {
       // Rising (it.54): no thought, no step, no strike until the body is up.
       this.riseTicks--;
+      return;
+    }
+
+    if (this.def.passive) {
+      this.updateDummy();
       return;
     }
 
@@ -1675,13 +1753,13 @@ export class Enemy extends Entity {
         this.body.rotation = 0.43 * (1 - r);
         this.body.position.set(6 * (1 - r), 6);
       }
-      this.body.scale.y = 1;
+      this.body.scale.y = this.rigScale;
       this.shadow.scale.set(1);
       return;
     }
 
     if (this.action === 'hit') {
-      // Flinch: jitter recoil.
+      // Flinch: jitter recoil (a dummy rocks on its post).
       this.body.rotation = Math.sin(this.actionTicks * 1.3) * 0.12;
       this.body.position.set(-2, 6);
       return;
@@ -1689,16 +1767,23 @@ export class Enemy extends Entity {
 
     // Free: stepping hop while moving, slow breathing while standing.
     this.body.rotation = 0;
+    if (this.def.passive) {
+      // Wood does not breathe (it.90).
+      this.body.position.set(0, 6);
+      this.body.scale.y = this.rigScale;
+      this.shadow.scale.set(1);
+      return;
+    }
     const moving = Math.hypot(this.pos.x - this.prevPos.x, this.pos.y - this.prevPos.y) > 1e-4;
     if (moving) {
       this.walkPhase += 0.26;
       const hop = Math.abs(Math.sin(this.walkPhase));
       this.body.position.set(0, 6 - hop * 3);
-      this.body.scale.y = 1 + hop * 0.06 - 0.02;
+      this.body.scale.y = this.rigScale * (1 + hop * 0.06 - 0.02);
       this.shadow.scale.set(1 - hop * 0.1);
     } else {
       this.body.position.set(0, 6);
-      this.body.scale.y = 1 + Math.sin(this.elapsed * 2.2 + this.bobPhase) * 0.03;
+      this.body.scale.y = this.rigScale * (1 + Math.sin(this.elapsed * 2.2 + this.bobPhase) * 0.03);
       this.shadow.scale.set(1);
     }
   }

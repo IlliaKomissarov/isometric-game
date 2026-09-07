@@ -4159,6 +4159,7 @@ async function boot(): Promise<void> {
         .map((t) => ({ t, d: Math.hypot(t.x - player.pos.x, t.y - player.pos.y) }))
         .sort((a, b) => a.d - b.d);
       let shown = 0;
+      const placed: Array<{ x: number; y: number }> = [];
       for (const { t, d } of sorted) {
         if (shown >= els.length) break;
         const c = world.camera.worldToCanvas(t.x, t.y, ptrScratch);
@@ -4176,6 +4177,8 @@ async function boot(): Promise<void> {
         const s = Math.min(sx, sy, 1);
         const ex = cx + dx * s;
         const ey = cy + dy * s;
+        if (placed.some((q) => Math.hypot(q.x - ex, q.y - ey) < 34)) continue; // Two in one direction share one chevron.
+        placed.push({ x: ex, y: ey });
         const el = els[shown++] as HTMLElement;
         el.style.transform = `translate(${ex.toFixed(1)}px, ${ey.toFixed(1)}px)`;
         (el.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(dy, dx).toFixed(3)}rad)`;

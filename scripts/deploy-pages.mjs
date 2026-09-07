@@ -18,6 +18,9 @@ import { dirname, join } from 'node:path';
 const run = (cmd, env = {}) =>
   execSync(cmd, { stdio: 'inherit', env: { ...process.env, ...env } });
 
+// A plain `npm run build` before this copies ALL of public/ (2.5 GB, a 164 MB
+// .blend among it) into dist/, and GitHub refuses the push (it.91): start clean.
+rmSync('dist', { recursive: true, force: true });
 console.log('[deploy] building with PAGES=1 (base /isometric-game/, no public copy)…');
 run('npm run build', { PAGES: '1' });
 

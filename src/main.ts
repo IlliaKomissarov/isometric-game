@@ -363,6 +363,7 @@ async function boot(): Promise<void> {
     // ONE environment pipeline (it.17 revert): the proven stone set for all
     // depths; the bands are subtle tints baked inside buildStoneEnvironment.
     assets.buildStoneEnvironment(spriteLib.single('ground_stone'));
+    if (spriteLib.hasSingle('inn_wall_tex')) assets.buildInnWall(spriteLib.single('inn_wall_tex')); // THE INN'S WALLS (it.95).
     // CHEST MODEL (it.44): the isometric pack's dark-wood chest replaces the procedural box on every floor.
     if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
     if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));

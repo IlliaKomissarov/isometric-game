@@ -530,9 +530,16 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'inndoor': {
-        // The way out: the door in the south wall, an arch, lamp-lit.
-        const arch = standing(p, 'inn_doorway', 0.98);
-        if (arch) arch.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 6;
+        // The way out (it.95): a timber door set in the south wall's block, lamp-lit; the threshold before it is the tile.
+        if (has('inn_door')) {
+          const door = new Sprite(spriteLib.single('inn_door'));
+          door.anchor.set(0.5, 1);
+          const ds = worldToScreen(p.x + 0.5, p.y + 1.5, scratch);
+          door.position.set(ds.x - 14, ds.y + 12);
+          door.zIndex = depthKey(p.x + 1, p.y + 2) + 8; // In front of the wall block it is set in.
+          viewport.objectLayer.addChild(door);
+          lighting.registerProp(p.x, p.y, door);
+        }
         glowAt(p.x, p.y, 0xffb060, 0.3, 1.3, 20);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 3.4, 255, 190, 110, 0.55);
         interactables.push({ id: nextId++, kind: 'inndoor', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE STREET', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x - 1, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });

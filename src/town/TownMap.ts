@@ -844,9 +844,8 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   ruin(105, 54, 3, 3, 'ruin_j');
   ruin(80, 10, 3, 3, 'ruin_k');
   ruin(96, 8, 3, 3, 'ruin_g', true);
-  // The square's centrepiece: the burnt fountain ring.
+  // The square's centre is open cobble (it.95: the rotunda is gone).
   clearFor(86, 39, 3, 3, 0, KIND_COBBLE);
-  decal({ kind: 'ruin', x: 86, y: 39, w: 3, h: 3, variant: 'ruin_ring' }); // THE ROTUNDA (it.93): walked into, never ghosted.
   // Houses that stood: the smithy, the old barracks, three cottages, the tall house.
   clearFor(90, 50, 3, 3, 1);
   block({ kind: 'smithy', x: 90, y: 50, w: 3, h: 3 });

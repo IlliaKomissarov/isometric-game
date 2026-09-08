@@ -21,9 +21,9 @@ import type { Container } from 'pixi.js';
 import type { Viewport } from '@/engine/Viewport';
 
 /** Screen-space margin around the viewport, so nothing pops at the edge. */
-const MARGIN = 192;
+const MARGIN = 480; // Wide enough for the widest sprite (the inn's 430 px), so nothing pops at the edge (it.95).
 /** Walls and props stand up to this many world pixels above their anchor. */
-const TALL = 176;
+const TALL = 600;
 
 export interface CullStats {
   total: number;

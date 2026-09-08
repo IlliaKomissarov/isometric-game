@@ -736,6 +736,12 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
 - [x] Journal table; matrix; playthrough; clean build
 
+## Iteration 95 - The inn built of pieces (2026-09-08)
+
+- [x] Timber-and-plaster wall blocks, a real door, an arch, furniture, sconces; the rented room
+- [x] Culling margins sized to the largest sprites
+- [x] The rotunda removed
+
 ## Iteration 94 - The painted hall (2026-09-08)
 
 - [x] The inn's hall is the reference artwork: backdrop, authored floor, the bar cut out, lit hearth and sconces

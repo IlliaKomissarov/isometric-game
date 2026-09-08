@@ -1623,8 +1623,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g = game();
       await fadeClear();
       const inn = g.town.layout.inn;
-      check('the inn: the painted hall, its bar cut out, a hearth, sconces, the keeper behind the counter', !!inn && g.dungeon.backdrop === true && g.town.layout.props.some((q: { kind: string }) => q.kind === 'backdrop') && g.town.layout.props.some((q: { kind: string }) => q.kind === 'barfront') && g.town.layout.props.some((q: { kind: string }) => q.kind === 'hearth') && g.town.layout.props.filter((q: { kind: string }) => q.kind === 'sconce').length >= 4 && g.town.interactables.some((i: { kind: string }) => i.kind === 'innkeeper') && !!g.town.villagers3 === false);
-      check('the hall is walked, the counter and the tables are not', g.scene.isWalkable(13, 12) && !g.scene.isWalkable(12, 4) && (!g.scene.isWalkable(13, 15) || !g.scene.isWalkable(14, 15)));
+      check('the inn: timber walls, boards, a bar, a hearth, tables, doors, the keeper behind the counter', !!inn && g.dungeon.tileKind[inn.hall.y * g.dungeon.width + inn.hall.x] === 4 && g.town.layout.props.some((q: { kind: string }) => q.kind === 'hearth') && g.town.layout.props.filter((q: { kind: string }) => q.kind === 'inntable' || q.kind === 'table_chairs').length >= 6 && g.town.layout.props.some((q: { kind: string }) => q.kind === 'doorway') && g.town.layout.props.filter((q: { kind: string }) => q.kind === 'sconce').length >= 4 && g.town.interactables.some((i: { kind: string }) => i.kind === 'innkeeper') && !!g.town.villagers3 === false);
+      check('the hall is walked, the counter and the tables are not', g.scene.isWalkable(7, 12) && !g.scene.isWalkable(9, 4) && !g.scene.isWalkable(8, 9));
       check('patrons stroll the hall with a word', g.town.villagers.positions().length >= 5);
       check('the corner room holds the bed, the chest and the bench', ['bed', 'stash', 'forge'].every((k) => g.town.interactables.some((i: { kind: string; room?: boolean }) => i.kind === k && i.room)));
       // The reward, at the bar.
@@ -1643,7 +1643,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('200 gold, a bow and a sword', p2.gold === gold0 + 200 && bases.includes('hunters_bow') && bases.includes('soldier_blade') && g.quests.east === 'done', `${p2.gold - gold0} ${bases.join()}`);
       check('REWARD RECEIVED · 200 GOLD · A BOW · A SWORD', /200 GOLD · A BOW · A SWORD/.test(document.getElementById('reward-note')?.textContent ?? ''));
       // The bed: E from across the room walks the hero to the bedside first, then the lying-down.
-      warp(inn.bed.x + 2, inn.bed.y + 1); // On the stone, two strides off the bed - within the prompt's reach, past the bedside's.
+      warp(g.scene.isWalkable(inn.bed.x + 2, inn.bed.y + 1) ? inn.bed.x + 2 : inn.bed.x - 2, inn.bed.y + 1); // Two strides off the bed, whichever side is floor - within the prompt's reach, past the bedside's.
       p2.hp = Math.floor(p2.hpMax * 0.5);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(4);

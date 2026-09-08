@@ -30,7 +30,7 @@ const THEME_SUFFIX: Record<FloorTheme, string> = {
   frost: '_frost',
   ember: '_ember',
   town: '',
-  inn: '', // THE GILDED STAG (it.92): the crypt's stone walls, the town's painted floors (boards).
+  inn: '_inn', // THE GILDED STAG (it.95): plaster-and-timber wall blocks, the town's painted floors (boards).
 };
 
 export class SceneManager {
@@ -117,7 +117,7 @@ export class SceneManager {
     const sprite = new Sprite(assets.get(`wall${this.themeSuffix}`));
     // TOWN (it.40): the ring wall reads as mossy rock cliffs behind the tree line.
     if (this.theme === 'town') sprite.tint = 0x56614f; // Grim (it.57): damp, mossy, deep in shadow.
-    if (this.theme === 'inn') sprite.tint = 0xa89078; // THE GILDED STAG (it.92): warm plaster over stone.
+    if (this.theme === 'inn') sprite.tint = 0xf2e6d2; // THE GILDED STAG (it.95): plaster in lamplight.
     const s = worldToScreen(gx, gy, this.scratch);
     // Wall texture is TILE_H + WALL_Z tall; its base diamond must align with
     // the floor grid, so the sprite is raised by WALL_Z.

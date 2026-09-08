@@ -118,8 +118,13 @@ export class AssetManager {
   }
 
 
+  /** THE INN'S WALLS (it.95): plaster and timber blocks, lit lighter than stone, no mortar seams. */
+  buildInnWall(tex: Texture): void {
+    this.buildStoneWall(tex, '_inn', 0xffffff, true);
+  }
+
   /** Stone-textured wall block replacing the flat procedural faces. */
-  private buildStoneWall(stone: Texture, suffix = '', mul = 0xffffff): void {
+  private buildStoneWall(stone: Texture, suffix = '', mul = 0xffffff, plaster = false): void {
     const g = new Graphics();
     const w = TILE_W;
     const h = TILE_H;
@@ -132,14 +137,14 @@ export class AssetManager {
     // Faces share the stone material at slightly different samples; `mul`
     // is the band's subtle palette shift (identical geometry & shading).
     g.poly(leftFace).fill({ texture: stone, matrix: new Matrix().scale(0.42, 0.42).translate(-30, -10), color: mul });
-    g.poly(leftFace).fill({ color: 0x08070c, alpha: 0.62 }); // Deep shade (away from light).
+    g.poly(leftFace).fill({ color: 0x08070c, alpha: plaster ? 0.34 : 0.62 }); // Deep shade (away from light).
     g.poly(rightFace).fill({ texture: stone, matrix: new Matrix().scale(0.42, 0.42).translate(-95, -40), color: mul });
-    g.poly(rightFace).fill({ color: 0x0c0a12, alpha: 0.45 });
+    g.poly(rightFace).fill({ color: 0x0c0a12, alpha: plaster ? 0.2 : 0.45 });
     g.poly(topFace).fill({ texture: stone, matrix: new Matrix().scale(0.5, 0.25).translate(0, 0), color: mul });
-    g.poly(topFace).fill({ color: 0x2c2836, alpha: 0.28 }); // Cool cap sheen.
+    g.poly(topFace).fill({ color: plaster ? 0x3a2a1a : 0x2c2836, alpha: plaster ? 0.5 : 0.28 }); // Cool cap sheen; a timber cap on plaster.
 
     // Mortar seams on the faces.
-    for (let i = 1; i < 3; i++) {
+    for (let i = 1; i < (plaster ? 1 : 3); i++) {
       const yOff = (z / 3) * i;
       g.moveTo(0, h / 2 + yOff)
         .lineTo(w / 2, h + yOff)

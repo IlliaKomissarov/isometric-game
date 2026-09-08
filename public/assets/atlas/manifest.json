@@ -5544,16 +5544,16 @@
    "h": 114,
    "nearest": false
   },
-  "tavern_hall": {
-   "file": "single_tavern_hall.png",
-   "w": 1150,
-   "h": 589,
+  "inn_wall_tex": {
+   "file": "single_inn_wall_tex.png",
+   "w": 256,
+   "h": 256,
    "nearest": false
   },
-  "tavern_bar": {
-   "file": "single_tavern_bar.png",
-   "w": 253,
-   "h": 148,
+  "inn_door": {
+   "file": "single_inn_door.png",
+   "w": 56,
+   "h": 90,
    "nearest": false
   }
  }

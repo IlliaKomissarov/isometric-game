@@ -1,5 +1,11 @@
 # Development Log
 
+## 2026-09-08 (iteration 95) - The inn built of pieces, no popping, the rotunda gone
+
+- THE GILDED STAG, rebuilt from the engine's own pieces after the painted backdrop was rejected: plaster-and-timber wall blocks (`inn_wall_tex` baked, `AssetManager.buildInnWall` -> `wall_inn`, the `inn` theme's suffix; lighter shade, no mortar seams, plaster tint in lamplight), boards underfoot, a timber door set in the south wall (`inn_door` from the Medieval Building pack, drawn in front of its block), a stone arch on the partition, the bar along the north wall (counters, bottle shelves, kegs, the keeper behind), a hearth in the west wall with chairs and a rug, six round tables with stools and two long tables with chairs, bookcases and display cases along the walls, candle stands, crates and kegs in the corners, a carpet from the door to the bar, eleven sconces; the rented room through the arch with the bed, chest, bench, table, chair, rug and bookcase. The 30x24 map audits with no pocket.
+- NO POPPING: the culler's margins grew to the widest sprite (480 px) and the tallest (600 px) so a building or a pine at the screen's edge is drawn before its anchor enters the view.
+- THE ROTUNDA is gone; the square's centre is open cobble.
+
 ## 2026-09-08 (iteration 94) - The painted hall, and keys on the word
 
 - THE GILDED STAG is the artwork now (`first-isometric-tavern...webp`, given as the reference): keyed off its dark surround and scaled to our grid (228 px a diamond -> 64), it is one `backdrop` prop under the room (`TownMap.backdrop` makes the scene draw no tiles); the walkable floor is authored over it tile by tile (`HALL` in `scenes/Inn.ts`, from the room's outline and a colour pass, the counter and the six tables shut); the bar counter is cut from the picture (`barfront`, sorted at the counter's south edge) so the keeper stands behind it; the painted hearth burns with the campfire's flame; five `sconce` lights and six `tablelight` candles throw real light. The rented corner sits by the hearth under the loft stair. Culling exempts painted pieces (`noCull`).

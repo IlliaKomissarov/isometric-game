@@ -772,7 +772,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       };
       check('the south road joins the plaza', walk(30, 30, 31, 72));
       check('the gateways stand on blocked tiles', layout.gateways.every((gw: { x: number; y: number }) => !g.scene.isWalkable(gw.x, gw.y)));
-      check('every ward prop keeps its footprint solid', layout.props.filter((pr: { kind: string; w?: number; x: number; y: number }) => ['guildhall', 'statue', 'bench', 'cart', 'lamp', 'barricade', 'dummy'].includes(pr.kind)).every((pr: { x: number; y: number }) => !g.scene.isWalkable(pr.x, pr.y)));
+      check('every ward prop keeps its footprint solid', layout.props.filter((pr: { kind: string; w?: number; x: number; y: number }) => ['guildhall', 'statue', 'cart', 'lamp', 'barricade', 'dummy'].includes(pr.kind)).every((pr: { x: number; y: number }) => !g.scene.isWalkable(pr.x, pr.y)));
       // The zone chip follows the hero.
       p.pos.x = 31.5;
       p.pos.y = 72.5;
@@ -1085,11 +1085,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       for (let i = 0; i < 40 && game()?.reclaim; i++) driveRender(1000);
       check('the forest\'s homecoming ends', !game()?.reclaim);
       g.loop.step(5);
-      await until(() => game() && game().floor === 0, 15000);
-      g = game();
-      await fadeClear();
       await wait(120);
-      check('the last beast\'s fall sends the hero back to the gatekeeper', g.floor === 0 && g.quests.forest === 'done' && Math.hypot(p.pos.x - (keeper!.x + 0.5), p.pos.y - (keeper!.y + 0.5)) < 3, `${g.floor} ${g.quests.forest} ${p.pos.x},${p.pos.y}`);
+      check('the errand is paid in the clearing, no road home', g.floor === 101 && g.quests.forest === 'done', `${g.floor} ${g.quests.forest}`);
       check('the gatekeeper pays a hundred gold', p.gold === gold0 + 100, `${gold0} → ${p.gold}`);
       const paid = document.getElementById('reward-note');
       // The banner stands 3.4 s; a slow transition can outlive it, so the words are what is checked (it.89).
@@ -1652,7 +1649,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('E across the room walks to the bedside first', p2.resting === false);
       g.loop.step(160);
       g.loop.callbacks.render(1);
-      check('at the bedside the hero lies down', p2.resting === true && Math.floor(p2.pos.x + 0.12) === inn.bed.x && Math.floor(p2.pos.y + 0.12) === inn.bed.y, `${p2.resting} ${p2.pos.x.toFixed(1)},${p2.pos.y.toFixed(1)} bed ${inn.bed.x},${inn.bed.y}`);
+      check('at the bedside the hero lies down', p2.resting === true && Math.floor(p2.pos.x + 0.12) === inn.bed.x && [inn.bed.y, inn.bed.y + 1].includes(Math.floor(p2.pos.y + 0.12)), `${p2.resting} ${p2.pos.x.toFixed(1)},${p2.pos.y.toFixed(1)} bed ${inn.bed.x},${inn.bed.y}`);
       const hpRest = p2.hp;
       g.loop.step(120);
       check('a bed mends', p2.hp > hpRest, `${hpRest} -> ${p2.hp}`);

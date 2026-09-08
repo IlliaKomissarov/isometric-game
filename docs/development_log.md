@@ -1,5 +1,13 @@
 # Development Log
 
+## 2026-09-08 (iteration 93) - Express fixes: the inn's room, the hill road, walk-through clutter, the rotunda, the errand paid in the forest
+
+- THE INN'S ROOM: the bed is a 1x2 footprint with the big render (`bed_big`, 150 px) and the hero lies at its middle, drawn above it (`Player.syncRender` lifts the sleeper's zIndex); an arched `doorway` (`inn_doorway`) on the partition's gap and over the street door; bookcases along the north wall, the hearth moved into the west wall with chairs before it, the sword case, a rug, a chair and a box in the room.
+- THE HILL ROAD: the north-east lane carved at 1.7 half-width up to the gateway, both verges lined with pines and oaks (a perpendicular walk along the polyline at 2.6 and 3.3 tiles).
+- WALK THROUGH: `CLUTTER_KINDS` grew - heaps, wall stubs, boulders, benches, tables, crates, kegs, chairs, candle stands and doorways never block a tile (the map's `block` and `tryBlock` honour the set).
+- THE ROTUNDA: a decal, sorted at its centre, never an occluder - walked into, in front of its far columns and behind its near ones.
+- THE FOREST ERRAND is paid in the clearing: after the homecoming the gatekeeper's thanks and the hundred gold arrive where the hero stands (the folk stay, `keepWalkers`); the road home is the signpost, when wanted.
+
 ## 2026-09-08 (iteration 92) - The Gilded Stag inside, the forest's homecoming, the streets walked, chests in every district
 
 ### Words

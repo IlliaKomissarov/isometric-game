@@ -452,10 +452,10 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'ruin': {
         // A burnt shell: an occluder like a cottage, ashen.
         const spr = standing(p, p.variant ?? 'ruin_a', 0.95, 'object', 0.5);
-        if (spr) {
-          spr.tint = 0xc4b8aa;
-          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
-        }
+        if (spr) spr.tint = 0xc4b8aa;
+        // THE ROTUNDA (it.93): open ground - sorted at its centre so the hero walks behind its far columns and before its near ones; never ghosted.
+        if (spr && p.variant === 'ruin_ring') spr.zIndex = depthKey(p.x + 1.5, p.y + 1.5);
+        else if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
         break;
       }
       case 'heap': {
@@ -523,8 +523,16 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       // ---- THE GILDED STAG INSIDE (it.92) ----
+      case 'doorway': {
+        // A DOORWAY (it.93): the stone arch on a partition's gap, walked through.
+        const spr = standing(p, 'inn_doorway', 0.98);
+        if (spr) spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 6;
+        break;
+      }
       case 'inndoor': {
-        // The way out: the door in the south wall, lamp-lit.
+        // The way out: the door in the south wall, an arch, lamp-lit.
+        const arch = standing(p, 'inn_doorway', 0.98);
+        if (arch) arch.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 6;
         glowAt(p.x, p.y, 0xffb060, 0.3, 1.3, 20);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 3.4, 255, 190, 110, 0.55);
         interactables.push({ id: nextId++, kind: 'inndoor', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE STREET', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x - 1, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
@@ -581,8 +589,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'bed': {
-        standing(p, 'bed', 0.86);
-        interactables.push({ id: nextId++, kind: 'bed', x: p.x + 0.5, y: p.y + 0.5, label: 'E · REST', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }], room: true });
+        // THE BED (it.93): a 1x2 footprint, the big render seated on it; the hero lies at its middle.
+        standing(p, 'bed_big', 0.9);
+        const h = p.h ?? 1;
+        const tiles: Array<{ x: number; y: number }> = [];
+        for (let y = p.y - 1; y <= p.y + h; y++) for (let x = p.x - 1; x <= p.x + 1; x++) tiles.push({ x, y });
+        interactables.push({ id: nextId++, kind: 'bed', x: p.x + 0.5, y: p.y + h / 2, label: 'E · REST', tiles, room: true });
         break;
       }
       case 'smithy':

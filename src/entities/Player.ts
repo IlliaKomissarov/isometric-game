@@ -712,6 +712,7 @@ export class Player extends Entity {
 
   override syncRender(alpha: number): void {
     super.syncRender(alpha);
+    if (this.resting) this.container.zIndex += 48; // On the bed, never under it (it.93).
     // Render wall-clock (frame-rate independent idle pacing).
     const now = performance.now();
     const rdt = this.lastSyncTime === 0 ? 0 : Math.min(0.1, (now - this.lastSyncTime) / 1000);

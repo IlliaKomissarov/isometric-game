@@ -736,6 +736,13 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
 - [x] Journal table; matrix; playthrough; clean build
 
+## Iteration 93 - Express fixes (2026-09-08)
+
+- [x] The inn's room: a 1x2 bed the hero lies on, arched doorways, dressing
+- [x] The hill road widened and tree-lined
+- [x] Low clutter never blocks; the rotunda is walked into
+- [x] The forest errand paid in the clearing
+
 ## Iteration 92 - The Gilded Stag inside (2026-09-08)
 
 - [x] Every dialogue plain; everyday chatter in six banks

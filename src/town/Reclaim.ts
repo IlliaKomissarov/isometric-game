@@ -112,6 +112,8 @@ export interface ProcessionHooks {
   titles: [[string, string], [string, string]];
   /** How many walk (default 8). */
   walkers?: number;
+  /** The folk stay where they arrived when the scene ends (they die with the floor). */
+  keepWalkers?: boolean;
   /** The camera's cinematic focus (null gives it back to the hero). */
   focus: (x: number, y: number) => void;
   release: () => void;
@@ -279,7 +281,7 @@ export class ProcessionScene {
 
   /** Tear the procession down (the world is rebuilt right after). */
   destroy(): void {
-    for (const w of this.walkers) w.root.destroy({ children: true });
+    if (!this.h.keepWalkers) for (const w of this.walkers) w.root.destroy({ children: true });
     this.walkers.length = 0;
     this.overlay.remove();
     this.finished = true;

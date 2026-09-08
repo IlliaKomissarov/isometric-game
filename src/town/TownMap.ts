@@ -139,7 +139,8 @@ export type TownPropKind =
   | 'candle'
   | 'carpet'
   | 'shelf'
-  | 'chest';
+  | 'chest'
+  | 'doorway';
 
 /** THE GILDED STAG INSIDE (it.92): what main needs of the inn's floor. */
 export interface InnLayout {
@@ -184,7 +185,11 @@ export interface EastQuarter {
  * never a blocked tile. Every placer (the town, the forest, the quarry)
  * asks this before it claims a tile.
  */
-export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers', 'carpet']);
+export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
+  'grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers', 'carpet',
+  // WALK THROUGH (it.93): everything knee-high or broken is paint underfoot - a heap, a stub of wall, a boulder, a bench, a keg, a chair, a candle stand.
+  'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
+]);
 
 export interface TownProp {
   kind: TownPropKind;
@@ -396,7 +401,7 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   street([[87, 45], [87, 56], [88, 66]], KIND_COBBLE, 1.3); // South to the south fields.
   street([[94, 40], [102, 40], [110, 40]], KIND_COBBLE, 1.3); // East to the river gate.
   street([[80, 38], [76, 44], [72, 54]], KIND_DIRT, 1.0); // The inn's lane (south-west).
-  street([[88, 24], [98, 20], [104, 14]], KIND_DIRT, 1.0); // The north-east lane.
+  street([[88, 24], [98, 20], [104, 14], [105, 13]], KIND_DIRT, 1.7); // THE HILL ROAD (it.93): the north-east lane, wide, tree-lined below.
   street([[87, 56], [96, 58], [104, 62]], KIND_DIRT, 1.0); // The south-east lane.
   street([[88, 24], [78, 20], [72, 14]], KIND_DIRT, 0.9); // The north-west lane.
   street([[94, 40], [100, 30]], KIND_DIRT, 0.9); // The alley.
@@ -830,7 +835,7 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   ruin(96, 8, 3, 3, 'ruin_g', true);
   // The square's centrepiece: the burnt fountain ring.
   clearFor(86, 39, 3, 3, 0, KIND_COBBLE);
-  block({ kind: 'ruin', x: 86, y: 39, w: 3, h: 3, variant: 'ruin_ring' });
+  decal({ kind: 'ruin', x: 86, y: 39, w: 3, h: 3, variant: 'ruin_ring' }); // THE ROTUNDA (it.93): walked into, never ghosted.
   // Houses that stood: the smithy, the old barracks, three cottages, the tall house.
   clearFor(90, 50, 3, 3, 1);
   block({ kind: 'smithy', x: 90, y: 50, w: 3, h: 3 });
@@ -879,8 +884,27 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   block({ kind: 'pillar', x: 86, y: 66 });
   block({ kind: 'pillar', x: 90, y: 66 });
   block({ kind: 'gateway', x: 88, y: 66 });
-  // THE HILL ROAD (it.92): the north-east lane was a dead end - a proper gateway now, and a lamp.
-  street([[104, 14], [105, 13]], KIND_DIRT, 1.0);
+  // THE HILL ROAD (it.92, widened it.93): the north-east lane ends at a proper gateway, both verges lined with pines.
+  {
+    const pts: Array<[number, number]> = [[88, 24], [98, 20], [104, 14]];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [x0, y0] = pts[i];
+      const [x1, y1] = pts[i + 1];
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const nx = -(y1 - y0) / len;
+      const ny = (x1 - x0) / len;
+      for (let s = 0; s <= len; s += 0.7)
+        for (const side of [-1, 1])
+          for (const d of [2.6, 3.3]) {
+            const tx = Math.round(x0 + ((x1 - x0) * s) / len + nx * d * side);
+            const ty = Math.round(y0 + ((y1 - y0) * s) / len + ny * d * side);
+            if (!inside(tx, ty) || grid[idx(tx, ty)] !== TILE_FLOOR || road[idx(tx, ty)]) continue;
+            if (props.some((q) => q.x === tx && q.y === ty)) continue;
+            const v = ['pine_a', 'pine_b', 'pine_c', 'tree_a'][(tx * 3 + ty * 5) % 4];
+            block({ kind: v.startsWith('tree') ? 'tree' : 'pine', x: tx, y: ty, variant: v });
+          }
+    }
+  }
   clearFor(103, 11, 5, 3, 0, KIND_COBBLE);
   block({ kind: 'pillar', x: 103, y: 13 });
   block({ kind: 'pillar', x: 107, y: 13 });

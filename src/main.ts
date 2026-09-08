@@ -4045,12 +4045,13 @@ async function boot(): Promise<void> {
         route: [{ x: 8, y: 20 }, { x: 14, y: 17 }, { x: 20, y: 21 }, { x: 26, y: 24 }, { x: 28, y: 22 }],
         titles: [['THE DARK FOREST', 'the last beast falls · the road is open'], ['THE PEOPLE RETURN', 'the clearings are theirs again']],
         walkers: 7,
+        keepWalkers: true, // They stay in the clearing (it.93).
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
           reclaim?.destroy();
           reclaim = null;
-          forestReturnTicks = 1; // The next tick sends the party home.
+          forestReturnTicks = 1; // The next tick pays the errand, here in the forest.
         },
       });
     };
@@ -4071,29 +4072,22 @@ async function boot(): Promise<void> {
       if (forestReturnTicks === 0) return; // The homecoming is on.
       if (--forestReturnTicks > 0) return;
       forestReturnTicks = -1;
+      // PAID HERE (it.93): the gatekeeper came up the road with his people; the thanks and the gold are given in the clearing, no road home.
       quests.forest = 'done';
       for (const seat of liveSeats()) seat.player.gold += 100; // The guild's purse, every hero of the party.
       eventBus.emit('inventory:changed', {});
       showReward('REWARD RECEIVED · 100 GOLD');
       audio.sfx('questDone'); // The fanfare (it.89).
-      withFade(async () => {
-        await preloadFloor(0, 'hub');
-        if (!swapWorld(() => buildWorld(0, 'hub'))) return;
-        enterTown(false);
-        const k = world.town?.layout.gatekeeper;
-        if (k) {
-          placeParty(k.x - 0.5, k.y - 1.5, world.scene.isWalkable); // On the road, a stride from the keeper.
-          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-        }
-        world.dmgText.show(player.pos.x, player.pos.y - 0.8, '+100 GOLD · THE FOREST ERRAND', 'crit');
-        void dialogue.open({
-          speaker: 'THE GATEKEEPER',
-          role: 'sentry of the eastern road',
-          portrait: keeperPortrait(),
-          lines: ['All of them? Good work. Here\'s your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever is down there, it isn\'t wolves.'],
-          choices: [{ label: 'THANKS', value: 'ok' }],
-        });
-      }, 'back to the gate');
+      world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 26);
+      world.dmgText.show(player.pos.x, player.pos.y - 0.8, '+100 GOLD · THE FOREST ERRAND', 'crit');
+      void dialogue.open({
+        speaker: 'THE GATEKEEPER',
+        role: 'come up the road with his people',
+        portrait: keeperPortrait(),
+        lines: ['All of them? Good work. Here\'s your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever is down there, it isn\'t wolves. The road home is behind you when you want it.'],
+        choices: [{ label: 'THANKS', value: 'ok' }],
+      });
+      saveNow();
     };
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
     /** THE GILDED STAG (it.92): through the door into the inn's own floor, and back out to its step. */

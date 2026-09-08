@@ -31,6 +31,7 @@ export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayo
   // The partition: the corner room's wall, with its doorway.
   const wallX = 16;
   for (let y = 9; y < H - 2; y++) if (y !== 12) grid[idx(wallX, y)] = TILE_WALL;
+  grid[idx(wallX, 8)] = TILE_WALL; // The partition meets the hall's north end with a pier.
 
   const props: TownProp[] = [];
   const block = (p: TownProp): void => {
@@ -42,7 +43,7 @@ export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayo
     props.push(p);
   };
 
-  // THE DOOR: the middle of the south wall; the party arrives just inside it.
+  // THE DOOR: the middle of the south wall, an arch over it; the party arrives just inside.
   const door = { x: 9, y: H - 3 };
   const spawn = { x: 9, y: H - 5 };
   block({ kind: 'inndoor', x: door.x, y: door.y });
@@ -58,36 +59,40 @@ export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayo
   block({ kind: 'barrels_stacked', x: 14, y: 3 });
   block({ kind: 'barrel', x: 7, y: 3, variant: 'barrel_c' });
   block({ kind: 'potions', x: 11, y: 2 });
-  // THE HEARTH in the west wall, a bench of chairs before it.
-  block({ kind: 'hearth', x: 3, y: 5 });
-  block({ kind: 'innchair', x: 5, y: 6 });
-  block({ kind: 'innchair', x: 5, y: 4 });
-  block({ kind: 'supports', x: 2, y: 8 });
-  // THE HALL: three long tables with their chairs, candle stands, a carpet to the bar.
-  block({ kind: 'inntable', x: 4, y: 9, w: 2, h: 2, variant: 'inn_table_a' });
-  block({ kind: 'inntable', x: 9, y: 8, w: 2, h: 2, variant: 'inn_table_b' });
-  block({ kind: 'inntable', x: 4, y: 13, w: 2, h: 2, variant: 'inn_table_a' });
-  block({ kind: 'inntable', x: 11, y: 12, w: 2, h: 2, variant: 'inn_table_d' });
-  block({ kind: 'innchair', x: 13, y: 9 });
-  block({ kind: 'innchair', x: 8, y: 14 });
-  block({ kind: 'candle', x: 3, y: 12, variant: 'inn_candle2' });
+  // Bookcases along the north wall, west of the bar; the hearth in the west wall with chairs before it.
+  block({ kind: 'shelf', x: 4, y: 2, w: 2, h: 1, variant: 'inn_shelf_b' });
+  block({ kind: 'hearth', x: 2, y: 6 });
+  block({ kind: 'innchair', x: 4, y: 5 });
+  block({ kind: 'innchair', x: 4, y: 7 });
+  block({ kind: 'barrel', x: 2, y: 9, variant: 'barrel_d' });
+  // THE HALL: long tables with their chairs, candle stands, a carpet from the door to the bar.
+  block({ kind: 'inntable', x: 4, y: 10, w: 2, h: 2, variant: 'inn_table_a' });
+  block({ kind: 'inntable', x: 11, y: 8, w: 2, h: 2, variant: 'inn_table_b' });
+  block({ kind: 'inntable', x: 4, y: 14, w: 2, h: 2, variant: 'inn_table_a' });
+  block({ kind: 'inntable', x: 12, y: 13, w: 2, h: 2, variant: 'inn_table_d' });
+  block({ kind: 'innchair', x: 14, y: 9 });
+  block({ kind: 'innchair', x: 11, y: 15 });
+  block({ kind: 'candle', x: 2, y: 12, variant: 'inn_candle2' });
   block({ kind: 'candle', x: 14, y: 6, variant: 'inn_candle' });
-  block({ kind: 'candle', x: 7, y: 16, variant: 'inn_candle' });
-  block({ kind: 'candle', x: 14, y: 16, variant: 'inn_candle2' });
+  block({ kind: 'candle', x: 6, y: 17, variant: 'inn_candle' });
+  block({ kind: 'candle', x: 13, y: 17, variant: 'inn_candle2' });
   for (let y = 6; y <= 16; y += 2) decal({ kind: 'carpet', x: 9, y, w: 1, h: 2, variant: y === 6 ? 'inn_carpet_e' : 'inn_carpet' });
   block({ kind: 'crates', x: 2, y: 16 });
   block({ kind: 'jar', x: 15, y: 17, variant: 'jar_a' });
-  // THE CORNER ROOM past the doorway: the bed, the chest, the bench, a candle, a rug.
+  // THE CORNER ROOM: through an arched doorway in the partition - the bed along the east wall, a rug,
+  // a candle by the bed, the sword case, the chest (the stash), the bench (the forge), a chair and a chest of boxes.
+  decal({ kind: 'doorway', x: wallX, y: 12 });
   const bed = { x: 20, y: 10 };
   const stash = { x: 20, y: 16 };
   const forge = { x: 18, y: 16 };
-  block({ kind: 'bed', x: bed.x, y: bed.y });
+  block({ kind: 'bed', x: bed.x, y: bed.y, w: 1, h: 2 });
   block({ kind: 'stash', x: stash.x, y: stash.y, variant: 'room' });
   block({ kind: 'forge', x: forge.x, y: forge.y, variant: 'room' });
-  block({ kind: 'candle', x: 18, y: 10, variant: 'inn_candle' });
-  block({ kind: 'shelf', x: 18, y: 12, w: 1, h: 1, variant: 'inn_case' });
-  decal({ kind: 'carpet', x: 19, y: 13, variant: 'inn_carpet_s' });
-  block({ kind: 'box', x: 21, y: 12, variant: 'box_a' });
+  block({ kind: 'candle', x: 18, y: 9, variant: 'inn_candle' });
+  block({ kind: 'shelf', x: 18, y: 13, w: 1, h: 1, variant: 'inn_case' });
+  decal({ kind: 'carpet', x: 18, y: 11, variant: 'inn_carpet_s' });
+  block({ kind: 'innchair', x: 21, y: 13 });
+  block({ kind: 'box', x: 21, y: 14, variant: 'box_a' });
 
   // Behind the bar and in every corner the furniture seals: solid, so no stroll is planned into a pocket.
   {

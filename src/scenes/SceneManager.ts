@@ -30,7 +30,7 @@ const THEME_SUFFIX: Record<FloorTheme, string> = {
   frost: '_frost',
   ember: '_ember',
   town: '',
-  inn: '_inn', // THE GILDED STAG (it.95): plaster-and-timber wall blocks, the town's painted floors (boards).
+  inn: '', // THE GILDED STAG (it.96): the inn draws no wall cubes at all - its walls are tileset pieces (`wallsFromProps`).
 };
 
 export class SceneManager {
@@ -43,7 +43,6 @@ export class SceneManager {
     this.map = map;
     this.theme = theme;
     this.themeSuffix = THEME_SUFFIX[theme];
-    if ((map as { backdrop?: boolean }).backdrop) return; // THE PAINTED HALL (it.94): the picture is the room.
     const { width, height, grid } = map;
 
     for (let gy = 0; gy < height; gy++) {
@@ -52,7 +51,8 @@ export class SceneManager {
         if (tile === TILE_FLOOR || tile === TILE_BLOCKED || tile === TILE_DOOR) {
           // Blocked-prop tiles (hearths) render floor UNDER the solid prop.
           this.addFloorSprite(gx, gy, viewport, lighting);
-        } else if (this.bordersFloor(gx, gy)) {
+        } else if (this.bordersFloor(gx, gy) && !(map as { wallsFromProps?: boolean }).wallsFromProps) {
+          // THE GILDED STAG (it.96): the inn's walls are tileset pieces the dresser places, not cubes.
           this.addWallSprite(gx, gy, viewport, lighting);
         }
       }
@@ -99,7 +99,8 @@ export class SceneManager {
     // TERRAIN VARIANTS (it.56): four diamonds per ground kind, picked by tile
     // coords, so no two neighbours repeat and no field reads as a flat block.
     const kind = kinds ? kinds[gy * this.map.width + gx] : 0;
-    const townVariant = `floor_town_${kind}_${(gx * 5 + gy * 11) % 4}`;
+    // THE GILDED STAG (it.96): its boards run over 2x2 blocks, so the quadrant is picked by parity.
+    const townVariant = `floor_town_${kind}_${this.theme === 'inn' ? (gx & 1) + 2 * (gy & 1) : (gx * 5 + gy * 11) % 4}`;
     const key =
       (this.theme === 'town' || this.theme === 'inn') && kinds
         ? assets.has(townVariant)

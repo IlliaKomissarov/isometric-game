@@ -193,6 +193,9 @@ export type AnimName =
   | 'brazier_stand'
   | 'banner'
   | 'gateway'
+  // THE GILDED STAG (it.96): the hearth's fire and the wall torches.
+  | 'inn_fire'
+  | 'inn_torch'
   | 'well';
 
 export interface PaintedBounds {

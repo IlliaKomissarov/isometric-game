@@ -17,6 +17,7 @@ import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
 import { spriteLib } from '@/render/SpriteLibrary';
+import { TILE_H, TILE_W } from '@/core/config';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
 import type { TownLayout, TownProp } from './TownMap';
@@ -94,7 +95,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const animated = (
     gx: number,
     gy: number,
-    anim: 'campfire' | 'torch' | 'brazier_stand' | 'banner' | 'gateway',
+    anim: 'campfire' | 'torch' | 'brazier_stand' | 'banner' | 'gateway' | 'inn_fire' | 'inn_torch',
     fps: number,
     anchorY: number,
     scale = 1,
@@ -257,11 +258,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'stash': {
         // THE ROOM'S CHEST (it.91): the same stash, opened from the inn.
         const room = p.variant === 'room';
-        const spr = standing(p, 'stash_closed', 0.82);
+        const spr = standing(p, room ? 'inn_chest' : 'stash_closed', room ? 0.9 : 0.82);
         if (!room) stashSprite = spr;
-        interactables.push({ id: nextId++, kind: 'stash', x: p.x + 0.5, y: p.y + 0.5, label: room ? 'E · YOUR CHEST' : 'E · STASH', tiles: [{ x: p.x, y: p.y }], room });
-        glowAt(p.x, p.y, 0xd8a85c, room ? 0.22 : 0.35, 0.9, 10);
-        if (!room) plate(p.x, p.y, 'TOWN STASH', 64);
+        interactables.push({ id: nextId++, kind: 'stash', x: p.x + 0.5, y: p.y + 0.5, label: room ? 'E · THE WARDED CHEST' : 'E · STASH', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }], room });
+        glowAt(p.x, p.y, room ? 0.0 || 0x9ad8ff : 0xd8a85c, room ? 0.4 : 0.35, room ? 1.2 : 0.9, room ? 14 : 10);
+        plate(p.x, p.y, room ? 'THE WARDED CHEST' : 'TOWN STASH', room ? 70 : 64);
         break;
       }
       case 'forge': {
@@ -522,99 +523,66 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         plate(p.x + 2, p.y + 2, 'THE GILDED STAG', 250);
         break;
       }
-      // ---- THE GILDED STAG INSIDE (it.92) ----
-      case 'doorway': {
-        // A DOORWAY (it.93): the stone arch on a partition's gap, walked through.
-        const spr = standing(p, 'inn_doorway', 0.98);
-        if (spr) spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 6;
-        break;
-      }
-      case 'inndoor': {
-        // The way out (it.95): a timber door set in the south wall's block, lamp-lit; the threshold before it is the tile.
-        if (has('inn_door')) {
-          const door = new Sprite(spriteLib.single('inn_door'));
-          door.anchor.set(0.5, 1);
-          const ds = worldToScreen(p.x + 0.5, p.y + 1.5, scratch);
-          door.position.set(ds.x - 14, ds.y + 12);
-          door.zIndex = depthKey(p.x + 1, p.y + 2) + 8; // In front of the wall block it is set in.
-          viewport.objectLayer.addChild(door);
-          lighting.registerProp(p.x, p.y, door);
-        }
-        glowAt(p.x, p.y, 0xffb060, 0.3, 1.3, 20);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.4, 255, 190, 110, 0.55);
-        interactables.push({ id: nextId++, kind: 'inndoor', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE STREET', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x - 1, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
-        plate(p.x, p.y, 'THE DOOR', 70);
-        break;
-      }
-      case 'backdrop': {
-        // THE PAINTED HALL (it.94): one picture under everything, seated so its iso grid is ours.
+      // ---- THE GILDED STAG (it.96): the inn built of tileset pieces ----
+      case 'innwall': {
+        // A wall piece stands on the FAR edge of a 2x2 block of tiles, seated by the
+        // tileset's own convention: the image's bottom-left meets that block's
+        // bounding-box bottom-left. `w === 2` runs along +x, `h === 2` along +y.
         if (!has(p.variant ?? '')) break;
         const spr = new Sprite(spriteLib.single(p.variant!));
-        const s = worldToScreen(p.x, p.y, scratch);
-        spr.position.set(s.x + (p.ox ?? 0), s.y + (p.oy ?? 0));
-        (spr as Sprite & { noCull?: boolean }).noCull = true;
-        viewport.groundLayer.addChild(spr);
-        lighting.registerProp(Math.min(layout.map.width - 1, p.x + 6), Math.min(layout.map.height - 1, p.y + 8), spr);
-        break;
-      }
-      case 'barfront': {
-        // The bar counter cut from the picture, drawn in front of the keeper and anyone on the dais.
-        if (!has(p.variant ?? '')) break;
-        const spr = new Sprite(spriteLib.single(p.variant!));
-        const s = worldToScreen(p.x, p.y, scratch);
-        spr.position.set(s.x + (p.ox ?? 0), s.y + (p.oy ?? 0));
-        spr.zIndex = depthKey(p.x + (p.w ?? 1) - 0.5, p.y + (p.h ?? 1) - 0.5);
-        (spr as Sprite & { noCull?: boolean }).noCull = true;
+        const alongX = (p.w ?? 1) === 2;
+        const bx = alongX ? p.x : p.x - 1;
+        const by = alongX ? p.y - 1 : p.y;
+        const s0 = worldToScreen(bx, by, scratch);
+        spr.position.set(s0.x - TILE_W, s0.y + TILE_H * 2 - spr.height);
+        spr.zIndex = depthKey(p.x, p.y);
         viewport.objectLayer.addChild(spr);
-        lighting.registerProp(Math.min(layout.map.width - 1, p.x + 4), Math.min(layout.map.height - 1, p.y + 2), spr);
+        lighting.registerProp(p.x, p.y, spr);
+        // A partition the hero can stand behind fades to a ghost, as a cottage roof does.
+        occluders.push({ sprite: spr, depth: spr.zIndex, tiles: { x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 } });
+        break;
+      }
+      case 'innprop':
+      case 'inndeco': {
+        // Furniture and small dressing: placed on its tile with a fractional nudge.
+        if (!has(p.variant ?? '')) break;
+        const spr = new Sprite(spriteLib.single(p.variant!));
+        spr.anchor.set(0.5, 1);
+        const s1 = worldToScreen(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0), scratch);
+        spr.position.set(s1.x, s1.y + 5 - (p.lift ?? 0));
+        spr.zIndex = depthKey(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0)) + (p.lift ? 6 : 0);
+        viewport.objectLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'innrug': {
+        // A carpet lies on the boards, under every foot.
+        if (!has(p.variant ?? '')) break;
+        const spr = new Sprite(spriteLib.single(p.variant!));
+        spr.anchor.set(0.5, 0.5);
+        const s2 = worldToScreen(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0), scratch);
+        spr.position.set(s2.x, s2.y);
+        viewport.groundLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
         break;
       }
       case 'sconce': {
-        // A wall torch in the picture, burning for real: a warm glow and a light.
-        glowAt(p.x, p.y, 0xffb060, 0.42, 1.3, 46);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 180, 90, 0.6);
+        // A torch on the wall: the flame burns and throws its light over the hall.
+        const t = animated(p.x, p.y, 'inn_torch', 7, 1, 1, 46);
+        if (t) t.position.x += (p.ox ?? 0) * TILE_W;
+        glowAt(p.x, p.y, 0xffb060, 0.4, 1.2, 52);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 255, 180, 90, 0.62);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
         break;
       }
-      case 'tablelight': {
-        // A candle on a table in the picture: a small warm pool.
-        glowAt(p.x, p.y, 0xffd080, 0.22, 0.8, 22);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 2.4, 255, 200, 120, 0.35);
+      case 'inndoor': {
+        // The way out: the arch is part of the wall run; this is the prompt beneath it.
+        glowAt(p.x, p.y, 0xffc880, 0.34, 1.4, 26);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.4, 255, 200, 130, 0.6);
+        interactables.push({ id: nextId++, kind: 'inndoor', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE STREET', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }] });
+        plate(p.x, p.y, 'THE DOOR', 74);
         break;
       }
-      case 'barkeep': {
-        // Drawn by Villagers; the counter's front tiles are the keeper's.
-        interactables.push({ id: nextId++, kind: 'innkeeper', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE INNKEEPER', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x - 1, y: p.y + 2 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }] });
-        plate(p.x, p.y, 'THE BAR', 84);
-        break;
-      }
-      case 'hearth': {
-        // The fire in the wall: the campfire's flame, no plate, a warm light over the hall.
-        // PAINTED (it.94): a smaller flame over the picture's own hearth.
-        animated(p.x, p.y, 'campfire', 9, 0.92, p.variant === 'painted' ? 0.62 : 0.9, p.variant === 'painted' ? 14 : 0);
-        glowAt(p.x, p.y, 0xff9040, 0.7, 2.4, 18);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 6.5, 255, 160, 70, 0.9);
-        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
-        break;
-      }
-      case 'inntable':
-        standing(p, p.variant ?? 'inn_table_a', 0.9);
-        break;
-      case 'innchair':
-        standing(p, 'inn_chair', 0.9);
-        break;
-      case 'candle': {
-        standing(p, p.variant ?? 'inn_candle', 0.95);
-        glowAt(p.x, p.y, 0xffc070, 0.32, 0.9, 40);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.2, 255, 200, 120, 0.5);
-        break;
-      }
-      case 'carpet':
-        standing(p, p.variant ?? 'inn_carpet', 0.6, 'ground');
-        break;
-      case 'shelf':
-        standing(p, p.variant ?? 'inn_shelf', 0.95);
-        break;
       case 'chest':
         break; // A ChestSystem chest stands on the tile (main spawns it); the prop only keeps the tile solid.
       case 'innkeeper': {
@@ -632,15 +600,34 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         }
         break;
       }
+      case 'barkeep': {
+        // Drawn by Villagers; the counter's front tiles are where a word is had.
+        interactables.push({ id: nextId++, kind: 'innkeeper', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE INNKEEPER', tiles: [{ x: p.x, y: p.y }, ...[-2, -1, 0, 1, 2].flatMap((d) => [{ x: p.x + d, y: p.y + 2 }, { x: p.x + d, y: p.y + 3 }])] });
+        plate(p.x, p.y, 'THE BAR', 92);
+        break;
+      }
+      case 'hearth': {
+        // The fire in the stone arch: embers on the flags, the flame above them.
+        const em = standing({ ...p, kind: 'innrug' }, 'inn_embers', 0.5, 'ground');
+        if (em) em.alpha = 0.95;
+        animated(p.x, p.y, 'inn_fire', 10, 0.95, 1, 10);
+        glowAt(p.x, p.y, 0xff8a30, 0.8, 2.4, 20);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 7.5, 255, 160, 70, 0.95);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
       case 'bed': {
-        // THE BED (it.93): a 1x2 footprint, the big render seated on it; the hero lies at its middle.
-        standing(p, 'bed_big', 0.9);
+        // THE BED (it.96): the rented room's own, a 2x1 footprint; the hero lies at its middle.
+        const spr = standing(p, 'inn_bed', 0.92);
+        if (spr) spr.zIndex = depthKey(p.x + (p.w ?? 1) - 0.5, p.y + (p.h ?? 1) - 0.5);
+        const w = p.w ?? 1;
         const h = p.h ?? 1;
-        // The bed's own tiles first (the bedside walk aims beside them), the ring around them after.
         const tiles: Array<{ x: number; y: number }> = [];
-        for (let y = p.y; y < p.y + h; y++) tiles.push({ x: p.x, y });
-        for (let y = p.y; y < p.y + h; y++) for (const x of [p.x - 1, p.x + 1]) tiles.push({ x, y }); // The long sides only: the foot is the chest's place.
-        interactables.push({ id: nextId++, kind: 'bed', x: p.x + 0.5, y: p.y + h / 2, label: 'E · REST', tiles, room: true });
+        for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) tiles.push({ x, y });
+        for (let y = p.y - 1; y <= p.y + h; y++)
+          for (let x = p.x - 1; x <= p.x + w; x++)
+            if (x < p.x || x >= p.x + w || y < p.y || y >= p.y + h) tiles.push({ x, y });
+        interactables.push({ id: nextId++, kind: 'bed', x: p.x + w / 2, y: p.y + h / 2, label: 'E · REST', tiles, room: true });
         break;
       }
       case 'smithy':

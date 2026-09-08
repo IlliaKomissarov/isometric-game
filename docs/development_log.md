@@ -1,5 +1,68 @@
 # Development Log
 
+## 2026-09-08 (iteration 96) - The Gilded Stag, built of tileset pieces
+
+Every earlier inn was drawn by the engine or painted from the reference sheet;
+this one is assembled from real isometric art and nothing else.
+
+### The art (`scratchpad/assets96.py` -> 50 atlas entries)
+- The **Ancient Isometric Tileset** (`test-models/3rd town part/new/Isometric tileset`)
+  is the room: `interior_1` plaster-and-wainscot walls, the `doorway_1` arch and
+  its swinging door leaf, the `doorway_3` stone arch as the hearth, the `clutter`
+  furniture (short tables, two chairs, a stool, a cupboard, crates, casks, pots,
+  plates, box goods, paintings, posters), and the four-frame `burn` and `torch`
+  loops.
+- The **Dungeon Pry placeables** give the pieces that set has not baked yet:
+  the alchemy shelf of bottles, the bookshelf, two barrels, the long table, two
+  bordered carpets, the flasks, and the chest that is the warded stash.
+- **Scale.** The tileset's own reference characters stand 110 px on a 256 px
+  tile; our hero is 56 px on a 64 px tile - exactly twice. So every piece of
+  that set is baked at **0.5**, which makes one wall piece span TWO game tiles
+  and one source floor diamond cover a **2x2 block**. The floor is therefore
+  sliced into four quadrants (`inn_boards_0..3`, `inn_stone_0..3`) that the
+  scene picks by tile parity `(gx & 1) + 2 * (gy & 1)`, so the planks run on
+  unbroken - the fix for the "broken block floors".
+- **No seams.** Each quadrant has its colour bled outward three passes and then
+  an exact diamond alpha mask stamped on it, so no transparent fringe survives
+  to draw a grid over the boards.
+- The bed is the project's own `bed01.jpg` render, keyed off its studio grey and
+  graded from lacquer red to stained walnut with linen bedding. Nothing in the
+  inn is drawn procedurally.
+
+### The room (`src/scenes/Inn.ts`, floor 103, 28x24)
+- Wall pieces stand on the far edges by the tileset's own convention: the
+  image's bottom-left meets the 2x2 block's bounding-box bottom-left
+  (`case 'innwall'` in `TownProps`). `wall_n` runs along +x, `wall_w` along +y.
+- The hall: boards throughout, flagstone behind the bar and on the hearth's
+  apron; a seven-piece bar counter along the north-east wall with the keeper
+  behind it, bottle shelves, a bookcase, kegs and crates at his back and four
+  stools before it; a stone hearth in the north-west wall with a live fire, two
+  chairs and a rug; five table clusters, two carpets, a cupboard, a cask, crates,
+  pots and a long table; three paintings and twelve wall torches, each a light.
+- Partitions ghost like a cottage roof (they are pushed to `occluders`), so the
+  hero is never lost behind one.
+- `TownMap.wallsFromProps` tells `SceneManager` to draw no wall cubes here: the
+  inn's walls are the tileset's own pieces.
+
+### THE RENTED ROOM
+- The layout is a pure function of `quests.east`. **Locked** (anything before
+  `done`): the room's tiles are `TILE_WALL`, so nothing is drawn and nothing is
+  lit - the doorway carries `inn_door_shut` and the space beyond it is black.
+  **Unlocked**: the floor is carved, the door piece becomes `inn_door_open`, the
+  gap at (23,13) opens, and the room is dressed with the bed, the warded chest,
+  a rug, a cupboard, a crate, two pictures, flasks and four torches.
+- The reward step rebuilds the inn in place (`withFade` -> `buildWorld(INN_FLOOR)`)
+  so the key turns in front of the player rather than on the next load.
+- **The warded chest is the town stash.** It is the same `stash` interactable the
+  town keeps, so what is left in it comes out of any stash point, and in co-op
+  every hero of the party reaches the same shelves.
+- Both states audit with zero unreachable floor tiles.
+
+### Fixed on the way
+- The it.95 rewrite had deleted the *gate* innkeeper prop case along with the old
+  inn block, which broke the whole Eastern Quarter errand. Restored, with the
+  `chest` case beside it; `qa75` caught it.
+
 ## 2026-09-08 (iteration 95) - The inn built of pieces, no popping, the rotunda gone
 
 - THE GILDED STAG, rebuilt from the engine's own pieces after the painted backdrop was rejected: plaster-and-timber wall blocks (`inn_wall_tex` baked, `AssetManager.buildInnWall` -> `wall_inn`, the `inn` theme's suffix; lighter shade, no mortar seams, plaster tint in lamplight), boards underfoot, a timber door set in the south wall (`inn_door` from the Medieval Building pack, drawn in front of its block), a stone arch on the partition, the bar along the north wall (counters, bottle shelves, kegs, the keeper behind), a hearth in the west wall with chairs and a rug, six round tables with stools and two long tables with chairs, bookcases and display cases along the walls, candle stands, crates and kegs in the corners, a carpet from the door to the bar, eleven sconces; the rented room through the arch with the bed, chest, bench, table, chair, rug and bookcase. The 30x24 map audits with no pocket.

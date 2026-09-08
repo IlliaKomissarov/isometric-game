@@ -45,8 +45,9 @@ export const KIND_GRASS = 1;
 export const KIND_DIRT = 2;
 /** Coliseum sand (it.55). */
 export const KIND_SAND = 3;
-/** THE GILDED STAG's boards (it.92). */
-export const KIND_PLANK = 4;
+/** THE GILDED STAG's boards and flagstones (it.96). */
+export const KIND_INN_BOARDS = 4;
+export const KIND_INN_STONE = 5;
 
 export type TownPropKind =
   | 'house'
@@ -141,14 +142,17 @@ export type TownPropKind =
   | 'shelf'
   | 'chest'
   | 'doorway'
-  // THE PAINTED HALL (it.94): the inn's artwork and the pieces lit or cut from it.
-  | 'backdrop'
-  | 'barfront'
-  | 'sconce'
-  | 'tablelight';
+  // THE GILDED STAG (it.96): the inn is built of tileset pieces.
+  | 'innwall'
+  | 'innprop'
+  | 'inndeco'
+  | 'innrug'
+  | 'sconce';
 
 /** THE GILDED STAG INSIDE (it.92): what main needs of the inn's floor. */
 export interface InnLayout {
+  /** THE RENTED ROOM (it.96): shut and black until the errand is paid. */
+  roomOpen?: boolean;
   keeper: { x: number; y: number };
   door: { x: number; y: number };
   bed: { x: number; y: number };
@@ -194,7 +198,7 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers', 'carpet',
   // WALK THROUGH (it.93): everything knee-high or broken is paint underfoot - a heap, a stub of wall, a boulder, a bench, a keg, a chair, a candle stand.
   'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
-  'backdrop', 'barfront', 'sconce', 'tablelight',
+  'inndeco', 'innrug', 'sconce', 'innwall',
 ]);
 
 export interface TownProp {
@@ -209,9 +213,11 @@ export interface TownProp {
   variant?: string;
   /** Mirror the sprite (it.87): a gate across a corridor running the other way. */
   flip?: boolean;
-  /** A painted piece's pixel offset from its tile's top corner (it.94: the backdrop, the bar cutout). */
+  /** A fractional nudge within the tile, in tiles (it.96: the inn's furniture is placed by hand). */
   ox?: number;
   oy?: number;
+  /** Screen pixels a wall-hung piece rides above the floor (it.96: paintings, posters). */
+  lift?: number;
 }
 
 export interface TownLayout {
@@ -273,8 +279,8 @@ export interface TownLayout {
 
 export interface TownMap extends DungeonMap {
   readonly tileKind: Uint8Array;
-  /** THE PAINTED HALL (it.94): the scene draws no tiles; a backdrop prop is the room. */
-  readonly backdrop?: boolean;
+  /** THE GILDED STAG (it.96): the walls are prop sprites, not the scene's cubes. */
+  readonly wallsFromProps?: boolean;
 }
 
 /** Build the town: grid + footprints + prop list. Pure and deterministic. */

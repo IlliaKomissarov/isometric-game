@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-08T10:29:35.221376+00:00",
+ "generated": "2026-09-08T15:20:48.317576+00:00",
  "anims": {
   "knight_idle": {
    "file": "knight_idle.png",
@@ -2678,6 +2678,44 @@
     "bottom": 152,
     "left": 0,
     "right": 87
+   }
+  },
+  "inn_fire": {
+   "file": "inn_fire.png",
+   "cellW": 19,
+   "cellH": 32,
+   "frameCount": 4,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 19,
+   "origH": 32,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 31,
+    "left": 0,
+    "right": 18
+   }
+  },
+  "inn_torch": {
+   "file": "inn_torch.png",
+   "cellW": 18,
+   "cellH": 45,
+   "frameCount": 4,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 18,
+   "origH": 45,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 44,
+    "left": 0,
+    "right": 17
    }
   }
  },
@@ -5418,142 +5456,292 @@
    "h": 76,
    "nearest": false
   },
-  "inn_table_a": {
-   "file": "single_inn_table_a.png",
-   "w": 88,
-   "h": 65,
-   "nearest": false
-  },
-  "inn_table_b": {
-   "file": "single_inn_table_b.png",
-   "w": 88,
-   "h": 65,
-   "nearest": false
-  },
-  "inn_table_c": {
-   "file": "single_inn_table_c.png",
-   "w": 88,
-   "h": 39,
-   "nearest": false
-  },
-  "inn_table_d": {
-   "file": "single_inn_table_d.png",
-   "w": 88,
-   "h": 76,
-   "nearest": false
-  },
-  "inn_chair": {
-   "file": "single_inn_chair.png",
-   "w": 25,
-   "h": 34,
-   "nearest": false
-  },
-  "inn_candle": {
-   "file": "single_inn_candle.png",
-   "w": 26,
-   "h": 49,
-   "nearest": false
-  },
-  "inn_candle2": {
-   "file": "single_inn_candle2.png",
-   "w": 42,
-   "h": 49,
-   "nearest": false
-  },
-  "inn_shelf": {
-   "file": "single_inn_shelf.png",
-   "w": 102,
-   "h": 86,
-   "nearest": false
-  },
-  "inn_shelf_b": {
-   "file": "single_inn_shelf_b.png",
-   "w": 80,
-   "h": 86,
-   "nearest": false
-  },
-  "inn_case": {
-   "file": "single_inn_case.png",
-   "w": 92,
-   "h": 57,
-   "nearest": false
-  },
-  "inn_stand": {
-   "file": "single_inn_stand.png",
-   "w": 32,
-   "h": 38,
-   "nearest": false
-  },
-  "inn_carpet": {
-   "file": "single_inn_carpet.png",
-   "w": 102,
-   "h": 38,
-   "nearest": false
-  },
-  "inn_carpet_s": {
-   "file": "single_inn_carpet_s.png",
-   "w": 90,
-   "h": 47,
-   "nearest": false
-  },
-  "inn_carpet_e": {
-   "file": "single_inn_carpet_e.png",
-   "w": 51,
-   "h": 37,
-   "nearest": false
-  },
-  "town_plank_0": {
-   "file": "single_town_plank_0.png",
+  "inn_boards_0": {
+   "file": "single_inn_boards_0.png",
    "w": 64,
    "h": 32,
    "nearest": false
   },
-  "town_plank_1": {
-   "file": "single_town_plank_1.png",
+  "inn_boards_1": {
+   "file": "single_inn_boards_1.png",
    "w": 64,
    "h": 32,
    "nearest": false
   },
-  "town_plank_2": {
-   "file": "single_town_plank_2.png",
+  "inn_boards_2": {
+   "file": "single_inn_boards_2.png",
    "w": 64,
    "h": 32,
    "nearest": false
   },
-  "town_plank_3": {
-   "file": "single_town_plank_3.png",
+  "inn_boards_3": {
+   "file": "single_inn_boards_3.png",
    "w": 64,
    "h": 32,
    "nearest": false
   },
-  "town_plank": {
-   "file": "single_town_plank.png",
+  "inn_stone_0": {
+   "file": "single_inn_stone_0.png",
    "w": 64,
    "h": 32,
    "nearest": false
   },
-  "inn_doorway": {
-   "file": "single_inn_doorway.png",
-   "w": 102,
-   "h": 92,
+  "inn_stone_1": {
+   "file": "single_inn_stone_1.png",
+   "w": 64,
+   "h": 32,
    "nearest": false
   },
-  "bed_big": {
-   "file": "single_bed_big.png",
-   "w": 150,
-   "h": 114,
+  "inn_stone_2": {
+   "file": "single_inn_stone_2.png",
+   "w": 64,
+   "h": 32,
    "nearest": false
   },
-  "inn_wall_tex": {
-   "file": "single_inn_wall_tex.png",
-   "w": 256,
+  "inn_stone_3": {
+   "file": "single_inn_stone_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "inn_wall_n": {
+   "file": "single_inn_wall_n.png",
+   "w": 128,
    "h": 256,
    "nearest": false
   },
-  "inn_door": {
-   "file": "single_inn_door.png",
-   "w": 56,
-   "h": 90,
+  "inn_wall_w": {
+   "file": "single_inn_wall_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_arch_n": {
+   "file": "single_inn_arch_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_arch_w": {
+   "file": "single_inn_arch_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_door_shut": {
+   "file": "single_inn_door_shut.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_door_open": {
+   "file": "single_inn_door_open.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_hearth_w": {
+   "file": "single_inn_hearth_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_hearth_n": {
+   "file": "single_inn_hearth_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_beam_n": {
+   "file": "single_inn_beam_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_beam_w": {
+   "file": "single_inn_beam_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_table": {
+   "file": "single_inn_table.png",
+   "w": 96,
+   "h": 75,
+   "nearest": false
+  },
+  "inn_chair_a": {
+   "file": "single_inn_chair_a.png",
+   "w": 36,
+   "h": 60,
+   "nearest": false
+  },
+  "inn_chair_b": {
+   "file": "single_inn_chair_b.png",
+   "w": 36,
+   "h": 60,
+   "nearest": false
+  },
+  "inn_stool": {
+   "file": "single_inn_stool.png",
+   "w": 24,
+   "h": 30,
+   "nearest": false
+  },
+  "inn_cupboard": {
+   "file": "single_inn_cupboard.png",
+   "w": 74,
+   "h": 100,
+   "nearest": false
+  },
+  "inn_crate": {
+   "file": "single_inn_crate.png",
+   "w": 48,
+   "h": 48,
+   "nearest": false
+  },
+  "inn_crates": {
+   "file": "single_inn_crates.png",
+   "w": 92,
+   "h": 84,
+   "nearest": false
+  },
+  "inn_pots": {
+   "file": "single_inn_pots.png",
+   "w": 28,
+   "h": 36,
+   "nearest": false
+  },
+  "inn_plate": {
+   "file": "single_inn_plate.png",
+   "w": 33,
+   "h": 16,
+   "nearest": false
+  },
+  "inn_goods_a": {
+   "file": "single_inn_goods_a.png",
+   "w": 28,
+   "h": 22,
+   "nearest": false
+  },
+  "inn_goods_b": {
+   "file": "single_inn_goods_b.png",
+   "w": 28,
+   "h": 22,
+   "nearest": false
+  },
+  "inn_goods_c": {
+   "file": "single_inn_goods_c.png",
+   "w": 28,
+   "h": 22,
+   "nearest": false
+  },
+  "inn_goods_d": {
+   "file": "single_inn_goods_d.png",
+   "w": 28,
+   "h": 22,
+   "nearest": false
+  },
+  "inn_painting_a": {
+   "file": "single_inn_painting_a.png",
+   "w": 22,
+   "h": 28,
+   "nearest": false
+  },
+  "inn_painting_b": {
+   "file": "single_inn_painting_b.png",
+   "w": 17,
+   "h": 33,
+   "nearest": false
+  },
+  "inn_poster_a": {
+   "file": "single_inn_poster_a.png",
+   "w": 19,
+   "h": 34,
+   "nearest": false
+  },
+  "inn_poster_b": {
+   "file": "single_inn_poster_b.png",
+   "w": 19,
+   "h": 34,
+   "nearest": false
+  },
+  "inn_sign": {
+   "file": "single_inn_sign.png",
+   "w": 31,
+   "h": 47,
+   "nearest": false
+  },
+  "inn_shelf_bottles": {
+   "file": "single_inn_shelf_bottles.png",
+   "w": 113,
+   "h": 134,
+   "nearest": false
+  },
+  "inn_bookshelf": {
+   "file": "single_inn_bookshelf.png",
+   "w": 117,
+   "h": 126,
+   "nearest": false
+  },
+  "inn_barrel": {
+   "file": "single_inn_barrel.png",
+   "w": 53,
+   "h": 48,
+   "nearest": false
+  },
+  "inn_barrels": {
+   "file": "single_inn_barrels.png",
+   "w": 87,
+   "h": 66,
+   "nearest": false
+  },
+  "inn_chest": {
+   "file": "single_inn_chest.png",
+   "w": 70,
+   "h": 56,
+   "nearest": false
+  },
+  "inn_chest_open": {
+   "file": "single_inn_chest_open.png",
+   "w": 91,
+   "h": 72,
+   "nearest": false
+  },
+  "inn_bigtable": {
+   "file": "single_inn_bigtable.png",
+   "w": 132,
+   "h": 79,
+   "nearest": false
+  },
+  "inn_carpet_a": {
+   "file": "single_inn_carpet_a.png",
+   "w": 139,
+   "h": 69,
+   "nearest": false
+  },
+  "inn_carpet_b": {
+   "file": "single_inn_carpet_b.png",
+   "w": 139,
+   "h": 69,
+   "nearest": false
+  },
+  "inn_flasks": {
+   "file": "single_inn_flasks.png",
+   "w": 45,
+   "h": 32,
+   "nearest": false
+  },
+  "inn_embers": {
+   "file": "single_inn_embers.png",
+   "w": 62,
+   "h": 35,
+   "nearest": false
+  },
+  "inn_bed": {
+   "file": "single_inn_bed.png",
+   "w": 104,
+   "h": 79,
    "nearest": false
   }
  }

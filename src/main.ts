@@ -363,12 +363,11 @@ async function boot(): Promise<void> {
     // ONE environment pipeline (it.17 revert): the proven stone set for all
     // depths; the bands are subtle tints baked inside buildStoneEnvironment.
     assets.buildStoneEnvironment(spriteLib.single('ground_stone'));
-    if (spriteLib.hasSingle('inn_wall_tex')) assets.buildInnWall(spriteLib.single('inn_wall_tex')); // THE INN'S WALLS (it.95).
     // CHEST MODEL (it.44): the isometric pack's dark-wood chest replaces the procedural box on every floor.
     if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
     if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
-    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'town_plank'].forEach((name, i) => {
+    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'inn_boards', 'inn_stone'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
@@ -1736,7 +1735,7 @@ async function boot(): Promise<void> {
       const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
-      const inn = isInn ? buildInnLayout(seed) : null; // THE GILDED STAG INSIDE (it.92).
+      const inn = isInn ? buildInnLayout(seed, quests.east === 'done') : null; // THE GILDED STAG (it.96): the room opens once the errand is paid.
       const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : inn ? inn.layout : null;
       const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
@@ -3913,6 +3912,18 @@ async function boot(): Promise<void> {
         world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 26);
         world.ambience.playGlint(player.pos.x, player.pos.y);
         saveNow();
+        // THE ROOM IS YOURS (it.96): the key turns, the door swings, and the inn is
+        // rebuilt with the room open - the bed and the warded chest waiting in it.
+        withFade(async () => {
+          await preloadFloor(INN_FLOOR, 'inn');
+          if (!swapWorld(() => buildWorld(INN_FLOOR, 'inn'))) return;
+          const at = world.town?.layout.inn;
+          if (at) placeParty(at.keeper.x + 0.5, at.keeper.y + 2.5, world.scene.isWalkable);
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          minimap.markDirty();
+          audio.sfx('gateOpen');
+          tutorial.say('The room at the back is yours. The chest in it is warded - what you leave there you can take from any stash, and your party can reach it too.');
+        }, 'the key turns');
       }
     };
     /** E at the barricade, or at the inn's counter: the refugees, then the keeper. */
@@ -3953,15 +3964,15 @@ async function boot(): Promise<void> {
       if (st === 'cleared') {
         const v = await dialogue.open({
           ...who,
-          lines: ['You did it. The streets are ours again.', 'Two hundred gold (200), the bow and the sword - they\'re yours. And the room in the back is yours as long as you want it: bed, chest, bench.'],
-          choices: [{ label: 'THANK YOU', sub: 'take the gold, the bow, the sword and the room', value: 'reward' }],
+          lines: ['You did it. The streets are ours again.', 'Two hundred gold (200), the bow and the sword - they\'re yours. And the back room, for as long as you want it: a bed, and a chest the guild warded. Leave anything in it and you can take it out of any stash anywhere - your friends too.'],
+          choices: [{ label: 'THANK YOU', sub: 'the gold, the bow, the sword, and the key to the room', value: 'reward' }],
         });
         if (v === 'reward') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'reward' });
         return;
       }
       await dialogue.open({
         ...who,
-        lines: ['Rest whenever you like. The room\'s yours.'],
+        lines: ['Rest whenever you like. The room\'s yours, and the warded chest with it.'],
         choices: [{ label: 'THANKS', value: 'ok' }],
       });
     };
@@ -5686,8 +5697,8 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
   if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
-  // THE GILDED STAG INSIDE (it.92): the folk, the keeper's coat, the hearth's flame.
-  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
+  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
     const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);

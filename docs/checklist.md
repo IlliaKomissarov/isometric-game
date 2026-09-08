@@ -786,6 +786,19 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] tryBlock's double push fixed
 - [x] Matrix; playthrough; clean build
 
+## Iteration 96 - The Gilded Stag, built of tileset pieces (2026-09-08)
+
+- [x] Fifty atlas entries baked from the Ancient Isometric Tileset and the Dungeon Pry placeables; nothing procedural, nothing stretched
+- [x] Boards and flagstone sliced into 2x2 quadrants picked by tile parity - the block floor is gone
+- [x] Colour-bled, diamond-masked floor tiles: no seams, no grid
+- [x] Plaster-and-wainscot walls seated by the tileset's bottom-left convention; partitions ghost
+- [x] The bar, the keeper, shelves, kegs and stools; the stone hearth with a live fire; five table clusters, carpets, casks, crates, paintings, twelve torches
+- [x] The rented room locked, dark and empty until the errand is paid; the closed door in the partition
+- [x] The reward turns the key in place: the inn rebuilds with the door open, the bed and the warded chest inside
+- [x] The warded chest is the town stash - reachable from every stash point, shared by the party in co-op
+- [x] The gate innkeeper restored after the it.95 deletion
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

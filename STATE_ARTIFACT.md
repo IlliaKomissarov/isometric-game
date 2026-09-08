@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 95, 2026-09-08)
+- **Project version:** 0.1.0 (iteration 96, 2026-09-08)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 280 checks at it.90) | 0 failures | 280/280 on seed 42 (warrior, deep), incl. the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 320 checks at it.96) | 0 failures | 320/320 on seed 3 (mage), incl. the locked and unlocked inn room; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -243,6 +243,18 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 96 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The inn's floor drew as broken blocks | High (art) | one source diamond baked into four seamless quadrants (`inn_boards_0..3`, `inn_stone_0..3`) picked by tile parity; colour bled outward three passes, then an exact diamond alpha mask - no fringe, no grid |
+| Walls, furniture and the bed were engine-drawn or painted from the reference | High (art) | fifty atlas entries baked from the Ancient Isometric Tileset and the Dungeon Pry placeables; `TownMap.wallsFromProps` stops `SceneManager` drawing wall cubes in the inn |
+| Wall pieces floated off their tiles | Medium (render) | the tileset's own seating: the image's bottom-left meets the 2x2 block's bounding-box bottom-left; `wall_n` runs along +x, `wall_w` along +y |
+| Carpets cut off; benches and the bed were an eyesore | Medium (art) | bordered Dungeon Pry carpets; the tileset's chairs, stools and tables; the bed is the project's own render regraded to walnut and linen |
+| The rented room was open from the first walk in | Feature | the layout is a pure function of `quests.east`: locked the room's tiles are `TILE_WALL` (nothing drawn, nothing lit) behind `inn_door_shut`; the reward rebuilds the inn in place with the door open, the bed, the warded chest and four torches |
+| The room's chest was a second, separate store | Feature | it is the town `stash` interactable - reachable from every stash point, shared by the whole party in co-op |
+| The it.95 rewrite deleted the gate innkeeper's prop case | High (regression) | restored with the `chest` case beside it; caught by `qa75` |
 
 ### Iteration 92 additions
 

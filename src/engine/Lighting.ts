@@ -98,6 +98,9 @@ export class Lighting {
   /** Sight radius (LOS reveal) and full-brightness radius; the town widens both. */
   private sight = FOG_RADIUS;
   private full = LIGHT_FULL_RADIUS;
+  /** The radii the floor was built with, so a scene can borrow them and give them back. */
+  private baseSight = FOG_RADIUS;
+  private baseFull = LIGHT_FULL_RADIUS;
 
   build(
     width: number,
@@ -110,6 +113,8 @@ export class Lighting {
     this.isOpaque = isOpaque;
     this.sight = opts?.sightRadius ?? FOG_RADIUS;
     this.full = opts?.fullRadius ?? LIGHT_FULL_RADIUS;
+    this.baseSight = this.sight;
+    this.baseFull = this.full;
     this.states = new Uint8Array(width * height).fill(FogState.HIDDEN);
     this.floorSprites = new Array<Sprite | null>(width * height).fill(null);
     this.wallSprites = new Array<Sprite | null>(width * height).fill(null);
@@ -175,6 +180,19 @@ export class Lighting {
     sprite.tint = HIDDEN_TINT;
     sprite.visible = false;
     this.wallSprites[gy * this.width + gx] = sprite;
+  }
+
+  /**
+   * A CUTSCENE CARRIES ITS OWN LIGHT (it.99). While a scene is playing the camera
+   * leaves the hero, and everything it looks at is lit by the hero's torch and
+   * fogged by the hero's line of sight - so the people walking in arrived as
+   * silhouettes on ground that was never re-tinted. This opens the sight wide and
+   * pushes the full-brightness radius out for the length of the scene; the caller
+   * drives `updateVisibility` from the camera while it is on, and turns it off after.
+   */
+  setSceneLight(on: boolean): void {
+    this.sight = on ? Math.max(this.baseSight, 22) : this.baseSight;
+    this.full = on ? Math.max(this.baseFull, 14) : this.baseFull;
   }
 
   /** True when the tile is currently in the player's line of sight. */

@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-08T17:42:30.955074+00:00",
+ "generated": "2026-09-08T19:45:19.399998+00:00",
  "anims": {
   "knight_idle": {
    "file": "knight_idle.png",
@@ -2735,6 +2735,139 @@
     "bottom": 63,
     "left": 0,
     "right": 29
+   }
+  },
+  "cit_farmer_walk": {
+   "file": "cit_farmer_walk.png",
+   "cellW": 34,
+   "cellH": 60,
+   "frameCount": 4,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 34,
+   "origH": 60,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 59,
+    "left": 0,
+    "right": 33
+   }
+  },
+  "cit_porter_walk": {
+   "file": "cit_porter_walk.png",
+   "cellW": 33,
+   "cellH": 59,
+   "frameCount": 4,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 33,
+   "origH": 59,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 58,
+    "left": 0,
+    "right": 32
+   }
+  },
+  "cit_monk_walk": {
+   "file": "cit_monk_walk.png",
+   "cellW": 34,
+   "cellH": 60,
+   "frameCount": 4,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 34,
+   "origH": 60,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 59,
+    "left": 0,
+    "right": 33
+   }
+  },
+  "cit_goodwife_walk": {
+   "file": "cit_goodwife_walk.png",
+   "cellW": 33,
+   "cellH": 60,
+   "frameCount": 4,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 33,
+   "origH": 60,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 59,
+    "left": 0,
+    "right": 32
+   }
+  },
+  "cit_maid_walk": {
+   "file": "cit_maid_walk.png",
+   "cellW": 34,
+   "cellH": 60,
+   "frameCount": 4,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 34,
+   "origH": 60,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 59,
+    "left": 0,
+    "right": 33
+   }
+  },
+  "cit_labourer_walk": {
+   "file": "cit_labourer_walk.png",
+   "cellW": 50,
+   "cellH": 65,
+   "frameCount": 10,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 50,
+   "origH": 65,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 64,
+    "left": 0,
+    "right": 49
+   }
+  },
+  "cit_carter_walk": {
+   "file": "cit_carter_walk.png",
+   "cellW": 50,
+   "cellH": 65,
+   "frameCount": 10,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 50,
+   "origH": 65,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 64,
+    "left": 0,
+    "right": 49
    }
   }
  },

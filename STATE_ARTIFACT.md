@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 98, 2026-09-08)
+- **Project version:** 0.1.0 (iteration 99, 2026-09-08)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -243,6 +243,17 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 99 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The liberation cutscene still played in the dark after it.98's lamps | High (feel) | the lamps were never the problem: `updateRender` only re-tints tiles in `visibleSet`, which is computed from the HERO, so everything the camera looked at sat at the flat explored shadow. The fog now follows the CAMERA while `cineFocus` is set, `Lighting.setSceneLight` widens sight and full brightness for the scene, and the lamps run the whole route |
+| The same four bodies milled about indoors and out | Medium (feel) | the circling four are the taproom's alone (`TAVERN_FOLK`); every open district walks `STREET_FOLK` |
+| The town had no civilians of its own, and no women | Feature (art) | seven bodies: five composited from the Spell of Mastery layered pack (farmer, porter, monk, goodwife, maid), plus a labourer and a re-dyed carter from the Kenney pack's `Characters/Male`, which is one man in EIGHT facings with a ten-frame stride - the only true eight-direction civilian in the repo |
+| Two-facing source art in an eight-direction engine | Medium (art) | each canonical row filled from the facing it shows and mirrored where it leans the other way; rows come out canonical, so no `DIR_ROW_FIX` entry is needed |
+| The click-attack check failed whenever the nearest spawn landed outside the fog | Low (harness) | it picked a foe by raw distance; the hero rightly refuses to path to a body it cannot see, so the check now picks the nearest VISIBLE foe |
+| Which bodies walk a place was a module constant | Low (design) | `Villagers` takes a `sheets` roster |
 
 ### Iteration 98 additions
 

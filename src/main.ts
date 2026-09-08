@@ -90,7 +90,7 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { RECLAIMED_WORDS, REFUGEE_WORDS, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { RECLAIMED_WORDS, REFUGEE_WORDS, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
@@ -2193,23 +2193,23 @@ async function boot(): Promise<void> {
         // THE STREETS (it.92): the folk walk the district's roads, path-found, and keep to them three times in four.
         const streets = { roads: layout.road, mapWidth: layout.map.width };
         const villagers = isForest
-          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined }) // A cleared forest keeps folk and sentries (it.87).
+          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined, sheets: STREET_FOLK }) // A cleared forest keeps folk and sentries (it.87).
           : isCellar
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isInn
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
-            : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, ...streets });
+            : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
         const villagers2 = isForest || isInn || isCellar
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, ...streets });
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
         // them - or, the quarter reclaimed, ten of the folk on the burnt square and the keeper behind his counter.
         const east = layout.east;
         const villagers3 = isHub && east
           ? east.state === 'cleared'
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 12, null, [], null, {}, null, { chatter: RECLAIMED_WORDS, ...streets }) // The keeper is behind his own bar now (it.92).
-            : new Villagers(viewport.objectLayer, scene.isWalkable, east.refuge, 4, null, [], null, {}, east.innkeeper, { chatter: REFUGEE_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 12, null, [], null, {}, null, { chatter: RECLAIMED_WORDS, sheets: STREET_FOLK, ...streets }) // The keeper is behind his own bar now (it.92).
+            : new Villagers(viewport.objectLayer, scene.isWalkable, east.refuge, 4, null, [], null, {}, east.innkeeper, { chatter: REFUGEE_WORDS, sheets: STREET_FOLK, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
           : null;
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // THE TRAINING GROUND (it.90): a passive foe stands on every dummy tile - struck, it flinches and heals.
@@ -4091,6 +4091,8 @@ async function boot(): Promise<void> {
     };
     /** The last looter falls: the letterboxed reclaiming, then the town rebuilt with the carts gone and the folk home. */
     let reclaim: ProcessionScene | null = null;
+    /** The tile the scene's fog was last opened from, so it is only recomputed on a change. */
+    let cineFogTile = -1;
     const cineFocusHooks = {
       focus: (x: number, y: number): void => {
         if (!cineFocus) {
@@ -4101,6 +4103,10 @@ async function boot(): Promise<void> {
       },
       release: (): void => {
         cineFocus = null;
+        cineFogTile = -1;
+        // The hero has the light back, at the floor's own radii.
+        world.lighting.setSceneLight(false);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
       },
     };
     const startReclaim = (): void => {
@@ -4166,12 +4172,22 @@ async function boot(): Promise<void> {
      * hang a warm lamp over its first stretch for as long as the scene runs.
      */
     const lightTheWayIn = (from: { x: number; y: number }, route: ReadonlyArray<{ x: number; y: number }>): void => {
-      const lamps = [from, ...route.slice(0, 2)];
+      // The scene's own sight and full-brightness radius, for as long as the bars are down.
+      world.lighting.setSceneLight(true);
+      cineFogTile = -1;
+      // A warm lamp over every stretch of the road, and over the ground between the
+      // waypoints too - the folk are walking the whole way, not just the first leg.
+      const lamps: Array<{ x: number; y: number }> = [from];
+      let prev = from;
+      for (const at of route) {
+        const steps = Math.max(1, Math.round(Math.hypot(at.x - prev.x, at.y - prev.y) / 5));
+        for (let i = 1; i <= steps; i++) lamps.push({ x: prev.x + ((at.x - prev.x) * i) / steps, y: prev.y + ((at.y - prev.y) * i) / steps });
+        prev = at;
+      }
       for (const at of lamps) {
         world.lighting.updateVisibility(Math.round(at.x), Math.round(at.y)); // The road is seen before it is walked.
-        world.lighting.addSource(at.x + 0.5, at.y + 0.5, 9, 255, 214, 158, 0.85);
+        world.lighting.addSource(at.x + 0.5, at.y + 0.5, 10, 255, 216, 164, 0.9);
       }
-      // The fog belongs to the hero again; the lamps stay for the scene's sake.
       world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
     };
     /** THE FOREST'S HOMECOMING (it.92): the last beast down, the folk walk in from the town road through the clearings before the way home. */
@@ -4958,6 +4974,17 @@ async function boot(): Promise<void> {
           cameraFocus.y = cineCur.y;
         }
 
+        // A CUTSCENE CARRIES ITS OWN LIGHT (it.99): while the camera is off the hero,
+        // the fog is opened from where the camera looks, so the ground the procession
+        // walks over is VISIBLE - and therefore re-tinted every frame by the wide
+        // scene light below, instead of sitting at the flat explored shadow.
+        if (cineFocus) {
+          const ct = Math.floor(cameraFocus.y) * world.dungeon.width + Math.floor(cameraFocus.x);
+          if (ct !== cineFogTile) {
+            cineFogTile = ct;
+            world.lighting.updateVisibility(Math.floor(cameraFocus.x), Math.floor(cameraFocus.y));
+          }
+        }
         world.lighting.updateRender(cameraFocus.x, cameraFocus.y, frameDt, timeSec);
         world.ambience.update(
           cameraFocus.x,
@@ -6005,7 +6032,7 @@ export function isBossFloor(floor: number): boolean {
 function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
-  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
+  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
   if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.
@@ -6024,7 +6051,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   }
   // THE FOREST AND THE QUARRY (it.85): their own packs, the town's torches and braziers, the hydra.
   if (mode === 'forest' || mode === 'mines' || (mode === 'arena' && floor === MINES_FLOOR)) {
-    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'poacher_idle', ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'poacher_idle', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of mode === 'forest' ? FOREST_POOL : [...MINES_POOL, 'hydra' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

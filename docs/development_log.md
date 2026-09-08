@@ -1,5 +1,56 @@
 # Development Log
 
+## 2026-09-08 (iteration 99) - A scene that carries its own light, and a town full of strangers
+
+### The liberation scene was lit from the wrong place
+The it.98 lamps did nothing, and the reason was not the lamps. Fog is keyed by
+tile and `updateRender` only re-tints tiles in `visibleSet` - and `visibleSet` is
+computed from the HERO. During a cutscene the camera leaves the hero entirely, so
+everything it looked at sat at the flat explored shadow, unlit by anything,
+including the sources the lamps had added. The people walked in over dead ground.
+
+Three changes, and now the scene carries its own light:
+- `Lighting.setSceneLight(on)` opens the sight radius to at least 22 and pushes
+  full brightness out to at least 14 for the length of the scene, then gives the
+  floor its own radii back.
+- While `cineFocus` is set, the render pass drives `updateVisibility` from the
+  CAMERA each time it crosses a tile, so the ground the procession walks over is
+  VISIBLE and therefore re-tinted every frame.
+- `lightTheWayIn` now hangs a warm lamp every five tiles along the WHOLE route
+  rather than over the first stretch only.
+
+Both processions - the town's reclaiming and the forest's homecoming - use it,
+and the light is released with the letterbox.
+
+### The taproom keeps its regulars; the town gets its own people
+The four bodies that walk in circles read as drinkers moving between tables
+indoors and as aimless milling outdoors, so they are now the taproom's alone
+(`TAVERN_FOLK`). Every open district - both town wards, the eastern quarter and
+the cleared forest - walks `STREET_FOLK` instead: five civilians composited at
+bake time from the Spell of Mastery layered pack (CC-BY 4.0, "NancyGold / Spell
+of Mastery"), the same pack Sarah came from. A bearded farmer, a porter, a robed
+monk, a goodwife and a maid, each a different stack of body kit, footwear, legs
+or skirt, chest, belt, sleeves and hair - so no two share a silhouette, and the
+streets have women on them for the first time.
+
+Two more come from the Kenney isometric pack's `Characters/Male` (CC0), which is
+not eight characters but ONE man in eight facings with a ten-frame stride: a
+bare-armed labourer in a rust tunic, and the same body re-dyed cold blue-grey for
+a carter. That is the only genuine eight-direction civilian in the packs, and its
+facing order was read off a contact sheet of its own idle frames before baking:
+file D1 is the right profile, D3 the full front, D5 the left profile, D7 the full
+back, which gives the canonical map directly. Seven bodies walk the streets.
+
+`Villagers` gained a `sheets` option, so which bodies walk a place is now the
+caller's decision rather than a module constant.
+
+**The direction trick.** The pack draws two facings - south in rows 0-2, north in
+rows 3-5, with the four-frame walk cycle on row 1 and row 4. The engine wants
+eight canonical rows, `[E, NE, N, NW, W, SW, S, SE]`, so each is filled from
+whichever facing it shows and mirrored where it leans the other way: walking away
+reads from the back, walking across the view reads from the front. The rows come
+out canonical, so no `DIR_ROW_FIX` entry is needed.
+
 ## 2026-09-08 (iteration 98) - Names, a crowd, and a town that remembers
 
 ### The cellar

@@ -829,6 +829,20 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Procession entry points lit and unfogged, so the people who walk in can be seen
 - [x] Playthrough; clean build
 
+## Iteration 99 - A scene that carries its own light, and a town full of strangers (2026-09-08)
+
+- [x] `Lighting.setSceneLight` widens sight and full brightness for the length of a cutscene, and gives the floor its radii back after
+- [x] The fog follows the CAMERA while a scene plays, so the ground a procession walks over is re-lit every frame instead of sitting at the explored shadow
+- [x] Warm lamps every five tiles along the whole route, not just its first stretch
+- [x] Verified: the forest liberation now plays over a fully lit clearing with the citizens clearly visible
+- [x] The four circling bodies restricted to the tavern interior (`TAVERN_FOLK`)
+- [x] Five new civilians on every city street, in the eastern quarter and in the cleared forest (`STREET_FOLK`)
+- [x] Seven bodies in all: a farmer, a porter, a robed monk, a goodwife, a maid, and a labourer and carter from the one genuine eight-direction civilian in the packs
+- [x] Women on the streets for the first time
+- [x] Two-facing source art mapped onto the engine's eight canonical rows with mirroring, needing no direction-row fix
+- [x] `Villagers` takes a `sheets` roster, so a place chooses its own people
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

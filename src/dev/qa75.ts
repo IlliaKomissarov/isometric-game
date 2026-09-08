@@ -208,7 +208,12 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
 
     // ---- a fight: click-attack the nearest foe (the hero walks, so the
     // fog and the target rules run exactly as they do for a player) --------------
-    const list = foes(g);
+    // The nearest foe the hero can actually SEE. A player cannot click a body
+    // beyond the fog, and the hero rightly refuses to walk to one - so picking by
+    // raw distance made this check fail whenever the closest spawn happened to
+    // land outside the sight radius, which is a fact about the floor, not a bug.
+    const seen = foes(g).filter((e: Any) => g.lighting.isVisible(Math.floor(e.pos.x), Math.floor(e.pos.y)));
+    const list = seen.length ? seen : foes(g);
     if (list.length) {
       let best = list[0];
       let bd = 1e9;

@@ -198,6 +198,14 @@ export type AnimName =
   | 'inn_torch'
   // THE CELLAR (it.97): the keeper's serving woman, idling at the deep end.
   | 'cellar_girl'
+  // THE TOWN'S OWN PEOPLE (it.99): five civilians who walk the districts.
+  | 'cit_farmer_walk'
+  | 'cit_porter_walk'
+  | 'cit_monk_walk'
+  | 'cit_goodwife_walk'
+  | 'cit_maid_walk'
+  | 'cit_labourer_walk'
+  | 'cit_carter_walk'
   | 'well';
 
 export interface PaintedBounds {

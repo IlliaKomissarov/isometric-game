@@ -22,17 +22,44 @@ const FOLK_HEIGHT = 56;
 const WALK_SPEED = 1.25; // tiles / s
 const CYCLES_PER_TILE = 0.5;
 /**
- * THE STREETS ARE NOT ONE MAN (it.98). Four bodies walk the town instead of one,
- * each with its own painted height, anchor and frame count - a sheet is not
- * interchangeable with another, so a walker carries its own. Every one of these is
- * already registered in `SpriteLibrary.DIR_ROW_FIX`, so they all face the right way.
- * `feet` marks a sheet whose cells end at the sole (anchor 1); the others are padded.
+ * A WALKER CARRIES ITS OWN SHEET (it.98). A sheet is not interchangeable with
+ * another - painted height, anchor, frame count and scale all differ - so each
+ * walker holds its own. Every anim named here is registered in
+ * `SpriteLibrary.DIR_ROW_FIX`, so they all face the way they walk. `feet` marks a
+ * sheet whose cells end at the sole (anchor 1); the others are padded below.
  */
-const FOLK_SHEETS: ReadonlyArray<{ anim: AnimName; feet: boolean; height: number }> = [
+export interface FolkSheet {
+  anim: AnimName;
+  feet: boolean;
+  height: number;
+}
+/**
+ * THE TAPROOM'S REGULARS (it.99). These four wander in circles, which reads as
+ * drinkers moving between tables indoors and as aimless milling out on the street -
+ * so they are kept to the inn, and the town gets bodies of its own below.
+ */
+export const TAVERN_FOLK: ReadonlyArray<FolkSheet> = [
   { anim: 'folk_walk', feet: true, height: 56 },
   { anim: 'villager_walk', feet: false, height: 58 },
   { anim: 'merchant_walk', feet: false, height: 58 },
   { anim: 'poacher_walk', feet: true, height: 58 },
+];
+/**
+ * THE TOWN'S OWN PEOPLE (it.99). Five civilians composited from the layered pack -
+ * a bearded farmer, a porter, a robed monk, a goodwife and a maid - so a street is
+ * a crowd of different people instead of the taproom's four regulars milling about
+ * outdoors. They are drawn small, so they stand a shade under the taproom's folk.
+ */
+export const STREET_FOLK: ReadonlyArray<FolkSheet> = [
+  { anim: 'cit_farmer_walk', feet: true, height: 57 },
+  { anim: 'cit_porter_walk', feet: true, height: 57 },
+  { anim: 'cit_monk_walk', feet: true, height: 58 },
+  { anim: 'cit_goodwife_walk', feet: true, height: 56 },
+  { anim: 'cit_maid_walk', feet: true, height: 56 },
+  // THE LABOURER (it.99): the one genuine eight-direction civilian in the packs -
+  // a bare-armed man in a rust tunic, and the same man in a colder blue-grey re-dye.
+  { anim: 'cit_labourer_walk', feet: true, height: 58 },
+  { anim: 'cit_carter_walk', feet: true, height: 58 },
 ];
 /** Coats, aprons and cloaks: a colour per walker, multiplied into the scene's light. */
 const FOLK_COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
@@ -63,6 +90,8 @@ export interface VillagerOptions {
   /** The keeper's colour and body (the innkeeper wears the villager's coat). */
   keeperTint?: number;
   keeperAnim?: string;
+  /** THE PEOPLE OF THIS PLACE (it.99): which bodies walk here. Defaults to the taproom's. */
+  sheets?: ReadonlyArray<FolkSheet>;
 }
 
 interface Bubble {
@@ -193,7 +222,7 @@ export class Villagers {
     this.opts = opts;
     this.keeperAnim = (opts.keeperAnim && spriteLib.hasAnim(opts.keeperAnim) ? opts.keeperAnim : KEEPER_IDLE) as AnimName;
     // Only the sheets this floor actually loaded are on the street (it.98).
-    const sheets = FOLK_SHEETS.filter((f) => spriteLib.hasAnim(f.anim));
+    const sheets = (opts.sheets ?? TAVERN_FOLK).filter((f) => spriteLib.hasAnim(f.anim));
     if (sheets.length) {
       for (let i = 0; i < count; i++) {
         const p = this.randomTile();

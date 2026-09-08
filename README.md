@@ -63,8 +63,10 @@
   burnt and barricaded, its refugees huddled at the carts until the innkeeper's errand sends you
   in after twenty looters (men, not monsters - a tally on the HUD, pips on the map, chevrons on
   the screen's edge). The last one down, the carts topple in a letterboxed scene and the people
-  walk home; the Gilded Stag pays two hundred gold, a bow and a sword, and the corner room is
-  yours - a chest, a bench, and a bed to lie on. Every villager has a word for you. The eastern
+  walk home; inside the Gilded Stag - its own floor: a bar, a hearth, long tables, patrons - the
+  keeper pays two hundred gold, a bow and a sword, and the room in the back is yours: a chest, a
+  bench, and a bed to lie on. Villagers walk the streets of every district and have a word for
+  you; small chests wait in the corners; every quest target wears a mark, on screen and off. The eastern
   road out of the Market Ward stays shut until the gatekeeper hands you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
   and the road opens for good, a hundred gold in hand, the woods a safe road with folk in the
   clearings. Trees ghost to a whisper for anything behind them. At the far end the QUARRY MINES

@@ -190,6 +190,8 @@ export class Player extends Entity {
   private readonly restFrom = { x: 0, y: 0 };
   /** Ticks spent lying (the lying-down animation, and a slow mend). */
   restTicks = 0;
+  /** Render-side: seconds into the waking (the fall played back); -1 when not waking. */
+  private wakeClock = -1;
 
   override beginTick(): void {
     super.beginTick();
@@ -851,11 +853,21 @@ export class Player extends Entity {
       const fc = fcOf(animName);
       frame = Math.min(fc - 1, Math.floor((this.actionTicks / PLAYER_DEATH_TICKS) * fc));
     } else if (this.resting) {
-      // THE INN'S BED (it.91): the death sheet's fall is the lying-down, and
-      // its last frame - the body at rest - is the sleep.
+      // THE INN'S BED (it.91, eased it.92): the death sheet's fall is the
+      // lying-down - slow, eased, over a second - and its last frame the sleep.
       animName = rig.death;
       const fc = fcOf(animName);
-      frame = Math.min(fc - 1, Math.floor((this.restTicks / 36) * fc));
+      const k = Math.min(1, this.restTicks / 60);
+      const e = 1 - (1 - k) * (1 - k) * (1 - k);
+      frame = Math.min(fc - 1, Math.floor(e * fc));
+      this.wakeClock = 0;
+    } else if (this.wakeClock >= 0 && this.wakeClock < 0.5 && this.action === 'idle' && !this.moving) {
+      // THE WAKING (it.92): the fall played back, half a second, before the idle.
+      animName = rig.death;
+      const fc = fcOf(animName);
+      this.wakeClock += 0.016;
+      frame = Math.max(0, Math.min(fc - 1, Math.floor((1 - this.wakeClock / 0.5) * fc)));
+      if (this.wakeClock >= 0.5) this.wakeClock = -1;
     } else if (this.action === 'attack') {
       const profile = this.weaponProfile;
       const total = profile.windupTicks + profile.recoverTicks;

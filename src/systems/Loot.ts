@@ -15,7 +15,7 @@ import type { Camera } from '@/engine/Camera';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
 import { RARITY_COLOR, type ItemDef } from '@/items/catalog';
-import { itemDef, rollChestItem, rollDrop, rollRareItem } from '@/items/instance';
+import { itemDef, rollChestItem, rollDrop, rollMinorItem, rollRareItem } from '@/items/instance';
 import { spriteLib } from '@/render/SpriteLibrary';
 import { itemIconTexture } from '@/ui/itemIcons';
 import { vec2 } from '@/utils/Vec2';
@@ -86,6 +86,11 @@ export class LootSystem {
   /** Guaranteed drop (chests): always yields gear, uncommon at least. */
   dropForced(x: number, y: number): void {
     this.spawnId(rollChestItem(this.rand, this.ilvl), x, y);
+  }
+
+  /** A TOWN CHEST's spoils (it.92): small things, always something. */
+  dropMinor(x: number, y: number): void {
+    this.spawnId(rollMinorItem(this.rand, this.ilvl), x, y);
   }
 
   /** Guaranteed RARE drop (boss trophies). */

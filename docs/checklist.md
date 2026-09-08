@@ -736,6 +736,18 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
 - [x] Journal table; matrix; playthrough; clean build
 
+## Iteration 92 - The Gilded Stag inside (2026-09-08)
+
+- [x] Every dialogue plain; everyday chatter in six banks
+- [x] The inn's own floor: boards, bar, hearth, tables, candles, the corner room; the door barred until cleared
+- [x] The bed: walk to the bedside, eased lying-down, motes, the waking played back
+- [x] The forest's homecoming before the road home (ProcessionScene, carts optional)
+- [x] Overhead marks over targets in sight, in the quarter and the forest
+- [x] Villagers path-find along the streets across whole districts; roofs ghost for them
+- [x] THE HILL ROAD gateway; no bare cliff cubes; heaps to their tile; the fallen on the ground
+- [x] Twelve small chests across the districts and the forest, remembered by the save
+- [x] Harness; matrix; clean build
+
 ## Iteration 91 - The Eastern Quarter (2026-09-07)
 
 - [x] The map grown east; the largest district; three shut gateways; ruins, rubble, the fallen, embers

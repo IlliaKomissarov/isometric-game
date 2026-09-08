@@ -45,6 +45,8 @@ export const KIND_GRASS = 1;
 export const KIND_DIRT = 2;
 /** Coliseum sand (it.55). */
 export const KIND_SAND = 3;
+/** THE GILDED STAG's boards (it.92). */
+export const KIND_PLANK = 4;
 
 export type TownPropKind =
   | 'house'
@@ -127,7 +129,28 @@ export type TownPropKind =
   | 'bed'
   | 'gatebar'
   | 'smithy'
-  | 'barracks';
+  | 'barracks'
+  // THE GILDED STAG INSIDE (it.92): the inn's own floor.
+  | 'inndoor'
+  | 'barkeep'
+  | 'hearth'
+  | 'inntable'
+  | 'innchair'
+  | 'candle'
+  | 'carpet'
+  | 'shelf'
+  | 'chest';
+
+/** THE GILDED STAG INSIDE (it.92): what main needs of the inn's floor. */
+export interface InnLayout {
+  keeper: { x: number; y: number };
+  door: { x: number; y: number };
+  bed: { x: number; y: number };
+  stash: { x: number; y: number };
+  forge: { x: number; y: number };
+  /** The hall the patrons stroll. */
+  hall: Room;
+}
 
 /** THE EASTERN QUARTER (it.91): how the barricade stands when the town is built. */
 export type EastState = 'sealed' | 'open' | 'cleared';
@@ -161,7 +184,7 @@ export interface EastQuarter {
  * never a blocked tile. Every placer (the town, the forest, the quarry)
  * asks this before it claims a tile.
  */
-export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers']);
+export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(['grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers', 'carpet']);
 
 export interface TownProp {
   kind: TownPropKind;
@@ -228,6 +251,10 @@ export interface TownLayout {
   districts: Array<{ name: string; x: number; y: number; w: number; h: number }>;
   /** THE EASTERN QUARTER (it.91): the town only; the forest and the quarry have none. */
   east?: EastQuarter;
+  /** THE GILDED STAG INSIDE (it.92): the inn's floor only. */
+  inn?: InnLayout;
+  /** LOOTABLE CHESTS (it.92): where the district's small chests stand (the `chest` props' tiles). */
+  chests?: Array<{ x: number; y: number }>;
 }
 
 export interface TownMap extends DungeonMap {
@@ -758,30 +785,20 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   // footprint's rim is wall; the hall inside is floor, the door is the
   // south face's middle column; the keeper's counter, the corner room's
   // bed, chest and bench stand inside.
+  // THE GILDED STAG INSIDE (it.92): the building is solid; its hall is its own
+  // floor (`scenes/Inn.ts`), entered at the door tile in the south face.
   const tavern = { x: 74, y: 46, w: 6, h: 5 };
   const door = { x: tavern.x + 2, y: tavern.y + tavern.h - 1 };
   clearFor(tavern.x, tavern.y, tavern.w, tavern.h, 1);
   block({ kind: 'tavern2', x: tavern.x, y: tavern.y, w: tavern.w, h: tavern.h });
-  for (let y = tavern.y + 1; y < tavern.y + tavern.h - 1; y++)
-    for (let x = tavern.x + 1; x < tavern.x + tavern.w - 1; x++) {
-      grid[idx(x, y)] = TILE_FLOOR;
-      tileKind[idx(x, y)] = KIND_COBBLE;
-    }
   grid[idx(door.x, door.y)] = TILE_FLOOR;
   tileKind[idx(door.x, door.y)] = KIND_COBBLE;
   grid[idx(door.x, door.y + 1)] = TILE_FLOOR;
   tileKind[idx(door.x, door.y + 1)] = KIND_DIRT;
-  houses.push({ ...tavern });
   const keeperInn = { x: tavern.x + 1, y: tavern.y + 1 };
   const bed = { x: tavern.x + 4, y: tavern.y + 1 };
   const roomStash = { x: tavern.x + 4, y: tavern.y + 3 };
   const roomForge = { x: tavern.x + 1, y: tavern.y + 3 };
-  if (eastState === 'cleared') block({ kind: 'innkeeper', x: keeperInn.x, y: keeperInn.y });
-  else grid[idx(keeperInn.x, keeperInn.y)] = TILE_BLOCKED; // The counter stands whether or not the keeper is behind it.
-  block({ kind: 'table', x: tavern.x + 2, y: tavern.y + 1, variant: 'table_a' });
-  block({ kind: 'bed', x: bed.x, y: bed.y });
-  block({ kind: 'stash', x: roomStash.x, y: roomStash.y, variant: 'room' });
-  block({ kind: 'forge', x: roomForge.x, y: roomForge.y, variant: 'room' });
   block({ kind: 'barrels_stacked', x: tavern.x + tavern.w, y: tavern.y + 3 });
   block({ kind: 'cart', x: tavern.x - 2, y: tavern.y + 4, w: 2, h: 1 });
   placeLamp('lamp', door.x + 2, door.y + 2);
@@ -845,9 +862,10 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   }
   // Blocked gateways: the north road, the river gate, the south fields.
   const eastGateways: TownLayout['gateways'] = [
-    { x: 88, y: 10, label: 'THE NORTH ROAD', note: 'The north road is choked with the fallen and their carts - not open yet.' },
-    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut; the bridge beyond it burned.' },
-    { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: 'The south fields lie fallow - the way is not open yet.' },
+    { x: 88, y: 10, label: 'THE NORTH ROAD', note: 'The north road is blocked with wrecked carts. Not open yet.' },
+    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut. The bridge beyond it burned.' },
+    { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: 'The south fields are empty. The way is not open yet.' },
+    { x: 105, y: 13, label: 'THE HILL ROAD', note: 'The hill road climbs out of the quarter. Not open yet.' },
   ];
   clearFor(86, 9, 5, 3, 0, KIND_COBBLE);
   block({ kind: 'pillar', x: 86, y: 10 });
@@ -861,7 +879,36 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   block({ kind: 'pillar', x: 86, y: 66 });
   block({ kind: 'pillar', x: 90, y: 66 });
   block({ kind: 'gateway', x: 88, y: 66 });
+  // THE HILL ROAD (it.92): the north-east lane was a dead end - a proper gateway now, and a lamp.
+  street([[104, 14], [105, 13]], KIND_DIRT, 1.0);
+  clearFor(103, 11, 5, 3, 0, KIND_COBBLE);
+  block({ kind: 'pillar', x: 103, y: 13 });
+  block({ kind: 'pillar', x: 107, y: 13 });
+  block({ kind: 'gateway', x: 105, y: 13 });
+  placeLamp('lamp', 104, 15);
+  // The north-west lane's end: a well and a bench, so it is a place and not a dead end.
+  clearFor(71, 13, 3, 3, 0, KIND_DIRT);
+  block({ kind: 'well', x: 72, y: 13, variant: 'well_b' });
+  tryBlock({ kind: 'bench', x: 70, y: 15, w: 2, h: 1, variant: 'bench_a' }, KIND_DIRT);
   gateways.push(...eastGateways);
+  // LOOTABLE CHESTS (it.92): a few small chests in every district, off the roads, in the corners folk forget.
+  const chestSpots: Array<{ x: number; y: number }> = [];
+  const chestAt = (x: number, y: number): void => {
+    if (grid[idx(x, y)] !== TILE_FLOOR || road[idx(x, y)]) return;
+    block({ kind: 'chest', x, y });
+    chestSpots.push({ x, y });
+  };
+  chestAt(12, 12); // Behind the north-west cottages.
+  chestAt(44, 42); // The portal yard's corner.
+  chestAt(17, 22); // Beside the vault.
+  chestAt(14, 66); // The training yard's back.
+  chestAt(48, 82); // The ward's south-east cottage.
+  chestAt(43, 63); // Under the park's tree.
+  chestAt(69, 24); // The east quarter: the first ruin's cellar.
+  chestAt(95, 35); // The alley.
+  chestAt(83, 62); // The south row.
+  chestAt(101, 27); // The north-east lane.
+  chestAt(75, 66); // The south-west lane's end.
   // Lights that still burn, and the looters' own fires.
   for (const [x, y] of [[68, 30], [74, 36], [80, 40], [93, 40], [88, 34], [88, 46], [82, 55], [96, 26], [100, 52], [86, 20], [90, 60], [104, 42]] as const) placeLamp('torch', x, y);
   for (const [x, y] of [[92, 42], [70, 30]] as const) {
@@ -879,7 +926,7 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
       else if (roll < 0.075 && road[i]) decal({ kind: 'slab', x, y, variant: `slab_${'abcdefgh'[Math.floor(rand() * 8)]}` });
     }
   }
-  const wander3: Room = { x: 80, y: 35, w: 15, h: 11 };
+  const wander3: Room = { x: 64, y: 8, w: 48, h: 62 }; // The whole quarter (it.92): the folk walk its streets.
   const square = { x: 87, y: 40 };
 
   // THE OLD QUARTER, DRESSED DEEPER (it.84): benches by the well, a cart on
@@ -901,6 +948,7 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
 
   /** THE GATE'S EAST FLANK (it.91): no tree may stand just past the barricade, where it would draw over the carts. */
   const gateFlank = (x: number, y: number): boolean => x > EAST_GATE_X && x <= EAST_GATE_X + 4 && Math.abs(y - gap.y) <= 3;
+  const ROCKS = ['rock_a', 'rock_b', 'rock_c', 'rock_d', 'rock_e', 'rock_f'];
   // ---- FOREST BELT: pines and dead trees on belt tiles, brush between ----
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
@@ -913,6 +961,8 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
         // Dark pines, twisted oaks and dead wood (it.57).
         const v = roll < 0.22 ? 'pine_a' : roll < 0.38 ? 'pine_b' : roll < 0.5 ? 'pine_c' : roll < 0.58 ? 'tree_a' : roll < 0.64 ? 'tree_b' : rand() < 0.5 ? 'dead_a' : 'dead_b';
         props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
+      } else if (gateFlank(x, y) && roll < 0.5) {
+        props.push({ kind: 'rock', x, y, variant: ROCKS[Math.floor(rand() * ROCKS.length)] }); // Boulders where a tree would hide the carts (it.92).
       } else {
         decal({ kind: 'grassclump', x, y });
       }
@@ -934,13 +984,15 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
           if (inside(nx, ny) && grid[idx(nx, ny)] !== TILE_WALL) nearOpen = true;
         }
       if (!nearOpen) continue;
+      // NO BARE CUBE (it.92): every cliff tile by the open ground wears a tree - a boulder on the gate's flank - and brush besides.
       const roll = rand();
-      if (roll < 0.62 && !gateFlank(x, y)) {
-        const v = roll < 0.24 ? 'pine_a' : roll < 0.42 ? 'pine_b' : roll < 0.52 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
+      if (!gateFlank(x, y)) {
+        const v = roll < 0.36 ? 'pine_a' : roll < 0.64 ? 'pine_b' : roll < 0.8 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
         props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
-      } else if (roll < 0.9) {
-        props.push({ kind: 'grassclump', x, y });
+      } else {
+        props.push({ kind: 'rock', x, y, variant: ROCKS[Math.floor(rand() * ROCKS.length)] });
       }
+      if (rand() < 0.3) props.push({ kind: 'grassclump', x, y });
     }
   }
 
@@ -1102,8 +1154,9 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
     square,
   };
 
-  const wander: Room = { x: 21, y: 16, w: 19, h: 13 };
-  const wander2: Room = { x: 23, y: 65, w: 17, h: 11 };
+  // THE STREETS (it.92): the folk range over their whole district and keep to the roads three times in four.
+  const wander: Room = { x: 6, y: 6, w: 50, h: 42 };
+  const wander2: Room = { x: 12, y: 56, w: 42, h: 32 };
   const map: TownMap = {
     width: W,
     height: H,
@@ -1162,6 +1215,7 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
     road,
     gatekeeper,
     training,
+    chests: chestSpots,
     districts: [
       { name: 'THE EASTERN QUARTER', x: EAST_X, y: 0, w: W - EAST_X, h: H },
       { name: 'THE OLD QUARTER', x: 0, y: 0, w: EAST_X, h: WARD_Y },

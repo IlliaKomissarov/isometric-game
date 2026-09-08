@@ -77,7 +77,8 @@ import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
 import { buildTownLayout, LOOTER_COUNT, type EastState, type TownLayout } from '@/town/TownMap';
-import { GateFx, ReclaimScene } from '@/town/Reclaim';
+import { GateFx, ProcessionScene } from '@/town/Reclaim';
+import { buildInnLayout } from '@/scenes/Inn';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
@@ -88,7 +89,7 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { RECLAIMED_WORDS, REFUGEE_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { RECLAIMED_WORDS, REFUGEE_WORDS, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
@@ -203,14 +204,16 @@ interface World {
   foesAtStart: number;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn';
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
 const MINES_FLOOR = 102;
+/** THE GILDED STAG INSIDE (it.92): the inn's own floor. */
+const INN_FLOOR = 103;
 const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
 const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
 /** The mode a floor number stands for (the arena is decided by the caller). */
-const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : 'normal');
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : 'normal');
 
 /** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
 interface MinesState {
@@ -364,7 +367,7 @@ async function boot(): Promise<void> {
     if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
     if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
-    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand'].forEach((name, i) => {
+    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'town_plank'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
@@ -1529,6 +1532,8 @@ async function boot(): Promise<void> {
     let portalReturn: { floor: number; arena: boolean; x: number; y: number } | null = null;
     let portalArmed = false;
     let pendingInteract: number | null = null;
+    /** THE BEDSIDE (it.92): the bed the hero is walking to, to lie on when there. */
+    let pendingRest: number | null = null;
     const makeInventory = (p: Player, slot: number): InventorySystem => {
       const inv = new InventorySystem(p, {
         heal: (fraction) => {
@@ -1654,7 +1659,7 @@ async function boot(): Promise<void> {
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
-      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : null;
+      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : null;
       if (depthLabel) depthLabel.textContent = place ?? (floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`);
       setZoneLabel(place ?? (floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`));
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
@@ -1701,6 +1706,8 @@ async function boot(): Promise<void> {
     // SYNCHRONOUS world construction (it.37): no await between the old
     // floor's teardown and the new floor's first tick — the freeze was the
     // loop touching a destroyed world during the old async gap.
+    /** LOOTABLE CHESTS (it.92): a district's chest the save says was opened. */
+    const townChestOpened = (floorNum: number, x: number, y: number): boolean => (quests.chests ?? '').split(';').includes(`${floorNum}:${x},${y}`);
     /** THE EASTERN QUARTER (it.91): how the town is built from the errand's state. */
     const eastStateOf = (): EastState => (quests.east === 'done' || quests.east === 'cleared' ? 'cleared' : quests.east === 'open' ? 'open' : 'sealed');
     const LOOTER_LEVEL = 5;
@@ -1718,7 +1725,8 @@ async function boot(): Promise<void> {
       const isColiseum = mode === 'coliseum';
       const isForest = mode === 'forest';
       const isMines = mode === 'mines';
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isInn = mode === 'inn';
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
@@ -1727,8 +1735,9 @@ async function boot(): Promise<void> {
       const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
-      const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : null;
-      const memory: FloorMemory | undefined = isHub || isColiseum || isForest ? undefined : floors[memKey(floorNum, isArena)];
+      const inn = isInn ? buildInnLayout(seed) : null; // THE GILDED STAG INSIDE (it.92).
+      const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : inn ? inn.layout : null;
+      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
@@ -1738,8 +1747,8 @@ async function boot(): Promise<void> {
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub || isColiseum || isForest) {
-        hearths = []; // The town, the coliseum and the forest light themselves.
+      if (isHub || isColiseum || isForest || isInn) {
+        hearths = []; // The town, the coliseum, the forest and the inn light themselves.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
@@ -1787,7 +1796,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : undefined);
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : undefined); // The inn is lit end to end (it.92).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -1795,6 +1804,8 @@ async function boot(): Promise<void> {
         ? 'stone'
         : isHub || isColiseum || isForest
           ? 'town'
+        : isInn
+          ? 'inn'
         : isMines || isMinesArena
           ? 'stone'
         : floorNum <= 2
@@ -1812,6 +1823,8 @@ async function boot(): Promise<void> {
         audio.setMusic('boss', 5); // The trial fights to the warden's drums (it.53).
       } else if (isForest) {
         audio.setMusic('forest', floorNum);
+      } else if (isInn) {
+        audio.setMusic('town'); // The inn keeps the town's tune (it.92).
       } else if (isMines) {
         audio.setMusic('mines', floorNum);
       } else {
@@ -1824,7 +1837,7 @@ async function boot(): Promise<void> {
       const ambience = new Ambience(viewport);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
-      const goldPiles = isHub || isColiseum || isForest ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      const goldPiles = isHub || isColiseum || isForest || isInn ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -1888,7 +1901,7 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: isForest ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
+            ? { at: isForest || isInn ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
             : isMines
               ? { hidden: true, at: { x: 1, y: 1 } } // The quarry has no stair (a wall tile no one can touch): the way home is the teleporter after the hall (it.85).
             : isArena
@@ -1902,7 +1915,9 @@ async function boot(): Promise<void> {
       const loot = new LootSystem(viewport, seed);
       loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub && !isColiseum && !isForest) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      if (!isArena && !isHub && !isColiseum && !isForest && !isInn) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      // LOOTABLE CHESTS (it.92): the districts' small chests, on the layout's spots, the opened ones remembered by the save.
+      if (layout?.chests) for (const c of layout.chests) if (!townChestOpened(floorNum, c.x, c.y)) chests.spawnAt(c.x, c.y, false, true);
       // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
       if (minesPlan) {
         for (const k of minesPlan.keys) {
@@ -2097,7 +2112,7 @@ async function boot(): Promise<void> {
       let boss: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || isColiseum || arenaAlreadyCleared || (isForest && forestSafe)) {
+      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe)) {
         // No enemies in town; a cleared arena stays empty with its stair open; a cleared forest is a safe road (it.87).
       } else if (isArena) {
         const room = dungeon.rooms[0];
@@ -2155,19 +2170,23 @@ async function boot(): Promise<void> {
       if (layout) {
         const dressing = placeTownProps(layout, viewport, lighting, ambience);
         // AMBIENT CHATTER (it.91): every peaceful head in town speaks a word now and then.
+        // THE STREETS (it.92): the folk walk the district's roads, path-found, and keep to them three times in four.
+        const streets = { roads: layout.road, mapWidth: layout.map.width };
         const villagers = isForest
-          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null) // A cleared forest keeps folk and sentries (it.87).
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS });
+          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined }) // A cleared forest keeps folk and sentries (it.87).
+          : isInn
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
+            : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
-        const villagers2 = isForest
+        const villagers2 = isForest || isInn
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS });
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
         // them - or, the quarter reclaimed, ten of the folk on the burnt square and the keeper behind her counter.
         const east = layout.east;
         const villagers3 = isHub && east
           ? east.state === 'cleared'
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 10, null, [], null, {}, east.innkeeper, { chatter: RECLAIMED_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 12, null, [], null, {}, null, { chatter: RECLAIMED_WORDS, ...streets }) // The keeper is behind her own bar now (it.92).
             : new Villagers(viewport.objectLayer, scene.isWalkable, east.refuge, 4, null, [], null, {}, east.innkeeper, { chatter: REFUGEE_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
           : null;
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
@@ -2291,7 +2310,7 @@ async function boot(): Promise<void> {
             const p = camera.worldToCanvas(it.x, it.y, pickScratch);
             if (Math.abs(canvasX - p.x) <= 44 * zoom && canvasY >= p.y - 70 * zoom && canvasY <= p.y + 14 * zoom) return it.id;
           }
-          return null;
+          return chests.pickAtCanvas(canvasX, canvasY, camera); // A TOWN CHEST (it.92).
         }
         return chests.pickAtCanvas(canvasX, canvasY, camera);
       };
@@ -2518,6 +2537,12 @@ async function boot(): Promise<void> {
       }
       const old = world;
       world = next;
+      // A PROCESSION (it.92) belongs to the floor it played on: its walkers die with that floor's layer.
+      if (reclaim) {
+        reclaim.destroy();
+        reclaim = null;
+        cineFocus = null;
+      }
       for (const sk of skillSystems) sk?.clearZones(); // Firewalls/traps stay in the old world's grave.
       arenaTeleporterIn = 0;
       bossLoot = null;
@@ -3335,6 +3360,12 @@ async function boot(): Promise<void> {
 
     on('chest:reached', ({ chestId }) => world.chests.open(chestId));
     on('chest:opened', ({ x, y }) => {
+      // A TOWN CHEST (it.92) stays opened: the save remembers it by floor and tile.
+      if (world.town) {
+        const key = `${floor}:${Math.floor(x)},${Math.floor(y)}`;
+        const had = (quests.chests ?? '').split(';').filter(Boolean);
+        if (!had.includes(key)) quests.chests = [...had, key].join(';');
+      }
       interactHint?.classList.remove('show', 'dim'); // The prompt dies with the lock.
       audio.sfx('chest');
       world.ambience.playGlint(x, y);
@@ -3773,9 +3804,9 @@ async function boot(): Promise<void> {
       if (state === 'done') {
         const v = await dialogue.open({
           ...who,
-          lines: ['Road\'s open, delver. My people walk the clearings now. The quarry is at the far end of the woods.'],
+          lines: ['The road\'s open. Our people are back in the clearings.', 'The quarry is at the far end of the woods. Be careful down there.'],
           choices: [
-            { label: 'WALK THE ROAD EAST', sub: 'the forest, and the quarry beyond', value: 'go' },
+            { label: 'GO EAST', sub: 'through the forest to the quarry', value: 'go' },
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
@@ -3785,7 +3816,7 @@ async function boot(): Promise<void> {
       if (state === 'active') {
         const v = await dialogue.open({
           ...who,
-          lines: ['Still beasts out there. Finish the job and come back - the gold (100) is waiting.'],
+          lines: ['There are still beasts out there. Finish the job and the gold (100) is yours.'],
           choices: [
             { label: 'BACK TO THE FOREST', value: 'go' },
             { label: 'NOT NOW', value: 'stay' },
@@ -3797,17 +3828,17 @@ async function boot(): Promise<void> {
       const v = await dialogue.open({
         ...who,
         lines: [
-          'Road\'s closed. Wolves in the woods, poachers with them, and something bigger than either.',
-          'Clear the forest and I open the road for good. The guild pays a hundred gold (100) when it\'s done.',
+          'The road\'s closed. There are wolves in the woods, and poachers with them. I can\'t spare anyone.',
+          'Clear the forest and I\'ll open the road. The guild pays a hundred gold (100) for it.',
         ],
         choices: [
-          { label: 'I\'LL CLEAR THE FOREST', sub: 'take the job and walk east now', value: 'accept' },
+          { label: 'I\'LL DO IT', sub: 'take the job and go now', value: 'accept' },
           { label: 'NOT NOW', value: 'stay' },
         ],
       });
       if (v === 'accept') {
         quests.forest = 'active';
-        tutorial.say('Job taken: clear the forest, and the road opens.');
+        tutorial.say('Job taken: clear the forest and the road opens.');
         goForest();
       }
     };
@@ -3847,8 +3878,8 @@ async function boot(): Promise<void> {
     const applyEastStep = (step: string): void => {
       const t = world.town;
       const east = t?.layout.east;
-      if (!t || !east || floor !== 0) return;
-      if (step === 'accept' && (quests.east ?? 'new') === 'new') {
+      if (!t) return;
+      if (step === 'accept' && east && floor === 0 && (quests.east ?? 'new') === 'new') {
         quests.east = 'open';
         quests.looters = '0';
         // The militia drags the gap's cart aside: the tile is road, the sprite slides to the verge.
@@ -3864,7 +3895,7 @@ async function boot(): Promise<void> {
         world.dmgText.show(east.gap.x + 0.5, east.gap.y - 0.6, 'THE CART IS PULLED ASIDE · GO EAST', 'crit');
         tutorial.say(`Job taken: clear the Eastern Quarter of its ${LOOTER_COUNT} looters.`);
         saveNow();
-      } else if (step === 'reward' && quests.east === 'cleared') {
+      } else if (step === 'reward' && quests.east === 'cleared' && floor === INN_FLOOR) {
         quests.east = 'done';
         // The purse and the steel under the floorboards: two hundred gold, a bow and a sword to every hero of the party.
         for (const seat of liveSeats()) {
@@ -3892,19 +3923,19 @@ async function boot(): Promise<void> {
           speaker: 'A REFUGEE',
           role: 'of the eastern quarter',
           portrait: refugeePortrait(),
-          lines: ['They came over the east wall at night. By morning the quarter was fire and the streets were theirs.', `Looters - men, not beasts. Twenty of them, the militia counted. They hold our homes still.`],
+          lines: ['They came over the east wall at night. By morning the quarter was burning.', 'Looters. Twenty of them, the militia says. They\'re still in there, in our houses.'],
           choices: [
-            { label: 'THE INNKEEPER', sub: 'she has an errand', value: 'next' },
+            { label: 'TALK TO THE INNKEEPER', sub: 'she has work for you', value: 'next' },
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
         if (first !== 'next') return;
         const v = await dialogue.open({
           ...who,
-          lines: ['My inn stands in there with looters drinking my cellar dry. Clear the quarter - all twenty - and these people go home.', 'Two hundred gold (200) when it is done, and a bow and a sword from under my floorboards. The militia will pull a cart aside for you.'],
+          lines: ['That\'s my inn in there, and they\'re drinking my cellar dry. Clear the quarter - all twenty - and these people can go home.', 'Two hundred gold (200) when it\'s done, and a bow and a sword I\'ve had put away. The militia will move a cart for you.'],
           choices: [
-            { label: 'TAKE THE ERRAND', sub: 'the cart is pulled aside', value: 'go' },
-            { label: 'NOT YET', value: 'stay' },
+            { label: 'I\'LL DO IT', sub: 'the militia moves a cart aside', value: 'go' },
+            { label: 'NOT NOW', value: 'stay' },
           ],
         });
         if (v === 'go') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'accept' });
@@ -3913,34 +3944,46 @@ async function boot(): Promise<void> {
       if (st === 'open') {
         await dialogue.open({
           ...who,
-          lines: [`Still looters in the quarter - ${lootersAlive()} left by the militia's count. Mind the bowmen; they run when you close.`],
-          choices: [{ label: 'BACK TO IT', value: 'ok' }],
+          lines: [`Still looters in there - ${lootersAlive()} left, the militia says. Watch the ones with bows; they run when you get close.`],
+          choices: [{ label: 'UNDERSTOOD', value: 'ok' }],
         });
         return;
       }
       if (st === 'cleared') {
         const v = await dialogue.open({
           ...who,
-          lines: ['You did it. The streets are ours again, and the Stag pours tonight.', 'Two hundred gold (200), the bow and the sword - yours. And the corner room: the bed, the chest, the bench. Yours too, for as long as you like.'],
-          choices: [{ label: 'TAKE THE REWARD', sub: 'gold, bow, sword - and the room', value: 'reward' }],
+          lines: ['You did it. The streets are ours again.', 'Two hundred gold (200), the bow and the sword - they\'re yours. And the room in the back is yours as long as you want it: bed, chest, bench.'],
+          choices: [{ label: 'THANK YOU', sub: 'take the gold, the bow, the sword and the room', value: 'reward' }],
         });
         if (v === 'reward') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'reward' });
         return;
       }
       await dialogue.open({
         ...who,
-        lines: ['Rest whenever you like - the corner room is yours. The quarter breathes again because of you.'],
+        lines: ['Rest whenever you like. The room\'s yours.'],
         choices: [{ label: 'THANKS', value: 'ok' }],
       });
     };
     /** The last looter falls: the letterboxed reclaiming, then the town rebuilt with the carts gone and the folk home. */
-    let reclaim: ReclaimScene | null = null;
+    let reclaim: ProcessionScene | null = null;
+    const cineFocusHooks = {
+      focus: (x: number, y: number): void => {
+        if (!cineFocus) {
+          cineCur.x = cameraFocus.x;
+          cineCur.y = cameraFocus.y;
+        }
+        cineFocus = { x, y };
+      },
+      release: (): void => {
+        cineFocus = null;
+      },
+    };
     const startReclaim = (): void => {
       const t = world.town;
       const east = t?.layout.east;
       if (!t || !east || reclaim) return;
       audio.sfx('questDone');
-      reclaim = new ReclaimScene({
+      reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
         ambience: world.ambience,
         fx: gateFx,
@@ -3951,19 +3994,11 @@ async function boot(): Promise<void> {
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
           minimap.markDirty();
         },
+        at: east.gap,
         from: east.approach,
         route: [east.gap, east.inside, { x: 72, y: 34 }, { x: 80, y: 38 }, { x: 84, y: 37 }],
-        isWalkable: world.scene.isWalkable,
-        focus: (x, y) => {
-          if (!cineFocus) {
-            cineCur.x = cameraFocus.x;
-            cineCur.y = cameraFocus.y;
-          }
-          cineFocus = { x, y };
-        },
-        release: () => {
-          cineFocus = null;
-        },
+        titles: [['THE EASTERN QUARTER', 'the barricade comes down'], ['THE PEOPLE RETURN', 'twenty looters fallen · the quarter reclaimed']],
+        ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
           reclaim?.destroy();
@@ -3976,7 +4011,7 @@ async function boot(): Promise<void> {
             placeParty(at.x, at.y, world.scene.isWalkable);
             world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
             minimap.markDirty();
-            tutorial.say('The quarter is yours. The innkeeper waits at THE GILDED STAG with your pay.');
+            tutorial.say('The quarter is yours. The innkeeper is back at the Gilded Stag with your pay.');
             saveNow();
           }, 'the quarter reclaimed');
         },
@@ -3997,6 +4032,28 @@ async function boot(): Promise<void> {
     /** Ticks left before the cleared forest sends the party home. */
     let forestReturnTicks = -1;
     /** The last beast falls: a moment, then the way home, then the gatekeeper's thanks (it.87). */
+    /** THE FOREST'S HOMECOMING (it.92): the last beast down, the folk walk in from the town road through the clearings before the way home. */
+    const startForestScene = (): void => {
+      if (reclaim) return;
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: 6, y: 20 },
+        from: { x: 3, y: 20 },
+        route: [{ x: 8, y: 20 }, { x: 14, y: 17 }, { x: 20, y: 21 }, { x: 26, y: 24 }, { x: 28, y: 22 }],
+        titles: [['THE DARK FOREST', 'the last beast falls · the road is open'], ['THE PEOPLE RETURN', 'the clearings are theirs again']],
+        walkers: 7,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          forestReturnTicks = 1; // The next tick sends the party home.
+        },
+      });
+    };
     const tickForestQuest = (): void => {
       if (floor !== FOREST_FLOOR || quests.forest !== 'active' || transitioning) return;
       if (forestReturnTicks < 0) {
@@ -4005,12 +4062,13 @@ async function boot(): Promise<void> {
           if (e.hp > 0 && e.action !== 'dead') alive++;
         });
         if (alive > 0) return;
-        forestReturnTicks = 110;
-        world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE FOREST IS QUIET · THE GATEKEEPER WAITS', 'crit');
+        forestReturnTicks = 0; // Held while the homecoming plays; its end sets the clock to one.
+        world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE FOREST IS QUIET', 'crit');
         audio.sfx('questDone');
-        audio.sfx('depart'); // Footsteps down the road home (it.89).
+        startForestScene();
         return;
       }
+      if (forestReturnTicks === 0) return; // The homecoming is on.
       if (--forestReturnTicks > 0) return;
       forestReturnTicks = -1;
       quests.forest = 'done';
@@ -4032,12 +4090,25 @@ async function boot(): Promise<void> {
           speaker: 'THE GATEKEEPER',
           role: 'sentry of the eastern road',
           portrait: keeperPortrait(),
-          lines: ['All of them? Then the road\'s open. Your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever\'s down there isn\'t wolves.'],
-          choices: [{ label: 'WELL MET', value: 'ok' }],
+          lines: ['All of them? Good work. Here\'s your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever is down there, it isn\'t wolves.'],
+          choices: [{ label: 'THANKS', value: 'ok' }],
         });
       }, 'back to the gate');
     };
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
+    /** THE GILDED STAG (it.92): through the door into the inn's own floor, and back out to its step. */
+    const goInn = (): void => goPlace(INN_FLOOR, 'into the Gilded Stag');
+    const leaveInn = (): void =>
+      withFade(async () => {
+        await preloadFloor(0, 'hub');
+        if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+        enterTown(false);
+        const door = world.town?.layout.east?.door;
+        if (door) placeParty(door.x + 0.5, door.y + 1.5, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        updateOrb();
+      }, 'out to the street');
 
     // ---- PARTY HUD + WAITING VEIL (it.59) --------------------------------
     const partyHud = document.createElement('div');
@@ -4129,6 +4200,7 @@ async function boot(): Promise<void> {
     let cineBlend = false;
     const cineCur = vec2();
     const gateFx = new GateFx(() => world.ambience);
+    let restGlint = 0;
     /**
      * TARGET POINTERS (it.91): chevrons on the screen's edge toward the
      * nearest three quest targets off it - the quarter's looters, the
@@ -4145,10 +4217,21 @@ async function boot(): Promise<void> {
     document.body.appendChild(foePointers);
     subs.push(() => foePointers.remove());
     const ptrScratch = vec2();
+    /** OVERHEAD MARKS (it.92): a bobbing red chevron over every quest target on the screen; a pool of twenty-four. */
+    const foeOver = document.createElement('div');
+    foeOver.id = 'foe-over';
+    for (let i = 0; i < 24; i++) {
+      const p = document.createElement('i');
+      foeOver.appendChild(p);
+    }
+    document.body.appendChild(foeOver);
+    subs.push(() => foeOver.remove());
     const updateFoePointers = (targets: Array<{ x: number; y: number }> | null): void => {
       const els = foePointers.children;
+      const overs = foeOver.children;
       if (!targets || !targets.length || reclaim) {
         for (let i = 0; i < els.length; i++) (els[i] as HTMLElement).classList.remove('show');
+        for (let i = 0; i < overs.length; i++) (overs[i] as HTMLElement).classList.remove('show');
         return;
       }
       const W = screenLayout.state.w;
@@ -4159,14 +4242,23 @@ async function boot(): Promise<void> {
         .map((t) => ({ t, d: Math.hypot(t.x - player.pos.x, t.y - player.pos.y) }))
         .sort((a, b) => a.d - b.d);
       let shown = 0;
+      let over = 0;
       const placed: Array<{ x: number; y: number }> = [];
       for (const { t, d } of sorted) {
-        if (shown >= els.length) break;
         const c = world.camera.worldToCanvas(t.x, t.y, ptrScratch);
         const px = rect.left + c.x;
         const py = rect.top + c.y;
         const inside = px > 40 && px < W - 40 && py > 40 && py < H - 40;
-        if (inside) continue; // On the screen: the body itself is the mark.
+        if (inside) {
+          // On the screen: a chevron over the head.
+          if (over < overs.length && world.lighting.isVisible(Math.floor(t.x), Math.floor(t.y))) {
+            const el = overs[over++] as HTMLElement;
+            el.style.transform = `translate(${px.toFixed(1)}px, ${(py - 78 * world.camera.currentZoom).toFixed(1)}px)`;
+            el.classList.add('show');
+          }
+          continue;
+        }
+        if (shown >= els.length) continue;
         const cx = W / 2;
         const cy = H / 2;
         const dx = px - cx;
@@ -4186,6 +4278,7 @@ async function boot(): Promise<void> {
         el.classList.add('show');
       }
       for (let i = shown; i < els.length; i++) (els[i] as HTMLElement).classList.remove('show');
+      for (let i = over; i < overs.length; i++) (overs[i] as HTMLElement).classList.remove('show');
     };
     const pickRingScratch = vec2();
     let lastRenderTime = performance.now();
@@ -4549,7 +4642,7 @@ async function boot(): Promise<void> {
     function frameRender(alpha: number): void {
       {
         const now = performance.now();
-        const frameDt = Math.min((now - lastRenderTime) / 1000, 0.1);
+        const frameDt = Math.max(0, Math.min((now - lastRenderTime) / 1000, 0.1)); // A clock that steps back (a stubbed one, a resumed tab) never runs a frame backwards (it.92).
         lastRenderTime = now;
         const timeSec = now / 1000;
 
@@ -4666,8 +4759,11 @@ async function boot(): Promise<void> {
 
         // Proximity prompt: an "E — OPEN" chip floats over a nearby chest —
         // or, in town, over the stall / stash / gate / portal (it.39).
-        const nearChest = world.town ? null : world.chests.findNearestUnopened(player.pos.x, player.pos.y, 2.2);
-        const townPrompt = world.town ? nearestTownPrompt() : null;
+        let nearChest = world.chests.findNearestUnopened(player.pos.x, player.pos.y, 2.2);
+        let townPrompt = world.town ? nearestTownPrompt() : null;
+        // A TOWN CHEST (it.92): whichever is nearer speaks - the chest or the stall.
+        if (nearChest && townPrompt && Math.hypot(nearChest.x - player.pos.x, nearChest.y - player.pos.y) < Math.hypot(townPrompt.x - player.pos.x, townPrompt.y - player.pos.y)) townPrompt = null;
+        else if (nearChest && townPrompt) nearChest = null;
         world.town?.setPromptAt(townPrompt ? townPrompt.x : null, townPrompt?.y);
         if (interactHint && townPrompt) {
           const p = world.camera.worldToCanvas(townPrompt.x, townPrompt.y, pickRingScratch);
@@ -4751,6 +4847,14 @@ async function boot(): Promise<void> {
           t.villagers3?.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
           gateFx.update(frameDt); // THE BARRICADE (it.91): a cart aside, or every cart down.
           reclaim?.update(frameDt);
+          // THE SLEEPER (it.92): a few pale motes rise from the bed while the hero rests.
+          if (player.resting) {
+            restGlint += frameDt;
+            if (restGlint > 1.3) {
+              restGlint = 0;
+              world.ambience.burst(player.pos.x + 0.2, player.pos.y - 0.6, 0xdce8ff, 3, { lowEnergy: true });
+            }
+          }
         }
         world.loot.updateBeacons((x, y) => world.lighting.isVisible(x, y), timeSec); // THE KEY BEACONS (it.87).
         // ENEMIES REMAINING (it.88): the forest's tally under the plate. LOOTERS REMAINING (it.91): the quarter's.
@@ -4811,6 +4915,15 @@ async function boot(): Promise<void> {
             const es = worldToScreen(e.pos.x, e.pos.y, vec2());
             bodies.push({ x: es.x, y: es.y, depth: (e.pos.x + e.pos.y) * 16 });
           });
+          // EVERY HEAD IN TOWN (it.92): a villager behind a roof or a trunk ghosts it too - no building draws over a walker.
+          for (const vs of [t.villagers, t.villagers2, t.villagers3]) {
+            if (!vs) continue;
+            for (const v of vs.positions()) {
+              if (!world.lighting.isVisible(Math.floor(v.x), Math.floor(v.y))) continue;
+              const ps = worldToScreen(v.x, v.y, vec2());
+              bodies.push({ x: ps.x, y: ps.y, depth: (v.x + v.y) * 16 });
+            }
+          }
           for (const o of t.occluders) {
             const spr = o.sprite;
             const w = spr.width;
@@ -5010,10 +5123,10 @@ async function boot(): Promise<void> {
       if (tutor.isRunning) return;
       const v = await dialogue.open({
         speaker: 'THE TRAINING GROUND',
-        role: 'three dummies and a sign',
-        lines: ['A yard to learn the crypt\'s ways in: walking, striking, skills, draughts, the pack, the forge, the book. Two minutes, no one watching.'],
+        role: 'a sign by the dummies',
+        lines: ['A yard to practise in: moving, fighting, skills, potions, the pack, the forge. It takes a couple of minutes.'],
         choices: [
-          { label: 'BEGIN THE TRAINING', sub: 'the yard walks you through it', value: 'go' },
+          { label: 'START TRAINING', sub: 'the yard walks you through it', value: 'go' },
           { label: 'NOT NOW', value: 'stay' },
         ],
       });
@@ -5058,7 +5171,30 @@ async function boot(): Promise<void> {
         else void innkeeperTalk();
         return;
       }
+      if (it.kind === 'inn') {
+        // THE GILDED STAG'S DOOR (it.92): barred while the looters hold the quarter; the inn's own floor after.
+        if (quests.east !== 'cleared' && quests.east !== 'done') {
+          tutorial.say('The door is barred from inside. You can hear them in there.');
+          return;
+        }
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else goInn();
+        return;
+      }
+      if (it.kind === 'inndoor') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else leaveInn();
+        return;
+      }
       if (it.kind === 'bed') {
+        // Walk to the bedside first (it.92): the lying-down starts from beside the bed, not from across the room.
+        const d = Math.hypot(player.pos.x - it.x, player.pos.y - it.y);
+        if (d > 1.45 && !player.resting) {
+          pendingRest = it.id;
+          walkToInteractable(it, localSlot, [it.tiles[0]]); // Beside the bed itself, not its footboard.
+          return;
+        }
+        pendingRest = null;
         inputQueue.enqueue({ type: 'REST', playerId: localSlot, x: it.x, y: it.y });
         return;
       }
@@ -5133,22 +5269,7 @@ async function boot(): Promise<void> {
           const it = t.interactables.find((i) => i.id === cmd.chestId);
           if (!it) continue;
           if (isLocal) pendingInteract = it.id;
-          // Walk to the nearest walkable tile beside the footprint.
-          let goal: { x: number; y: number } | null = null;
-          let goalD = Infinity;
-          for (const tile of it.tiles) {
-            for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-              const gx = tile.x + ox;
-              const gy = tile.y + oy;
-              if (!world.scene.isWalkable(gx, gy)) continue;
-              const d = Math.hypot(hero.pos.x - (gx + 0.5), hero.pos.y - (gy + 0.5));
-              if (d < goalD) {
-                goalD = d;
-                goal = { x: gx, y: gy };
-              }
-            }
-          }
-          if (goal) world.movements[cmd.playerId]?.applyCommands([{ type: 'MOVE_TO', playerId: cmd.playerId, gx: goal.x, gy: goal.y }]);
+          walkToInteractable(it, cmd.playerId);
         }
       }
       if (pendingInteract !== null) {
@@ -5159,6 +5280,34 @@ async function boot(): Promise<void> {
           openInteractable(it);
         }
       }
+      // THE BEDSIDE (it.92): the walk to the bed ends in the lying-down.
+      if (pendingRest !== null) {
+        const it = t.interactables.find((i) => i.id === pendingRest);
+        if (!it) pendingRest = null;
+        else if (Math.hypot(player.pos.x - it.x, player.pos.y - it.y) <= 1.45) {
+          pendingRest = null;
+          inputQueue.enqueue({ type: 'REST', playerId: localSlot, x: it.x, y: it.y });
+        }
+      }
+    }
+    /** Walk a hero to the nearest open tile beside an interactable's footprint (it.92: shared by clicks and the bed). */
+    function walkToInteractable(it: Interactable, playerId = localSlot, tiles: ReadonlyArray<{ x: number; y: number }> = it.tiles): void {
+      const hero = party[playerId]?.player ?? player;
+      let goal: { x: number; y: number } | null = null;
+      let goalD = Infinity;
+      for (const tile of tiles) {
+        for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const gx = tile.x + ox;
+          const gy = tile.y + oy;
+          if (!world.scene.isWalkable(gx, gy)) continue;
+          const d = Math.hypot(hero.pos.x - (gx + 0.5), hero.pos.y - (gy + 0.5));
+          if (d < goalD) {
+            goalD = d;
+            goal = { x: gx, y: gy };
+          }
+        }
+      }
+      if (goal) world.movements[playerId]?.applyCommands([{ type: 'MOVE_TO', playerId, gx: goal.x, gy: goal.y }]);
     }
     /** The nearest town prompt within reach: stall / stash / gate / portal. */
     const nearestTownPrompt = (): { x: number; y: number; html: string; lift: number } | null => {
@@ -5171,7 +5320,7 @@ async function boot(): Promise<void> {
         if (d < bestD) {
           bestD = d;
           const label = it.kind === 'bed' && player.resting ? 'RISE' : it.label.replace('E · ', '');
-          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${label}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : it.kind === 'innkeeper' ? 74 : it.kind === 'bed' ? 44 : 54 };
+          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${label}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : it.kind === 'innkeeper' ? 74 : it.kind === 'bed' ? 44 : it.kind === 'inn' ? 120 : 54 };
         }
       }
       const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
@@ -5420,7 +5569,7 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = target === FOREST_FLOOR || target === MINES_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
         const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         if (!world.town) captureFloor();
@@ -5437,7 +5586,7 @@ async function boot(): Promise<void> {
       };
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, INN_FLOOR, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -5542,6 +5691,8 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
   if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
+  // THE GILDED STAG INSIDE (it.92): the folk, the keeper's coat, the hearth's flame.
+  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'campfire', 'torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
     const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);

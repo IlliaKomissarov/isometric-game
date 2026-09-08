@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-07T20:09:26.339945Z",
+ "generated": "2026-09-08T10:29:35.221376+00:00",
  "anims": {
   "knight_idle": {
    "file": "knight_idle.png",
@@ -5416,6 +5416,120 @@
    "file": "single_bed.png",
    "w": 100,
    "h": 76,
+   "nearest": false
+  },
+  "inn_table_a": {
+   "file": "single_inn_table_a.png",
+   "w": 88,
+   "h": 65,
+   "nearest": false
+  },
+  "inn_table_b": {
+   "file": "single_inn_table_b.png",
+   "w": 88,
+   "h": 65,
+   "nearest": false
+  },
+  "inn_table_c": {
+   "file": "single_inn_table_c.png",
+   "w": 88,
+   "h": 39,
+   "nearest": false
+  },
+  "inn_table_d": {
+   "file": "single_inn_table_d.png",
+   "w": 88,
+   "h": 76,
+   "nearest": false
+  },
+  "inn_chair": {
+   "file": "single_inn_chair.png",
+   "w": 25,
+   "h": 34,
+   "nearest": false
+  },
+  "inn_candle": {
+   "file": "single_inn_candle.png",
+   "w": 26,
+   "h": 49,
+   "nearest": false
+  },
+  "inn_candle2": {
+   "file": "single_inn_candle2.png",
+   "w": 42,
+   "h": 49,
+   "nearest": false
+  },
+  "inn_shelf": {
+   "file": "single_inn_shelf.png",
+   "w": 102,
+   "h": 86,
+   "nearest": false
+  },
+  "inn_shelf_b": {
+   "file": "single_inn_shelf_b.png",
+   "w": 80,
+   "h": 86,
+   "nearest": false
+  },
+  "inn_case": {
+   "file": "single_inn_case.png",
+   "w": 92,
+   "h": 57,
+   "nearest": false
+  },
+  "inn_stand": {
+   "file": "single_inn_stand.png",
+   "w": 32,
+   "h": 38,
+   "nearest": false
+  },
+  "inn_carpet": {
+   "file": "single_inn_carpet.png",
+   "w": 102,
+   "h": 38,
+   "nearest": false
+  },
+  "inn_carpet_s": {
+   "file": "single_inn_carpet_s.png",
+   "w": 90,
+   "h": 47,
+   "nearest": false
+  },
+  "inn_carpet_e": {
+   "file": "single_inn_carpet_e.png",
+   "w": 51,
+   "h": 37,
+   "nearest": false
+  },
+  "town_plank_0": {
+   "file": "single_town_plank_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_plank_1": {
+   "file": "single_town_plank_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_plank_2": {
+   "file": "single_town_plank_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_plank_3": {
+   "file": "single_town_plank_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "town_plank": {
+   "file": "single_town_plank.png",
+   "w": 64,
+   "h": 32,
    "nearest": false
   }
  }

@@ -22,7 +22,7 @@ import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { TILE_BLOCKED, TILE_DOOR, TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
 
-export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town';
+export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town' | 'inn';
 
 const THEME_SUFFIX: Record<FloorTheme, string> = {
   stone: '',
@@ -30,6 +30,7 @@ const THEME_SUFFIX: Record<FloorTheme, string> = {
   frost: '_frost',
   ember: '_ember',
   town: '',
+  inn: '', // THE GILDED STAG (it.92): the crypt's stone walls, the town's painted floors (boards).
 };
 
 export class SceneManager {
@@ -99,7 +100,7 @@ export class SceneManager {
     const kind = kinds ? kinds[gy * this.map.width + gx] : 0;
     const townVariant = `floor_town_${kind}_${(gx * 5 + gy * 11) % 4}`;
     const key =
-      this.theme === 'town' && kinds
+      (this.theme === 'town' || this.theme === 'inn') && kinds
         ? assets.has(townVariant)
           ? townVariant
           : `floor_town_${kind}`
@@ -115,6 +116,7 @@ export class SceneManager {
     const sprite = new Sprite(assets.get(`wall${this.themeSuffix}`));
     // TOWN (it.40): the ring wall reads as mossy rock cliffs behind the tree line.
     if (this.theme === 'town') sprite.tint = 0x56614f; // Grim (it.57): damp, mossy, deep in shadow.
+    if (this.theme === 'inn') sprite.tint = 0xa89078; // THE GILDED STAG (it.92): warm plaster over stone.
     const s = worldToScreen(gx, gy, this.scratch);
     // Wall texture is TILE_H + WALL_Z tall; its base diamond must align with
     // the floor grid, so the sprite is raised by WALL_Z.

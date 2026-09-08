@@ -279,6 +279,14 @@ export function rollGear(rand: () => number, ilvl: number, opts: RollOptions & {
   return encodeItemId({ base: base.id, ilvl: lvl, rarity, upgrade: 0, affixes });
 }
 
+/** A TOWN CHEST (it.92): a draught, a scrap, now and then a plain piece - never a trophy. */
+export function rollMinorItem(rand: () => number, ilvl: number): string {
+  const kind = rand();
+  if (kind < 0.55) return rollDraught(rand, ilvl);
+  if (kind < 0.85) return rollMaterial(rand, ilvl);
+  return rollGear(rand, Math.max(1, ilvl - 1), { weights: { common: 70, uncommon: 30, rare: 0, epic: 0, legendary: 0, mythic: 0 } });
+}
+
 /** Materials fall too (it.78): scraps mostly, dust sometimes, an essence rarely. */
 export function rollMaterial(rand: () => number, ilvl: number): string {
   const tier = 1 + Math.floor(ilvl / 25);

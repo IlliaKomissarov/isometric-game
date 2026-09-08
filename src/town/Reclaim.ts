@@ -1,20 +1,21 @@
 /**
  * @module town/Reclaim
- * THE EASTERN QUARTER'S GATE (it.91): render-only theatre around the
- * barricade on the east road.
+ * PROCESSIONS (it.91, generalised it.92): render-only theatre for the
+ * moment a place is won back.
  *
- *   - `pullAside`: the errand is taken - the militia drags one cart out of
- *     the line (it slides, rocks, and settles on the verge in a puff of
- *     dust) and the gap is a road.
- *   - `ReclaimScene`: the last looter falls - a letterboxed cutscene. The
- *     camera leaves the hero for the gate; the carts shake, then topple one
- *     by one in dust; the title rises; the refugees walk home through the
- *     gap in a loose procession while gold light drifts over the road; the
+ *   - `GateFx`: the barricade's carts - one dragged aside when the errand is
+ *     taken (it slides, rocks, settles on the verge in dust), all of them
+ *     toppling when the quarter is cleared.
+ *   - `ProcessionScene`: a letterboxed cutscene. The camera leaves the hero
+ *     for a place; carts (if any) tremble and fall; a title rises; the folk
+ *     walk a route home in a loose column under drifting gold light; the
  *     bars lift and the camera comes back. `onDone` fires once, at the end.
+ *     THE EASTERN QUARTER runs it with carts; THE DARK FOREST runs it bare,
+ *     the clearings' folk walking in from the town road.
  *
  * Nothing here touches the simulation: the grid opens through the `open`
- * hook main hands in (a plain tile write, done the same tick on every peer
- * by the QUEST command), and every sprite is the dresser's or this file's.
+ * hook main hands in (a plain tile write, done the same tick on every peer),
+ * and every sprite is the dresser's or this file's.
  */
 
 import { Container, Sprite } from 'pixi.js';
@@ -67,6 +68,10 @@ export class GateFx {
     this.dustClock += dt;
     for (let i = this.tweens.length - 1; i >= 0; i--) {
       const tw = this.tweens[i];
+      if (tw.sprite.destroyed) {
+        this.tweens.splice(i, 1);
+        continue;
+      }
       tw.t += dt;
       if (tw.t < 0) {
         // Waiting its turn: a tremble.
@@ -90,22 +95,27 @@ export class GateFx {
   }
 }
 
-export interface ReclaimHooks {
+export interface ProcessionHooks {
   layer: Container;
   ambience: Ambience;
   fx: GateFx;
-  /** The barricade's sprites by tile, and the tiles themselves. */
+  /** The barricade's sprites by tile (empty for a place with no carts). */
   carts: Array<{ sprite: Sprite; x: number; y: number }>;
   /** The grid opens (every gate tile becomes floor): called once, when the carts fall. */
-  open: () => void;
-  /** Where the refugees stand, and the road they walk: the gap, then the quarter's first bend, then the square. */
+  open?: () => void;
+  /** Where the camera looks first (the gate, the road in). */
+  at: { x: number; y: number };
+  /** Where the folk start, and the road they walk. */
   from: { x: number; y: number };
   route: Array<{ x: number; y: number }>;
-  isWalkable: (gx: number, gy: number) => boolean;
+  /** The two titles: the place, then the people. */
+  titles: [[string, string], [string, string]];
+  /** How many walk (default 8). */
+  walkers?: number;
   /** The camera's cinematic focus (null gives it back to the hero). */
   focus: (x: number, y: number) => void;
   release: () => void;
-  sfx: (name: 'barrelBreak' | 'questDone' | 'gateOpen' | 'crowd') => void;
+  sfx: (name: 'barrelBreak' | 'questDone' | 'gateOpen' | 'crowd' | 'depart') => void;
   onDone: () => void;
 }
 
@@ -122,8 +132,8 @@ interface Walker {
   done: boolean;
 }
 
-/** The letterboxed reclaiming. */
-export class ReclaimScene {
+/** The letterboxed homecoming. */
+export class ProcessionScene {
   private t = 0;
   private readonly walkers: Walker[] = [];
   private opened = false;
@@ -135,8 +145,13 @@ export class ReclaimScene {
   private readonly sub: HTMLElement;
   private readonly scratch = vec2();
   private glintClock = 0;
+  /** With carts the folk wait for them to fall; without, they set out at once. */
+  private readonly walkAt: number;
+  private readonly endAt: number;
 
-  constructor(private readonly h: ReclaimHooks) {
+  constructor(private readonly h: ProcessionHooks) {
+    this.walkAt = h.carts.length ? 4.2 : 1.6;
+    this.endAt = this.walkAt + 9;
     this.overlay = document.createElement('div');
     this.overlay.id = 'cine-layer';
     this.overlay.innerHTML = '<div class="cine-bar top"></div><div class="cine-bar bottom"></div><div class="cine-title"><b></b><i></i></div>';
@@ -145,11 +160,12 @@ export class ReclaimScene {
     this.sub = this.overlay.querySelector('.cine-title i')!;
     void this.overlay.offsetWidth; // Commit the closed bars, then open them (no animation frame needed: a hidden tab has none).
     this.overlay.classList.add('show');
-    // The procession: eight of the folk, each on the road a beat after the last.
+    // The procession: the folk, each on the road a beat after the last.
     if (spriteLib.hasAnim(WALK)) {
       const painted = spriteLib.paintedHeight(WALK) || 50;
       const scale = FOLK_HEIGHT / painted;
-      for (let i = 0; i < 8; i++) {
+      const n = h.walkers ?? 8;
+      for (let i = 0; i < n; i++) {
         const root = new Container();
         root.scale.set(0.8);
         const shadow = new Sprite(assets.get('shadow'));
@@ -165,7 +181,7 @@ export class ReclaimScene {
         h.layer.addChild(root);
         const ox = (i % 2) * 0.9 - 0.45 + (Math.random() - 0.5) * 0.4;
         const oy = Math.floor(i / 2) * 0.7 - 1 + (Math.random() - 0.5) * 0.4;
-        this.walkers.push({ root, body, x: h.from.x + 0.5 + ox, y: h.from.y + 0.5 + oy, leg: 0, delay: 4.2 + i * 0.55, dir: 2, clock: Math.random(), speed: 1.35 + Math.random() * 0.25, done: false });
+        this.walkers.push({ root, body, x: h.from.x + 0.5 + ox, y: h.from.y + 0.5 + oy, leg: 0, delay: this.walkAt + i * 0.55, dir: 2, clock: Math.random(), speed: 1.35 + Math.random() * 0.25, done: false });
       }
     }
   }
@@ -186,33 +202,39 @@ export class ReclaimScene {
     const prev = this.t;
     this.t += dt;
     const t = this.t;
-    const gate = h.carts[Math.floor(h.carts.length / 2)] ?? { x: h.from.x + 3, y: h.from.y };
-    // 0 - 1.3 s: the bars close and the camera crosses to the gate.
-    if (t < 6) h.focus(gate.x + 0.5, gate.y + 0.5);
-    // 1.3 - 3.4 s: the carts tremble, then fall.
-    if (t >= 1.3 && !this.toppled) {
+    const at = h.at;
+    // The bars close and the camera crosses to the place.
+    if (t < this.walkAt + 1.8) h.focus(at.x + 0.5, at.y + 0.5);
+    if (h.carts.length) {
+      // 1.3 - 3.4 s: the carts tremble, then fall.
+      if (t >= 1.3 && !this.toppled) {
+        this.toppled = true;
+        h.carts.forEach((c, i) => h.fx.topple(c.sprite, c.x, c.y, 0.9 + i * 0.22));
+        h.sfx('barrelBreak');
+        this.setTitle(h.titles[0][0], h.titles[0][1]);
+      }
+      if (t >= 3.2 && !this.opened) {
+        this.opened = true;
+        h.open?.();
+        h.sfx('gateOpen');
+        h.ambience.burst(at.x + 0.5, at.y + 0.5, 0xffd070, 30);
+      }
+    } else if (t >= 0.6 && !this.toppled) {
       this.toppled = true;
-      h.carts.forEach((c, i) => h.fx.topple(c.sprite, c.x, c.y, 0.9 + i * 0.22));
-      h.sfx('barrelBreak');
-      this.setTitle('THE EASTERN QUARTER', 'the barricade comes down');
+      this.setTitle(h.titles[0][0], h.titles[0][1]);
+      h.sfx('depart');
     }
-    if (t >= 3.2 && !this.opened) {
-      this.opened = true;
-      h.open();
-      h.sfx('gateOpen');
-      h.ambience.burst(gate.x + 0.5, gate.y + 0.5, 0xffd070, 30);
-    }
-    if (t >= 4.2 && !this.cheered) {
+    if (t >= this.walkAt && !this.cheered) {
       this.cheered = true;
       h.sfx('questDone');
-      h.sfx('crowd');
-      this.setTitle('THE PEOPLE RETURN', 'twenty looters fallen · the quarter reclaimed');
+      if (h.carts.length) h.sfx('crowd');
+      this.setTitle(h.titles[1][0], h.titles[1][1]);
     }
-    // 4.2 s on: the procession walks the route; the camera drifts with its head.
+    // The procession walks the route; the camera drifts with its head.
     let head: Walker | null = null;
     const fc = spriteLib.hasAnim(WALK) ? spriteLib.anim(WALK).frameCount : 1;
     for (const w of this.walkers) {
-      if (t < w.delay) continue;
+      if (t < w.delay || w.root.destroyed) continue;
       w.root.visible = true;
       const goal = h.route[Math.min(w.leg, h.route.length - 1)];
       const gx = goal.x + 0.5 + ((w.x * 7) % 1) * 0.8 - 0.4;
@@ -234,20 +256,19 @@ export class ReclaimScene {
       const s = worldToScreen(w.x, w.y, this.scratch);
       w.root.position.set(s.x, s.y);
       w.root.zIndex = depthKey(w.x, w.y);
-      if (!head || w.x > head.x) head = w;
+      if (!head || w.leg > head.leg || (w.leg === head.leg && w.x + w.y > head.x + head.y)) head = w;
     }
-    if (t >= 6 && head) h.focus(head.x, head.y);
+    if (t >= this.walkAt + 1.8 && head) h.focus(head.x, head.y);
     // Gold light along the road as they pass.
     this.glintClock += dt;
-    if (t >= 4.2 && this.glintClock > 0.35) {
+    if (t >= this.walkAt && this.glintClock > 0.35) {
       this.glintClock = 0;
-      const w = head ?? null;
-      if (w) h.ambience.burst(w.x + (Math.random() - 0.5) * 2, w.y + (Math.random() - 0.5) * 2, 0xffd070, 6, { lowEnergy: true });
+      if (head) h.ambience.burst(head.x + (Math.random() - 0.5) * 2, head.y + (Math.random() - 0.5) * 2, 0xffd070, 6, { lowEnergy: true });
     }
-    if (Math.floor(prev) !== Math.floor(t) && t >= 4 && t < 12) h.ambience.burst(gate.x + 0.5 + (Math.random() - 0.5) * 3, gate.y + 0.5 + (Math.random() - 0.5) * 3, 0xffe8a0, 10);
-    // 12.5 s: the title fades; 13.5 s: the bars lift and the hero has the camera again.
-    if (t >= 12.2) this.overlay.classList.remove('titled');
-    if (t >= 13.2 && !this.finished) {
+    if (Math.floor(prev) !== Math.floor(t) && t >= this.walkAt && t < this.endAt - 1) h.ambience.burst(at.x + 0.5 + (Math.random() - 0.5) * 3, at.y + 0.5 + (Math.random() - 0.5) * 3, 0xffe8a0, 10);
+    // The title fades; then the bars lift and the hero has the camera again.
+    if (t >= this.endAt - 1) this.overlay.classList.remove('titled');
+    if (t >= this.endAt && !this.finished) {
       this.finished = true;
       this.overlay.classList.remove('show');
       h.release();
@@ -264,3 +285,6 @@ export class ReclaimScene {
     this.finished = true;
   }
 }
+
+/** The old name (it.91) stays for the harness and the docs. */
+export { ProcessionScene as ReclaimScene };

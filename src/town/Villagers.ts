@@ -31,15 +31,19 @@ const KEEPER_IDLE = 'guard_idle';
  * bubbles, render-only, one per speaker, never two at once on the same
  * head; the words come from the district's own bank.
  */
-export const TOWN_WORDS = ['Fine day.', 'Bread?', 'Hm.', 'Rain soon.', 'Blessings.', 'Hush.', 'Fresh fish!', 'Ha!', 'Cold wind.', 'The King...', 'Trade?', 'Mind the well.', 'Aye.', 'Wolves, they say.', 'Good steel.', 'Late again.'];
-export const VENDOR_WORDS = ['Wares!', 'Fair price.', 'Look here.', 'Best in town.', 'Come, come.'];
-export const GUARD_WORDS = ['Move along.', 'All quiet.', 'Halt.', 'Long watch.'];
-export const REFUGEE_WORDS = ['Ruin...', 'Burned.', 'Looters!', 'Our homes.', 'Help us.', 'Gone.', 'Twenty of them.', 'The inn...', 'My roof.'];
-export const RECLAIMED_WORDS = ['Home!', 'At last.', 'Rebuild.', 'Thank you!', 'Home again.', 'We live.', 'Bless you.', 'Our street.', 'The Stag pours!'];
+export const TOWN_WORDS = ['Nice weather today.', 'Greetings.', 'So much work to do.', 'Good morning.', 'Long day.', 'Have you eaten?', 'Mind your step.', 'Off to the market.', 'Looks like rain.', 'Take care.', 'Busy today.', 'Good to see you.', 'Afternoon.', 'Back to work.'];
+export const VENDOR_WORDS = ['Take a look.', 'Fair prices.', 'Fresh stock today.', 'Good morning.', 'Anything else?', 'Come back soon.'];
+export const GUARD_WORDS = ['All quiet.', 'Move along.', 'Long shift.', 'Evening.', 'Nothing to report.'];
+export const REFUGEE_WORDS = ['We lost everything.', 'Our house is in there.', 'Is it safe yet?', 'Cold night.', 'Any news?', 'They took it all.', 'We wait.'];
+export const RECLAIMED_WORDS = ['We\'re home.', 'So much to rebuild.', 'Thank you.', 'The roof needs work.', 'Good to be back.', 'Nice weather today.', 'Back to work.'];
+export const TAVERN_WORDS = ['Another round.', 'Long day.', 'Good stew tonight.', 'Cheers.', 'Warm in here.', 'Heard the news?', 'One more, then home.'];
 
 export interface VillagerOptions {
   /** The bank the folk speak from (none: silent). */
   chatter?: string[];
+  /** THE STREETS (it.92): street tiles by index (`y * width + x`); the folk walk them, and the lanes between. */
+  roads?: Uint8Array;
+  mapWidth?: number;
   vendorWords?: string[];
   guardWords?: string[];
   /** The keeper's colour and body (the innkeeper wears the villager's coat). */
@@ -120,6 +124,8 @@ interface Villager {
   walkClock: number;
   idleClock: number;
   bubble: Bubble;
+  /** THE WAY (it.92): tile centres to walk through, the next first. */
+  path: Array<{ x: number; y: number }>;
 }
 
 interface Guard {
@@ -176,7 +182,7 @@ export class Villagers {
         body.position.set(0, 2);
         root.addChild(body);
         layer.addChild(root);
-        this.folk.push({ root, body, x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10, bubble: makeBubble(layer, 2 + Math.random() * 10) });
+        this.folk.push({ root, body, x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10, bubble: makeBubble(layer, 2 + Math.random() * 10), path: [] });
       }
     }
     if (merchantAt && spriteLib.hasAnim('merchant_walk')) {
@@ -237,18 +243,86 @@ export class Villagers {
     }
   }
 
+  /** Every head's place (it.92): the folk, the vendors, the keeper - so a roof or a trunk in front of them ghosts. */
+  positions(): Array<{ x: number; y: number }> {
+    const out: Array<{ x: number; y: number }> = [];
+    for (const v of this.folk) out.push({ x: v.x, y: v.y });
+    if (this.merchant) out.push({ x: this.merchant.x, y: this.merchant.y });
+    if (this.alchemist) out.push({ x: this.alchemist.x, y: this.alchemist.y });
+    for (const g of this.guards) out.push({ x: g.x, y: g.y });
+    if (this.keeper) out.push({ x: this.keeper.x, y: this.keeper.y });
+    return out;
+  }
+
   /** The keeper's tile centre (it.91): where a word bubble or a portrait looks for them. */
   get keeperAt(): { x: number; y: number } | null {
     return this.keeper ? { x: this.keeper.x, y: this.keeper.y } : null;
   }
 
   private randomTile(): { x: number; y: number } {
-    for (let i = 0; i < 40; i++) {
+    // THE STREETS (it.92): three strolls in four end on a street tile, so the folk are seen on the roads.
+    const roads = this.opts.roads;
+    const W = this.opts.mapWidth ?? 0;
+    const wantRoad = !!roads && W > 0 && Math.random() < 0.75;
+    for (let i = 0; i < 60; i++) {
       const gx = this.area.x + Math.floor(Math.random() * this.area.w);
       const gy = this.area.y + Math.floor(Math.random() * this.area.h);
-      if (this.isWalkable(gx, gy)) return { x: gx + 0.5, y: gy + 0.5 };
+      if (!this.isWalkable(gx, gy)) continue;
+      if (wantRoad && i < 50 && !roads![gy * W + gx]) continue;
+      return { x: gx + 0.5, y: gy + 0.5 };
     }
     return { x: this.area.x + this.area.w / 2, y: this.area.y + this.area.h / 2 };
+  }
+
+  /**
+   * THE WAY (it.92): a breadth-first walk over open tiles from one tile to
+   * another, inside the wander area grown by a margin. Render-only and
+   * cheap (a few thousand tiles at most); null when there is no way.
+   */
+  private findPath(sx: number, sy: number, tx: number, ty: number): Array<{ x: number; y: number }> | null {
+    const m = 3;
+    const x0 = this.area.x - m;
+    const y0 = this.area.y - m;
+    const w = this.area.w + m * 2;
+    const h = this.area.h + m * 2;
+    const inBox = (x: number, y: number): boolean => x >= x0 && y >= y0 && x < x0 + w && y < y0 + h;
+    if (!inBox(sx, sy) || !inBox(tx, ty)) return null;
+    const prev = new Int32Array(w * h).fill(-1);
+    const key = (x: number, y: number): number => (y - y0) * w + (x - x0);
+    const queue: number[] = [key(sx, sy)];
+    prev[queue[0]] = queue[0];
+    let head = 0;
+    const goal = key(tx, ty);
+    while (head < queue.length) {
+      const k = queue[head++];
+      if (k === goal) break;
+      const x = (k % w) + x0;
+      const y = Math.floor(k / w) + y0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!inBox(nx, ny) || !this.isWalkable(nx, ny)) continue;
+        const nk = key(nx, ny);
+        if (prev[nk] !== -1) continue;
+        prev[nk] = k;
+        queue.push(nk);
+      }
+    }
+    if (prev[goal] === -1) return null;
+    const out: Array<{ x: number; y: number }> = [];
+    for (let k = goal; k !== key(sx, sy); k = prev[k]) out.push({ x: (k % w) + x0 + 0.5, y: Math.floor(k / w) + y0 + 0.5 });
+    out.reverse();
+    // Corners cut where the diagonal is open: the walk reads as a stroll, not a march along a grid.
+    const smooth: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < out.length; i++) {
+      if (i + 1 < out.length && i > 0) {
+        const a = out[i - 1];
+        const c = out[i + 1];
+        if (a.x !== c.x && a.y !== c.y && this.isWalkable(Math.floor(a.x), Math.floor(c.y)) && this.isWalkable(Math.floor(c.x), Math.floor(a.y))) continue;
+      }
+      smooth.push(out[i]);
+    }
+    return smooth;
   }
 
   /** Render-frame update: stroll, pause, breathe; scene-lit by the caller's tint. */
@@ -259,28 +333,42 @@ export class Villagers {
         v.pause -= dt;
         v.idleClock += dt;
         if (v.pause <= 0) {
-          const t = this.randomTile();
-          v.tx = t.x;
-          v.ty = t.y;
+          // A new errand: somewhere in the district, by the streets (it.92).
+          let path: Array<{ x: number; y: number }> | null = null;
+          for (let tries = 0; tries < 4 && !path; tries++) {
+            const t = this.randomTile();
+            if (Math.hypot(t.x - v.x, t.y - v.y) < 2) continue;
+            path = this.findPath(Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y));
+          }
+          if (path && path.length) {
+            v.path = path;
+            v.tx = path[0].x;
+            v.ty = path[0].y;
+          } else v.pause = 0.8 + Math.random() * 1.5;
         }
       } else {
         const dx = v.tx - v.x;
         const dy = v.ty - v.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < 0.08) {
-          v.pause = 1.5 + Math.random() * 4;
+        if (dist < 0.12) {
+          v.path.shift();
+          if (v.path.length) {
+            v.tx = v.path[0].x;
+            v.ty = v.path[0].y;
+          } else v.pause = 1.2 + Math.random() * 3.5;
         } else {
           const step = Math.min(dist, WALK_SPEED * dt);
           const nx = v.x + (dx / dist) * step;
           const ny = v.y + (dy / dist) * step;
-          // Only walk onto walkable tiles; otherwise give up and idle.
+          // The way was open when it was found; if a tile shut since, stand a moment and think again.
           if (this.isWalkable(Math.floor(nx), Math.floor(ny))) {
             v.x = nx;
             v.y = ny;
             v.walkClock += step * CYCLES_PER_TILE;
             v.dir = stableDir(dx / dist, dy / dist, v.dir);
           } else {
-            v.pause = 1 + Math.random() * 2;
+            v.path.length = 0;
+            v.pause = 0.6 + Math.random() * 1.2;
           }
         }
       }

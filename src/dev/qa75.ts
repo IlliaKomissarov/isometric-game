@@ -45,6 +45,27 @@ async function until(cond: () => boolean, ms: number, step = 120): Promise<boole
 const W = window as Any;
 const game = (): Any => W.__game;
 
+/** The fake clock never steps back between calls: a frame after a fast chunk would otherwise run a negative delta. */
+let driveClock = 0;
+/** Render frames over a fake clock (the tab may be occluded): 100 ms a frame, six ticks a frame. */
+const driveRender = (ms: number): void => {
+  const orig = performance.now.bind(performance);
+  let t = Math.max(orig(), driveClock);
+  performance.now = () => t;
+  try {
+    for (let i = 0; i < ms / 100; i++) {
+      const gg = game();
+      if (!gg) break;
+      t += 100;
+      gg.loop.step(6);
+      gg.loop.callbacks.render(1);
+    }
+  } finally {
+    driveClock = t;
+    performance.now = orig;
+  }
+};
+
 function countFoes(g: Any): number {
   let n = 0;
   g.state.forEach((e: Any) => {
@@ -1058,8 +1079,13 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       });
       check('the forest had beasts to clear', alive > 0, String(alive));
       const gold0 = p.gold;
-      g.loop.step(125);
-      await until(() => game() && game().floor === 0, 12000);
+      g.loop.step(75);
+      g.loop.callbacks.render(1);
+      check('the last beast falls: the folk walk back in before the road home', !!g.reclaim && !!document.querySelector('#cine-layer.show'), String(!!g.reclaim));
+      for (let i = 0; i < 40 && game()?.reclaim; i++) driveRender(1000);
+      check('the forest\'s homecoming ends', !game()?.reclaim);
+      g.loop.step(5);
+      await until(() => game() && game().floor === 0, 15000);
       g = game();
       await fadeClear();
       await wait(120);
@@ -1500,23 +1526,6 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         g = game();
         await fadeClear();
       }
-      /** Render frames over a fake clock (the tab may be occluded): 100 ms a frame, six ticks a frame. */
-      const driveRender = (ms: number): void => {
-        const orig = performance.now.bind(performance);
-        let t = orig();
-        performance.now = () => t;
-        try {
-          for (let i = 0; i < ms / 100; i++) {
-            const gg = game();
-            if (!gg) break;
-            t += 100;
-            gg.loop.step(6);
-            gg.loop.callbacks.render(1);
-          }
-        } finally {
-          performance.now = orig;
-        }
-      };
       const warp = (x: number, y: number): void => {
         g.player.pos.x = x + 0.5;
         g.player.pos.y = y + 0.5;
@@ -1547,8 +1556,16 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       const props = g.town.layout.props as Array<{ kind: string; x: number; y: number }>;
       check('ruins, rubble and the fallen dress the streets', props.some((q) => q.kind === 'ruin') && props.some((q) => q.kind === 'rubble') && props.some((q) => q.kind === 'corpse'));
       check('the fallen and the rubble block no tile', props.filter((q) => q.kind === 'corpse' || q.kind === 'rubble' || q.kind === 'slab' || q.kind === 'debris').every((q) => g.scene.isWalkable(q.x, q.y)));
-      check('the inn has a door, a hall, a bed, a chest and a bench', props.some((q) => q.kind === 'tavern2') && g.scene.isWalkable(east.door.x, east.door.y) && g.scene.isWalkable(east.door.x, east.door.y - 1) && ['bed', 'stash', 'forge'].every((k) => g.town.interactables.some((i: { kind: string; room?: boolean }) => i.kind === k && i.room)));
-      check('three gateways stand shut past the ruins', g.town.layout.gateways.filter((w: { x: number }) => w.x >= 60).length === 3 && g.town.layout.gateways.filter((w: { x: number; y: number }) => w.x >= 60).every((w: { x: number; y: number }) => !g.scene.isWalkable(w.x, w.y)));
+      check('the inn stands solid with a door to its own floor', props.some((q) => q.kind === 'tavern2') && g.scene.isWalkable(east.door.x, east.door.y) && !g.scene.isWalkable(east.door.x, east.door.y - 1) && g.town.interactables.some((i: { kind: string }) => i.kind === 'inn'));
+      check('every district keeps a few small chests', (g.town.layout.chests?.length ?? 0) >= 9 && g.town.layout.chests.some((c: { x: number }) => c.x < 60) && g.town.layout.chests.some((c: { x: number }) => c.x >= 60), String(g.town.layout.chests?.length));
+      {
+        // The door is barred while the looters hold the quarter.
+        warp(east.door.x, east.door.y + 1);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(3);
+        check('the inn\'s door is barred while the looters hold the quarter', g.floor === 0 && /barred/i.test(document.getElementById('hint-banner')?.textContent ?? ''), document.getElementById('hint-banner')?.textContent ?? '');
+      }
+      check('four gateways stand shut past the ruins', g.town.layout.gateways.filter((w: { x: number }) => w.x >= 60).length === 4 && g.town.layout.gateways.filter((w: { x: number; y: number }) => w.x >= 60).every((w: { x: number; y: number }) => !g.scene.isWalkable(w.x, w.y)));
       check('no looter walks a sealed quarter', g.lootersAlive() === 0);
       // The word at the gate.
       warp(east.approach.x - 1, east.approach.y);
@@ -1598,16 +1615,28 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await fadeClear();
       const east2 = g.town.layout.east;
       check('the carts are gone for good', g.town.gates.size === 0 && east2.gateTiles.every((t: { x: number; y: number }) => g.scene.isWalkable(t.x, t.y)));
-      check('the folk come home and the keeper stands behind her counter', !!g.town.villagers3 && east2.innkeeper.x === east2.tavern.x + 1 && east2.innkeeper.y === east2.tavern.y + 1);
+      check('the folk come home to the streets', !!g.town.villagers3 && g.town.villagers3.positions().length >= 10);
+      check('no keeper stands at the gate any more', !g.town.interactables.some((i: { kind: string }) => i.kind === 'innkeeper'));
       check('the fallen are buried', !(g.town.layout.props as Array<{ kind: string }>).some((q) => q.kind === 'corpse'));
-      // The reward, in the inn.
+      // Through the door: the inn's own floor.
+      warp(east2.door.x, east2.door.y + 1);
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(3);
+      check('E at the door walks into the Gilded Stag', await until(() => game() && game().floor === g.INN_FLOOR, 15000));
+      g = game();
+      await fadeClear();
+      const inn = g.town.layout.inn;
+      check('the inn: boards underfoot, a bar, a hearth, tables, the keeper behind the counter', !!inn && g.dungeon.tileKind[inn.hall.y * g.dungeon.width + inn.hall.x] === 4 && g.town.layout.props.some((q: { kind: string }) => q.kind === 'hearth') && g.town.layout.props.filter((q: { kind: string }) => q.kind === 'inntable').length >= 4 && g.town.interactables.some((i: { kind: string }) => i.kind === 'innkeeper') && !!g.town.villagers3 === false);
+      check('patrons stroll the hall with a word', g.town.villagers.positions().length >= 5);
+      check('the corner room holds the bed, the chest and the bench', ['bed', 'stash', 'forge'].every((k) => g.town.interactables.some((i: { kind: string; room?: boolean }) => i.kind === k && i.room)));
+      // The reward, at the bar.
       const p2 = g.player;
-      warp(east2.innkeeper.x + 1, east2.innkeeper.y + 1);
+      warp(inn.keeper.x, inn.keeper.y + 2);
       const gold0 = p2.gold;
       const pack0 = p2.backpack.length;
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(3);
-      check('E at the counter: the keeper offers the reward', !!dl() && /TAKE THE REWARD/.test(dl()?.textContent ?? ''));
+      check('E at the counter: the keeper offers the reward', !!dl() && /THANK YOU/.test(dl()?.textContent ?? '') && /\(200\)/.test(dl()?.textContent ?? ''));
       dl()?.querySelector<HTMLElement>('[data-choice=reward]')?.click();
       await wait(30);
       g.loop.step(3);
@@ -1615,22 +1644,24 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       const bases = p2.backpack.slice(pack0).map((id: string) => id.split('@')[0]);
       check('200 gold, a bow and a sword', p2.gold === gold0 + 200 && bases.includes('hunters_bow') && bases.includes('soldier_blade') && g.quests.east === 'done', `${p2.gold - gold0} ${bases.join()}`);
       check('REWARD RECEIVED · 200 GOLD · A BOW · A SWORD', /200 GOLD · A BOW · A SWORD/.test(document.getElementById('reward-note')?.textContent ?? ''));
-      // The bed.
-      warp(east2.bed.x - 1, east2.bed.y + 1);
+      // The bed: E from across the room walks the hero to the bedside first, then the lying-down.
+      warp(inn.bed.x - 2, inn.bed.y + 1); // On open boards, two strides off the bed - within the prompt's reach, past the bedside's.
       p2.hp = Math.floor(p2.hpMax * 0.5);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
-      g.loop.step(40);
+      g.loop.step(4);
+      check('E across the room walks to the bedside first', p2.resting === false);
+      g.loop.step(160);
       g.loop.callbacks.render(1);
-      check('E at the bed: the hero lies on it', p2.resting === true && Math.floor(p2.pos.x + 0.12) === east2.bed.x && Math.floor(p2.pos.y + 0.12) === east2.bed.y);
+      check('at the bedside the hero lies down', p2.resting === true && Math.floor(p2.pos.x + 0.12) === inn.bed.x && Math.floor(p2.pos.y + 0.12) === inn.bed.y, `${p2.resting} ${p2.pos.x.toFixed(1)},${p2.pos.y.toFixed(1)} bed ${inn.bed.x},${inn.bed.y}`);
       const hpRest = p2.hp;
       g.loop.step(120);
       check('a bed mends', p2.hp > hpRest, `${hpRest} -> ${p2.hp}`);
       g.loop.callbacks.render(1);
-      check('the prompt says RISE', /RISE/.test(document.getElementById('interact-hint')?.textContent ?? ''), document.getElementById('interact-hint')?.textContent ?? '');
+      check('the prompt says RISE', document.getElementById('interact-hint')?.classList.contains('show') === true && /RISE/.test(document.getElementById('interact-hint')?.textContent ?? ''), document.getElementById('interact-hint')?.textContent ?? '');
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(3);
       check('E again: the hero rises beside the bed', p2.resting === false && g.scene.isWalkable(Math.floor(p2.pos.x), Math.floor(p2.pos.y)));
-      g.queue.enqueue({ type: 'REST', playerId: 0, x: east2.bed.x + 0.5, y: east2.bed.y + 0.5 });
+      g.queue.enqueue({ type: 'REST', playerId: 0, x: inn.bed.x + 0.5, y: inn.bed.y + 0.5 });
       g.loop.step(2);
       g.queue.enqueue({ type: 'DIRECT_MOVE', playerId: 0, dx: 0, dy: 1 });
       g.loop.step(2);
@@ -1638,11 +1669,36 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.loop.step(2);
       check('a step stands the hero up', p2.resting === false);
       // The room's chest is the town's stash.
-      warp(east2.roomStash.x, east2.roomStash.y + 1);
+      warp(inn.stash.x, inn.stash.y - 1);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(3);
       check('the room\'s chest opens the stash', g.stashUI.isOpen === true);
       g.stashUI.close();
+      // Out through the door, onto the inn's step.
+      warp(inn.door.x, inn.door.y - 1);
+      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+      g.loop.step(3);
+      check('E at the door walks back out to the street', await until(() => game() && game().floor === 0, 15000));
+      g = game();
+      await fadeClear();
+      check('the hero stands on the inn\'s step', Math.hypot(g.player.pos.x - (g.town.layout.east.door.x + 0.5), g.player.pos.y - (g.town.layout.east.door.y + 1.5)) < 2.5, `${g.player.pos.x.toFixed(1)},${g.player.pos.y.toFixed(1)}`);
+      // A district chest: minor spoils, remembered opened.
+      {
+        const spot = g.town.layout.chests.find((c: { x: number }) => c.x >= 60);
+        const chest = g.chests.findNearestUnopened(spot.x + 0.5, spot.y + 0.5, 0.8);
+        check('a chest stands on the district\'s spot, unopened', !!chest && chest.minor === true);
+        const items0 = g.loot.count ? g.loot.count() : -1;
+        g.chests.open(chest.id);
+        g.loop.step(2);
+        const items1 = g.loot.count ? g.loot.count() : -1;
+        check('opening it drops small things', chest.opened === true && (items0 < 0 || items1 > items0), `${items0} -> ${items1}`);
+        check('the save remembers the chest', (g.quests.chests ?? '').includes(`0:${spot.x},${spot.y}`), g.quests.chests ?? '');
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 8000);
+        g = game();
+        await fadeClear();
+        check('the opened chest does not come back', !g.chests.findNearestUnopened(spot.x + 0.5, spot.y + 0.5, 0.8));
+      }
       // The save keeps the quarter.
       g.saveNow();
       const saved = JSON.parse(localStorage.getItem('iso-arpg-save-1') ?? '{}');

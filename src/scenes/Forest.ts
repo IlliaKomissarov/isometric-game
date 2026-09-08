@@ -248,6 +248,13 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
     tileKind,
   };
   const layout = bareLayout(map, props, 'THE DARK FOREST');
+  // LOOTABLE CHESTS (it.92): one in three of the clearings, off the road.
+  layout.chests = [];
+  for (const c of [{ x: 12, y: 15 }, { x: 28, y: 26 }, { x: 43, y: 21 }]) {
+    if (grid[idx(c.x, c.y)] !== TILE_FLOOR) continue; // A clearing counts as road here; the spots are its edges, off the way through.
+    grid[idx(c.x, c.y)] = TILE_BLOCKED;
+    layout.chests.push(c);
+  }
   if (safe) {
     // THE FOREST CLEARED (it.87): sentries at the gate yard, folk in the second clearing.
     layout.guards = [

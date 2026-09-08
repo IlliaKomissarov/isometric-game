@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 91, 2026-09-07)
+- **Project version:** 0.1.0 (iteration 92, 2026-09-08)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -243,6 +243,19 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 92 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Dialogue and chatter read as theatre | Low (writing) | every line rewritten plain; six everyday word banks |
+| The inn was a ghosted roof over a lot | Feature | `scenes/Inn.ts`: the inn's own floor (mode `inn`, theme `inn`, plank tiles), entered at the door |
+| The forest sent the hero home with a cut | Low (feel) | `ProcessionScene` bare: the folk walk into the clearings first |
+| Targets on screen had no mark | Low (UX) | `#foe-over` chevrons over every quest target in sight |
+| Villagers stood in corners, walked into tables | Medium (feel) | breadth-first paths along street tiles over whole districts |
+| Buildings drew over villagers | Medium (render) | `Villagers.positions()` joins the roof cutaway's bodies |
+| Bare cliff cubes, a dead-end lane, heaps wider than their tile | Low (map) | THE HILL ROAD gateway, trees or brush on every rim cube, heaps scaled to 66 px, the fallen on the ground layer |
+| Nothing to loot in town | Feature | twelve minor chests, remembered opened by the save |
 
 ### Iteration 91 additions
 

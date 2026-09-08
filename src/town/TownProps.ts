@@ -32,7 +32,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
@@ -222,7 +222,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     promptAt = x === null ? null : { x, y };
   };
 
-  let nextId = 1;
+  // Interactable ids start past any chest's (it.92): both ride the OPEN_CHEST command, and a chest now stands in town.
+  let nextId = 10001;
   for (const p of layout.props) {
     switch (p.kind) {
       case 'house': {
@@ -457,9 +458,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         }
         break;
       }
-      case 'heap':
-        standing(p, p.variant ?? 'heap_a', 0.88);
+      case 'heap': {
+        // A HEAP KEEPS TO ITS TILE (it.92): the wide renders shrink to the diamond, so nothing walks through paint.
+        const spr = standing(p, p.variant ?? 'heap_a', 0.88);
+        if (spr && spr.width > 66) spr.scale.set(66 / spr.width);
         break;
+      }
       case 'ruinwall':
         standing(p, p.variant ?? 'ruinwall_a', 0.94);
         break;
@@ -485,16 +489,15 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         pool.alpha = 0.55;
         pool.scale.set(1.15, 0.5);
         pool.position.set(s.x, s.y + 2);
-        pool.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 40;
-        viewport.objectLayer.addChild(pool);
         lighting.registerProp(p.x, p.y, pool);
+        // ON THE GROUND (it.92): the fallen are paint under every foot - the ground layer, never in front of a walker.
         const body = new Sprite(a.frames[dir][a.frameCount - 1]);
         body.anchor.set(0.5, v[0] === 'g' ? 0.72 : 0.9);
         body.scale.set(v[0] === 'g' ? 0.42 : 0.44);
         body.tint = 0x8c8078;
         body.position.set(s.x, s.y + 4);
-        body.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 30;
-        viewport.objectLayer.addChild(body);
+        viewport.groundLayer.addChild(pool);
+        viewport.groundLayer.addChild(body);
         lighting.registerProp(p.x, p.y, body);
         break;
       }
@@ -506,8 +509,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'tavern2': {
-        // THE GILDED STAG: the inn the hero walks into. The hall inside its
-        // footprint is floor; standing there ghosts the whole building.
+        // THE GILDED STAG: the inn with its own floor inside (it.92). The door
+        // tile is the way in; the building stays solid.
         const spr = standing(p, 'tavern_east', 0.975, 'object', 0.5);
         if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
         const east = layout.east;
@@ -515,9 +518,53 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const dy = east ? east.door.y + 1.5 : p.y + 5.5;
         lighting.addSource(dx, dy, 3.6, 255, 190, 110, 0.5);
         glowAt(Math.floor(dx), Math.floor(dy) - 1, 0xffb060, 0.22, 1.2, 40);
+        if (east) interactables.push({ id: nextId++, kind: 'inn', x: east.door.x + 0.5, y: east.door.y + 0.5, label: 'E · THE GILDED STAG', tiles: [{ x: east.door.x, y: east.door.y }, { x: east.door.x, y: east.door.y + 1 }, { x: east.door.x - 1, y: east.door.y + 1 }, { x: east.door.x + 1, y: east.door.y + 1 }] });
         plate(p.x + 2, p.y + 2, 'THE GILDED STAG', 250);
         break;
       }
+      // ---- THE GILDED STAG INSIDE (it.92) ----
+      case 'inndoor': {
+        // The way out: the door in the south wall, lamp-lit.
+        glowAt(p.x, p.y, 0xffb060, 0.3, 1.3, 20);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.4, 255, 190, 110, 0.55);
+        interactables.push({ id: nextId++, kind: 'inndoor', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE STREET', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x - 1, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, 'THE DOOR', 70);
+        break;
+      }
+      case 'barkeep': {
+        // Drawn by Villagers; the counter's front tiles are the keeper's.
+        interactables.push({ id: nextId++, kind: 'innkeeper', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE INNKEEPER', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x - 1, y: p.y + 2 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }] });
+        plate(p.x, p.y, 'THE BAR', 84);
+        break;
+      }
+      case 'hearth': {
+        // The fire in the wall: the campfire's flame, no plate, a warm light over the hall.
+        animated(p.x, p.y, 'campfire', 9, 0.92, 0.9);
+        glowAt(p.x, p.y, 0xff9040, 0.7, 2.4, 18);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 6.5, 255, 160, 70, 0.9);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'inntable':
+        standing(p, p.variant ?? 'inn_table_a', 0.9);
+        break;
+      case 'innchair':
+        standing(p, 'inn_chair', 0.9);
+        break;
+      case 'candle': {
+        standing(p, p.variant ?? 'inn_candle', 0.95);
+        glowAt(p.x, p.y, 0xffc070, 0.32, 0.9, 40);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.2, 255, 200, 120, 0.5);
+        break;
+      }
+      case 'carpet':
+        standing(p, p.variant ?? 'inn_carpet', 0.6, 'ground');
+        break;
+      case 'shelf':
+        standing(p, p.variant ?? 'inn_shelf', 0.95);
+        break;
+      case 'chest':
+        break; // A ChestSystem chest stands on the tile (main spawns it); the prop only keeps the tile solid.
       case 'innkeeper': {
         // Drawn by Villagers. At the gate the keeper's tiles are the barricade's
         // too, so E anywhere along it opens the word; in the inn, the counter.

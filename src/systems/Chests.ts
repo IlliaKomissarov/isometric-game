@@ -30,6 +30,8 @@ export interface Chest {
   opened: boolean;
   /** THE COLISEUM CHEST (it.53): rare + legendary spoils. */
   grand?: boolean;
+  /** A TOWN CHEST (it.92): a draught or two, a scrap, a plain piece. */
+  minor?: boolean;
 }
 
 interface ChestView extends Chest {
@@ -82,7 +84,7 @@ export class ChestSystem {
   }
 
   /** One chest on a tile; grand chests are larger and gold-lit (it.53). */
-  private create(gx: number, gy: number, grand = false): number {
+  private create(gx: number, gy: number, grand = false, minor = false): number {
     const id = this.nextId++;
     const sprite = new Sprite(assets.get('chest_closed'));
     sprite.anchor.set(0.5, 1.0);
@@ -112,13 +114,13 @@ export class ChestSystem {
     halo.visible = false;
     this.viewport.ambienceLayer.addChild(halo);
 
-    this.chests.set(id, { id, x: gx + 0.5, y: gy + 0.5, opened: false, grand, sprite, indicator, halo });
+    this.chests.set(id, { id, x: gx + 0.5, y: gy + 0.5, opened: false, grand, minor, sprite, indicator, halo });
     return id;
   }
 
-  /** Drop a chest at runtime (the Coliseum's prize, it.53). Returns its id. */
-  spawnAt(gx: number, gy: number, grand = false): number {
-    return this.create(gx, gy, grand);
+  /** Drop a chest at runtime (the Coliseum's prize, it.53; a town's minor chests, it.92). Returns its id. */
+  spawnAt(gx: number, gy: number, grand = false, minor = false): number {
+    return this.create(gx, gy, grand, minor);
   }
 
   getChest(id: number): Chest | null {
@@ -204,7 +206,8 @@ export class ChestSystem {
       for (let i = 0; i < count; i++) {
         const angle = this.rand() * Math.PI * 2;
         const r = 0.5 + this.rand() * 0.5;
-        this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+        if (chest.minor) this.loot.dropMinor(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+        else this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
       }
     }
     eventBus.emit('chest:opened', { chestId: id, x: chest.x, y: chest.y });

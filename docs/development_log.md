@@ -1,5 +1,76 @@
 # Development Log
 
+## 2026-09-08 (iteration 92) - The Gilded Stag inside, the forest's homecoming, the streets walked, chests in every district
+
+### Words
+- Every dialogue rewritten plain: the gatekeeper, the refugee, the innkeeper
+  (all four states), the sign at the yard, the gateways' notes. Short lines,
+  no theatre; the gold still in parentheses.
+- Ambient chatter is everyday talk now: `TOWN_WORDS` ("Nice weather today.",
+  "Greetings.", "So much work to do."), `VENDOR_WORDS`, `GUARD_WORDS`,
+  `REFUGEE_WORDS`, `RECLAIMED_WORDS`, and `TAVERN_WORDS` for the inn.
+
+### The Gilded Stag inside (`src/scenes/Inn.ts`, floor 103, mode `inn`)
+- The inn is a floor of its own: a 24x20 stone-walled hall with boards
+  underfoot (`KIND_PLANK` = 4, four `town_plank_*` diamonds drawn by hand),
+  the bar along the north wall (`inntable` counters, `shelf` cases, kegs)
+  with the keeper behind it (`barkeep` -> the `innkeeper` interactable), a
+  `hearth` in the west wall (the campfire's flame, a wide warm light), long
+  tables and chairs from the library pack (`inn_table_a..d`, `inn_chair`),
+  candle stands (`candle`, lit), a `carpet` from the door to the bar, and
+  the corner room past a doorway in the east partition: the bed, the chest
+  (the stash), the bench (the forge). Five patrons stroll the hall with a
+  word. `SceneManager` gained the `inn` theme: the crypt's stone walls,
+  the town's painted floors. Lit end to end (`fullRadius` 30).
+- The town's tavern2 is solid now; its door tile is the `inn` interactable
+  (barred with a word while the looters hold the quarter). `goInn` /
+  `leaveInn` fade in and out (`INN_FLOOR` 103, `modeFor`, `animsForFloor`,
+  the zone name THE GILDED STAG). The errand's reward is paid at the bar
+  (`applyEastStep('reward')` on the inn's floor); the town's keeper prop is
+  gone once the quarter is cleared (she is behind her own bar).
+- THE BED, eased: E from across the room walks the hero to the bedside
+  first (`pendingRest` + `walkToInteractable`), the lying-down runs a
+  second with an ease-out, pale motes rise while the hero sleeps, and the
+  rising plays the fall back over half a second (`Player.wakeClock`).
+
+### The forest's homecoming
+- `ReclaimScene` became `ProcessionScene` (`src/town/Reclaim.ts`): carts
+  optional, `at`/`from`/`route`/`titles`/`walkers` hooks. The forest runs
+  it bare when the last beast falls: THE DARK FOREST · the road is open,
+  then THE PEOPLE RETURN as seven of the folk walk in from the town road
+  through the clearings; then the road home and the gatekeeper's thanks,
+  as before. `forestReturnTicks` 0 holds the tick while the scene plays.
+
+### Marks, streets, roofs, chests, the map
+- OVERHEAD MARKS: `#foe-over` - a bobbing red chevron over every quest
+  target in sight (looters, the forest's beasts), a pool of twenty-four;
+  the edge chevrons stay for the ones off screen, and two in one direction
+  share one.
+- THE STREETS: `Villagers` path-find (`findPath`, a bounded breadth-first
+  walk with corners cut) to targets that are street tiles three times in
+  four (`VillagerOptions.roads/mapWidth`), over wander rooms that now span
+  whole districts; no more standing in a corner because a table was in the
+  way. `positions()` feeds the roof cutaway: a building or a trunk in
+  front of any villager ghosts, as it does for the hero and the foes.
+- THE EASTERN QUARTER: a fourth gateway, THE HILL ROAD, ends the
+  north-east lane; the north-west lane ends at a well and a bench; no bare
+  cliff cube by open ground (trees 80 %, brush the rest, boulders on the
+  gate's flank); heaps shrink to their tile; the fallen and their pools are
+  ground paint; interactable ids start at 10001 so a chest and a stall
+  never share an id.
+- LOOTABLE CHESTS: `layout.chests` - nine spots over the three districts
+  and three in the forest's clearings, `ChestSystem.spawnAt(..., minor)`
+  dropping `rollMinorItem` (a draught, a scrap, now and then a plain
+  piece). Opened ones are remembered by the save (`quests.chests` as
+  `floor:x,y;...`) and never come back. Clicks reach town chests
+  (`pickChest` falls through), the E-prompt shows OPEN when the chest is
+  nearer than the stall.
+
+### QA
+- qa75: the forest's homecoming driven over the fake clock; the inn walked
+  into and out of; the reward at the bar; the bedside walk; the district
+  chest opened and remembered. `driveRender` hoisted to module scope.
+
 ## 2026-09-07 (iteration 91) - The Eastern Quarter: the barricade, the looters, the reclaiming, the inn
 
 ### The map grew east (`src/town/TownMap.ts`)

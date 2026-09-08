@@ -20,6 +20,7 @@ import { spriteLib } from '@/render/SpriteLibrary';
 import { TILE_H, TILE_W } from '@/core/config';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
+import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
 import type { TownLayout, TownProp } from './TownMap';
 
 export interface Occluder {
@@ -33,7 +34,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
@@ -72,6 +73,28 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const gates = new Map<string, Sprite>();
   const has = (name: string): boolean => spriteLib.loaded && spriteLib.hasSingle(name);
 
+  /**
+   * THE LIT TILE (it.97). Fog and light are keyed by tile, and a WALL tile only
+   * wins line of sight when the hero stands nearly level with it. So anything
+   * mounted on a wall - the wall panel itself, a painting, a torch and its glow
+   * - blinked on and off in a three-tile window that slid along with the hero.
+   * Snap such a piece to the floor tile it faces (the room in front of it, which
+   * is lit whenever the hero can see the wall at all) and the run stays steady.
+   */
+  const litTile = (x: number, y: number): { x: number; y: number } => {
+    const { width, height, grid } = layout.map;
+    const floorish = (tx: number, ty: number): boolean => {
+      if (tx < 0 || ty < 0 || tx >= width || ty >= height) return false;
+      const t = grid[ty * width + tx];
+      return t === TILE_FLOOR || t === TILE_BLOCKED;
+    };
+    if (floorish(x, y)) return { x, y };
+    // The faces of these walls look south and east, so try those first.
+    for (const [dx, dy] of [[0, 1], [1, 0], [1, 1], [0, -1], [-1, 0], [-1, -1]] as const)
+      if (floorish(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+    return { x: Math.max(0, Math.min(width - 1, x)), y: Math.max(0, Math.min(height - 1, y)) };
+  };
+
   /** A standing prop anchored at the south corner of its footprint. */
   const standing = (p: TownProp, single: string, anchorY: number, layer: 'object' | 'ground' = 'object', anchorX = 0.5): Sprite | null => {
     if (!has(single)) return null;
@@ -95,11 +118,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const animated = (
     gx: number,
     gy: number,
-    anim: 'campfire' | 'torch' | 'brazier_stand' | 'banner' | 'gateway' | 'inn_fire' | 'inn_torch',
+    anim: 'campfire' | 'torch' | 'brazier_stand' | 'banner' | 'gateway' | 'inn_fire' | 'inn_torch' | 'cellar_girl',
     fps: number,
     anchorY: number,
     scale = 1,
     lift = 0,
+    lit?: { x: number; y: number },
   ): Sprite | null => {
     if (!spriteLib.loaded || !spriteLib.hasAnim(anim)) return null;
     const frames = spriteLib.anim(anim).frames[0];
@@ -110,11 +134,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     spr.position.set(s.x, s.y + 4 - lift);
     spr.zIndex = depthKey(gx + 0.5, gy + 0.5) + 1;
     viewport.objectLayer.addChild(spr);
-    ambience.addLoopingAnim(spr, frames, fps, gx, gy);
+    ambience.addLoopingAnim(spr, frames, fps, lit?.x ?? gx, lit?.y ?? gy);
     return spr;
   };
 
-  const glowAt = (gx: number, gy: number, tint: number, alpha: number, scale: number, lift: number): Sprite => {
+  const glowAt = (gx: number, gy: number, tint: number, alpha: number, scale: number, lift: number, lit?: { x: number; y: number }): Sprite => {
     const g = new Sprite(assets.get('glow'));
     g.anchor.set(0.5);
     g.blendMode = 'add';
@@ -122,7 +146,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     const s = worldToScreen(gx + 0.5, gy + 0.5, scratch);
     g.position.set(s.x, s.y - lift);
     viewport.ambienceLayer.addChild(g);
-    ambience.addGlow(g, gx, gy, alpha, scale);
+    ambience.addGlow(g, lit?.x ?? gx, lit?.y ?? gy, alpha, scale);
     return g;
   };
 
@@ -535,9 +559,24 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const by = alongX ? p.y - 1 : p.y;
         const s0 = worldToScreen(bx, by, scratch);
         spr.position.set(s0.x - TILE_W, s0.y + TILE_H * 2 - spr.height);
-        spr.zIndex = depthKey(p.x, p.y);
+        // NO FLICKER, NO CLIPPING (it.97). Two rules, both borrowed from the
+        // engine's own wall cubes:
+        //
+        //  - SORT by a key that sits strictly between the tiles behind the
+        //    piece and the tiles in front of it. `depthKey(x, y + 1) + 4` does
+        //    that for a run along either axis, so a hero walking the wall is
+        //    always drawn over it and neighbouring panels never disagree about
+        //    which side of the hero they belong on (the old near-corner key
+        //    tied with the hero's depth every other tile, and the two panels
+        //    beside them sorted opposite ways - the hero clipped through).
+        //  - LIGHT the piece from the floor it FACES, not from its own tile.
+        //    A wall tile only wins line of sight when the hero is nearly level
+        //    with it, so lighting it by itself lit a sliding three-tile window
+        //    and left the rest of the run dark - the flicker along the wall.
+        spr.zIndex = depthKey(p.x, p.y + 1) + 4;
+        const lit = litTile(alongX ? p.x : p.x + 1, alongX ? p.y + 1 : p.y);
         viewport.objectLayer.addChild(spr);
-        lighting.registerProp(p.x, p.y, spr);
+        lighting.registerProp(lit.x, lit.y, spr);
         // A partition the hero can stand behind fades to a ghost, as a cottage roof does.
         occluders.push({ sprite: spr, depth: spr.zIndex, tiles: { x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 } });
         break;
@@ -552,7 +591,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         spr.position.set(s1.x, s1.y + 5 - (p.lift ?? 0));
         spr.zIndex = depthKey(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0)) + (p.lift ? 6 : 0);
         viewport.objectLayer.addChild(spr);
-        lighting.registerProp(p.x, p.y, spr);
+        const litP = litTile(p.x, p.y);
+        lighting.registerProp(litP.x, litP.y, spr);
         break;
       }
       case 'innrug': {
@@ -568,11 +608,39 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'sconce': {
         // A torch on the wall: the flame burns and throws its light over the hall.
-        const t = animated(p.x, p.y, 'inn_torch', 7, 1, 1, 46);
+        const litS = litTile(p.x, p.y);
+        const t = animated(p.x, p.y, 'inn_torch', 7, 1, 1, 46, litS);
         if (t) t.position.x += (p.ox ?? 0) * TILE_W;
-        glowAt(p.x, p.y, 0xffb060, 0.4, 1.2, 52);
+        glowAt(p.x, p.y, 0xffb060, 0.4, 1.2, 52, litS);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 255, 180, 90, 0.62);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      // ---- THE CELLAR (it.97) ----
+      case 'cellardoor': {
+        // The taproom's back door. The leaf itself is part of the wall run the
+        // dresser lays; this is the prompt under it and the lamp over the stair.
+        const shut = p.variant === 'shut';
+        glowAt(p.x, p.y, shut ? 0x6a7a92 : 0xffb060, shut ? 0.16 : 0.38, 1.2, 30, litTile(p.x, p.y));
+        if (!shut) lighting.addSource(p.x + 0.5, p.y + 0.5, 3.8, 255, 180, 110, 0.5);
+        interactables.push({ id: nextId++, kind: 'cellardoor', x: p.x + 0.5, y: p.y + 0.5, label: shut ? 'E · THE CELLAR DOOR · LOCKED' : 'E · DOWN TO THE CELLAR', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x + 1, y: p.y + 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, shut ? 'THE CELLAR · LOCKED' : 'THE CELLAR', 78);
+        break;
+      }
+      case 'cellarup': {
+        // The stair back into the taproom: a little daylight falls down it.
+        glowAt(p.x, p.y, 0xffc880, 0.34, 1.5, 30);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 5, 255, 205, 140, 0.62);
+        interactables.push({ id: nextId++, kind: 'cellarup', x: p.x + 0.5, y: p.y + 0.5, label: 'E · UP TO THE TAPROOM', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }] });
+        plate(p.x, p.y, 'THE STAIR UP', 74);
+        break;
+      }
+      case 'cellargirl': {
+        // The keeper's serving woman: an idle loop on her tile, and a word when
+        // the hero stands beside her. The fog keeps her hidden until then.
+        animated(p.x, p.y, 'cellar_girl', 5, 1, 1, 2);
+        glowAt(p.x, p.y, 0xffd9a0, 0.2, 0.8, 30);
+        interactables.push({ id: nextId++, kind: 'cellargirl', x: p.x + 0.5, y: p.y + 0.5, label: 'E · SPEAK', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }] });
         break;
       }
       case 'inndoor': {

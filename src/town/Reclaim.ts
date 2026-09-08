@@ -112,6 +112,8 @@ export interface ProcessionHooks {
   titles: [[string, string], [string, string]];
   /** How many walk (default 8). */
   walkers?: number;
+  /** THE CELLAR (it.97): a shorter hold, for a scene with nobody walking in it. */
+  hold?: number;
   /** The folk stay where they arrived when the scene ends (they die with the floor). */
   keepWalkers?: boolean;
   /** The camera's cinematic focus (null gives it back to the hero). */
@@ -153,7 +155,7 @@ export class ProcessionScene {
 
   constructor(private readonly h: ProcessionHooks) {
     this.walkAt = h.carts.length ? 4.2 : 1.6;
-    this.endAt = this.walkAt + 9;
+    this.endAt = this.walkAt + (h.hold ?? 9);
     this.overlay = document.createElement('div');
     this.overlay.id = 'cine-layer';
     this.overlay.innerHTML = '<div class="cine-bar top"></div><div class="cine-bar bottom"></div><div class="cine-title"><b></b><i></i></div>';

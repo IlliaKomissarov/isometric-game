@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 96, 2026-09-08)
+- **Project version:** 0.1.0 (iteration 97, 2026-09-08)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 320 checks at it.96) | 0 failures | 320/320 on seed 3 (mage), incl. the locked and unlocked inn room; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 336 checks at it.97) | 0 failures | 336/336 on seed 3 (mage), incl. the cellar errand end to end and the locked and unlocked inn room; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -243,6 +243,18 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 97 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Wall runs strobed and the hero clipped through them | High (render) | wall pieces keyed `depthKey(x, y + 1) + 4` - strictly between the tiles behind and in front, so no depth ties; and every wall-mounted piece lit from the floor it FACES through a shared `litTile`, instead of from its own wall tile whose line of sight slid along with the hero |
+| No cellar under the inn | Feature | `scenes/Cellar.ts`: floor 104, its own mode and theme, a 34x26 vault of near-black tileset stone with three chambers joined by real round arches, 581 reachable tiles, no pockets |
+| The inn's interior was the only lit-through interior | Feature | the cellar takes real fog (`sightRadius: 8`, `fullRadius: 3`) - the first interior in the game that has to be explored |
+| Nothing to fight under the taproom | Feature | `CELLAR_POOL` - spiders, the risen, a shambler; no looters, no men. Three lootable chests off the paths |
+| The keeper's story ended with the quarter | Feature | her second errand: the drink she cannot fetch, the bolted back door, the key turned in place, and a thank-you upstairs that names the woman |
+| No woman in the game at all | Feature (art) | NELL, composited at bake time from the Spell of Mastery layered pack (CC-BY 4.0) - female body kit, long skirt, bodice, sash, sleeves, hair, with the pack's own idle bob. The Flare "Heroine" sheets proved to be off-hand weapon layers with no body |
+| A cutscene could only run at procession length | Low | `ProcessionScene` gained an optional `hold`, and the cellar's scene opens the fog on its subject first so the camera does not pan into black |
 
 ### Iteration 96 additions
 

@@ -196,6 +196,8 @@ export type AnimName =
   // THE GILDED STAG (it.96): the hearth's fire and the wall torches.
   | 'inn_fire'
   | 'inn_torch'
+  // THE CELLAR (it.97): the keeper's serving woman, idling at the deep end.
+  | 'cellar_girl'
   | 'well';
 
 export interface PaintedBounds {

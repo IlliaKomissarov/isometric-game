@@ -392,9 +392,16 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       }
       check('three sure reinforcements reach +3', p.backpack[bladeIdx]?.includes('U3'), p.backpack[bladeIdx]);
       const before = p.backpack[bladeIdx];
-      g.queue.enqueue({ type: 'REROLL', playerId: 0, backpackIndex: bladeIdx, affixIndex: 0 });
-      g.loop.step(3);
-      check('refining rewrites one line', p.backpack[bladeIdx] !== before && p.backpack[bladeIdx]?.includes('U3'), p.backpack[bladeIdx]);
+      // A reroll may legitimately land on the line it replaced, so ask a few
+      // times before calling it broken - the assertion is that refining CAN
+      // rewrite a line and never touches the reinforcement, not that one roll must differ.
+      let rerolled = false;
+      for (let i = 0; i < 6 && !rerolled; i++) {
+        g.queue.enqueue({ type: 'REROLL', playerId: 0, backpackIndex: bladeIdx, affixIndex: 0 });
+        g.loop.step(3);
+        rerolled = p.backpack[bladeIdx] !== before;
+      }
+      check('refining rewrites one line', rerolled && p.backpack[bladeIdx]?.includes('U3'), p.backpack[bladeIdx]);
       const packBefore = p.backpack.length;
       g.queue.enqueue({ type: 'FORGE', playerId: 0, base: 'steel_shortsword' });
       g.loop.step(3);
@@ -1694,6 +1701,88 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.loop.step(3);
       check('the room\'s chest opens the stash', g.stashUI.isOpen === true);
       g.stashUI.close();
+      // ================= THE CELLAR (it.97) =========================
+      {
+        const innProps2 = g.town.layout.props as Array<{ kind: string; variant?: string }>;
+        check('the cellar door is bolted until the keeper asks', !!inn2.cellarDoor && inn2.cellarOpen !== true
+          && innProps2.some((q) => q.kind === 'innwall' && q.variant === 'inn_door_w_shut')
+          && g.town.interactables.some((i: { kind: string }) => i.kind === 'cellardoor'));
+        // The keeper offers the drink, and the errand under it.
+        warp(inn2.keeper.x, inn2.keeper.y + 2);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(3);
+        await wait(60);
+        check('E at the counter: the keeper asks for her cellar back', !!dl() && /GO DOWN/.test(dl()?.textContent ?? '') && /cellar/i.test(dl()?.textContent ?? ''));
+        dl()?.querySelector<HTMLElement>('[data-choice=go]')?.click();
+        await wait(60);
+        check('the errand is taken and the bolt slides back', await until(() => game() && game().quests.cellar === 'active' && game().town?.layout.inn?.cellarOpen === true, 15000));
+        g = game();
+        await fadeClear();
+        const inn3 = g.town.layout.inn;
+        check('the door stands open', (g.town.layout.props as Array<{ kind: string; variant?: string }>).some((q) => q.kind === 'innwall' && q.variant === 'inn_door_w_open'));
+        // Down the stair.
+        warp(inn3.cellarDoor.x + 1, inn3.cellarDoor.y);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        check('E at the back door walks down into the cellar', await until(() => game() && game().floor === 104, 15000));
+        g = game();
+        await fadeClear();
+        const cel = g.town.layout.cellar;
+        const celProps = g.town.layout.props as Array<{ kind: string; variant?: string }>;
+        check('the cellar is built of the tileset\'s darkest stone, with real arches', !!cel && g.dungeon.wallsFromProps === true
+          && celProps.filter((q) => q.kind === 'innwall').length >= 28
+          && celProps.filter((q) => q.kind === 'innwall' && String(q.variant).startsWith('cellar_arch')).length >= 3
+          && celProps.some((q) => q.variant === 'cellar_vault_a')
+          && celProps.filter((q) => q.kind === 'sconce').length >= 4);
+        check('it is dark: the fog is on and the sight is short', g.lighting.omniscient !== true && !g.lighting.isVisible(cel.girl.x, cel.girl.y));
+        check('three chests wait in it', (g.town.layout.chests ?? []).length >= 2 && (g.town.layout.chests ?? []).every((c: { x: number; y: number }) => !!g.chests.findNearestUnopened(c.x + 0.5, c.y + 0.5, 0.9)));
+        // Monsters, and not one man among them.
+        const kinds: string[] = [];
+        g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
+          if (e.hp > 0) kinds.push(e.def.kind);
+        });
+        check('a moderate press of monsters, no looters', kinds.length >= 6 && kinds.length <= 20 && !kinds.some((k) => ['bandit', 'brigand', 'poacher', 'guard', 'archer', 'shaman'].includes(k)), kinds.join());
+        // The last of them falls: the scene, then her words, then the pay.
+        const gold1 = g.player.gold;
+        const pots1 = g.player.backpack.filter((i: string) => i === 'health_potion').length;
+        const ids: number[] = [];
+        g.enemies.forEachActive((e: { hp: number; id: number }) => {
+          if (e.hp > 0) ids.push(e.id);
+        });
+        for (const id of ids) g.combat.dealDamage({ sourceId: g.player.id, targetId: id, amount: 999999 });
+        g.loop.step(20);
+        check('the cellar quiet brings the letterbox down', await until(() => !!document.querySelector('#cine-layer'), 8000));
+        // An occluded tab renders nothing, and the scene is ticked from the render
+        // pass - so drive it by hand, exactly as the reclaiming above is driven.
+        for (let i = 0; i < 30 && game()?.reclaim; i++) driveRender(1000);
+        g = game();
+        check('she is found and speaks', await until(() => !!dl() && /saving me/.test(dl()?.textContent ?? ''), 15000));
+        check('the hero says nothing back', (dl()?.querySelectorAll('[data-choice]').length ?? 0) === 1);
+        dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
+        await wait(120);
+        g.loop.step(6);
+        check('a hundred gold and a draught', g.player.gold === gold1 + 100 && g.player.backpack.filter((i: string) => i === 'health_potion').length === pots1 + 1 && g.quests.cellar === 'done', `${g.player.gold - gold1}`);
+        // A word with her afterwards, then up the stair to the keeper.
+        warp(cel.girl.x - 1, cel.girl.y);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(3);
+        await wait(60);
+        check('she thanks the hero whenever she is asked', !!dl() && /Thank you/.test(dl()?.textContent ?? ''));
+        dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
+        await wait(60);
+        warp(cel.up.x, cel.up.y + 1);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        check('E at the stair walks back up into the taproom', await until(() => game() && game().floor === g.INN_FLOOR, 15000));
+        g = game();
+        await fadeClear();
+        check('she is behind the bar now, and stays', g.town.interactables.some((i: { kind: string }) => i.kind === 'cellargirl'));
+        warp(g.town.layout.inn.keeper.x, g.town.layout.inn.keeper.y + 2);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(3);
+        await wait(60);
+        check('the keeper thanks the hero again, and names her', !!dl() && /Nell/.test(dl()?.textContent ?? ''));
+        dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
+        await wait(60);
+      }
       // Out through the door, onto the inn's step.
       warp(inn2.door.x, inn2.door.y - 1);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });

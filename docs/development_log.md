@@ -1,5 +1,67 @@
 # Development Log
 
+## 2026-09-08 (iteration 97) - The cellar under the Gilded Stag, and walls that hold still
+
+### No more flicker, no more clipping (`town/TownProps.ts`)
+Walking a wall in the taproom made the run strobe and the hero clip through it.
+Two separate causes, both now fixed the way the engine's own wall cubes do it:
+
+- **Sorting.** A wall piece was keyed on its NEAR corner with no nudge, so its
+  depth tied with the hero's every other tile and the two panels either side of
+  them sorted opposite ways. The key is now `depthKey(x, y + 1) + 4`, which sits
+  strictly between the tiles behind the piece and the tiles in front of it for a
+  run along either axis. No ties, and the hero is always drawn over the wall they
+  are standing in front of.
+- **Lighting.** Fog is keyed by tile, and a WALL tile only wins line of sight
+  when the hero stands nearly level with it - so a panel lit from its own tile lit
+  a three-tile window that slid along with the hero and left the rest of the run
+  dark. Every wall-mounted piece (the panel, a painting, a torch and its glow) is
+  now lit from the floor tile it FACES, through a shared `litTile` helper.
+
+### THE CELLAR (`src/scenes/Cellar.ts`, floor 104, mode and theme `cellar`)
+A 34x26 vault under the taproom, and a second errand from its keeper.
+
+- **The art**, baked by `scratchpad/assets97.py` into 39 atlas entries, all from
+  packs already in the repo: the Ancient Isometric Tileset's near-black `wall_5`
+  runs, its `wall_3` brick for the internal walls, **real round stone archways**
+  from `doorway_3`, the 128-cube arch blocks from `arch/small` as vault piers,
+  columns from `blocks/pillar3` and `pillar6`, the altar slab, loose blocks, a
+  cobweb, the stair head, damp flagstone and packed earth floors (quadrant-sliced
+  and parity-picked, as the taproom's are), and Dungeon Pry's water and blood
+  stains. The taproom's own casks, crates and bottle shelves are reused - they
+  are the stock the errand is about.
+- **The shape.** Three chambers: the stock room along the north, and two deep
+  chambers below a cross wall, joined by three stone arches. 581 floor tiles,
+  every one reachable, no pockets. Three chests, off the paths.
+- **The dark.** Unlike the taproom this floor takes real fog (`sightRadius: 8`,
+  `fullRadius: 3`), so the chambers open a few tiles at a time - and the woman at
+  the deep end is not seen until the hero reaches her.
+- **The monsters** come from `CELLAR_POOL` - spiders, the risen, a shambler. Not
+  one man among them.
+
+### The errand, end to end
+1. With the quarter's errand paid, the keeper offers a drink, admits every bottle
+   she has is in the cellar, and asks the hero to go down. The back door in the
+   taproom's north-west wall is `inn_door_w_shut` until then, and says so.
+2. Taking it flips `quests.cellar` to `active` and rebuilds the taproom in place
+   with the leaf swung open, so the bolt slides back in front of the player.
+3. The last monster down brings the letterbox in, opens the fog on her alcove and
+   holds the camera there (`ProcessionScene` gained an optional `hold`).
+4. NELL speaks - the hero says nothing - and presses a hundred gold and a health
+   draught into their hand, per hero of the party. `quests.cellar` becomes `done`.
+5. She thanks the hero whenever she is asked, and once the hero goes back up the
+   stair she is standing by the bar for good. The keeper names her and thanks the
+   hero a second time.
+
+Her sprite is composited at bake time from the Spell of Mastery layered pack
+(CC-BY 4.0, "NancyGold / Spell of Mastery"): the female body kit under a long
+skirt, bodice, sash, sleeves and loose hair, with the pack's own idle bob. It is
+the only genuine female civilian art in the repo - the Flare "Heroine" sheets
+turned out to be off-hand WEAPON layers with no body on them.
+
+The keeper is MARGO, as she has been since it.91; the errand is written for her
+rather than for a new character.
+
 ## 2026-09-08 (iteration 96) - The Gilded Stag, built of tileset pieces
 
 Every earlier inn was drawn by the engine or painted from the reference sheet;

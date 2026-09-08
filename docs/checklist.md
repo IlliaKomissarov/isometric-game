@@ -799,6 +799,23 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The gate innkeeper restored after the it.95 deletion
 - [x] Playthrough; clean build
 
+## Iteration 97 - The cellar, and walls that hold still (2026-09-08)
+
+- [x] Wall pieces sorted between the tiles behind and in front of them: no depth ties, no clipping through a wall run
+- [x] Every wall-mounted piece lit from the floor it faces, not its own wall tile: the flicker along a wall is gone
+- [x] THE CELLAR: a 34x26 vault under the taproom, floor 104, its own mode and theme
+- [x] 39 atlas entries baked from packs already in the repo - near-black stone runs, real round archways, vault piers, columns, webs, stains, damp flags and packed earth
+- [x] Three chambers joined by three stone arches; 581 floor tiles, zero unreachable
+- [x] Real fog of war, short sight: the vault opens a few tiles at a time
+- [x] A moderate press of non-human monsters (`CELLAR_POOL`) - no looters, no men
+- [x] Three lootable chests
+- [x] The keeper's second errand: the drink she cannot fetch, the bolted back door, and the key turned in place when it is taken
+- [x] The rescue: letterbox, the fog opened on her alcove, the camera held on her
+- [x] NELL speaks her piece, the hero stays silent, and pays a hundred gold and a health draught to every hero of the party
+- [x] She thanks the hero whenever asked, and stands by the bar for good afterwards
+- [x] The keeper names her and thanks the hero a second time upstairs
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

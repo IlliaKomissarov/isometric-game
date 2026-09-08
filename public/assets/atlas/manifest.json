@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-08T15:20:48.317576+00:00",
+ "generated": "2026-09-08T17:42:30.955074+00:00",
  "anims": {
   "knight_idle": {
    "file": "knight_idle.png",
@@ -2716,6 +2716,25 @@
     "bottom": 44,
     "left": 0,
     "right": 17
+   }
+  },
+  "cellar_girl": {
+   "file": "cellar_girl.png",
+   "cellW": 30,
+   "cellH": 64,
+   "frameCount": 4,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 30,
+   "origH": 64,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 63,
+    "left": 0,
+    "right": 29
    }
   }
  },
@@ -5742,6 +5761,234 @@
    "file": "single_inn_bed.png",
    "w": 104,
    "h": 79,
+   "nearest": false
+  },
+  "cellar_flag_0": {
+   "file": "single_cellar_flag_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_flag_1": {
+   "file": "single_cellar_flag_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_flag_2": {
+   "file": "single_cellar_flag_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_flag_3": {
+   "file": "single_cellar_flag_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_dirt_0": {
+   "file": "single_cellar_dirt_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_dirt_1": {
+   "file": "single_cellar_dirt_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_dirt_2": {
+   "file": "single_cellar_dirt_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_dirt_3": {
+   "file": "single_cellar_dirt_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_wall_n": {
+   "file": "single_cellar_wall_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_wall_w": {
+   "file": "single_cellar_wall_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_brick_n": {
+   "file": "single_cellar_brick_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_brick_w": {
+   "file": "single_cellar_brick_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_arch_n": {
+   "file": "single_cellar_arch_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_arch_w": {
+   "file": "single_cellar_arch_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_lintel_n": {
+   "file": "single_cellar_lintel_n.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_lintel_w": {
+   "file": "single_cellar_lintel_w.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_vault_a": {
+   "file": "single_cellar_vault_a.png",
+   "w": 128,
+   "h": 128,
+   "nearest": false
+  },
+  "cellar_vault_b": {
+   "file": "single_cellar_vault_b.png",
+   "w": 128,
+   "h": 128,
+   "nearest": false
+  },
+  "cellar_pier_a": {
+   "file": "single_cellar_pier_a.png",
+   "w": 128,
+   "h": 128,
+   "nearest": false
+  },
+  "cellar_pier_b": {
+   "file": "single_cellar_pier_b.png",
+   "w": 128,
+   "h": 128,
+   "nearest": false
+  },
+  "inn_door_w_shut": {
+   "file": "single_inn_door_w_shut.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_door_w_open": {
+   "file": "single_inn_door_w_open.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "inn_arch_w2": {
+   "file": "single_inn_arch_w2.png",
+   "w": 128,
+   "h": 256,
+   "nearest": false
+  },
+  "cellar_pillar": {
+   "file": "single_cellar_pillar.png",
+   "w": 39,
+   "h": 110,
+   "nearest": false
+  },
+  "cellar_post": {
+   "file": "single_cellar_post.png",
+   "w": 48,
+   "h": 104,
+   "nearest": false
+  },
+  "cellar_altar": {
+   "file": "single_cellar_altar.png",
+   "w": 96,
+   "h": 80,
+   "nearest": false
+  },
+  "cellar_rubble_a": {
+   "file": "single_cellar_rubble_a.png",
+   "w": 33,
+   "h": 32,
+   "nearest": false
+  },
+  "cellar_rubble_b": {
+   "file": "single_cellar_rubble_b.png",
+   "w": 26,
+   "h": 22,
+   "nearest": false
+  },
+  "cellar_stairs": {
+   "file": "single_cellar_stairs.png",
+   "w": 128,
+   "h": 88,
+   "nearest": false
+  },
+  "cellar_crate": {
+   "file": "single_cellar_crate.png",
+   "w": 48,
+   "h": 48,
+   "nearest": false
+  },
+  "cellar_crates": {
+   "file": "single_cellar_crates.png",
+   "w": 92,
+   "h": 84,
+   "nearest": false
+  },
+  "cellar_pots": {
+   "file": "single_cellar_pots.png",
+   "w": 28,
+   "h": 36,
+   "nearest": false
+  },
+  "cellar_goods": {
+   "file": "single_cellar_goods.png",
+   "w": 28,
+   "h": 22,
+   "nearest": false
+  },
+  "cellar_web": {
+   "file": "single_cellar_web.png",
+   "w": 42,
+   "h": 39,
+   "nearest": false
+  },
+  "cellar_stain_a": {
+   "file": "single_cellar_stain_a.png",
+   "w": 47,
+   "h": 16,
+   "nearest": false
+  },
+  "cellar_stain_b": {
+   "file": "single_cellar_stain_b.png",
+   "w": 47,
+   "h": 16,
+   "nearest": false
+  },
+  "cellar_stain_c": {
+   "file": "single_cellar_stain_c.png",
+   "w": 47,
+   "h": 16,
+   "nearest": false
+  },
+  "cellar_girl_still": {
+   "file": "single_cellar_girl_still.png",
+   "w": 29,
+   "h": 61,
    "nearest": false
   }
  }

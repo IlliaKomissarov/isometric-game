@@ -79,6 +79,7 @@ import { mulberry32, randInt } from '@/utils/rng';
 import { buildTownLayout, LOOTER_COUNT, type EastState, type TownLayout } from '@/town/TownMap';
 import { GateFx, ProcessionScene } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
+import { buildCellarLayout } from '@/scenes/Cellar';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
@@ -204,16 +205,20 @@ interface World {
   foesAtStart: number;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar';
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
 const MINES_FLOOR = 102;
 /** THE GILDED STAG INSIDE (it.92): the inn's own floor. */
 const INN_FLOOR = 103;
+/** THE CELLAR (it.97): the vault under the taproom. */
+const CELLAR_FLOOR = 104;
 const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
 const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
+/** THE CELLAR (it.97): what crawled in under the inn - vermin and the risen, no men. */
+const CELLAR_POOL: EnemyKind[] = ['spider', 'spider', 'spider', 'zombie', 'zombie', 'ahoul', 'skeleton', 'shambler'];
 /** The mode a floor number stands for (the arena is decided by the caller). */
-const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : 'normal');
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : 'normal');
 
 /** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
 interface MinesState {
@@ -367,7 +372,7 @@ async function boot(): Promise<void> {
     if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
     if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
-    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'inn_boards', 'inn_stone'].forEach((name, i) => {
+    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'inn_boards', 'inn_stone', 'cellar_flag', 'cellar_dirt'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
@@ -1659,7 +1664,7 @@ async function boot(): Promise<void> {
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
-      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : null;
+      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : null;
       if (depthLabel) depthLabel.textContent = place ?? (floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`);
       setZoneLabel(place ?? (floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`));
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
@@ -1709,6 +1714,8 @@ async function boot(): Promise<void> {
     /** LOOTABLE CHESTS (it.92): a district's chest the save says was opened. */
     const townChestOpened = (floorNum: number, x: number, y: number): boolean => (quests.chests ?? '').split(';').includes(`${floorNum}:${x},${y}`);
     /** THE EASTERN QUARTER (it.91): how the town is built from the errand's state. */
+    /** THE CELLAR (it.97): the keeper has asked, so her back door is unbolted. */
+    const cellarAsked = (): boolean => quests.cellar === 'active' || quests.cellar === 'done';
     const eastStateOf = (): EastState => (quests.east === 'done' || quests.east === 'cleared' ? 'cleared' : quests.east === 'open' ? 'open' : 'sealed');
     const LOOTER_LEVEL = 5;
     /** The looters at their posts, the first `killed` of them already counted dead; two champions among the twenty. */
@@ -1726,18 +1733,25 @@ async function boot(): Promise<void> {
       const isForest = mode === 'forest';
       const isMines = mode === 'mines';
       const isInn = mode === 'inn';
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isCellar = mode === 'cellar';
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
       const minesLevel = Math.max(4, Math.min(MAX_DEPTH, deepestFloor + 2));
       const isMinesArena = isArena && floorNum === MINES_FLOOR; // THE QUARRY ARENA (it.88): past the hall's seal.
-      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : floorNum;
+      // THE CELLAR (it.97) fights a step under the forest's measure: it is the errand a hero takes early.
+      const cellarLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
+      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
-      const inn = isInn ? buildInnLayout(seed, quests.east === 'done') : null; // THE GILDED STAG (it.96): the room opens once the errand is paid.
-      const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : inn ? inn.layout : null;
-      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn ? undefined : floors[memKey(floorNum, isArena)];
+      // THE GILDED STAG (it.96/97): the room opens once the errand is paid; the
+      // cellar door once the keeper asks for his drink back; the woman stands by
+      // the bar once she has been walked up out of the dark.
+      const inn = isInn ? buildInnLayout(seed, quests.east === 'done', cellarAsked(), quests.cellar === 'done') : null;
+      const cellar = isCellar ? buildCellarLayout(seed, quests.cellar === 'done') : null;
+      const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : null;
+      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn || isCellar ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
@@ -1747,8 +1761,8 @@ async function boot(): Promise<void> {
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub || isColiseum || isForest || isInn) {
-        hearths = []; // The town, the coliseum, the forest and the inn light themselves.
+      if (isHub || isColiseum || isForest || isInn || isCellar) {
+        hearths = []; // The town, the coliseum, the forest, the inn and its cellar light themselves.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
@@ -1796,7 +1810,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : undefined); // The inn is lit end to end (it.92).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -1806,6 +1820,8 @@ async function boot(): Promise<void> {
           ? 'town'
         : isInn
           ? 'inn'
+        : isCellar
+          ? 'cellar'
         : isMines || isMinesArena
           ? 'stone'
         : floorNum <= 2
@@ -1825,6 +1841,8 @@ async function boot(): Promise<void> {
         audio.setMusic('forest', floorNum);
       } else if (isInn) {
         audio.setMusic('town'); // The inn keeps the town's tune (it.92).
+      } else if (isCellar) {
+        audio.setMusic('mines', floorNum); // Under the boards the tune goes cold (it.97).
       } else if (isMines) {
         audio.setMusic('mines', floorNum);
       } else {
@@ -1837,7 +1855,7 @@ async function boot(): Promise<void> {
       const ambience = new Ambience(viewport);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
-      const goldPiles = isHub || isColiseum || isForest || isInn ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      const goldPiles = isHub || isColiseum || isForest || isInn || isCellar ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -1901,7 +1919,7 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: isForest || isInn ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
+            ? { at: isForest || isInn || isCellar ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
             : isMines
               ? { hidden: true, at: { x: 1, y: 1 } } // The quarry has no stair (a wall tile no one can touch): the way home is the teleporter after the hall (it.85).
             : isArena
@@ -1915,7 +1933,7 @@ async function boot(): Promise<void> {
       const loot = new LootSystem(viewport, seed);
       loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub && !isColiseum && !isForest && !isInn) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      if (!isArena && !isHub && !isColiseum && !isForest && !isInn && !isCellar) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
       // LOOTABLE CHESTS (it.92): the districts' small chests, on the layout's spots, the opened ones remembered by the save.
       if (layout?.chests) for (const c of layout.chests) if (!townChestOpened(floorNum, c.x, c.y)) chests.spawnAt(c.x, c.y, false, true);
       // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
@@ -2112,7 +2130,7 @@ async function boot(): Promise<void> {
       let boss: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe)) {
+      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done')) {
         // No enemies in town; a cleared arena stays empty with its stair open; a cleared forest is a safe road (it.87).
       } else if (isArena) {
         const room = dungeon.rooms[0];
@@ -2137,7 +2155,7 @@ async function boot(): Promise<void> {
           if (affixRoll < 0.15) guardBody.setAffix(AFFIXES[Math.floor((affixRoll / 0.15) * 3) % 3]); // Elite honor guard (it.53).
         }
       } else {
-        spawnFloorEnemies(dungeon, enemies, floorLevel, stairs, seed, killed, isForest ? FOREST_POOL : isMines ? MINES_POOL : undefined);
+        spawnFloorEnemies(dungeon, enemies, floorLevel, stairs, seed, killed, isForest ? FOREST_POOL : isMines ? MINES_POOL : isCellar ? CELLAR_POOL : undefined);
         // THE QUARRY'S KEEPER (it.88) waits in its arena past the hall's seal, not in the hall.
       }
       // ENEMIES REMAINING (it.88): what the floor woke with.
@@ -2174,11 +2192,13 @@ async function boot(): Promise<void> {
         const streets = { roads: layout.road, mapWidth: layout.map.width };
         const villagers = isForest
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined }) // A cleared forest keeps folk and sentries (it.87).
+          : isCellar
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isInn
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
             : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
-        const villagers2 = isForest || isInn
+        const villagers2 = isForest || isInn || isCellar
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
           : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
@@ -3849,6 +3869,12 @@ async function boot(): Promise<void> {
       if (innFace === undefined) innFace = spriteLib.loaded && spriteLib.hasAnim('villager_walk') ? portraitFromTexture(spriteLib.frame('villager_walk', 6, 0), 0xf0c890) : null;
       return innFace;
     };
+    let girlFace: HTMLCanvasElement | null | undefined;
+    /** THE CELLAR (it.97): her own idle frame, cropped to the head. */
+    const girlPortrait = (): HTMLCanvasElement | null => {
+      if (girlFace === undefined) girlFace = spriteLib.loaded && spriteLib.hasAnim('cellar_girl') ? portraitFromTexture(spriteLib.frame('cellar_girl', 0, 0), 0xffffff) : null;
+      return girlFace;
+    };
     let refugeeFace: HTMLCanvasElement | null | undefined;
     const refugeePortrait = (): HTMLCanvasElement | null => {
       if (refugeeFace === undefined) refugeeFace = spriteLib.loaded && spriteLib.hasAnim('folk_walk') ? portraitFromTexture(spriteLib.frame('folk_walk', 6, 0), 0xffffff) : null;
@@ -3968,6 +3994,43 @@ async function boot(): Promise<void> {
           choices: [{ label: 'THANK YOU', sub: 'the gold, the bow, the sword, and the key to the room', value: 'reward' }],
         });
         if (v === 'reward') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'reward' });
+        return;
+      }
+      // ---- THE CELLAR (it.97): her second errand, and her thanks for it ----
+      const cel = quests.cellar ?? 'new';
+      if (cel === 'new') {
+        const v = await dialogue.open({
+          ...who,
+          lines: [
+            'Sit down, you\'ve earned a drink. On the house.',
+            'Ah. That\'s the trouble - every bottle I have is down in the cellar, and I have not been down there since the looters left. Something else went down after them. I can hear it through the boards at night.',
+            'I gave you the bow and the sword. Go down and see what it is, and bring my stock back up. I\'m not proud about it - I am frightened of that stair.',
+          ],
+          choices: [
+            { label: 'I\'LL GO DOWN', sub: 'she unbolts the back door', value: 'go' },
+            { label: 'NOT NOW', value: 'stay' },
+          ],
+        });
+        if (v === 'go') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'cellar', step: 'accept' });
+        return;
+      }
+      if (cel === 'active') {
+        await dialogue.open({
+          ...who,
+          lines: ['The back door\'s open. Mind the dark down there - I never got round to lighting it properly.'],
+          choices: [{ label: 'UNDERSTOOD', value: 'ok' }],
+        });
+        return;
+      }
+      if (cel === 'done') {
+        await dialogue.open({
+          ...who,
+          lines: [
+            'You brought Nell up with you. She works my tables - three years now - and I had her down as gone with the rest of them.',
+            'I do not know what to say except thank you. Twice now. The room is yours, the chest is yours, and you will never pay for a drink in here again.',
+          ],
+          choices: [{ label: 'THANKS', value: 'ok' }],
+        });
         return;
       }
       await dialogue.open({
@@ -4101,6 +4164,143 @@ async function boot(): Promise<void> {
       });
       saveNow();
     };
+    // ================= THE CELLAR (it.97) =================================
+    // The keeper's second errand: her stock is in the vault under the taproom
+    // and something has moved in among the casks. The back door is locked until
+    // she asks; the woman at the deep end is not seen until the dark is cleared.
+    /** Ticks left before the rescue's dialogue, once the cutscene has played. */
+    let cellarSceneTicks = -1;
+    /** The way down into the vault, and back up into the taproom. */
+    const goCellar = (): void => goPlace(CELLAR_FLOOR, 'down into the cellar');
+    const leaveCellar = (): void =>
+      withFade(async () => {
+        await preloadFloor(INN_FLOOR, 'inn');
+        if (!swapWorld(() => buildWorld(INN_FLOOR, 'inn'))) return;
+        floor = INN_FLOOR;
+        updateDepth();
+        floorStartTick = state.tick;
+        floorActiveTicks = 0;
+        player.action = 'idle';
+        const at = world.town?.layout.inn?.cellarDoor;
+        if (at) placeParty(at.x + 1.5, at.y + 0.5, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        updateOrb();
+      }, 'up to the taproom');
+    /** The cutscene: the bars close, the camera finds her among the casks. */
+    const startCellarScene = (): void => {
+      if (reclaim) return;
+      const at = world.town?.layout.cellar?.girl ?? { x: 29, y: 22 };
+      // The camera is about to look into a corner the hero has never lit: open
+      // the fog there first, or the scene plays over solid black.
+      world.lighting.updateVisibility(at.x, at.y);
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: at.x, y: at.y },
+        from: { x: at.x, y: at.y },
+        route: [],
+        titles: [['THE CELLAR IS QUIET', 'the last of them falls among the casks'], ['SOMEONE IS DOWN HERE', 'a light behind the crates, and a voice']],
+        walkers: 0,
+        keepWalkers: true,
+        hold: 4.5, // Nobody walks in this one: hold on her, then let her speak.
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y)); // The sight comes back to the hero.
+          cellarSceneTicks = 1; // The next tick gives her her words.
+        },
+      });
+    };
+    /** Her thanks, and the errand paid where she stands. */
+    const girlRescueTalk = async (): Promise<void> => {
+      const v = await dialogue.open({
+        speaker: 'NELL',
+        role: 'of the Gilded Stag',
+        portrait: girlPortrait(),
+        lines: [
+          'Is it over? Are they dead? I was hiding from the looters in the basement, and then these monsters appeared...',
+          'I was hiding here until you showed up. Thank you for saving me!',
+        ],
+        choices: [{ label: '...', sub: 'she presses a purse and a draught into your hand', value: 'ok' }],
+      });
+      if (v !== null) inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'cellar', step: 'rescue' });
+    };
+    /** A word with her afterwards, down here or behind the bar. */
+    const girlTalk = async (): Promise<void> => {
+      await dialogue.open({
+        speaker: 'NELL',
+        role: 'of the Gilded Stag',
+        portrait: girlPortrait(),
+        lines: [
+          quests.cellar === 'done'
+            ? 'Thank you. I mean it. I would still be behind those crates if you had not come down.'
+            : 'Please - do not leave me down here.',
+        ],
+        choices: [{ label: 'TAKE CARE', value: 'ok' }],
+      });
+    };
+    /** Each tick in the vault: the count, then the scene, then her words. */
+    const tickCellarQuest = (): void => {
+      if (floor !== CELLAR_FLOOR || quests.cellar !== 'active' || transitioning) return;
+      if (cellarSceneTicks === -2) return; // Played already: her words are open, or were closed unanswered.
+      if (cellarSceneTicks < 0) {
+        let alive = 0;
+        world.enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.action !== 'dead') alive++;
+        });
+        if (alive > 0) return;
+        cellarSceneTicks = 0; // Held while the scene plays; its end sets the clock to one.
+        world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE CELLAR IS QUIET', 'crit');
+        audio.sfx('questDone');
+        startCellarScene();
+        return;
+      }
+      if (cellarSceneTicks === 0) return; // The scene is on.
+      if (--cellarSceneTicks > 0) return;
+      cellarSceneTicks = -2; // Spent: the scene never plays twice.
+      void girlRescueTalk();
+    };
+    /**
+     * The ledger's two steps. `accept` unlocks the back door and rebuilds the
+     * taproom around the hero so the key turns in front of them; `rescue` pays
+     * her hundred gold and her draught to every hero of the party.
+     */
+    const applyCellarStep = (step: string): void => {
+      if (step === 'accept') {
+        if (quests.east !== 'done' || (quests.cellar ?? 'new') !== 'new' || floor !== INN_FLOOR) return;
+        quests.cellar = 'active';
+        saveNow();
+        audio.sfx('gateOpen');
+        withFade(async () => {
+          await preloadFloor(INN_FLOOR, 'inn');
+          if (!swapWorld(() => buildWorld(INN_FLOOR, 'inn'))) return;
+          const at = world.town?.layout.inn?.cellarDoor;
+          if (at) placeParty(at.x + 2.5, at.y + 0.5, world.scene.isWalkable);
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          minimap.markDirty();
+          tutorial.say('The back door is open. Whatever is in her cellar, it is between you and the drink.');
+        }, 'the bolt slides back');
+        return;
+      }
+      if (step !== 'rescue' || quests.cellar !== 'active' || floor !== CELLAR_FLOOR) return;
+      quests.cellar = 'done';
+      for (const seat of liveSeats()) {
+        seat.player.gold += 100;
+        seat.player.addItem('health_potion');
+      }
+      eventBus.emit('inventory:changed', {});
+      showReward('REWARD RECEIVED · 100 GOLD · A HEALTH DRAUGHT');
+      audio.sfx('questDone');
+      world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 26);
+      world.dmgText.show(player.pos.x, player.pos.y - 0.8, '+100 GOLD · A HEALTH DRAUGHT', 'crit');
+      saveNow();
+    };
+
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
     /** THE GILDED STAG (it.92): through the door into the inn's own floor, and back out to its step. */
     const goInn = (): void => goPlace(INN_FLOOR, 'into the Gilded Stag');
@@ -4363,6 +4563,7 @@ async function boot(): Promise<void> {
             // THE EASTERN QUARTER (it.91): the leader's word, everyone's tick.
             if (coop && cmd.playerId !== leaderSlot) continue;
             if (cmd.id === 'east') applyEastStep(cmd.step);
+      else if (cmd.id === 'cellar') applyCellarStep(cmd.step); // THE CELLAR (it.97).
           } else if (cmd.type === 'WARP') {
             if (coop && cmd.playerId !== leaderSlot) {
               if (cmd.playerId === localSlot) leaderOnlyNote();
@@ -4398,6 +4599,7 @@ async function boot(): Promise<void> {
         if (world.mines) tickMines(); // THE IRON GATES (it.85): a key at a gate opens it.
         tickForestQuest(); // THE FOREST ERRAND (it.87).
         tickEastQuest(); // THE EASTERN QUARTER (it.91).
+        tickCellarQuest(); // THE CELLAR (it.97).
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
@@ -4525,7 +4727,7 @@ async function boot(): Promise<void> {
             if (audio.currentMusic !== 'death' && audio.currentMusic !== 'gameover') musicBeforeDeath = audio.currentMusic;
             audio.setMusic(hardcore ? 'gameover' : 'death', floor);
             runMenus.showDeath(
-              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
+              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
               hardcore,
             );
           }
@@ -5192,6 +5394,22 @@ async function boot(): Promise<void> {
         else leaveInn();
         return;
       }
+      // THE CELLAR (it.97): the back door, the stair up, and the woman behind the casks.
+      if (it.kind === 'cellardoor') {
+        if (!cellarAsked()) tutorial.say('Bolted, and the keeper has the key. She has not asked you to go down there.');
+        else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else goCellar();
+        return;
+      }
+      if (it.kind === 'cellarup') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else leaveCellar();
+        return;
+      }
+      if (it.kind === 'cellargirl') {
+        void girlTalk();
+        return;
+      }
       if (it.kind === 'bed') {
         // Walk to the bedside first (it.92): the lying-down starts from beside the bed, not from across the room.
         const d = Math.hypot(player.pos.x - it.x, player.pos.y - it.y);
@@ -5575,7 +5793,7 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
         const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         if (!world.town) captureFloor();
@@ -5698,7 +5916,13 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
   if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
-  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.
+  if (mode === 'cellar') {
+    const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'cellar_girl', 'folk_walk', ...VFX_ANIMS]);
+    for (const k of CELLAR_POOL) for (const a of animsForKind(k)) out.add(a);
+    return [...out];
+  }
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
     const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);

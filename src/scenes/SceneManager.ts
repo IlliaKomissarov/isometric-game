@@ -22,7 +22,7 @@ import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { TILE_BLOCKED, TILE_DOOR, TILE_FLOOR, TILE_WALL, type DungeonMap } from './DungeonGenerator';
 
-export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town' | 'inn';
+export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town' | 'inn' | 'cellar';
 
 const THEME_SUFFIX: Record<FloorTheme, string> = {
   stone: '',
@@ -31,6 +31,7 @@ const THEME_SUFFIX: Record<FloorTheme, string> = {
   ember: '_ember',
   town: '',
   inn: '', // THE GILDED STAG (it.96): the inn draws no wall cubes at all - its walls are tileset pieces (`wallsFromProps`).
+  cellar: '', // THE CELLAR (it.97): the same - dark stone pieces, no cubes.
 };
 
 export class SceneManager {
@@ -100,9 +101,9 @@ export class SceneManager {
     // coords, so no two neighbours repeat and no field reads as a flat block.
     const kind = kinds ? kinds[gy * this.map.width + gx] : 0;
     // THE GILDED STAG (it.96): its boards run over 2x2 blocks, so the quadrant is picked by parity.
-    const townVariant = `floor_town_${kind}_${this.theme === 'inn' ? (gx & 1) + 2 * (gy & 1) : (gx * 5 + gy * 11) % 4}`;
+    const townVariant = `floor_town_${kind}_${this.theme === 'inn' || this.theme === 'cellar' ? (gx & 1) + 2 * (gy & 1) : (gx * 5 + gy * 11) % 4}`;
     const key =
-      (this.theme === 'town' || this.theme === 'inn') && kinds
+      (this.theme === 'town' || this.theme === 'inn' || this.theme === 'cellar') && kinds
         ? assets.has(townVariant)
           ? townVariant
           : `floor_town_${kind}`

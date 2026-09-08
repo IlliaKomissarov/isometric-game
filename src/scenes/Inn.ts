@@ -35,8 +35,15 @@ const DOOR_PIECE_X = 22;
 const DOOR_GAP = { x: 23, y: PART_Y };
 /** The way out to the street: an arch in the north-east wall over tiles (8,1) and (9,1). */
 const OUT_PIECE_X = 8;
+/** THE CELLAR DOOR (it.97): a leaf in the north-west wall over tiles (1,18) and (1,19). */
+const CELLAR_PIECE_Y = 18;
 
-export function buildInnLayout(seed: number, roomOpen = false): { layout: TownLayout; inn: InnLayout } {
+/**
+ * @param roomOpen   the errand is paid: the rented room is carved and dressed.
+ * @param cellarOpen the keeper has asked for his drink back: the back door opens.
+ * @param rescued    his serving woman is out of the cellar: she stands by the bar.
+ */
+export function buildInnLayout(seed: number, roomOpen = false, cellarOpen = false, rescued = false): { layout: TownLayout; inn: InnLayout } {
   const W = INN_W;
   const H = INN_H;
   const grid = new Uint8Array(W * H).fill(TILE_WALL);
@@ -80,7 +87,7 @@ export function buildInnLayout(seed: number, roomOpen = false): { layout: TownLa
 
   // ---- THE WALLS -------------------------------------------------------
   for (let x = HALL.x0; x <= HALL.x1; x += 2) wallN(x, 1, x === OUT_PIECE_X ? 'inn_arch_n' : 'inn_wall_n');
-  for (let y = HALL.y0; y <= HALL.y1; y += 2) wallW(1, y, y === 8 ? 'inn_hearth_w' : 'inn_wall_w');
+  for (let y = HALL.y0; y <= HALL.y1; y += 2) wallW(1, y, y === 8 ? 'inn_hearth_w' : y === CELLAR_PIECE_Y ? (cellarOpen ? 'inn_door_w_open' : 'inn_door_w_shut') : 'inn_wall_w');
   for (let x = ROOM.x0; x <= ROOM.x1; x += 2) wallN(x, PART_Y, x === DOOR_PIECE_X ? (roomOpen ? 'inn_door_open' : 'inn_door_shut') : 'inn_wall_n');
   for (let y = PART_Y; y <= ROOM.y1; y += 2) wallW(PART_X, y, 'inn_wall_w');
 
@@ -101,6 +108,10 @@ export function buildInnLayout(seed: number, roomOpen = false): { layout: TownLa
   decal({ kind: 'inndeco', x: 19, y: 3, variant: 'inn_plate', ox: 0.2, oy: -0.35 });
   decal({ kind: 'inndeco', x: 21, y: 3, variant: 'inn_flasks', ox: 0.1, oy: -0.4 });
 
+  // ---- THE CELLAR DOOR -------------------------------------------------
+  const cellarDoor = { x: 1, y: CELLAR_PIECE_Y + 1 };
+  decal({ kind: 'cellardoor', x: cellarDoor.x, y: cellarDoor.y, variant: cellarOpen ? 'open' : 'shut' });
+
   // ---- THE HEARTH ------------------------------------------------------
   const hearth = { x: 2, y: 8 };
   decal({ kind: 'hearth', x: hearth.x, y: hearth.y });
@@ -118,7 +129,7 @@ export function buildInnLayout(seed: number, roomOpen = false): { layout: TownLa
   rug('inn_carpet_a', 9, 16, 0.4, 0.2);
   rug('inn_carpet_a', 11, 10, 0.2, 0.4);
   put('inn_cupboard', 2, 15, 0.35, 0);
-  put('inn_barrel', 2, 19, 0.3, 0.1);
+  put('inn_barrel', 4, 21, 0.3, 0.1); // Clear of the cellar door's approach at (2,19).
   put('inn_crates', 5, 2, 0.2, -0.1);
   put('inn_crate', 12, 2, 0.2, -0.1);
   decal({ kind: 'inndeco', x: 10, y: 2, variant: 'inn_goods_a', ox: 0.2, oy: -0.2 });
@@ -130,6 +141,9 @@ export function buildInnLayout(seed: number, roomOpen = false): { layout: TownLa
   for (const [x, y] of [[6, 1], [14, 1], [22, 1]] as const) decal({ kind: 'inndeco', x, y, variant: x === 14 ? 'inn_painting_b' : 'inn_painting_a', ox: 0.5, oy: 0.35, lift: 44 });
   for (const [x, y] of [[4, 1], [12, 1], [18, 1], [24, 1]] as const) decal({ kind: 'sconce', x, y, ox: 0.55, oy: 0.4 });
   for (const y of [4, 12, 16, 20]) decal({ kind: 'sconce', x: 1, y, ox: 0.5, oy: 0.55 });
+
+  // ---- THE SERVING WOMAN, once she is out of the cellar -----------------
+  if (rescued) block({ kind: 'cellargirl', x: 17, y: 5 });
 
   // ---- THE RENTED ROOM -------------------------------------------------
   const bed = { x: 22, y: 16 };
@@ -188,7 +202,7 @@ export function buildInnLayout(seed: number, roomOpen = false): { layout: TownLa
   const layout = bareLayout(map, props, 'THE GILDED STAG');
   layout.wander = hall;
   layout.houses = [];
-  const inn: InnLayout = { keeper, door, bed, stash, forge: hearth, hall, roomOpen };
+  const inn: InnLayout = { keeper, door, bed, stash, forge: hearth, hall, roomOpen, cellarDoor, cellarOpen };
   layout.inn = inn;
   return { layout, inn };
 }

@@ -48,6 +48,9 @@ export const KIND_SAND = 3;
 /** THE GILDED STAG's boards and flagstones (it.96). */
 export const KIND_INN_BOARDS = 4;
 export const KIND_INN_STONE = 5;
+/** THE CELLAR's damp flags and the earth worn through them (it.97). */
+export const KIND_CELLAR_FLAG = 6;
+export const KIND_CELLAR_DIRT = 7;
 
 export type TownPropKind =
   | 'house'
@@ -147,12 +150,30 @@ export type TownPropKind =
   | 'innprop'
   | 'inndeco'
   | 'innrug'
-  | 'sconce';
+  | 'sconce'
+  // THE CELLAR (it.97): the way down, the way back up, and the woman at the deep end.
+  | 'cellardoor'
+  | 'cellarup'
+  | 'cellargirl';
+
+/** THE CELLAR (it.97): what main needs of the floor under the taproom. */
+export interface CellarLayout {
+  /** The stair back up to the taproom. */
+  up: { x: number; y: number };
+  /** The alcove the keeper's serving woman is hiding in. */
+  girl: { x: number; y: number };
+  /** True once she has been walked back up: the alcove is empty. */
+  rescued: boolean;
+}
 
 /** THE GILDED STAG INSIDE (it.92): what main needs of the inn's floor. */
 export interface InnLayout {
   /** THE RENTED ROOM (it.96): shut and black until the errand is paid. */
   roomOpen?: boolean;
+  /** THE CELLAR DOOR (it.97): in the taproom's back wall, shut until the keeper asks. */
+  cellarDoor?: { x: number; y: number };
+  /** True once the keeper has asked for his drink back: the door is open. */
+  cellarOpen?: boolean;
   keeper: { x: number; y: number };
   door: { x: number; y: number };
   bed: { x: number; y: number };
@@ -199,6 +220,8 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   // WALK THROUGH (it.93): everything knee-high or broken is paint underfoot - a heap, a stub of wall, a boulder, a bench, a keg, a chair, a candle stand.
   'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
   'inndeco', 'innrug', 'sconce', 'innwall',
+  // THE CELLAR (it.97): both doorways are drawn into a wall run, so the tile under them stays open.
+  'cellardoor', 'cellarup',
 ]);
 
 export interface TownProp {
@@ -273,6 +296,8 @@ export interface TownLayout {
   east?: EastQuarter;
   /** THE GILDED STAG INSIDE (it.92): the inn's floor only. */
   inn?: InnLayout;
+  /** THE CELLAR (it.97): the floor under the taproom only. */
+  cellar?: CellarLayout;
   /** LOOTABLE CHESTS (it.92): where the district's small chests stand (the `chest` props' tiles). */
   chests?: Array<{ x: number; y: number }>;
 }

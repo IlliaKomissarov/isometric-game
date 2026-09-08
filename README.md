@@ -68,7 +68,12 @@
   fire, tables, carpets, casks and torchlight - the keeper pays two hundred gold, a bow and a
   sword, and turns the key on the back room. Until then its door is shut and the dark behind it
   holds nothing; after, it is yours: a bed to lie on and a warded chest that is the same stash
-  you reach from any stash point, shared with your party in co-op. Villagers walk the streets of every district and have a word for
+  you reach from any stash point, shared with your party in co-op. Then she asks for one
+  thing more: every bottle she owns is in THE CELLAR under the taproom, and she has not been
+  down since the looters left. The back door is bolted until she asks. Below it is a dark
+  vault of black stone and round arches where the fog closes in at eight tiles, spiders and
+  the risen among the casks, three chests in the corners, and - when the last of them is
+  down - a woman who has been hiding behind the crates since the night the quarter burned. Villagers walk the streets of every district and have a word for
   you; small chests wait in the corners; every quest target wears a mark, on screen and off. The eastern
   road out of the Market Ward stays shut until the gatekeeper hands you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
   and the road opens for good, a hundred gold in hand, the woods a safe road with folk in the

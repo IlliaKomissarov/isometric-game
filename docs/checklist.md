@@ -816,6 +816,19 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The keeper names her and thanks the hero a second time upstairs
 - [x] Playthrough; clean build
 
+## Iteration 98 - Names, a crowd, and a town that remembers (2026-09-08)
+
+- [x] The cellar's free-standing arched cubes removed; the three wall archways that carry the passages kept
+- [x] SARAH: named, and out of the layer and wordless until the last monster in the vault is down
+- [x] COLESLAW: a male innkeeper on the peasant sheet, anchored at the sole, with every line written for him
+- [x] SIR HAM: the sentry on the eastern road, named on the gate prompt and in both dialogues
+- [x] Four walking bodies on the streets instead of one, each with its own height, anchor, frame count and coat
+- [x] The new sheets added to the hub, inn and forest atlas rosters
+- [x] Fog of war persisted per zone across transitions, and across a rebuild of the same floor
+- [x] Coming home from the forest lands the party at the eastern gateway, not the town square
+- [x] Procession entry points lit and unfogged, so the people who walk in can be seen
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -54,6 +54,9 @@ export interface TownDressing {
   /** Label manager (it.50): where the E-prompt shows, so its plate stands down. */
   setPromptAt: (x: number | null, y?: number) => void;
   stashSprite: Sprite | null;
+  /** SARAH (it.98): her sprite and the id of her word, so main can hold both back
+   *  until the vault is clear and then show her where she has been hiding. */
+  cellarGirl: { sprite: Sprite | null; id: number } | null;
   /** THE IRON GATES (it.85): the quarry's gate sprites by tile, swapped open when unlocked. THE BARRICADE (it.91) lives here too. */
   gates: Map<string, Sprite>;
   /** A plate re-titled, or hidden (it.91: the east gate's, once the carts are gone). */
@@ -70,6 +73,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const hotspots: Array<{ x: number; y: number }> = [];
   const fog: Array<{ sprite: Sprite; x: number; y: number; phase: number; speed: number }> = [];
   let stashSprite: Sprite | null = null;
+  let cellarGirl: { sprite: Sprite | null; id: number } | null = null;
   const gates = new Map<string, Sprite>();
   const has = (name: string): boolean => spriteLib.loaded && spriteLib.hasSingle(name);
 
@@ -636,11 +640,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'cellargirl': {
-        // The keeper's serving woman: an idle loop on her tile, and a word when
-        // the hero stands beside her. The fog keeps her hidden until then.
-        animated(p.x, p.y, 'cellar_girl', 5, 1, 1, 2);
+        // SARAH: an idle loop on her tile, and a word when the hero stands beside
+        // her. In the vault she is held back until the last monster is down (it.98);
+        // in the taproom afterwards she is simply there.
+        const gspr = animated(p.x, p.y, 'cellar_girl', 5, 1, 1, 2);
         glowAt(p.x, p.y, 0xffd9a0, 0.2, 0.8, 30);
-        interactables.push({ id: nextId++, kind: 'cellargirl', x: p.x + 0.5, y: p.y + 0.5, label: 'E · SPEAK', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }] });
+        const gid = nextId++;
+        interactables.push({ id: gid, kind: 'cellargirl', x: p.x + 0.5, y: p.y + 0.5, label: 'E · SPEAK', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }] });
+        cellarGirl = { sprite: gspr, id: gid };
         break;
       }
       case 'inndoor': {
@@ -809,7 +816,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // own tile counts as the road's, so E beside him is E at the gate.
         const keeper = g?.dest === 'forest' ? layout.gatekeeper : undefined;
         const gateTiles = keeper ? [{ x: p.x, y: p.y }, { x: keeper.x, y: keeper.y }] : [{ x: p.x, y: p.y }];
-        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: g?.dest ? (keeper ? `E · THE GATEKEEPER · ${g.label}` : `E · ${g.label}`) : `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: gateTiles, note: g?.note, dest: g?.dest });
+        interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: g?.dest ? (keeper ? `E · SIR HAM · ${g.label}` : `E · ${g.label}`) : `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: gateTiles, note: g?.note, dest: g?.dest });
         plate(p.x, p.y, g?.dest ? `${g.label} · THE FOREST` : (g?.label ?? 'THE WAY'), 118);
         break;
       }
@@ -859,5 +866,5 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, gates, update, destroy, setPromptAt, setPlate };
+  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate };
 }

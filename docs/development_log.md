@@ -1,5 +1,55 @@
 # Development Log
 
+## 2026-09-08 (iteration 98) - Names, a crowd, and a town that remembers
+
+### The cellar
+- The free-standing arched stone cubes are gone. They read as a low archway you
+  could not walk under, standing in the middle of the floor; columns, casks and
+  crates hold those spots now. The three ROUND STONE ARCHES in the wall runs stay
+  - they are the passages between the three chambers.
+- **SARAH** is the woman at the deep end, and she is not down there while anything
+  else is. She is built with the floor but taken out of the object layer and
+  stripped of her word until the last monster falls; `revealCellarGirl` puts both
+  back the moment the vault goes quiet, one beat before the camera turns to her.
+  Hiding her by `visible` alone did not hold - the ambience rewrites that from the
+  fog every frame, and the culler owns `renderable` - so she is detached instead.
+
+### The people
+- **COLESLAW** keeps the Gilded Stag. He is a man on the peasant sheet
+  (`folk_walk`), anchored at the sole like the sentry rather than at the villager
+  coat's padding, and every line and prompt is written for him.
+- **SIR HAM** holds the eastern road; his name is on the gate prompt and on both
+  of his dialogues.
+- **THE STREETS ARE NOT ONE MAN.** Four bodies walk the town instead of one -
+  `folk_walk`, `villager_walk`, `merchant_walk`, `poacher_walk`, dealt round so no
+  street is all one figure - each carrying its own painted height, anchor, frame
+  count and scale (a sheet is not interchangeable with another), plus a coat colour
+  multiplied into the scene's light. Every one of them is already registered in
+  `SpriteLibrary.DIR_ROW_FIX`, so they all face the way they walk, and the three new
+  sheets were added to the hub, inn and forest atlas rosters.
+
+### The map remembers
+- Fog of war now survives a zone change. `captureFloor` writes a fog-only entry for
+  the town-shaped floors (the town, the forest, the quarry, the taproom, the vault),
+  which are rebuilt from their layout and the quest ledger every visit and so can
+  keep nothing else; the crypt keeps its full FloorMemory as before. Every floor
+  restores whatever bitset it left behind.
+- The capture happens inside `swapWorld`, before the outgoing world is torn apart,
+  so even a rebuild of the SAME floor keeps its light - which is how the taproom no
+  longer forgets itself when its back door is unbolted.
+- No save version bump: `floors` round-trips unknown keys, and an old save simply
+  starts those zones unexplored.
+
+### Two smaller things
+- **The road home.** Out of the woods the party now steps back onto the eastern
+  road beside the gateway they left by, instead of the middle of the old quarter
+  half a town away. `goHome` takes the gate to arrive at.
+- **The way in is lit.** A procession walks its people in over ground the hero has
+  usually never stood on - unlit, often unexplored, so they arrived as silhouettes.
+  `lightTheWayIn` opens the fog along the first stretch of the route and hangs a
+  warm lamp over it for the length of the scene. Both the town's reclaiming and the
+  forest's homecoming use it.
+
 ## 2026-09-08 (iteration 97) - The cellar under the Gilded Stag, and walls that hold still
 
 ### No more flicker, no more clipping (`town/TownProps.ts`)

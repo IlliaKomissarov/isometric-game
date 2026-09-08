@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 97, 2026-09-08)
+- **Project version:** 0.1.0 (iteration 98, 2026-09-08)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 336 checks at it.97) | 0 failures | 336/336 on seed 3 (mage), incl. the cellar errand end to end and the locked and unlocked inn room; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 339 checks at it.98) | 0 failures | 339/339 on seed 3 (mage), incl. the cellar errand end to end and the locked and unlocked inn room; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -243,6 +243,19 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 98 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| A low arched cube stood in the cellar floor | Low (art) | the free-standing `cellar_vault`/`cellar_pier` blocks removed; columns and stock in their place. The three round archways in the wall runs stay - they are the passages |
+| The rescued woman was in the vault from the moment you walked in | Medium (design) | SARAH is detached from the object layer and stripped of her interactable until the last monster falls. `visible` alone will not hold her - the ambience rewrites it from the fog each frame and the culler owns `renderable` |
+| The innkeeper was a woman on the villager coat | Feature | COLESLAW, on `folk_walk`, anchored at the sole; the portrait, the body at the bar, the body at the barricade and every line follow |
+| The road sentry had no name | Feature | SIR HAM, on the gate prompt and both dialogues |
+| Every soul in town was the same man | Medium (feel) | four sheets dealt round the walkers, each carrying its own painted height, anchor, frame count and scale, with a coat colour multiplied into the scene light; the new sheets added to three atlas rosters |
+| Fog reset on every zone change | High (feel) | `captureFloor` writes a fog-only memory for the town-shaped floors and every floor restores its own bitset; the capture moved into `swapWorld` so even a rebuild of the same floor keeps its light |
+| Coming home from the forest dropped the party in the old quarter | Medium (feel) | `goHome('forest')` lands them on the cobble beside the eastern gateway they left by |
+| Processions walked their people in through the dark | Medium (feel) | `lightTheWayIn` opens the fog along the route's first stretch and hangs a warm lamp over it for the scene |
 
 ### Iteration 97 additions
 

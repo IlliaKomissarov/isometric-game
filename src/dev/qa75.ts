@@ -1731,7 +1731,6 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         check('the cellar is built of the tileset\'s darkest stone, with real arches', !!cel && g.dungeon.wallsFromProps === true
           && celProps.filter((q) => q.kind === 'innwall').length >= 28
           && celProps.filter((q) => q.kind === 'innwall' && String(q.variant).startsWith('cellar_arch')).length >= 3
-          && celProps.some((q) => q.variant === 'cellar_vault_a')
           && celProps.filter((q) => q.kind === 'sconce').length >= 4);
         check('it is dark: the fog is on and the sight is short', g.lighting.omniscient !== true && !g.lighting.isVisible(cel.girl.x, cel.girl.y));
         check('three chests wait in it', (g.town.layout.chests ?? []).length >= 2 && (g.town.layout.chests ?? []).every((c: { x: number; y: number }) => !!g.chests.findNearestUnopened(c.x + 0.5, c.y + 0.5, 0.9)));
@@ -1740,6 +1739,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
           if (e.hp > 0) kinds.push(e.def.kind);
         });
+        check('Sarah is not in the vault while anything else is', !g.town.interactables.some((i: { kind: string }) => i.kind === 'cellargirl') && !g.town.cellarGirl?.sprite?.parent);
         check('a moderate press of monsters, no looters', kinds.length >= 6 && kinds.length <= 20 && !kinds.some((k) => ['bandit', 'brigand', 'poacher', 'guard', 'archer', 'shaman'].includes(k)), kinds.join());
         // The last of them falls: the scene, then her words, then the pay.
         const gold1 = g.player.gold;
@@ -1756,6 +1756,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         for (let i = 0; i < 30 && game()?.reclaim; i++) driveRender(1000);
         g = game();
         check('she is found and speaks', await until(() => !!dl() && /saving me/.test(dl()?.textContent ?? ''), 15000));
+        check('and only now is she standing there', !!g.town.cellarGirl?.sprite?.parent && game().town.interactables.some((i: { kind: string }) => i.kind === 'cellargirl'));
         check('the hero says nothing back', (dl()?.querySelectorAll('[data-choice]').length ?? 0) === 1);
         dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
         await wait(120);
@@ -1779,7 +1780,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
         g.loop.step(3);
         await wait(60);
-        check('the keeper thanks the hero again, and names her', !!dl() && /Nell/.test(dl()?.textContent ?? ''));
+        check('the innkeeper thanks the hero again, and names her', !!dl() && /Sarah/.test(dl()?.textContent ?? ''));
         dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
         await wait(60);
       }

@@ -124,7 +124,7 @@ import { TownSystem } from '@/systems/Town';
 import { ShopUI } from '@/ui/Shop';
 import { StashUI } from '@/ui/Stash';
 import { SavePanelUI } from '@/ui/SavePanel';
-import { base64ToBytes, bytesToBase64, SAVE_VERSION, saves, type FloorMemory, type SaveGame, type StashState } from '@/persist/SaveGame';
+import { base64ToBytes, bytesToBase64, emptyFloorMemory, SAVE_VERSION, saves, type FloorMemory, type SaveGame, type StashState } from '@/persist/SaveGame';
 
 /** Everything owned by one dungeon floor. */
 interface World {
@@ -186,6 +186,8 @@ interface World {
     /** A plate re-titled or hidden (it.91). */
     setPlate: (x: number, y: number, label: string | null) => void;
     stashSprite: Sprite | null;
+    /** SARAH (it.98): her sprite and the id of her word, held back until the vault is clear. */
+    cellarGirl: { sprite: Sprite | null; id: number } | null;
     /** The three unpicked heroes resting at the fire (it.40). */
     campHeroes: CampHeroes;
     /** Render-frame dressing update (gate fog) + teardown. */
@@ -2195,19 +2197,19 @@ async function boot(): Promise<void> {
           : isCellar
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isInn
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
             : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
         const villagers2 = isForest || isInn || isCellar
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
           : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
-        // them - or, the quarter reclaimed, ten of the folk on the burnt square and the keeper behind her counter.
+        // them - or, the quarter reclaimed, ten of the folk on the burnt square and the keeper behind his counter.
         const east = layout.east;
         const villagers3 = isHub && east
           ? east.state === 'cleared'
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 12, null, [], null, {}, null, { chatter: RECLAIMED_WORDS, ...streets }) // The keeper is behind her own bar now (it.92).
-            : new Villagers(viewport.objectLayer, scene.isWalkable, east.refuge, 4, null, [], null, {}, east.innkeeper, { chatter: REFUGEE_WORDS, keeperAnim: 'villager_walk', keeperTint: 0xf0c890 })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, east.wander3, 12, null, [], null, {}, null, { chatter: RECLAIMED_WORDS, ...streets }) // The keeper is behind his own bar now (it.92).
+            : new Villagers(viewport.objectLayer, scene.isWalkable, east.refuge, 4, null, [], null, {}, east.innkeeper, { chatter: REFUGEE_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
           : null;
         const campHeroes = new CampHeroes(viewport.objectLayer, chosenClass, layout.campSpots, layout.campfire);
         // THE TRAINING GROUND (it.90): a passive foe stands on every dummy tile - struck, it flinches and heals.
@@ -2230,10 +2232,30 @@ async function boot(): Promise<void> {
           setPromptAt: dressing.setPromptAt,
           setPlate: dressing.setPlate,
           stashSprite: dressing.stashSprite,
+          cellarGirl: dressing.cellarGirl,
           campHeroes,
           update: dressing.update,
           destroyDressing: dressing.destroy,
         };
+      }
+
+      // SARAH (it.98): she is not standing in the open while the vault still has
+      // something in it. Built with the floor, hidden and unreachable until the
+      // last monster is down - `revealCellarGirl` puts her back.
+      if (isCellar && townState?.cellarGirl && quests.cellar !== 'done') {
+        let stillDown = 0;
+        enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.action !== 'dead') stillDown++;
+        });
+        if (stillDown > 0) {
+          const g = townState.cellarGirl;
+          // Taken OUT OF THE LAYER, not just hidden: the ambience rewrites `visible`
+          // from the fog every frame and the culler owns `renderable`, so a detached
+          // sprite is the only hiding place that holds.
+          if (g.sprite?.parent) g.sprite.parent.removeChild(g.sprite);
+          const at = townState.interactables.findIndex((i) => i.id === g.id);
+          if (at >= 0) townState.interactables.splice(at, 1);
+        }
       }
 
       // Target ring: unmistakable marker under whatever the player is striking.
@@ -2349,7 +2371,12 @@ async function boot(): Promise<void> {
       };
 
       lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-      if (memory?.explored) lighting.unpackExplored(base64ToBytes(memory.explored));
+      // A ZONE REMEMBERS WHAT IT SHOWED YOU (it.98). Every floor now restores its own
+      // explored bitset - the crypt through its FloorMemory, and the town-shaped floors
+      // (the town, the forest, the quarry, the taproom, the vault) through the same
+      // record, which `captureFloor` writes a fog-only entry into for them.
+      const rememberedFog = memory?.explored ?? floors[memKey(floorNum, isArena)]?.explored;
+      if (rememberedFog) lighting.unpackExplored(base64ToBytes(rememberedFog));
       minimap.setWorld(dungeon, lighting, stairs);
       // THE MARKS (it.85): keys, gates, the keeper and the way home — each only once its tile is explored.
       minimap.setMarkers(() => {
@@ -2458,8 +2485,15 @@ async function boot(): Promise<void> {
 
     /** Remember the current dungeon floor exactly as the hero leaves it (it.39). */
     const captureFloor = (): void => {
-      if (world.town || world.coliseum) return; // The trial is never remembered.
+      if (world.coliseum) return; // The trial has no fog and is never remembered.
       const key = memKey(floor, world.isArena);
+      if (world.town) {
+        // A town-shaped floor is rebuilt from its layout and the quest ledger every
+        // visit, so it remembers ONE thing: how much of itself it has shown you.
+        // Its chests live in `quests.chests`, and nothing else here would survive.
+        floors[key] = { ...(floors[key] ?? emptyFloorMemory()), explored: bytesToBase64(world.lighting.packExplored()) };
+        return;
+      }
       const takenGold: number[] = [];
       world.goldPiles.forEach((p, i) => {
         if (p.taken) takenGold.push(i);
@@ -2507,7 +2541,7 @@ async function boot(): Promise<void> {
     };
     const saveNow = (): boolean => {
       if (!alive || hardcoreOver) return false; // A spent life is never written back (it.89).
-      if (!world.town) captureFloor();
+      captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
       const save: SaveGame = {
         version: SAVE_VERSION,
         slot,
@@ -2544,6 +2578,10 @@ async function boot(): Promise<void> {
      * a console error instead of a dead loop. Returns false on failure.
      */
     const swapWorld = (make: () => World): boolean => {
+      // THE FOG IS TAKEN WITH US (it.98): whatever the outgoing floor had revealed is
+      // written down before it is torn apart - including a rebuild of the SAME floor,
+      // which is how the taproom keeps its light when its back door is unbolted.
+      captureFloor();
       let next: World;
       try {
         next = make();
@@ -3006,7 +3044,7 @@ async function boot(): Promise<void> {
     const enterColiseum = (waves: number): void =>
       withFade(async () => {
         await preloadFloor(-1, 'coliseum');
-        if (!world.town) captureFloor();
+        captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
         if (!swapWorld(() => buildWorld(-1, 'coliseum'))) return;
         floor = -1;
         updateDepth();
@@ -3043,7 +3081,7 @@ async function boot(): Promise<void> {
       if (target === floor) return;
       withFade(async () => {
         await preloadFloor(target, 'normal');
-        if (!world.town) captureFloor();
+        captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
         if (!swapWorld(() => buildWorld(target))) return;
         floor = target;
         deepestFloor = Math.max(deepestFloor, floor);
@@ -3121,7 +3159,7 @@ async function boot(): Promise<void> {
         withFade(async () => {
           const mode: FloorMode = arena && isBossFloor(dest) ? 'arena' : 'normal';
           await preloadFloor(dest, mode);
-          if (!world.town) captureFloor();
+          captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
           if (!swapWorld(() => buildWorld(dest, mode))) return;
           floor = dest;
           deepestFloor = Math.max(deepestFloor, floor);
@@ -3743,20 +3781,32 @@ async function boot(): Promise<void> {
       audio.sfx('gateOpen');
       audio.setBossMusic(false);
     };
-    /** Home from anywhere (the victory choice, the epilogue, a WARP town). */
-    const goHome = (): void =>
+    /**
+     * Home from anywhere (the victory choice, the epilogue, a WARP town).
+     * `atGate` walks the party out of the passage they actually used (it.98) instead
+     * of dropping them in the middle of the old quarter, half the town from it.
+     */
+    const goHome = (atGate?: 'forest'): void =>
       withFade(async () => {
         await preloadFloor(0, 'hub');
-        if (!world.town) captureFloor();
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
         enterTown(false);
+        if (atGate) {
+          const gw = world.town?.layout.gateways.find((g) => g.dest === atGate);
+          if (gw) {
+            // The cobble just inside the gate yard, between its two pillars.
+            placeParty(gw.x - 0.5, gw.y + 0.5, world.scene.isWalkable);
+            world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+            minimap.markDirty();
+          }
+        }
       }, 'back to town');
     /** THE ROAD EAST (it.85): out of the ward into the dark forest, and down into the quarry. */
     const goPlace = (dest: number, label: string): void =>
       withFade(async () => {
         const mode = modeFor(dest);
         await preloadFloor(dest, mode);
-        if (!world.town) captureFloor();
+        captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
         if (!swapWorld(() => buildWorld(dest, mode))) return;
         floor = dest;
         updateDepth();
@@ -3820,7 +3870,7 @@ async function boot(): Promise<void> {
     };
     const gatekeeper = async (): Promise<void> => {
       const state = quests.forest ?? 'new';
-      const who = { speaker: 'THE GATEKEEPER', role: 'sentry of the eastern road', portrait: keeperPortrait() };
+      const who = { speaker: 'SIR HAM', role: 'sentry of the eastern road', portrait: keeperPortrait() };
       if (state === 'done') {
         const v = await dialogue.open({
           ...who,
@@ -3866,7 +3916,7 @@ async function boot(): Promise<void> {
     /** The innkeeper's face: the peasant body's front frame in her warm coat. */
     let innFace: HTMLCanvasElement | null | undefined;
     const innPortrait = (): HTMLCanvasElement | null => {
-      if (innFace === undefined) innFace = spriteLib.loaded && spriteLib.hasAnim('villager_walk') ? portraitFromTexture(spriteLib.frame('villager_walk', 6, 0), 0xf0c890) : null;
+      if (innFace === undefined) innFace = spriteLib.loaded && spriteLib.hasAnim('folk_walk') ? portraitFromTexture(spriteLib.frame('folk_walk', 6, 0), 0xe8d8b8) : null;
       return innFace;
     };
     let girlFace: HTMLCanvasElement | null | undefined;
@@ -3955,7 +4005,7 @@ async function boot(): Promise<void> {
     /** E at the barricade, or at the inn's counter: the refugees, then the keeper. */
     const innkeeperTalk = async (): Promise<void> => {
       const st = quests.east ?? 'new';
-      const who = { speaker: 'MARGO', role: 'keeper of the Gilded Stag', portrait: innPortrait() };
+      const who = { speaker: 'COLESLAW', role: 'innkeeper of the Gilded Stag', portrait: innPortrait() };
       if (st === 'new') {
         const first = await dialogue.open({
           speaker: 'A REFUGEE',
@@ -4007,7 +4057,7 @@ async function boot(): Promise<void> {
             'I gave you the bow and the sword. Go down and see what it is, and bring my stock back up. I\'m not proud about it - I am frightened of that stair.',
           ],
           choices: [
-            { label: 'I\'LL GO DOWN', sub: 'she unbolts the back door', value: 'go' },
+            { label: 'I\'LL GO DOWN', sub: 'he unbolts the back door', value: 'go' },
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
@@ -4026,7 +4076,7 @@ async function boot(): Promise<void> {
         await dialogue.open({
           ...who,
           lines: [
-            'You brought Nell up with you. She works my tables - three years now - and I had her down as gone with the rest of them.',
+            'You brought Sarah up with you. She works my tables - three years now - and I had her down as gone with the rest of them.',
             'I do not know what to say except thank you. Twice now. The room is yours, the chest is yours, and you will never pay for a drink in here again.',
           ],
           choices: [{ label: 'THANKS', value: 'ok' }],
@@ -4058,6 +4108,8 @@ async function boot(): Promise<void> {
       const east = t?.layout.east;
       if (!t || !east || reclaim) return;
       audio.sfx('questDone');
+      const eastRoute = [east.gap, east.inside, { x: 72, y: 34 }, { x: 80, y: 38 }, { x: 84, y: 37 }];
+      lightTheWayIn(east.approach, eastRoute); // The road through the barricade is lit before they come up it (it.98).
       reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
         ambience: world.ambience,
@@ -4071,7 +4123,7 @@ async function boot(): Promise<void> {
         },
         at: east.gap,
         from: east.approach,
-        route: [east.gap, east.inside, { x: 72, y: 34 }, { x: 80, y: 38 }, { x: 84, y: 37 }],
+        route: eastRoute,
         titles: [['THE EASTERN QUARTER', 'the barricade comes down'], ['THE PEOPLE RETURN', 'twenty looters fallen · the quarter reclaimed']],
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
@@ -4107,17 +4159,35 @@ async function boot(): Promise<void> {
     /** Ticks left before the cleared forest sends the party home. */
     let forestReturnTicks = -1;
     /** The last beast falls: a moment, then the way home, then the gatekeeper's thanks (it.87). */
+    /**
+     * THE WAY IN IS LIT (it.98). A procession's people come from off the map, over
+     * ground the hero has usually never stood on - unlit, and often unexplored, so
+     * they walked in as silhouettes or not at all. Open the fog along the route and
+     * hang a warm lamp over its first stretch for as long as the scene runs.
+     */
+    const lightTheWayIn = (from: { x: number; y: number }, route: ReadonlyArray<{ x: number; y: number }>): void => {
+      const lamps = [from, ...route.slice(0, 2)];
+      for (const at of lamps) {
+        world.lighting.updateVisibility(Math.round(at.x), Math.round(at.y)); // The road is seen before it is walked.
+        world.lighting.addSource(at.x + 0.5, at.y + 0.5, 9, 255, 214, 158, 0.85);
+      }
+      // The fog belongs to the hero again; the lamps stay for the scene's sake.
+      world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+    };
     /** THE FOREST'S HOMECOMING (it.92): the last beast down, the folk walk in from the town road through the clearings before the way home. */
     const startForestScene = (): void => {
       if (reclaim) return;
+      const forestFrom = { x: 3, y: 20 };
+      const forestRoute = [{ x: 8, y: 20 }, { x: 14, y: 17 }, { x: 20, y: 21 }, { x: 26, y: 24 }, { x: 28, y: 22 }];
+      lightTheWayIn(forestFrom, forestRoute);
       reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
         ambience: world.ambience,
         fx: gateFx,
         carts: [],
         at: { x: 6, y: 20 },
-        from: { x: 3, y: 20 },
-        route: [{ x: 8, y: 20 }, { x: 14, y: 17 }, { x: 20, y: 21 }, { x: 26, y: 24 }, { x: 28, y: 22 }],
+        from: forestFrom,
+        route: forestRoute,
         titles: [['THE DARK FOREST', 'the last beast falls · the road is open'], ['THE PEOPLE RETURN', 'the clearings are theirs again']],
         walkers: 7,
         keepWalkers: true, // They stay in the clearing (it.93).
@@ -4156,7 +4226,7 @@ async function boot(): Promise<void> {
       world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 26);
       world.dmgText.show(player.pos.x, player.pos.y - 0.8, '+100 GOLD · THE FOREST ERRAND', 'crit');
       void dialogue.open({
-        speaker: 'THE GATEKEEPER',
+        speaker: 'SIR HAM',
         role: 'come up the road with his people',
         portrait: keeperPortrait(),
         lines: ['All of them? Good work. Here\'s your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever is down there, it isn\'t wolves. The road home is behind you when you want it.'],
@@ -4170,6 +4240,24 @@ async function boot(): Promise<void> {
     // she asks; the woman at the deep end is not seen until the dark is cleared.
     /** Ticks left before the rescue's dialogue, once the cutscene has played. */
     let cellarSceneTicks = -1;
+    /**
+     * SARAH steps out (it.98). She is built with the floor but kept dark and
+     * wordless while anything is still moving in the vault; the moment the last
+     * one is down she is shown where she has been hiding, and her word comes back.
+     */
+    const revealCellarGirl = (): void => {
+      const g = world.town?.cellarGirl;
+      if (!g) return;
+      if (g.sprite && !g.sprite.parent) {
+        g.sprite.visible = true;
+        world.viewport.objectLayer.addChild(g.sprite);
+      }
+      const list = world.town!.interactables;
+      if (!list.some((i) => i.id === g.id)) {
+        const at = world.town!.layout.cellar?.girl;
+        if (at) list.push({ id: g.id, kind: 'cellargirl', x: at.x + 0.5, y: at.y + 0.5, label: 'E · SPEAK', tiles: [{ x: at.x, y: at.y }, { x: at.x - 1, y: at.y }, { x: at.x + 1, y: at.y }, { x: at.x, y: at.y - 1 }, { x: at.x, y: at.y + 1 }] });
+      }
+    };
     /** The way down into the vault, and back up into the taproom. */
     const goCellar = (): void => goPlace(CELLAR_FLOOR, 'down into the cellar');
     const leaveCellar = (): void =>
@@ -4219,7 +4307,7 @@ async function boot(): Promise<void> {
     /** Her thanks, and the errand paid where she stands. */
     const girlRescueTalk = async (): Promise<void> => {
       const v = await dialogue.open({
-        speaker: 'NELL',
+        speaker: 'SARAH',
         role: 'of the Gilded Stag',
         portrait: girlPortrait(),
         lines: [
@@ -4233,7 +4321,7 @@ async function boot(): Promise<void> {
     /** A word with her afterwards, down here or behind the bar. */
     const girlTalk = async (): Promise<void> => {
       await dialogue.open({
-        speaker: 'NELL',
+        speaker: 'SARAH',
         role: 'of the Gilded Stag',
         portrait: girlPortrait(),
         lines: [
@@ -4255,6 +4343,7 @@ async function boot(): Promise<void> {
         });
         if (alive > 0) return;
         cellarSceneTicks = 0; // Held while the scene plays; its end sets the clock to one.
+        revealCellarGirl(); // Only now does she come out from behind the crates (it.98).
         world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE CELLAR IS QUIET', 'crit');
         audio.sfx('questDone');
         startCellarScene();
@@ -4283,7 +4372,7 @@ async function boot(): Promise<void> {
           if (at) placeParty(at.x + 2.5, at.y + 0.5, world.scene.isWalkable);
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
           minimap.markDirty();
-          tutorial.say('The back door is open. Whatever is in her cellar, it is between you and the drink.');
+          tutorial.say('The back door is open. Whatever is in his cellar, it is between you and the drink.');
         }, 'the bolt slides back');
         return;
       }
@@ -4576,7 +4665,9 @@ async function boot(): Promise<void> {
             } else if (cmd.to === 'town') {
               victoryShown = false;
               chat?.system('Leader returning to town. Warping party...');
-              goHome();
+              // THE ROAD HOME (it.98): out of the woods you step back onto the eastern
+              // road, where you left it - not into the middle of the old quarter.
+              goHome(floor === FOREST_FLOOR ? 'forest' : undefined);
             } else if (cmd.to === 'floor' && cmd.n !== undefined) {
               chat?.system(`Leader fast-travelling to depth ${ROMAN[cmd.n - 1] ?? cmd.n}. Warping party...`);
               jumpToFloor(cmd.n);
@@ -5396,7 +5487,7 @@ async function boot(): Promise<void> {
       }
       // THE CELLAR (it.97): the back door, the stair up, and the woman behind the casks.
       if (it.kind === 'cellardoor') {
-        if (!cellarAsked()) tutorial.say('Bolted, and the keeper has the key. She has not asked you to go down there.');
+        if (!cellarAsked()) tutorial.say('Bolted, and the innkeeper has the key. He has not asked you to go down there.');
         else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else goCellar();
         return;
@@ -5796,7 +5887,7 @@ async function boot(): Promise<void> {
         const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
         const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
-        if (!world.town) captureFloor();
+        captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
         if (!swapWorld(() => buildWorld(dest, mode))) return;
         floor = dest;
         if (floor <= MAX_DEPTH) deepestFloor = Math.max(deepestFloor, floor);
@@ -5914,9 +6005,9 @@ export function isBossFloor(floor: number): boolean {
 function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
-  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
+  if (mode === 'hub') return ['folk_walk', 'merchant_walk', 'villager_walk', 'poacher_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
-  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.
   if (mode === 'cellar') {
     const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'cellar_girl', 'folk_walk', ...VFX_ANIMS]);
@@ -5933,7 +6024,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   }
   // THE FOREST AND THE QUARRY (it.85): their own packs, the town's torches and braziers, the hydra.
   if (mode === 'forest' || mode === 'mines' || (mode === 'arena' && floor === MINES_FLOOR)) {
-    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'poacher_idle', ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'poacher_idle', ...VFX_ANIMS]);
     for (const k of mode === 'forest' ? FOREST_POOL : [...MINES_POOL, 'hydra' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

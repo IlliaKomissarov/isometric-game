@@ -21,7 +21,21 @@ import { vec2 } from '@/utils/Vec2';
 const FOLK_HEIGHT = 56;
 const WALK_SPEED = 1.25; // tiles / s
 const CYCLES_PER_TILE = 0.5;
-const WALK = 'folk_walk';
+/**
+ * THE STREETS ARE NOT ONE MAN (it.98). Four bodies walk the town instead of one,
+ * each with its own painted height, anchor and frame count - a sheet is not
+ * interchangeable with another, so a walker carries its own. Every one of these is
+ * already registered in `SpriteLibrary.DIR_ROW_FIX`, so they all face the right way.
+ * `feet` marks a sheet whose cells end at the sole (anchor 1); the others are padded.
+ */
+const FOLK_SHEETS: ReadonlyArray<{ anim: AnimName; feet: boolean; height: number }> = [
+  { anim: 'folk_walk', feet: true, height: 56 },
+  { anim: 'villager_walk', feet: false, height: 58 },
+  { anim: 'merchant_walk', feet: false, height: 58 },
+  { anim: 'poacher_walk', feet: true, height: 58 },
+];
+/** Coats, aprons and cloaks: a colour per walker, multiplied into the scene's light. */
+const FOLK_COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
 const GUARD_IDLE = 'poacher_idle';
 /** The gatekeeper wears the guard's mail (it.87). */
 const KEEPER_IDLE = 'guard_idle';
@@ -111,9 +125,23 @@ function tickBubble(b: Bubble, dt: number, words: string[] | undefined, sx: numb
   if (b.wait <= 0) speak(b, words);
 }
 
+/** A coat colour under the scene's own light: channel-wise multiply, both 0xRRGGBB. */
+function mulTint(light: number, coat: number): number {
+  if (coat === 0xffffff) return light;
+  const r = (((light >> 16) & 255) * ((coat >> 16) & 255)) / 255;
+  const g = (((light >> 8) & 255) * ((coat >> 8) & 255)) / 255;
+  const b = ((light & 255) * (coat & 255)) / 255;
+  return ((r & 255) << 16) | ((g & 255) << 8) | (b & 255);
+}
+
 interface Villager {
   root: Container;
   body: Sprite;
+  /** THE STREETS ARE NOT ONE MAN (it.98): this walker's own sheet and its numbers. */
+  anim: AnimName;
+  scale: number;
+  fc: number;
+  coat: number;
   x: number;
   y: number;
   tx: number;
@@ -141,7 +169,6 @@ export class Villagers {
   private readonly guards: Guard[] = [];
   private keeper: Guard | null = null;
   private readonly scratch = vec2();
-  private readonly scale: number;
   private merchant: { body: Sprite; clock: number; scale: number; bubble: Bubble; x: number; y: number } | null = null;
   /** The ALCHEMIST (it.48): the merchant body in violet robes behind the south stall. */
   private alchemist: { body: Sprite; clock: number; scale: number; bubble: Bubble; x: number; y: number } | null = null;
@@ -165,24 +192,30 @@ export class Villagers {
   ) {
     this.opts = opts;
     this.keeperAnim = (opts.keeperAnim && spriteLib.hasAnim(opts.keeperAnim) ? opts.keeperAnim : KEEPER_IDLE) as AnimName;
-    const painted = spriteLib.paintedHeight(WALK) || 50;
-    this.scale = FOLK_HEIGHT / painted;
-    if (spriteLib.hasAnim(WALK)) {
+    // Only the sheets this floor actually loaded are on the street (it.98).
+    const sheets = FOLK_SHEETS.filter((f) => spriteLib.hasAnim(f.anim));
+    if (sheets.length) {
       for (let i = 0; i < count; i++) {
         const p = this.randomTile();
+        // Deal the bodies round rather than rolling them, so no street is all one man.
+        const sheet = sheets[i % sheets.length];
+        const sPainted = spriteLib.paintedHeight(sheet.anim) || 50;
+        // A little height between people - dealt from the index, not rolled, so the
+        // street does not consume a number the rest of the frame is counting on.
+        const scale = (sheet.height / sPainted) * (0.94 + ((i * 5) % 7) * 0.02);
         const root = new Container();
         root.scale.set(0.8);
         const shadow = new Sprite(assets.get('shadow'));
         shadow.anchor.set(0.5, 0.5);
         shadow.alpha = 0.6;
         root.addChild(shadow);
-        const body = new Sprite(spriteLib.frame(WALK, 6, 0));
-        body.anchor.set(0.5, 1);
-        body.scale.set(this.scale / 0.8); // Undo the shadow root's scale.
+        const body = new Sprite(spriteLib.frame(sheet.anim, 6, 0));
+        body.anchor.set(0.5, sheet.feet ? 1 : 0.86);
+        body.scale.set(scale / 0.8); // Undo the shadow root's scale.
         body.position.set(0, 2);
         root.addChild(body);
         layer.addChild(root);
-        this.folk.push({ root, body, x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10, bubble: makeBubble(layer, 2 + Math.random() * 10), path: [] });
+        this.folk.push({ root, body, anim: sheet.anim, scale, fc: spriteLib.anim(sheet.anim).frameCount, coat: FOLK_COATS[(i * 3 + 1) % FOLK_COATS.length], x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10, bubble: makeBubble(layer, 2 + Math.random() * 10), path: [] });
       }
     }
     if (merchantAt && spriteLib.hasAnim('merchant_walk')) {
@@ -231,8 +264,11 @@ export class Villagers {
       const KA = this.keeperAnim;
       const kp = spriteLib.paintedHeight(KA) || 60;
       const kscale = (KA === KEEPER_IDLE ? 64 : 60) / kp;
+      // COLESLAW (it.98) wears the peasant sheet, whose cells end at the sole, so he
+      // is anchored at his feet like the sentry - not at the villager coat's padding.
+      const kFeet = KA === KEEPER_IDLE || KA === 'folk_walk' || KA === 'poacher_walk';
       const body = new Sprite(spriteLib.frame(KA, KA === KEEPER_IDLE ? 5 : 6, 0));
-      body.anchor.set(0.5, KA === KEEPER_IDLE ? 1 : 0.86);
+      body.anchor.set(0.5, kFeet ? 1 : 0.86);
       body.scale.set(kscale);
       body.tint = opts.keeperTint ?? 0xd8c8a8;
       const s = worldToScreen(keeperAt.x + 0.5, keeperAt.y + 0.5, this.scratch);
@@ -327,7 +363,6 @@ export class Villagers {
 
   /** Render-frame update: stroll, pause, breathe; scene-lit by the caller's tint. */
   update(dt: number, tint: (x: number, y: number) => number): void {
-    const fc = spriteLib.hasAnim(WALK) ? spriteLib.anim(WALK).frameCount : 1;
     for (const v of this.folk) {
       if (v.pause > 0) {
         v.pause -= dt;
@@ -373,13 +408,13 @@ export class Villagers {
         }
       }
       const walking = v.pause <= 0;
-      const frame = walking ? Math.floor(v.walkClock * fc) : 0;
-      v.body.texture = spriteLib.frame(WALK, v.dir, frame);
-      v.body.scale.y = (this.scale / 0.8) * (walking ? 1 : 1 + Math.sin(v.idleClock * 1.6) * 0.015);
+      const frame = walking ? Math.floor(v.walkClock * v.fc) : 0;
+      v.body.texture = spriteLib.frame(v.anim, v.dir, frame);
+      v.body.scale.y = (v.scale / 0.8) * (walking ? 1 : 1 + Math.sin(v.idleClock * 1.6) * 0.015);
       const s = worldToScreen(v.x, v.y, this.scratch);
       v.root.position.set(s.x, s.y);
       v.root.zIndex = depthKey(v.x, v.y);
-      v.body.tint = tint(v.x, v.y);
+      v.body.tint = mulTint(tint(v.x, v.y), v.coat);
       tickBubble(v.bubble, dt, this.opts.chatter, s.x, s.y - FOLK_HEIGHT * 0.8 - 6, v.root.zIndex);
     }
     const vendorWords = this.opts.vendorWords ?? (this.opts.chatter ? VENDOR_WORDS : undefined);

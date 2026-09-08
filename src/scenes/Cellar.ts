@@ -91,8 +91,8 @@ export function buildCellarLayout(seed: number, rescued = false): { layout: Town
   decal({ kind: 'cellarup', x: up.x, y: up.y });
 
   // ---- THE STOCK ROOM (the keeper's drink, which is the whole errand) ----
-  put('cellar_pier_a', 12, 2, 0, 0, true);
-  put('cellar_pier_b', 26, 2, 0, 0, true);
+  put('cellar_crates', 12, 2, 0.2, -0.1);
+  put('inn_barrels', 26, 2, 0.2, -0.1);
   for (const [x, y] of [[7, 3], [10, 8], [16, 4], [20, 8], [25, 5], [29, 8]] as const) put('cellar_pillar', x, y, 0.2, 0.1);
   put('inn_shelf_bottles', 6, 2, 0.35, -0.1);
   put('inn_shelf_bottles', 18, 2, 0.35, -0.1);
@@ -106,8 +106,8 @@ export function buildCellarLayout(seed: number, rescued = false): { layout: Town
   decal({ kind: 'inndeco', x: 11, y: 5, variant: 'cellar_goods', ox: 0.3, oy: 0.2 });
 
   // ---- THE WEST VAULT (dirt floor, fallen stone) ------------------------
-  put('cellar_vault_a', 3, 12, 0, 0, true);
-  put('cellar_vault_b', 13, 20, 0, 0, true);
+  put('cellar_post', 3, 12, 0.2, 0.1);
+  put('cellar_pillar', 13, 20, 0.2, 0.1);
   for (const [x, y] of [[7, 13], [11, 17], [5, 21], [14, 14]] as const) put('cellar_post', x, y, 0.2, 0.1);
   put('cellar_altar', 9, 19, 0.1, 0.1);
   put('inn_barrel', 3, 17, 0.3, 0);
@@ -116,7 +116,7 @@ export function buildCellarLayout(seed: number, rescued = false): { layout: Town
   for (const [x, y] of [[10, 13], [8, 22]] as const) decal({ kind: 'inndeco', x, y, variant: 'cellar_rubble_b', ox: 0.3, oy: 0.2 });
 
   // ---- THE DEEP CHAMBER (the far end, where she is) ---------------------
-  put('cellar_vault_a', 24, 12, 0, 0, true);
+  put('cellar_pillar', 24, 12, 0.2, 0.1);
   for (const [x, y] of [[20, 14], [28, 18], [22, 21]] as const) put('cellar_post', x, y, 0.2, 0.1);
   put('cellar_crates', 30, 13, 0.2, 0.1);
   put('inn_barrels', 19, 22, 0.2, 0.1);
@@ -134,7 +134,10 @@ export function buildCellarLayout(seed: number, rescued = false): { layout: Town
   for (const y of [6, 18]) decal({ kind: 'sconce', x: 1, y, ox: 0.5, oy: 0.55 });
   decal({ kind: 'sconce', x: SPUR_X, y: 20, ox: 0.5, oy: 0.55 });
 
-  // ---- THE WOMAN, until she is walked back up ---------------------------
+  // ---- SARAH, until she is walked back up -------------------------------
+  // She is built with the floor but not SHOWN with it: main hides her and takes
+  // her word away until the last monster in the vault is down (it.98), so she is
+  // never found cowering in a room that still has something else in it.
   const girl = { x: 29, y: 22 };
   if (!rescued) {
     block({ kind: 'cellargirl', x: girl.x, y: girl.y });

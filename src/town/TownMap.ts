@@ -140,7 +140,12 @@ export type TownPropKind =
   | 'carpet'
   | 'shelf'
   | 'chest'
-  | 'doorway';
+  | 'doorway'
+  // THE PAINTED HALL (it.94): the inn's artwork and the pieces lit or cut from it.
+  | 'backdrop'
+  | 'barfront'
+  | 'sconce'
+  | 'tablelight';
 
 /** THE GILDED STAG INSIDE (it.92): what main needs of the inn's floor. */
 export interface InnLayout {
@@ -189,6 +194,7 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers', 'carpet',
   // WALK THROUGH (it.93): everything knee-high or broken is paint underfoot - a heap, a stub of wall, a boulder, a bench, a keg, a chair, a candle stand.
   'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
+  'backdrop', 'barfront', 'sconce', 'tablelight',
 ]);
 
 export interface TownProp {
@@ -203,6 +209,9 @@ export interface TownProp {
   variant?: string;
   /** Mirror the sprite (it.87): a gate across a corridor running the other way. */
   flip?: boolean;
+  /** A painted piece's pixel offset from its tile's top corner (it.94: the backdrop, the bar cutout). */
+  ox?: number;
+  oy?: number;
 }
 
 export interface TownLayout {
@@ -264,6 +273,8 @@ export interface TownLayout {
 
 export interface TownMap extends DungeonMap {
   readonly tileKind: Uint8Array;
+  /** THE PAINTED HALL (it.94): the scene draws no tiles; a backdrop prop is the room. */
+  readonly backdrop?: boolean;
 }
 
 /** Build the town: grid + footprints + prop list. Pure and deterministic. */

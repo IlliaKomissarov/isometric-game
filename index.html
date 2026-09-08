@@ -5217,6 +5217,9 @@
       #dialogue-panel .dl-lines p:first-child::first-letter { font-family: 'Cinzel', 'Georgia', serif; font-size: 1.5em; color: #ffd070; }
       #dialogue-panel .dl-choices { display: grid; gap: 8px; }
       #dialogue-panel .dl-choice { position: relative; text-align: left; padding: 12px 14px 12px 44px; min-height: 44px; }
+      /* KEYS ON THE WORD (it.94): the lit choice - the arrows walk it, Enter takes it. */
+      #dialogue-panel .dl-choice.lit { border-color: var(--frame-gold, #c8a558); box-shadow: inset 0 0 0 1px rgba(200, 165, 88, 0.55), 0 0 14px rgba(200, 165, 88, 0.25); background: linear-gradient(90deg, rgba(200, 165, 88, 0.16), rgba(200, 165, 88, 0.04)); }
+      #dialogue-panel .dl-choice.lit .dl-num { background: var(--frame-gold, #c8a558); color: #1a1208; }
       #dialogue-panel .dl-choice .dl-num { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 22px; height: 22px; display: grid; place-items: center; font-size: 10px; border: 1px solid var(--frame-gold, #c8a558); border-radius: 50%; color: #ffd070; }
       #dialogue-panel .dl-choice .mm-sub { display: block; margin-top: 2px; }
       body.orient-portrait #dialogue-panel { width: calc(var(--app-w) - 12px); }

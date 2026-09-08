@@ -736,6 +736,11 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] Ambience per zone; quarry stingers; SPX effects; the books; polyphony caps
 - [x] Journal table; matrix; playthrough; clean build
 
+## Iteration 94 - The painted hall (2026-09-08)
+
+- [x] The inn's hall is the reference artwork: backdrop, authored floor, the bar cut out, lit hearth and sconces
+- [x] Dialogue: arrows walk the choices, Enter takes one
+
 ## Iteration 93 - Express fixes (2026-09-08)
 
 - [x] The inn's room: a 1x2 bed the hero lies on, arched doorways, dressing

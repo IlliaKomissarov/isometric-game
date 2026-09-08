@@ -539,6 +539,42 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         plate(p.x, p.y, 'THE DOOR', 70);
         break;
       }
+      case 'backdrop': {
+        // THE PAINTED HALL (it.94): one picture under everything, seated so its iso grid is ours.
+        if (!has(p.variant ?? '')) break;
+        const spr = new Sprite(spriteLib.single(p.variant!));
+        const s = worldToScreen(p.x, p.y, scratch);
+        spr.position.set(s.x + (p.ox ?? 0), s.y + (p.oy ?? 0));
+        (spr as Sprite & { noCull?: boolean }).noCull = true;
+        viewport.groundLayer.addChild(spr);
+        lighting.registerProp(Math.min(layout.map.width - 1, p.x + 6), Math.min(layout.map.height - 1, p.y + 8), spr);
+        break;
+      }
+      case 'barfront': {
+        // The bar counter cut from the picture, drawn in front of the keeper and anyone on the dais.
+        if (!has(p.variant ?? '')) break;
+        const spr = new Sprite(spriteLib.single(p.variant!));
+        const s = worldToScreen(p.x, p.y, scratch);
+        spr.position.set(s.x + (p.ox ?? 0), s.y + (p.oy ?? 0));
+        spr.zIndex = depthKey(p.x + (p.w ?? 1) - 0.5, p.y + (p.h ?? 1) - 0.5);
+        (spr as Sprite & { noCull?: boolean }).noCull = true;
+        viewport.objectLayer.addChild(spr);
+        lighting.registerProp(Math.min(layout.map.width - 1, p.x + 4), Math.min(layout.map.height - 1, p.y + 2), spr);
+        break;
+      }
+      case 'sconce': {
+        // A wall torch in the picture, burning for real: a warm glow and a light.
+        glowAt(p.x, p.y, 0xffb060, 0.42, 1.3, 46);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 180, 90, 0.6);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'tablelight': {
+        // A candle on a table in the picture: a small warm pool.
+        glowAt(p.x, p.y, 0xffd080, 0.22, 0.8, 22);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 2.4, 255, 200, 120, 0.35);
+        break;
+      }
       case 'barkeep': {
         // Drawn by Villagers; the counter's front tiles are the keeper's.
         interactables.push({ id: nextId++, kind: 'innkeeper', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE INNKEEPER', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x - 1, y: p.y + 2 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }] });
@@ -547,7 +583,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'hearth': {
         // The fire in the wall: the campfire's flame, no plate, a warm light over the hall.
-        animated(p.x, p.y, 'campfire', 9, 0.92, 0.9);
+        // PAINTED (it.94): a smaller flame over the picture's own hearth.
+        animated(p.x, p.y, 'campfire', 9, 0.92, p.variant === 'painted' ? 0.62 : 0.9, p.variant === 'painted' ? 14 : 0);
         glowAt(p.x, p.y, 0xff9040, 0.7, 2.4, 18);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 6.5, 255, 160, 70, 0.9);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
@@ -592,8 +629,10 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // THE BED (it.93): a 1x2 footprint, the big render seated on it; the hero lies at its middle.
         standing(p, 'bed_big', 0.9);
         const h = p.h ?? 1;
+        // The bed's own tiles first (the bedside walk aims beside them), the ring around them after.
         const tiles: Array<{ x: number; y: number }> = [];
-        for (let y = p.y - 1; y <= p.y + h; y++) for (let x = p.x - 1; x <= p.x + 1; x++) tiles.push({ x, y });
+        for (let y = p.y; y < p.y + h; y++) tiles.push({ x: p.x, y });
+        for (let y = p.y; y < p.y + h; y++) for (const x of [p.x - 1, p.x + 1]) tiles.push({ x, y }); // The long sides only: the foot is the chest's place.
         interactables.push({ id: nextId++, kind: 'bed', x: p.x + 0.5, y: p.y + h / 2, label: 'E · REST', tiles, room: true });
         break;
       }

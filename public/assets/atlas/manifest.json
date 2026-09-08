@@ -5543,6 +5543,18 @@
    "w": 150,
    "h": 114,
    "nearest": false
+  },
+  "tavern_hall": {
+   "file": "single_tavern_hall.png",
+   "w": 1150,
+   "h": 589,
+   "nearest": false
+  },
+  "tavern_bar": {
+   "file": "single_tavern_bar.png",
+   "w": 253,
+   "h": 148,
+   "nearest": false
   }
  }
 }

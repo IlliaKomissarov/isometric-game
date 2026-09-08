@@ -1,37 +1,68 @@
 /**
  * @module scenes/Inn
- * THE GILDED STAG INSIDE (it.92): the inn's own floor. A stone-walled hall
- * with boards underfoot, the bar along the north wall with the keeper behind
- * it, a hearth in the west wall, long tables and chairs, candle stands, a
- * carpet from the door to the bar - and, through a doorway in the east
- * partition, the corner room the errand pays for: the bed, the chest (the
- * town stash), the bench (the camp forge).
- *
- * Built like the forest: a TownMap with a `tileKind` layer (KIND_PLANK), a
- * prop list the town's dresser draws, a `TownLayout` main treats as a town
- * (villagers, interactables, no foes), and an `InnLayout` naming the spots.
+ * THE GILDED STAG INSIDE (it.92, redrawn it.94): the inn's hall is one
+ * painted backdrop - the isometric tavern artwork the project was given -
+ * with the walkable floor authored tile by tile over it (`HALL`), the bar
+ * counter cut out and drawn in front of the keeper, the hearth's flame and
+ * the wall sconces lit for real, patrons strolling the stone floor, and the
+ * rented corner under the loft stair: the bed, the chest (the town stash),
+ * the bench (the camp forge). The scene draws no floor or wall tiles of its
+ * own (`backdrop` on the map): the picture is the room.
  */
 
-import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type Room } from '@/scenes/DungeonGenerator';
+import { TILE_BLOCKED, TILE_FLOOR, type Room } from '@/scenes/DungeonGenerator';
 import { CLUTTER_KINDS, KIND_PLANK, type InnLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { bareLayout } from './Forest';
 
-export const INN_W = 24;
-export const INN_H = 20;
+export const INN_W = 28;
+export const INN_H = 28;
+/** The artwork's tile: 228 px a diamond; ours is 64. */
+export const INN_ART_SCALE = 64 / 228;
+/** The picture's pixel that sits on the top corner of tile (8, 4). */
+const ART_ORIGIN = { u: 2378, v: 60, tx: 8, ty: 4 };
+
+/** The hall, tile by tile: `.` is stone or rug the folk walk, `#` is wall, counter, table or stair. */
+const HALL = [
+  '############################',
+  '#########.........##########',
+  '#########.........##########',
+  '############################',
+  '#################..#########',
+  '#################..#########',
+  '###############....#########',
+  '#################..#########',
+  '##########.........#########',
+  '##########.........#########',
+  '##########.........#########',
+  '########...........#########',
+  '#######............#########',
+  '######..............########',
+  '######..............########',
+  '#######.#....#...#...#######',
+  '########.#...........#######',
+  '#######..............#######',
+  '#######..##...##..#...######',
+  '########..#........#..######',
+  '#########.............######',
+  '#########..............#####',
+  '#######....#...........#####',
+  '##########....##############',
+  '############################',
+  '############################',
+  '############################',
+  '############################'
+];
 
 export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayout } {
   const W = INN_W;
   const H = INN_H;
-  const grid = new Uint8Array(W * H).fill(TILE_FLOOR);
+  const grid = new Uint8Array(W * H).fill(TILE_BLOCKED);
   const tileKind = new Uint8Array(W * H).fill(KIND_PLANK);
   const idx = (x: number, y: number): number => y * W + x;
   const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
-  // The walls: two thick, so the cubes read as masonry and nothing shows past them.
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < 2 || y < 2 || x >= W - 2 || y >= H - 2) grid[idx(x, y)] = TILE_WALL;
-  // The partition: the corner room's wall, with its doorway.
-  const wallX = 16;
-  for (let y = 9; y < H - 2; y++) if (y !== 12) grid[idx(wallX, y)] = TILE_WALL;
-  grid[idx(wallX, 8)] = TILE_WALL; // The partition meets the hall's north end with a pier.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (HALL[y]?.[x] === '.') grid[idx(x, y)] = TILE_FLOOR;
+  // The way round the counter's end: the dais joins the hall at the right of the bar.
+  for (const [x, y] of [[17, 2], [18, 2], [17, 3], [18, 3], [17, 4], [18, 4]] as const) grid[idx(x, y)] = TILE_FLOOR;
 
   const props: TownProp[] = [];
   const block = (p: TownProp): void => {
@@ -43,61 +74,38 @@ export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayo
     props.push(p);
   };
 
-  // THE DOOR: the middle of the south wall, an arch over it; the party arrives just inside.
-  const door = { x: 9, y: H - 3 };
-  const spawn = { x: 9, y: H - 5 };
+  // THE PICTURE: the whole hall, seated so its tile grid is ours.
+  const s = INN_ART_SCALE;
+  decal({ kind: 'backdrop', x: ART_ORIGIN.tx, y: ART_ORIGIN.ty, variant: 'tavern_hall', ox: -ART_ORIGIN.u * s, oy: -ART_ORIGIN.v * s });
+  // THE BAR COUNTER, cut from the picture and drawn in front of whoever stands behind it.
+  decal({ kind: 'barfront', x: ART_ORIGIN.tx, y: ART_ORIGIN.ty, variant: 'tavern_bar', ox: (2132 - ART_ORIGIN.u) * s, oy: (215 - ART_ORIGIN.v) * s, w: 9, h: 2 }); // Sorted at the counter's south edge.
+  // THE DOOR: the double doors on the north-east wall; the party arrives on the dais just inside.
+  const door = { x: 13, y: 2 };
+  const spawn = { x: 14, y: 2 };
   block({ kind: 'inndoor', x: door.x, y: door.y });
-  grid[idx(door.x, door.y)] = TILE_FLOOR; // The threshold is floor: E stands on it.
-  // THE BAR: a counter of long tables along the north wall, the keeper behind it, shelves and kegs at his back.
-  const keeper = { x: 10, y: 3 };
-  block({ kind: 'barkeep', x: keeper.x, y: keeper.y });
-  block({ kind: 'inntable', x: 8, y: 4, w: 2, h: 1, variant: 'inn_table_c' });
-  block({ kind: 'inntable', x: 10, y: 4, w: 2, h: 1, variant: 'inn_table_c' });
-  block({ kind: 'inntable', x: 12, y: 4, w: 2, h: 1, variant: 'inn_table_c' });
-  block({ kind: 'shelf', x: 8, y: 2, w: 2, h: 1, variant: 'inn_shelf' });
-  block({ kind: 'shelf', x: 12, y: 2, w: 2, h: 1, variant: 'inn_shelf_b' });
-  block({ kind: 'barrels_stacked', x: 14, y: 3 });
-  block({ kind: 'barrel', x: 7, y: 3, variant: 'barrel_c' });
-  block({ kind: 'potions', x: 11, y: 2 });
-  // Bookcases along the north wall, west of the bar; the hearth in the west wall with chairs before it.
-  block({ kind: 'shelf', x: 4, y: 2, w: 2, h: 1, variant: 'inn_shelf_b' });
-  block({ kind: 'hearth', x: 2, y: 6 });
-  block({ kind: 'innchair', x: 4, y: 5 });
-  block({ kind: 'innchair', x: 4, y: 7 });
-  block({ kind: 'barrel', x: 2, y: 9, variant: 'barrel_d' });
-  // THE HALL: long tables with their chairs, candle stands, a carpet from the door to the bar.
-  block({ kind: 'inntable', x: 4, y: 10, w: 2, h: 2, variant: 'inn_table_a' });
-  block({ kind: 'inntable', x: 11, y: 8, w: 2, h: 2, variant: 'inn_table_b' });
-  block({ kind: 'inntable', x: 4, y: 14, w: 2, h: 2, variant: 'inn_table_a' });
-  block({ kind: 'inntable', x: 12, y: 13, w: 2, h: 2, variant: 'inn_table_d' });
-  block({ kind: 'innchair', x: 14, y: 9 });
-  block({ kind: 'innchair', x: 11, y: 15 });
-  block({ kind: 'candle', x: 2, y: 12, variant: 'inn_candle2' });
-  block({ kind: 'candle', x: 14, y: 6, variant: 'inn_candle' });
-  block({ kind: 'candle', x: 6, y: 17, variant: 'inn_candle' });
-  block({ kind: 'candle', x: 13, y: 17, variant: 'inn_candle2' });
-  for (let y = 6; y <= 16; y += 2) decal({ kind: 'carpet', x: 9, y, w: 1, h: 2, variant: y === 6 ? 'inn_carpet_e' : 'inn_carpet' });
-  block({ kind: 'crates', x: 2, y: 16 });
-  block({ kind: 'jar', x: 15, y: 17, variant: 'jar_a' });
-  // THE CORNER ROOM: through an arched doorway in the partition - the bed along the east wall, a rug,
-  // a candle by the bed, the sword case, the chest (the stash), the bench (the forge), a chair and a chest of boxes.
-  decal({ kind: 'doorway', x: wallX, y: 12 });
-  const bed = { x: 20, y: 10 };
-  const stash = { x: 20, y: 16 };
-  const forge = { x: 18, y: 16 };
+  grid[idx(door.x, door.y)] = TILE_FLOOR;
+  // THE KEEPER behind the counter's middle.
+  const keeper = { x: 11, y: 2 };
+  block({ kind: 'barkeep', x: keeper.x, y: keeper.y, variant: 'wide' });
+  // THE HEARTH: the painted fire burns for real, and the sconces on the walls throw their light.
+  decal({ kind: 'hearth', x: 5, y: 15, variant: 'painted' });
+  for (const [x, y] of [[9, 7], [13, 3], [16, 0], [17, 4], [19, 6]] as const) decal({ kind: 'sconce', x, y });
+  for (const [x, y] of [[8, 15], [9, 18], [14, 15], [15, 18], [17, 15], [18, 18]] as const) decal({ kind: 'tablelight', x, y });
+  // THE RENTED CORNER by the hearth, under the loft: the bed, the chest, the bench, a rug, a candle.
+  const bed = { x: 7, y: 12 };
+  const stash = { x: 7, y: 14 };
+  const forge = { x: 8, y: 14 };
   block({ kind: 'bed', x: bed.x, y: bed.y, w: 1, h: 2 });
   block({ kind: 'stash', x: stash.x, y: stash.y, variant: 'room' });
   block({ kind: 'forge', x: forge.x, y: forge.y, variant: 'room' });
-  block({ kind: 'candle', x: 18, y: 9, variant: 'inn_candle' });
-  block({ kind: 'shelf', x: 18, y: 13, w: 1, h: 1, variant: 'inn_case' });
-  decal({ kind: 'carpet', x: 18, y: 11, variant: 'inn_carpet_s' });
-  block({ kind: 'innchair', x: 21, y: 13 });
-  block({ kind: 'box', x: 21, y: 14, variant: 'box_a' });
+  block({ kind: 'candle', x: 6, y: 13, variant: 'inn_candle' });
+  decal({ kind: 'carpet', x: 8, y: 12, variant: 'inn_carpet_s' });
 
-  // Behind the bar and in every corner the furniture seals: solid, so no stroll is planned into a pocket.
+  // Only what the door reaches is floor: no stroll is planned into a pocket the picture closed.
   {
     const seen = new Uint8Array(W * H);
     const stack = [idx(spawn.x, spawn.y)];
+    grid[stack[0]] = TILE_FLOOR;
     seen[stack[0]] = 1;
     while (stack.length) {
       const i = stack.pop()!;
@@ -115,7 +123,7 @@ export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayo
     }
     for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
   }
-  const hall: Room = { x: 3, y: 5, w: 12, h: 12 };
+  const hall: Room = { x: 6, y: 7, w: 17, h: 16 };
   const map: TownMap = {
     width: W,
     height: H,
@@ -124,6 +132,7 @@ export function buildInnLayout(seed: number): { layout: TownLayout; inn: InnLayo
     spawn,
     seed,
     tileKind,
+    backdrop: true,
   };
   const layout = bareLayout(map, props, 'THE GILDED STAG');
   layout.wander = hall;

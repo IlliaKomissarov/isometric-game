@@ -5183,9 +5183,9 @@ async function boot(): Promise<void> {
       if (it.kind === 'bed') {
         // Walk to the bedside first (it.92): the lying-down starts from beside the bed, not from across the room.
         const d = Math.hypot(player.pos.x - it.x, player.pos.y - it.y);
-        if (d > 1.45 && !player.resting) {
+        if (d > 1.6 && !player.resting) {
           pendingRest = it.id;
-          walkToInteractable(it, localSlot, [it.tiles[0]]); // Beside the bed itself, not its footboard.
+          walkToInteractable(it, localSlot, it.tiles.slice(0, 2)); // Beside the bed's own tiles, not its ring.
           return;
         }
         pendingRest = null;
@@ -5278,7 +5278,7 @@ async function boot(): Promise<void> {
       if (pendingRest !== null) {
         const it = t.interactables.find((i) => i.id === pendingRest);
         if (!it) pendingRest = null;
-        else if (Math.hypot(player.pos.x - it.x, player.pos.y - it.y) <= 1.45) {
+        else if (Math.hypot(player.pos.x - it.x, player.pos.y - it.y) <= 1.6) {
           pendingRest = null;
           inputQueue.enqueue({ type: 'REST', playerId: localSlot, x: it.x, y: it.y });
         }

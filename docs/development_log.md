@@ -1,5 +1,11 @@
 # Development Log
 
+## 2026-09-08 (iteration 94) - The painted hall, and keys on the word
+
+- THE GILDED STAG is the artwork now (`first-isometric-tavern...webp`, given as the reference): keyed off its dark surround and scaled to our grid (228 px a diamond -> 64), it is one `backdrop` prop under the room (`TownMap.backdrop` makes the scene draw no tiles); the walkable floor is authored over it tile by tile (`HALL` in `scenes/Inn.ts`, from the room's outline and a colour pass, the counter and the six tables shut); the bar counter is cut from the picture (`barfront`, sorted at the counter's south edge) so the keeper stands behind it; the painted hearth burns with the campfire's flame; five `sconce` lights and six `tablelight` candles throw real light. The rented corner sits by the hearth under the loft stair. Culling exempts painted pieces (`noCull`).
+- The project already holds Remos' Isometric Medieval Tavern (CC-BY 4.0) under `test-models/tavern` - the exterior renders the quarter's inn is built from; the search found no freer interior at this quality than the reference itself.
+- KEYS ON THE WORD: the dialogue's choices walk with the arrows (W/S, Tab too), light up, and Enter or Space takes the lit one; the mouse lights what it hovers.
+
 ## 2026-09-08 (iteration 93) - Express fixes: the inn's room, the hill road, walk-through clutter, the rotunda, the errand paid in the forest
 
 - THE INN'S ROOM: the bed is a 1x2 footprint with the big render (`bed_big`, 150 px) and the hero lies at its middle, drawn above it (`Player.syncRender` lifts the sleeper's zIndex); an arched `doorway` (`inn_doorway`) on the partition's gap and over the street door; bookcases along the north wall, the hearth moved into the west wall with chairs before it, the sword case, a rug, a chair and a box in the room.

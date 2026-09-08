@@ -1306,7 +1306,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       const common = foes.find((f) => !f.affix) ?? foes[0]; // A champion falls in two, by the rule - measure a common one.
       const lost = hitFor(common.id, 1);
       check('tourist: a common foe falls in one hit', lost >= common.hpMax && common.hp === 0, `${lost}/${common.hpMax}`);
-      const elite = foes[1];
+      const elite = foes.find((f) => f !== common && f.hp > 0) ?? foes[1]; // Never the one just felled.
       elite.setAffix('thorns');
       hitFor(elite.id, 1);
       check('tourist: a champion stands after one hit', elite.hp > 0, `${elite.hp}/${elite.hpMax}`);
@@ -1623,7 +1623,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g = game();
       await fadeClear();
       const inn = g.town.layout.inn;
-      check('the inn: boards underfoot, a bar, a hearth, tables, the keeper behind the counter', !!inn && g.dungeon.tileKind[inn.hall.y * g.dungeon.width + inn.hall.x] === 4 && g.town.layout.props.some((q: { kind: string }) => q.kind === 'hearth') && g.town.layout.props.filter((q: { kind: string }) => q.kind === 'inntable').length >= 4 && g.town.interactables.some((i: { kind: string }) => i.kind === 'innkeeper') && !!g.town.villagers3 === false);
+      check('the inn: the painted hall, its bar cut out, a hearth, sconces, the keeper behind the counter', !!inn && g.dungeon.backdrop === true && g.town.layout.props.some((q: { kind: string }) => q.kind === 'backdrop') && g.town.layout.props.some((q: { kind: string }) => q.kind === 'barfront') && g.town.layout.props.some((q: { kind: string }) => q.kind === 'hearth') && g.town.layout.props.filter((q: { kind: string }) => q.kind === 'sconce').length >= 4 && g.town.interactables.some((i: { kind: string }) => i.kind === 'innkeeper') && !!g.town.villagers3 === false);
+      check('the hall is walked, the counter and the tables are not', g.scene.isWalkable(13, 12) && !g.scene.isWalkable(12, 4) && (!g.scene.isWalkable(13, 15) || !g.scene.isWalkable(14, 15)));
       check('patrons stroll the hall with a word', g.town.villagers.positions().length >= 5);
       check('the corner room holds the bed, the chest and the bench', ['bed', 'stash', 'forge'].every((k) => g.town.interactables.some((i: { kind: string; room?: boolean }) => i.kind === k && i.room)));
       // The reward, at the bar.
@@ -1642,7 +1643,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('200 gold, a bow and a sword', p2.gold === gold0 + 200 && bases.includes('hunters_bow') && bases.includes('soldier_blade') && g.quests.east === 'done', `${p2.gold - gold0} ${bases.join()}`);
       check('REWARD RECEIVED · 200 GOLD · A BOW · A SWORD', /200 GOLD · A BOW · A SWORD/.test(document.getElementById('reward-note')?.textContent ?? ''));
       // The bed: E from across the room walks the hero to the bedside first, then the lying-down.
-      warp(inn.bed.x - 2, inn.bed.y + 1); // On open boards, two strides off the bed - within the prompt's reach, past the bedside's.
+      warp(inn.bed.x + 2, inn.bed.y + 1); // On the stone, two strides off the bed - within the prompt's reach, past the bedside's.
       p2.hp = Math.floor(p2.hpMax * 0.5);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(4);
@@ -1666,7 +1667,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.loop.step(2);
       check('a step stands the hero up', p2.resting === false);
       // The room's chest is the town's stash.
-      warp(inn.stash.x, inn.stash.y - 1);
+      warp(inn.stash.x, inn.stash.y + 1); // Below the chest: above it lies the bed.
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(3);
       check('the room\'s chest opens the stash', g.stashUI.isOpen === true);
@@ -1703,7 +1704,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // Words over the folk.
       driveRender(15000);
       let bubbles = 0;
-      for (const c of g.viewport.objectLayer.children) if (c.visible && c.children?.length === 2 && c.children[1]?.text !== undefined && c.children[1]?.style?.fontSize === 9) bubbles++;
+      for (const c of g.viewport.objectLayer.children) if (c.children?.length === 2 && typeof c.children[1]?.text === 'string' && c.children[1].text !== '' && c.children[1]?.style?.fontSize === 9) bubbles++; // Spoke at least once.
       check('the folk speak a word now and then', bubbles > 0, String(bubbles));
     }
 

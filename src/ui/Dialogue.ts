@@ -45,6 +45,24 @@ export class DialogueUI {
           e.preventDefault();
           e.stopImmediatePropagation();
           this.choose(this.lastValue());
+        } else if (e.code === 'ArrowDown' || e.code === 'ArrowUp' || e.code === 'KeyS' || e.code === 'KeyW' || e.code === 'Tab') {
+          // KEYS ON THE WORD (it.94): the arrows (or W/S, Tab) walk the choices, Enter takes the one lit.
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const list = [...this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]')];
+          if (!list.length) return;
+          const down = e.code === 'ArrowDown' || e.code === 'KeyS' || (e.code === 'Tab' && !e.shiftKey);
+          this.focusIndex = (this.focusIndex + (down ? 1 : -1) + list.length) % list.length;
+          this.lightChoice(list);
+          audio.sfx('uiHover');
+        } else if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') {
+          const list = [...this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]')];
+          const b = list[this.focusIndex] ?? list[0];
+          if (b) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            b.click();
+          }
         } else if (/^Digit[1-3]$/.test(e.code)) {
           const i = Number(e.code.slice(5)) - 1;
           const b = this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]')[i];
@@ -76,13 +94,19 @@ export class DialogueUI {
       ${spec.portrait ? `<div class="dl-body"><div class="dl-portrait"></div><div class="dl-lines">${lines}</div></div>` : `<div class="dl-lines">${lines}</div>`}
       <div class="dl-choices">${choices}</div>`;
     if (spec.portrait) this.panel.querySelector('.dl-portrait')?.appendChild(spec.portrait);
+    this.focusIndex = 0;
+    this.lightChoice([...this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]')]);
     this.panel.dataset.last = spec.choices[spec.choices.length - 1]?.value ?? '';
     this.panel.querySelector<HTMLElement>('[data-close]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.choose(this.lastValue());
     });
-    this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]').forEach((b) => {
-      b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]').forEach((b, i) => {
+      b.addEventListener('mouseenter', () => {
+        audio.sfx('uiHover');
+        this.focusIndex = i;
+        this.lightChoice([...this.panel.querySelectorAll<HTMLButtonElement>('[data-choice]')]);
+      });
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         audio.sfx('uiConfirm');
@@ -102,6 +126,12 @@ export class DialogueUI {
     this.abort.abort();
     if (this.resolve) this.resolve(this.lastValue());
     this.panel.remove();
+  }
+
+  /** Which choice the keys have lit (it.94). */
+  private focusIndex = 0;
+  private lightChoice(list: HTMLButtonElement[]): void {
+    list.forEach((b, i) => b.classList.toggle('lit', i === this.focusIndex));
   }
 
   private lastValue(): string {

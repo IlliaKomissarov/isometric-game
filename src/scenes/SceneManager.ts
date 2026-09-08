@@ -43,6 +43,7 @@ export class SceneManager {
     this.map = map;
     this.theme = theme;
     this.themeSuffix = THEME_SUFFIX[theme];
+    if ((map as { backdrop?: boolean }).backdrop) return; // THE PAINTED HALL (it.94): the picture is the room.
     const { width, height, grid } = map;
 
     for (let gy = 0; gy < height; gy++) {

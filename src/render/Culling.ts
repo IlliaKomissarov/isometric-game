@@ -47,8 +47,8 @@ export function cullWorld(viewport: Viewport, screenW: number, screenH: number, 
     const kids = layer.children;
     for (let i = 0; i < kids.length; i++) {
       const c = kids[i];
-      if (keep.has(c)) {
-        c.renderable = true;
+      if (keep.has(c) || (c as { noCull?: boolean }).noCull) {
+        c.renderable = true; // A painted backdrop (it.94) is judged by no single point.
         continue;
       }
       const sx = c.position.x * z + ox;

@@ -16,7 +16,7 @@ import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
-import { spriteLib } from '@/render/SpriteLibrary';
+import { spriteLib, type AnimName } from '@/render/SpriteLibrary';
 import { TILE_H, TILE_W } from '@/core/config';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
@@ -34,7 +34,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'riverroad' | 'bridgegate' | 'oscar';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'riverroad' | 'bridgegate' | 'oscar' | 'fishspot';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
@@ -74,6 +74,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const interactables: Interactable[] = [];
   const hotspots: Array<{ x: number; y: number }> = [];
   const fog: Array<{ sprite: Sprite; x: number; y: number; phase: number; speed: number }> = [];
+  /** THE ANGLERS (it.107): render-only bodies sat at the bank, each with its own idle. */
+  const anglers: Array<{ root: Container; body: Sprite; rod: Sprite; phase: number }> = [];
   let stashSprite: Sprite | null = null;
   let cellarGirl: { sprite: Sprite | null; id: number } | null = null;
   const gates = new Map<string, Sprite>();
@@ -709,10 +711,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'fishspot': {
-        // A place the water is worth a line. It carries NO prompt and no plate:
-        // the rod comes out on its own when the hero stands here (it.106), so
-        // the only thing on screen is a faint disturbance on the water.
-        glowAt(p.x, p.y, 0x6fa8bc, 0.16, 1.1, 2);
+        // A place the water is worth a line. IT.107: it carries a PROMPT. Up to
+        // it.106 the rod came out on its own the moment the hero stood here,
+        // which meant a player walking the bank kept starting to fish by
+        // accident and never knew there was a mechanic to find. It is a normal
+        // interactable now - walk up, press E - and pressing it again puts the
+        // rod away.
+        glowAt(p.x, p.y, 0x6fa8bc, 0.2, 1.2, 2);
+        interactables.push({ id: nextId++, kind: 'fishspot', x: p.x + 0.5, y: p.y + 0.5, label: 'E \u00b7 CAST A LINE', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 }] });
         break;
       }
       case 'riverroad': {
@@ -737,6 +743,39 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         lighting.addSource(p.x + 0.5, p.y + 0.5, 5, 230, 170, 110, 0.7);
         plate(p.x, p.y, `${p.variant ?? 'THE BRIDGE'} · BURNED`, 96);
         interactables.push({ id: nextId++, kind: 'bridgegate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE BRIDGE'}`, tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }], note: 'The span is burned through and the far side is barred. Nothing crosses here yet.' });
+        break;
+      }
+      case 'angler': {
+        /**
+         * AN ANGLER OF THE RIVERSIDE (it.107). A render-only body sat at the
+         * bank with a line out. He has an IDLE OF HIS OWN: the dresser's own
+         * per-frame `update` breathes him and dips his rod on a slow cycle
+         * seeded off his tile, so no two of them move together.
+         *
+         * He is not a `Villager`: villagers wander, path and shoulder each
+         * other, and an angler who wanders off his own bank is not an angler.
+         */
+        const anim: AnimName = (p.x + p.y) % 2 === 0 ? 'cit_labourer_walk' : 'cit_carter_walk';
+        if (!spriteLib.loaded || !spriteLib.hasAnim(anim)) break;
+        const root = new Container();
+        const body = new Sprite(spriteLib.frame(anim, 2, 0));
+        const foot = spriteLib.footAnchor(anim);
+        body.anchor.set(foot.x, foot.y);
+        body.scale.set(57 / (spriteLib.paintedHeight(anim) || 90) / 0.8);
+        body.tint = (p.x + p.y) % 3 === 0 ? 0xd8c8a8 : 0xc0cbd8;
+        root.addChild(body);
+        const rod = new Sprite(assets.get('fishing_rod'));
+        rod.anchor.set(0.14, 0.86);
+        rod.scale.set(0.85);
+        rod.position.set(5, -6);
+        root.addChild(rod);
+        const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+        root.position.set(sc.x, sc.y + 4);
+        root.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
+        viewport.objectLayer.addChild(root);
+        lighting.registerProp(p.x, p.y, body);
+        lighting.registerProp(p.x, p.y, rod);
+        anglers.push({ root, body, rod, phase: ((p.x * 7 + p.y * 13) % 100) / 100 });
         break;
       }
       case 'oscar':
@@ -989,6 +1028,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   };
   const update = (dt: number): void => {
     clock += dt;
+    // THE ANGLERS (it.107): each breathes and dips his rod on his own slow
+    // cycle, seeded off his tile, so three men on one bank never move together.
+    for (const a of anglers) {
+      const t = clock * 0.9 + a.phase * 6.283;
+      a.body.scale.y = Math.abs(a.body.scale.y) * (1 + Math.sin(t * 1.7) * 0.012);
+      a.rod.rotation = 0.05 + Math.sin(t) * 0.07;
+      a.rod.position.y = -6 + Math.sin(t * 1.3) * 0.8;
+    }
     const k = 1 - Math.exp(-10 * dt);
     for (const pl of plates) {
       pl.node.position.y = pl.baseY + Math.sin(clock * 1.3 + pl.phase) * 2.5;
@@ -1004,6 +1051,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     }
   };
   const destroy = (): void => {
+    for (const a of anglers) a.root.destroy({ children: true });
+    anglers.length = 0;
     for (const f of fog) f.sprite.destroy();
     fog.length = 0;
     for (const pl of plates) pl.node.destroy({ children: true });

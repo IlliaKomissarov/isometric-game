@@ -17,7 +17,7 @@
 
 import { installTouchGuards } from '@/core/touchGuards';
 import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter, type Texture } from 'pixi.js';
-import { assets } from '@/core/AssetManager';
+import { assets, WATER_PHASES } from '@/core/AssetManager';
 import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
 import { GameLoop } from '@/core/GameLoop';
@@ -247,6 +247,13 @@ const RIVER_FLOOR = 106;
  * hero on sight.
  */
 const RIVER_AMBUSH: EnemyKind[] = ['brigand', 'bandit', 'brigand'];
+/**
+ * THE CUTAWAY'S REACH (it.107): how far from the camera, in tiles (Manhattan),
+ * a body may be and still ghost the roof in front of it. Wide enough to cover
+ * the viewport at the widest zoom, narrow enough that the far side of a floor
+ * cannot reach in and hold a building transparent.
+ */
+const CUTAWAY_RANGE = 26;
 /** THE COMPANY FIGHTS BACK (it.101): how far a hostile will look for a guard to fight instead of the hero. */
 const ALLY_AGGRO = 14;
 /**
@@ -424,13 +431,20 @@ async function boot(): Promise<void> {
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
     });
+    // THE RIVER IS ART (it.107). Ten baked phases of the pack's own caustic
+    // loop, registered both as the ground kind `SceneManager` lays down and
+    // under `water_phase_<n>` for the pass that cycles them.
+    for (let i = 0; i < WATER_PHASES; i++) {
+      const name = `water_${String(i).padStart(2, '0')}`;
+      if (!spriteLib.hasSingle(name)) continue;
+      const tex = spriteLib.single(name);
+      assets.registerTexture(`water_phase_${i}`, tex);
+      if (i < 4) assets.registerTexture(`floor_town_${KIND_WATER}_${i}`, tex);
+      if (i === 0) assets.registerTexture(`floor_town_${KIND_WATER}`, tex);
+    }
   } catch (err) {
     console.warn('[boot] Sprite atlases unavailable — using procedural art.', err);
   }
-  // THE RIVER (it.106). Built here, unconditionally and outside the try: the
-  // packs contain no water, so this is generated geometry like the stone floors
-  // were, and it must exist whether or not the atlases loaded.
-  assets.buildRiverGround();
   loadingOverlay?.classList.add('done');
 
   const settings = new SettingsUI();
@@ -1906,8 +1920,8 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
-      if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
+      // (it.53's `omniscient` for the trial is the default for every floor now, it.107.)
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
       const theme = !spriteLib.loaded
@@ -1988,7 +2002,11 @@ async function boot(): Promise<void> {
       // (The SIGHT radius is deliberately left short of the map: `revealAll` is
       // what kills the pop-in, and widening sight as well would have put the
       // general's health bar on screen from halfway across the field.)
-      if (isFarm || isRiver) lighting.revealAll(); // open country is known ground (it.103, it.106)
+      // IT.107: `revealAll` is a no-op now that nothing is ever HIDDEN - kept
+      // for the two floors that asked for it explicitly, so turning the fog back
+      // on (`lighting.omniscient = false`) restores their it.103/it.106
+      // behaviour rather than silently changing them too.
+      if (isFarm || isRiver) lighting.revealAll();
       const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
@@ -2453,24 +2471,10 @@ async function boot(): Promise<void> {
         }
       }
 
-      // THE SHORELINE (it.106): the ripples go on the water tiles that touch
-      // land, which is where a real river actually breaks. Computed here rather
-      // than in the layout because it is a render concern and nothing else wants it.
-      if (isRiver && riverside && water) {
-        const rk = (riverside.layout.map as TownMap).tileKind;
-        const rw = dungeon.width;
-        const edge = riverside.river.water.filter((t) => {
-          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-            const nx = t.x + dx;
-            const ny = t.y + dy;
-            if (nx < 0 || ny < 0 || nx >= rw || ny >= dungeon.height) continue;
-            if (rk[ny * rw + nx] !== KIND_WATER) return true;
-          }
-          return false;
-        });
-        water.seedRipples(viewport.ambienceLayer, edge);
-        ambience.setSmoke(false);
-      }
+      // IT.107: the shoreline ripple pass is gone with the procedural water -
+      // the pack's own caustics carry the motion, and rings drawn on top of
+      // them read as two different waters at once.
+      if (isRiver) ambience.setSmoke(false);
       // THE CITY'S OWN (it.100): the guards and their officer form up on the muster
       // ground. Only while the field is contested - once it is won they have gone home.
       if (isFarm && farm) {
@@ -5391,63 +5395,86 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * THE LINE IS IN THE WATER (it.106) — the riverside's fishing.
+     * THE LINE IS IN THE WATER (it.106, cast by hand it.107) — the riverside's
+     * fishing.
      *
-     * A PROXIMITY trigger, not a prompt: there is no key to press and no menu.
-     * Stand on one of the layout's fishing marks with nothing else going on and
-     * the rod comes out on its own; move, swing, take a hit or step off the mark
-     * and it is gone again. It is a pose on the hero (`player.fishing`), so
-     * nothing about movement or combat is gated on it and there is no state that
-     * can be got stuck in - walking away cancels it because THIS stops setting
-     * it, not because anything has to be undone.
+     * IT.107: THE ROD COMES OUT ON A KEYPRESS, NOT ON PROXIMITY. Up to it.106 it
+     * started on its own the moment the hero stood on a mark, which meant anyone
+     * walking the bank kept starting to fish by accident, and anyone who never
+     * happened to stop on the right tile never learned the mechanic existed at
+     * all. The mark is an ordinary interactable now: walk up, press E, and press
+     * it again to put the rod away. `castLine` below is what the prompt calls.
      *
-     * Two things happen while it is on: the water in front of the hero takes a
-     * ring of ripples, and now and then something takes the line. The bite is
-     * flavour - it pays nothing and costs nothing - so a player who never
-     * notices the mechanic has lost no reward by it.
+     * It is still a POSE (`player.fishing`), not an action - `action` stays
+     * `idle`, so nothing about movement or combat is gated on it and there is no
+     * state that can get stuck. This tick no longer STARTS anything; it only
+     * cancels, the instant the hero moves, swings, is hit, or steps off the mark.
+     *
+     * While it is on, the water in front of them stirs and now and then something
+     * takes the line. The bite is flavour - it pays nothing and costs nothing.
      */
     let fishBiteTicks = 0;
     /** Where the hero stood last tick, so "is walking" needs nothing private. */
     const fishLast = { x: NaN, y: NaN };
-    const tickFishing = (): void => {
+    /** The mark being fished, so the tick knows when they have stepped off it. */
+    let fishMark: { x: number; y: number; toX: number; toY: number } | null = null;
+
+    /** The prompt's own action: cast, or reel in if the line is already out. */
+    const castLine = (): void => {
       const r = world.riverside;
-      if (!r || floor !== RIVER_FLOOR) {
-        if (player.fishing) player.fishing = false;
+      if (!r || floor !== RIVER_FLOOR) return;
+      if (player.fishing) {
+        player.stopFishing();
+        fishMark = null;
         return;
       }
-      // Nothing while a scene is on, while a panel is up, or while the hero is
-      // doing literally anything else.
+      const hereX = Math.floor(player.pos.x);
+      const hereY = Math.floor(player.pos.y);
+      // The mark under the hero, or the nearest one they are standing beside -
+      // the prompt reaches a tile further than the mark itself, so casting must
+      // too, or walking up to the prompt and pressing it would do nothing.
+      const mark =
+        r.fishing.find((f) => f.x === hereX && f.y === hereY) ??
+        r.fishing.find((f) => Math.abs(f.x - hereX) + Math.abs(f.y - hereY) <= 1);
+      if (!mark) {
+        tutorial.say('There is no reach to the water here. Stand at the bank, or out on a jetty.');
+        return;
+      }
+      fishMark = mark;
+      player.fishing = true;
+      player.fishClock = 0;
+      // SEED THE BASELINE (it.107). `tickFishing` decides "are they walking" by
+      // comparing this tick's position with `fishLast`, and `fishLast` still held
+      // wherever the hero was standing the last time the tick ran - which, after
+      // walking up to the bank, is several tiles away. The line was cast and
+      // reeled straight back in on the very next tick, every time.
+      fishLast.x = player.pos.x;
+      fishLast.y = player.pos.y;
+      fishBiteTicks = 240 + Math.floor(Math.random() * 300);
+      // Face the water, so the rod is out over the river and not the field.
+      const fx = mark.toX - player.pos.x + 0.5;
+      const fy = mark.toY - player.pos.y + 0.5;
+      const fd = Math.hypot(fx, fy) || 1;
+      player.facing.x = fx / fd;
+      player.facing.y = fy / fd;
+      world.dmgText.show(player.pos.x, player.pos.y - 1.6, 'THE LINE IS OUT', 'player');
+      audio.sfx('equip');
+    };
+
+    const tickFishing = (): void => {
+      if (!player.fishing) return;
+      const r = world.riverside;
       const walking = Math.hypot(player.pos.x - fishLast.x, player.pos.y - fishLast.y) > 0.002;
       fishLast.x = player.pos.x;
       fishLast.y = player.pos.y;
-      const busy =
-        !!reclaim ||
-        player.action !== 'idle' ||
-        player.resting ||
-        player.hp <= 0 ||
-        walking;
-      const hereX = Math.floor(player.pos.x);
-      const hereY = Math.floor(player.pos.y);
-      const mark = busy ? undefined : r.fishing.find((f) => f.x === hereX && f.y === hereY);
-      if (!mark) {
-        if (player.fishing) {
-          player.fishing = false;
-          player.fishClock = 0;
-          fishBiteTicks = 0;
-        }
+      const mark = fishMark;
+      const off = !mark || Math.abs(mark.x - Math.floor(player.pos.x)) + Math.abs(mark.y - Math.floor(player.pos.y)) > 1;
+      // The line comes in the moment they do anything else at all.
+      if (!r || floor !== RIVER_FLOOR || !!reclaim || player.action !== 'idle' || player.resting || player.hp <= 0 || walking || off) {
+        player.stopFishing();
+        fishMark = null;
+        fishBiteTicks = 0;
         return;
-      }
-      if (!player.fishing) {
-        player.fishing = true;
-        player.fishClock = 0;
-        fishBiteTicks = 240 + Math.floor(Math.random() * 300);
-        // Face the water, so the rod is out over the river and not the field.
-        const fx = mark.toX - hereX;
-        const fy = mark.toY - hereY;
-        const fd = Math.hypot(fx, fy) || 1;
-        player.facing.x = fx / fd;
-        player.facing.y = fy / fd;
-        world.dmgText.show(player.pos.x, player.pos.y - 1.6, 'A GOOD SPOT', 'player');
       }
       // The float on the water in front of them.
       if (state.tick % 20 === 0) world.ambience.burst(mark.toX + 0.5, mark.toY + 0.5, 0x7fb4c4, 3);
@@ -6418,13 +6445,29 @@ async function boot(): Promise<void> {
           const k = 1 - Math.exp(-12 * frameDt);
           // EVERY BODY BEHIND A TREE (it.87): the other heroes and every foe in
           // sight fade the trunk in front of them too, so nothing fights unseen.
+          //
+          // ON SCREEN, NOT MERELY UNFOGGED (it.107). This list used to be gated on
+          // `lighting.isVisible`, which was doing two jobs at once: "the player can
+          // see this body" AND, by accident, "this body is near the player". With
+          // the fog gone (it.107) every tile on the floor is visible, so EVERY
+          // villager and EVERY foe anywhere on the map went into the list - and a
+          // roof only has to have somebody standing behind it, anywhere, to be
+          // ghosted. That is the "houses are permanently see-through" bug, and the
+          // fog was the only thing that had ever been holding it back.
+          //
+          // The right bound was always the CAMERA: a cutaway exists so a body the
+          // player is looking at is not hidden by a roof, which can only matter for
+          // bodies on screen. `CUTAWAY_RANGE` tiles comfortably covers the viewport
+          // at the widest zoom, and it caps the work this loop does as well.
           const bodies: Array<{ x: number; y: number; depth: number }> = [];
-          for (const seat of liveSeats()) if (seat.player !== player && seat.player.hp > 0) {
+          const onScreen = (x: number, y: number): boolean =>
+            Math.abs(x - cameraFocus.x) + Math.abs(y - cameraFocus.y) < CUTAWAY_RANGE;
+          for (const seat of liveSeats()) if (seat.player !== player && seat.player.hp > 0 && onScreen(seat.player.pos.x, seat.player.pos.y)) {
             const ps = worldToScreen(seat.player.pos.x, seat.player.pos.y, vec2());
             bodies.push({ x: ps.x, y: ps.y, depth: (seat.player.pos.x + seat.player.pos.y) * 16 });
           }
           world.enemies.forEachActive((e) => {
-            if (e.hp <= 0 || !world.lighting.isVisible(Math.floor(e.pos.x), Math.floor(e.pos.y))) return;
+            if (e.hp <= 0 || !onScreen(e.pos.x, e.pos.y)) return;
             const es = worldToScreen(e.pos.x, e.pos.y, vec2());
             bodies.push({ x: es.x, y: es.y, depth: (e.pos.x + e.pos.y) * 16 });
           });
@@ -6432,7 +6475,7 @@ async function boot(): Promise<void> {
           for (const vs of [t.villagers, t.villagers2, t.villagers3]) {
             if (!vs) continue;
             for (const v of vs.positions()) {
-              if (!world.lighting.isVisible(Math.floor(v.x), Math.floor(v.y))) continue;
+              if (!onScreen(v.x, v.y)) continue;
               const ps = worldToScreen(v.x, v.y, vec2());
               bodies.push({ x: ps.x, y: ps.y, depth: (v.x + v.y) * 16 });
             }
@@ -6767,6 +6810,8 @@ async function boot(): Promise<void> {
       } else if (it.kind === 'quarry') {
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else goMines();
+      } else if (it.kind === 'fishspot') {
+        castLine(); // THE LINE IS CAST BY HAND (it.107).
       } else if (it.kind === 'riverroad') {
         // Back through the gate into the quarter, the way the hero came.
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();

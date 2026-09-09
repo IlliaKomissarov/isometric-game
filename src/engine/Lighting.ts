@@ -79,8 +79,22 @@ export class Lighting {
   /** Decorative props on a tile (braziers, statues) — tinted like walls. */
   private propSprites = new Map<number, Sprite[]>();
   private visibleSet = new Set<number>();
-  /** THE COLISEUM (it.53): no fog at all — every tile stays in sight. */
-  omniscient = false;
+  /**
+   * NO FOG OF WAR (it.107). This was the Coliseum's own switch (it.53); it is
+   * now the whole game's, and it defaults ON.
+   *
+   * What it removes is the SHROUD - the HIDDEN black over ground the hero has
+   * not walked to, and the dimmed EXPLORED tint over ground they have left.
+   * Every tile is VISIBLE from the first frame, so the shape of a floor is
+   * known and the minimap is whole.
+   *
+   * What it does NOT remove is the LIGHT. A torch still has a radius, a crypt is
+   * still dark away from it, and `updateRender` still tints every tile by what
+   * reaches it. Fog and darkness were always two systems; only the first is
+   * gone. Setting this false restores the old behaviour intact - nothing was
+   * deleted, so a floor that wants a shroud can still ask for one.
+   */
+  omniscient = true;
   private allTiles: Set<number> | null = null;
   private isOpaque!: (gx: number, gy: number) => boolean;
 

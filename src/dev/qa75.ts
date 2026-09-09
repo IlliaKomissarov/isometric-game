@@ -168,6 +168,20 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     if (!g) throw new Error('no run');
     g.loop.step(30);
     check('starts in town', g.floor === 0 && !!g.town);
+    /**
+     * NO FOG OF WAR (it.107). Not "revealed as you walk" - gone. Every tile of
+     * every floor is visible from the first frame, and the shroud's own state
+     * (HIDDEN / EXPLORED) is never entered. The LIGHT is untouched: a crypt is
+     * still dark away from the torch, which is a different system entirely.
+     */
+    {
+      const all = (): boolean => {
+        const gg = game();
+        for (let y = 0; y < gg.dungeon.height; y++) for (let x = 0; x < gg.dungeon.width; x++) if (!gg.lighting.isVisible(x, y)) return false;
+        return true;
+      };
+      check('the fog of war is off, and the whole town is in sight', g.lighting.omniscient === true && all());
+    }
     // NOTHING IS SILENTLY SOFT (it.105). The resolution ladder used to be a fixed
     // list the start rung was SEARCHED in, so any display whose ratio was not on
     // it (1.25x, very common on Windows) rendered below native from the first
@@ -2287,6 +2301,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           kin: Array<{ x: number; y: number }>;
           bandits: Array<{ x: number; y: number }>;
           fishing: Array<{ x: number; y: number; toX: number; toY: number }>;
+          anglers: Array<{ x: number; y: number; toX: number; toY: number }>;
           water: Array<{ x: number; y: number }>;
           bridge: { x: number; y: number };
           safe: boolean;
@@ -2332,6 +2347,21 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           // THE WAY BACK, AND THE WAY ON.
           check('the signpost home and the burned bridge both stand', g.town.interactables.some((i: { kind: string }) => i.kind === 'riverroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'bridgegate'));
           check('chests are scattered over the farm', (g.town.layout.chests ?? []).length >= 3, String((g.town.layout.chests ?? []).length));
+          /**
+           * THE WATER IS ART, NOT A GENERATOR (it.107). it.106 drew the river
+           * with vector geometry because nothing was found in the packs; the
+           * caustic loop was there all along under `test-models/3rd town part`.
+           * `scripts/bake-water.py` turns it into ten atlas singles, so the
+           * proof that the generator is gone is that the atlas has them.
+           */
+          {
+            const missing: string[] = [];
+            for (let i = 0; i < 10; i++) {
+              const n = `water_${String(i).padStart(2, '0')}`;
+              if (!g.sprites.hasSingle(n)) missing.push(n);
+            }
+            check('the river is ten baked frames of the pack own caustics', missing.length === 0, `missing ${missing.join()}`);
+          }
           // THE WATER MOVES. The pass is render-only and rides the wall clock, so
           // it is checked by driving frames and watching a tile's texture change.
           {
@@ -2346,19 +2376,89 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
             }
             check('and the current actually moves through its phases', phases.size >= 2, `${[...phases].join()} (${before ? 'seeded' : 'unseeded'})`);
           }
-          // THE ROD COMES OUT ON ITS OWN. Stand on a mark, do nothing, and the
-          // pose is on; step off it and it is gone. No key, no prompt, no state
-          // that can stick.
+          /**
+           * THE LINE IS CAST BY HAND (it.107). Standing on a mark must do
+           * NOTHING on its own - it.106 started fishing on proximity, so anyone
+           * walking the bank kept starting by accident. E casts, E again reels
+           * in, and anything else at all cancels it.
+           */
           {
             const mark = r.fishing[0];
             warp(mark.x, mark.y);
-            g.loop.step(20);
+            g.loop.step(30);
+            driveRender(200);
+            check('standing on a mark does not start fishing by itself', g.player.fishing === false, `fishing ${g.player.fishing}`);
+            g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+            g.loop.step(30);
             driveRender(120);
-            const onMark = g.player.fishing === true;
+            const cast = g.player.fishing === true;
+            g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+            g.loop.step(30);
+            driveRender(120);
+            const reeled = g.player.fishing === false;
+            check('E casts the line, and E again reels it in', cast && reeled, `cast ${cast} reeled ${reeled}`);
+            // And walking off it puts the rod away without anything undoing it.
+            g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+            g.loop.step(30);
+            driveRender(60);
+            const out = g.player.fishing === true;
             warp(r.entry.x, r.entry.y);
-            g.loop.step(20);
+            g.loop.step(30);
             driveRender(120);
-            check('the rod comes out on the mark and goes away off it', onMark && g.player.fishing === false, `on ${onMark} off ${g.player.fishing}`);
+            check('and walking away puts it away again', out && g.player.fishing === false, `out ${out} then ${g.player.fishing}`);
+          }
+          // THE BANK IS LIVED ON (it.107): the farm's own anglers, sat still.
+          {
+            const anglers = r.anglers ?? [];
+            const props = (g.town.layout.props as Array<{ kind: string }>).filter((q) => q.kind === 'angler');
+            check('anglers of the farm sit along the bank', anglers.length >= 2 && props.length === anglers.length, `${anglers.length} anglers, ${props.length} drawn`);
+            const clash = anglers.filter((a: { x: number; y: number }) => r.fishing.some((f) => Math.hypot(f.x - a.x, f.y - a.y) < 4));
+            check('and none of them sits on the hero own mark', clash.length === 0, `${clash.length} on a mark`);
+          }
+          /**
+           * THE FARM IS BUILT OF DIFFERENT BUILDINGS, AND NONE OF THEM CLIP
+           * (it.107). it.106 gave every building a flat 3x3 footprint while the
+           * art runs 231-362 pixels wide - eleven half-tiles of screen, not six -
+           * so roofs overlapped. The footprints come off the art now and the
+           * placer refuses any spot whose SCREEN BOX touches another's.
+           */
+          {
+            const PX: Record<string, [number, number]> = {
+              house_a: [276, 253], house_b: [261, 238], house_c: [276, 232], house_d: [261, 254],
+              house_e: [231, 183], house_f: [228, 182], house_g: [231, 178], house_h: [340, 253],
+              barracks: [362, 288], smithy: [350, 297], watchtower: [141, 208],
+            };
+            const built = (g.town.layout.props as Array<{ kind: string; variant?: string; x: number; y: number; w?: number; h?: number }>)
+              .filter((q) => ['house', 'barracks', 'smithy', 'watchtower'].includes(q.kind));
+            check('the farm is built of many different buildings', built.length >= 6, `${built.length} buildings`);
+            check('and no two of them are the same', new Set(built.map((q) => q.variant ?? q.kind)).size === built.length, built.map((q) => q.variant ?? q.kind).join());
+            const boxes = built.map((q) => {
+              const [pw, ph] = PX[q.variant ?? q.kind] ?? [64, 64];
+              const sx = (q.x + (q.w ?? 1) - (q.y + (q.h ?? 1))) * 32;
+              const sy = (q.x + (q.w ?? 1) + q.y + (q.h ?? 1)) * 16;
+              return { l: sx - pw / 2, r: sx + pw / 2, t: sy - ph * 0.96, b: sy + ph * 0.04, k: q.variant ?? q.kind };
+            });
+            const clashes: string[] = [];
+            for (let i = 0; i < boxes.length; i++)
+              for (let j = i + 1; j < boxes.length; j++) {
+                const a = boxes[i];
+                const b = boxes[j];
+                if (a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t) clashes.push(`${a.k} x ${b.k}`);
+              }
+            check('and not one roof clips another', clashes.length === 0, clashes.join(' | '));
+          }
+          /**
+           * A HOUSE IS NOT A GHOST (it.107). With the fog gone every tile is
+           * "visible", and the cutaway's body list was gated on exactly that - so
+           * every villager and foe ANYWHERE on the floor ghosted every roof they
+           * happened to stand behind, permanently. It is bounded by the camera now.
+           */
+          {
+            warp(r.entry.x, r.entry.y);
+            driveRender(900);
+            const far = (g.town.occluders as Array<{ sprite: { alpha: number }; tree?: boolean; tiles: { x: number; y: number } }>)
+              .filter((o) => !o.tree && Math.abs(o.tiles.x - g.player.pos.x) + Math.abs(o.tiles.y - g.player.pos.y) > 30);
+            check('a building far from the hero is solid, not see-through', far.length === 0 || far.every((o) => o.sprite.alpha > 0.9), `${far.filter((o) => o.sprite.alpha <= 0.9).length} of ${far.length} ghosted`);
           }
         }
         // THE TRAINING DUMMY NEVER FALLS (it.106) - checked here because a hero

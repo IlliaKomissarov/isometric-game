@@ -1,5 +1,120 @@
 # Development Log
 
+## 2026-09-09 (iteration 107) - The fog lifted, and a river that was in the packs all along
+
+### The water was there the whole time (`scripts/bake-water.py`)
+it.106 built the river out of vector geometry and said in its own commit message
+that "the packs contain no water". That was wrong. `public/assets/test-models/`
+is gitignored - the repo's rule since it.36 is "drop a raw pack elsewhere, bake
+it, commit only the atlas" - and it holds 54,000 files, among them
+`3rd town part/water_extras/`: forty-five 1024x1024 frames.
+
+Classified by mean brightness they are three sets, not one:
+
+| frames | mean | what it is |
+| --- | --- | --- |
+| 07-17, 38-42 | ~210 | a wave-height / foam set |
+| **18-27** | **~21** | **a ten-frame CAUSTIC loop** |
+| 28-37, 43-45 | ~170 | a third pattern |
+
+18-27 is the only run that is a true animation loop, and caustics are what
+moving water looks like from above. `scripts/bake-water.py` projects each frame
+onto the isometric GROUND PLANE (inverting the projection per output pixel, so
+the pattern lies flat in the world rather than being a square picture squashed
+into a diamond), shades it over a deep river colour, supersamples 4x, and takes
+the diamond's alpha from `single_town_grass_0.png` so the edge matches the tiles
+it sits beside exactly. Ten `single_water_00..09.png`, committed to the atlas.
+
+Every procedural generator went with it: `buildRiverGround`, `buildWaterTile`,
+`buildShoreTile`, `buildRipple`, and the shoreline ripple pass in `RiverWater`.
+The real caustics carry the motion; rings drawn on top of them read as two
+different waters at once.
+
+**The bank is not baked either.** The pack's ground textures are near-flat on
+their own - `sand.png` is mean 161 with a standard deviation of 4, authored to be
+lit through a normal map - and sampled raw they bake to a plain brown diamond.
+`town_sand`, in the atlas since it.55, is already a river bank. `KIND_SHORE` is
+gone; the bank is `KIND_SAND`.
+
+**No boat, no rod.** Searched: nothing in any pack. The rod is vector art, like
+`slash`, `arrow`, `bolt` and every paperdoll overlay in `AssetManager`.
+
+### The fog of war is off (`src/engine/Lighting.ts`)
+`omniscient` was the Coliseum's own switch since it.53. It is the whole game's
+now, and it defaults ON: every tile is VISIBLE from the first frame, the shroud's
+HIDDEN and EXPLORED states are never entered, and the minimap is whole.
+
+The LIGHT is untouched. Fog and darkness were always two systems and only the
+first is gone - a crypt is still black away from the torch. Nothing was deleted,
+so `lighting.omniscient = false` restores the old behaviour intact.
+
+**It found a real bug immediately.** The riverside had never been added to the
+lighting chain in it.106, so it inherited the CRYPT's radii and was pitched dark.
+Fixed: `sightRadius: 40, fullRadius: 30`.
+
+### Houses were see-through because the fog had been holding a bug back
+The cutaway's body list was gated on `lighting.isVisible`, which was quietly
+doing two jobs: "the player can see this body" AND "this body is near the
+player". With the fog gone the second meaning evaporated, so EVERY villager and
+EVERY foe anywhere on the floor went into the list - and a roof only has to have
+somebody standing behind it, anywhere, to be ghosted. Permanently see-through
+houses, exactly as reported.
+
+The right bound was always the camera: a cutaway exists so a body the player is
+LOOKING at is not hidden by a roof. `CUTAWAY_RANGE` (26 tiles, Manhattan) covers
+the viewport at the widest zoom and caps the loop's work as well.
+
+### The folk keep out of each other (`src/town/Villagers.ts`)
+They had a positional shove and nothing else - each walked its own A* road
+knowing nothing about anybody, so they walked INTO each other and were slowly
+pushed apart again, every time. The squad learned this in it.103; the town's
+people learn it here: a repulsion off every neighbour inside `FOLK_PERSONAL`
+blended into the heading BEFORE the step, so the shove is never reached.
+Spacing 0.66 -> 0.92 (0.66 is well inside a drawn body), the backstop runs twice
+so a stacked pair separates in one frame, and a walker bent into a fence slides
+along it instead of giving up. Measured over 600 frames: closest pair 0.92.
+
+### The line is cast by hand (`main`, `Player`)
+The proximity trigger is gone. Standing on a mark does nothing; the mark is an
+ordinary interactable, E casts, E again reels in, and moving, swinging, being hit
+or stepping off puts the rod away. A rod is drawn in the hero's hands while the
+line is out - its own child of the rig, because the paperdoll layers are switched
+off entirely once the sprite rig is on.
+
+**A bug its own test caught:** `castLine` did not seed the "did they move"
+baseline, so a cast made right after walking to the bank was reeled straight back
+in on the very next tick.
+
+### The farm was rebuilt (`src/scenes/Riverside.ts`)
+it.106 gave every building a flat 3x3 footprint. The art runs 231-362 pixels
+wide, and a footprint's screen width is `(w + h) * 32` - so `barracks` needed
+eleven half-tiles and had six. That is why roofs overlapped.
+
+Footprints come off the art now (measured, in `STEADINGS`), and placement refuses
+any spot whose SCREEN BOX - computed exactly as `TownProps` will draw it -
+touches another's. Buildings are placed by SEARCH rather than by coordinate: a
+hand-picked tile on a map of four overlapping lobes with a river through it is as
+likely to be water as yard, and eight of eleven were silently declining. Trees
+keep clear of roofs, too - the border belt grows from every tile that is not land
+or water, and a lobed meadow has those notches inside it.
+
+Nine buildings, nine different sprites, zero overlapping boxes.
+
+### The bank is lived on
+Three anglers sit along the river with rods out and an idle of their own, seeded
+off their tile so no two move together. They are not `Villager`s - villagers
+wander and path, and an angler who wanders off his bank is not an angler.
+
+### Verification
+`tsc` and `vite build` clean, zero console errors. Device matrix 74/74. Thirteen
+checks run directly against a live floor: the fog is off and every tile of the
+floor is in sight; the river is ten baked frames and the current moves through
+them; three anglers sit clear of the hero's marks; nine buildings, nine
+different, not one roof clipping another; standing on a mark starts nothing, E
+casts, E reels, walking away puts it away; a building far from the hero is solid;
+the folk's closest pair is 0.92 tiles. The full ~400-check suite still stalls in
+a backgrounded tab (it.105) and was not run end to end.
+
 ## 2026-09-09 (iteration 106) - The riverside farm, and a post that will not fall
 
 ### The training dummy never falls (`src/systems/Combat.ts`)

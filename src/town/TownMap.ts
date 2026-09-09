@@ -54,13 +54,17 @@ export const KIND_CELLAR_DIRT = 7;
 /** THE FARMLANDS' scorched earth, where the fire has been through (it.100). */
 export const KIND_FARM_ASH = 8;
 /**
- * THE RIVERSIDE FARM (it.106): the river itself, and the wet shore it runs on.
- * Both are built procedurally in `AssetManager.buildRiverGround` - the pack has
- * no water in it - and the river's four variants are four PHASES of one loop
- * rather than four different tiles, so the scene can cycle them in place.
+ * THE RIVERSIDE FARM (it.106, real art it.107): the river.
+ *
+ * Its tiles are BAKED FROM THE PACK - `scripts/bake-water.py` turns the ten-frame
+ * caustic loop under `test-models/3rd town part/water_extras` into ten isometric
+ * ground diamonds - and they are ten PHASES of one animation rather than ten
+ * different tiles, so `RiverWater` can cycle them in place.
+ *
+ * The BANK is not its own kind: `KIND_SAND`, which the town has had since it.55,
+ * is a river bank already.
  */
 export const KIND_WATER = 9;
-export const KIND_SHORE = 10;
 
 export type TownPropKind =
   | 'house'
@@ -184,7 +188,9 @@ export type TownPropKind =
   | 'bridgegate'
   /** Oscar, and the two of his family the bandits had cornered. */
   | 'oscar'
-  | 'oscarkin';
+  | 'oscarkin'
+  /** An angler of the riverside, sat at the bank with a line out. */
+  | 'angler';
 
 /** THE FARMLANDS (it.100): what main needs of the fields. */
 export interface FarmLayout {
@@ -226,6 +232,8 @@ export interface RiverLayout {
   bandits: Array<{ x: number; y: number }>;
   /** Every tile the hero may fish from, and the water tile each one faces. */
   fishing: Array<{ x: number; y: number; toX: number; toY: number }>;
+  /** The farm's own anglers, and the water each of them is watching (it.107). */
+  anglers: Array<{ x: number; y: number; toX: number; toY: number }>;
   /** Every water tile on the map, for the ripple pass and the ambience. */
   water: Array<{ x: number; y: number }>;
   /** The burned bridge out of the north-east, and whether the pass opens it. */

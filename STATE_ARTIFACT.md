@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 106, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 107, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -37,7 +37,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `systems/Combat` | seeded RNG, seats, movement | damage events, deaths, XP | sole hp mutator (state sync is the one override) |
 | `systems/Skills` / `SkillTree` | player, combat RNG | casts, buffs, cooldowns | learn/unlock via commands only |
 | `entities/EnemyPool` / `Enemy` | Pathfinding, Collision, lighting | AI, spawns, phases | ids assigned at pool construction (snapshot id base) |
-| `engine/Lighting` | dungeon grid, player tile | per-tile tint, visible set, cutaway | owns sprite `visible` for fog |
+| `engine/Lighting` | dungeon grid, player tile | per-tile tint, visible set, cutaway | NO FOG OF WAR since it.107: `omniscient` defaults true, every tile is VISIBLE, the shroud's states are never entered. The LIGHT is untouched - a crypt is still dark away from the torch. `omniscient = false` restores the shroud intact |
 | `render/Culling` | viewport, camera | `renderable` on static sprites | never touches entities or `visible` |
 | `engine/Camera` | app screen, layout `stageZoom` | world transform | destroyed with its world |
 | `core/OrientationManager` | layout viewport, touch detection, settings | CSS custom properties + body classes | the only source of layout truth |
@@ -58,7 +58,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `town/Reclaim` (it.91) | the barricade's sprites, the ambience, a grid-open hook, a camera-focus hook | `GateFx` (a cart aside, carts toppling) and `ReclaimScene` (the letterboxed procession) | render-side only; the grid opens through main's hook on the QUEST tick |
 | `systems/Squad` (it.100, cut loose it.102, scaled it.105) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt`, three sheets a rank (idle/run/blow) | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor. Life and blow are handed in scaled to the floor's level, as every foe on it is |
 | `scenes/Riverside` + `render/RiverWater` (it.106) | the town's prop set, `KIND_WATER`/`KIND_SHORE`, `SceneManager.build`'s `onFloor` hook | the water meadow past the river gate: the river, its jetties, Oscar's steading, the fishing marks | the layout is a pure function of `safe`; the water pass is RENDER-ONLY and rides the wall clock, never a tick |
-| `AssetManager.buildRiverGround` / `AudioManager.setRiver` (it.106) | the Pixi renderer; the shared noise buffer | eight phase textures for the current, a ripple ring, and a synthesised river bed on the ambience bus | the packs contain no water, no boat and no river recording - all three are generated, never faked with the wrong art |
+| `scripts/bake-water.py` / `AudioManager.setRiver` (it.106, art it.107) | the raw pack's `water_extras` caustic loop (gitignored); the shared noise buffer | ten baked atlas singles `water_00..09` for the current, and a synthesised river bed on the ambience bus | the WATER IS ART, baked from the pack and committed to the atlas - every procedural water generator was deleted in it.107. The SOUND is still synthesised: there is no river recording in any pack |
 | `ui/CineDialogue` (it.102) | `SpeechBeat` from a running scene, main's `portraitFromTexture` | the lower-left portrait box: who is speaking, and what they said | render-side only; the ONE head-up element `body.cine` leaves on screen |
 | `ProcessionScene.awaiting` (it.103) | Space / Enter / E / a tap on the letterbox | the beat queue, and whether the bars may lift | a named beat holds the page; the walk, the camera and the light keep running under it |
 | `cineHold` in the sim tick (it.104) | `reclaim?.running` | movement, combat, projectiles, status, every entity's update, `enemies.separate`, the squad, the quest ticks | while the bars are down the WHOLE tick is skipped, so the freeze is identical on every peer |

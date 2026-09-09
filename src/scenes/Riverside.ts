@@ -35,7 +35,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
-import { KIND_DIRT, KIND_GRASS, KIND_SHORE, KIND_WATER, type RiverLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { KIND_DIRT, KIND_GRASS, KIND_SAND, KIND_WATER, type RiverLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -59,6 +59,46 @@ const HOME = { x: 3, y: 20 };
 const BRIDGE = { x: 50, y: 9 };
 /** Oscar's yard: the ground between the farmhouse and the barn. */
 const YARD = { x: 27, y: 20 };
+
+/**
+ * THE BUILDINGS, AND THEIR REAL SIZE (it.107).
+ *
+ * Every one of these is drawn at its own pixel size and anchored at the SOUTH
+ * corner of its footprint - the footprint is not a scale, it is where the thing
+ * stands. So a footprint has to be derived from the art, and it.106 used a flat
+ * 3x3 for all of them, which is wrong for every single entry below: `barracks`
+ * paints 362px across, and 362px is eleven tile-diamonds of screen width, not
+ * six. That is why roofs overlapped and clipped through each other.
+ *
+ * `w + h` is the footprint's screen width in half-tiles, so `w + h ~= px / 32`
+ * is the rule these are measured against, and `px` is the sprite's own painted
+ * width (measured, not guessed).
+ */
+interface Steading {
+  kind: TownProp['kind'];
+  variant?: string;
+  w: number;
+  h: number;
+  /** Painted width in pixels - what the no-clipping test is done against. */
+  px: number;
+  ph: number;
+}
+const STEADINGS: Record<string, Steading> = {
+  // The blue-slate cottages: the well-kept houses of a working farm.
+  cottage_a: { kind: 'house', variant: 'house_a', w: 4, h: 5, px: 276, ph: 253 },
+  cottage_b: { kind: 'house', variant: 'house_b', w: 4, h: 4, px: 261, ph: 238 },
+  cottage_c: { kind: 'house', variant: 'house_c', w: 4, h: 5, px: 276, ph: 232 },
+  cottage_d: { kind: 'house', variant: 'house_d', w: 4, h: 4, px: 261, ph: 254 },
+  // The timber-framed ones: older, lower, greener - the outbuildings.
+  timber_e: { kind: 'house', variant: 'house_e', w: 3, h: 4, px: 231, ph: 183 },
+  timber_f: { kind: 'house', variant: 'house_f', w: 3, h: 4, px: 228, ph: 182 },
+  timber_g: { kind: 'house', variant: 'house_g', w: 4, h: 3, px: 231, ph: 178 },
+  // The long shingled barn, and the walled yard behind it.
+  longbarn: { kind: 'house', variant: 'house_h', w: 5, h: 5, px: 340, ph: 253 },
+  greatbarn: { kind: 'barracks', w: 6, h: 5, px: 362, ph: 288 },
+  workshop: { kind: 'smithy', w: 5, h: 6, px: 350, ph: 297 },
+  tower: { kind: 'watchtower', w: 2, h: 2, px: 141, ph: 208 },
+};
 
 /**
  * THE RIVER'S COURSE. A polyline the water is painted around; the band is
@@ -137,7 +177,8 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
         tileKind[idx(x, y)] = KIND_WATER;
         water.push({ x, y });
       } else if (d <= RIVER_HALF + wob + SHORE_BAND && grid[idx(x, y)] === TILE_FLOOR) {
-        tileKind[idx(x, y)] = KIND_SHORE;
+        // The bank is the town's own sand (it.107), not a kind of its own.
+        tileKind[idx(x, y)] = KIND_SAND;
       }
     }
   }
@@ -167,7 +208,7 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
           // The track bridges nothing: it stops at the water's edge.
           if (tileKind[idx(tx, ty)] === KIND_WATER) continue;
           grid[idx(tx, ty)] = TILE_FLOOR;
-          if (tileKind[idx(tx, ty)] !== KIND_SHORE) tileKind[idx(tx, ty)] = KIND_DIRT;
+          if (tileKind[idx(tx, ty)] !== KIND_SAND) tileKind[idx(tx, ty)] = KIND_DIRT;
           onTrack[idx(tx, ty)] = 1;
         }
     }
@@ -188,26 +229,111 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     if (!isFloor(x, y) || onTrack[idx(x, y)]) return;
     block({ kind, x, y, variant });
   };
-  /** A building: only where its whole footprint is open ground, door carved back. */
-  const steading = (kind: TownProp['kind'], x: number, y: number, w: number, h: number, variant?: string): boolean => {
-    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (!isFloor(xx, yy) || onTrack[idx(xx, yy)]) return false;
-    block({ kind, x, y, w, h, variant });
-    const dx = x + Math.floor(w / 2);
-    const dy = y + h;
+  /**
+   * ZERO CLIPPING, BY CONSTRUCTION (it.107).
+   *
+   * Every placed building's SCREEN BOX is kept, and a new one is refused if its
+   * box overlaps any of them. The box is computed exactly the way `TownProps`
+   * will draw the sprite - anchored (0.5, 0.96) on the south corner of the
+   * footprint - so this is not an approximation of the render, it is the render.
+   *
+   * Checking footprints instead (what it.106 did) does not work: two 3x3
+   * footprints three tiles apart do not overlap, and their 276-pixel roofs do.
+   */
+  const placed: Array<{ l: number; r: number; t: number; b: number }> = [];
+  /** Footprints of every building put up, for the tree line to keep clear of. */
+  const roofs: Array<{ x: number; y: number; w: number; h: number }> = [];
+  /** True when a tile is close enough to a standing roof that a tree would bury it. */
+  const nearBuilding = (x: number, y: number): boolean =>
+    roofs.some((r) => x >= r.x - 2 && x < r.x + r.w + 2 && y >= r.y - 2 && y < r.y + r.h + 3);
+  const screenBox = (st: Steading, x: number, y: number): { l: number; r: number; t: number; b: number } => {
+    // worldToScreen of the footprint's south corner, in the same units iso.ts uses.
+    const sx = (x + st.w - (y + st.h)) * 32;
+    const sy = (x + st.w + (y + st.h)) * 16;
+    return { l: sx - st.px / 2, r: sx + st.px / 2, t: sy - st.ph * 0.96, b: sy + st.ph * 0.04 };
+  };
+  /** A building: open ground, off the track, and clear of every other roof. */
+  const steading = (key: string, x: number, y: number): boolean => {
+    const st = STEADINGS[key];
+    if (!st) return false;
+    for (let yy = y - 1; yy <= y + st.h; yy++)
+      for (let xx = x - 1; xx <= x + st.w; xx++) if (!isFloor(xx, yy) || onTrack[idx(xx, yy)]) return false;
+    const box = screenBox(st, x, y);
+    // A small gap either side, so two roofs never even touch.
+    const PAD = 10;
+    for (const q of placed) {
+      if (box.l < q.r + PAD && box.r > q.l - PAD && box.t < q.b + PAD && box.b > q.t - PAD) return false;
+    }
+    placed.push(box);
+    roofs.push({ x, y, w: st.w, h: st.h });
+    block({ kind: st.kind, x, y, w: st.w, h: st.h, variant: st.variant });
+    // The door column: the tile in front of the south face stays walkable.
+    const dx = x + Math.floor(st.w / 2);
+    const dy = y + st.h;
     if (inside(dx, dy) && grid[idx(dx, dy)] !== 0) grid[idx(dx, dy)] = TILE_FLOOR;
     return true;
   };
 
-  // OSCAR'S STEADING: the farmhouse north of the yard, the great barn south of
-  // it, so the yard between them is the enclosed ground the ambush happens in.
-  steading('house', YARD.x - 2, YARD.y - 6, 3, 3, 'house_b');
-  steading('barracks', YARD.x - 1, YARD.y + 3, 3, 3); // the barn
-  steading('house', YARD.x + 5, YARD.y - 5, 3, 3, 'house_d'); // the kin's cottage
+  /**
+   * OSCAR'S STEADING AND THE LAND AROUND IT (it.107).
+   *
+   * Eleven buildings, no two of them the same sprite, spread over the whole
+   * meadow instead of piled into one yard - the farm reads as a holding with
+   * outbuildings rather than as three sheds. Each is tried in order and simply
+   * declines if it would clip or would not fit, so the list can be generous
+   * without any of them ever landing on top of another.
+   *
+   * The yard itself keeps its shape: a house NORTH of it and the great barn
+   * SOUTH, so the ground between them is still the enclosed place the ambush
+   * happens in and the cutscene still frames.
+   */
+  /**
+   * Placed by SEARCH, not by coordinate (it.107). The meadow is four overlapping
+   * lobes with a river cut through it, so a hand-picked tile is as likely to be
+   * water, wood or cart track as it is to be a yard - eight of eleven buildings
+   * were silently declining. Each one now spirals out from where it WANTS to be
+   * until it finds ground that fits and is clear of every roof already up, and
+   * only gives up if there is nowhere within .
+   */
+  const steadingNear = (key: string, ax: number, ay: number, reach = 9): boolean => {
+    if (steading(key, ax, ay)) return true;
+    for (let r = 1; r <= reach; r++) {
+      for (let oy = -r; oy <= r; oy++) {
+        for (let ox = -r; ox <= r; ox++) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+          if (steading(key, ax + ox, ay + oy)) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  // The yard keeps its shape: the house north of it, the great barn south.
+  steadingNear('cottage_a', YARD.x - 3, YARD.y - 8, 5);
+  steadingNear('greatbarn', YARD.x - 3, YARD.y + 4, 5);
+  steadingNear('timber_e', YARD.x + 6, YARD.y - 6, 5);
+  // The rest of the holding, out on its own land.
+  steadingNear('cottage_c', 13, 13);
+  steadingNear('timber_f', 14, 25);
+  steadingNear('longbarn', 39, 20);
+  steadingNear('cottage_b', 45, 9);
+  steadingNear('timber_g', 21, 31);
+  steadingNear('workshop', 34, 11);
+  steadingNear('cottage_d', 9, 22);
+  steadingNear('tower', 47, 14);
+
   put('well', YARD.x + 3, YARD.y - 1);
-  put('cart', YARD.x - 4, YARD.y + 1, 'cart_b');
-  put('wood_pile', YARD.x + 4, YARD.y + 3);
-  put('barrels_stacked', YARD.x - 5, YARD.y - 3);
+  put('cart', YARD.x - 5, YARD.y + 1, 'cart_b');
+  put('wood_pile', YARD.x + 4, YARD.y + 2);
+  put('barrels_stacked', YARD.x - 6, YARD.y - 3);
   put('crates_wood', YARD.x + 6, YARD.y + 1);
+  // A little gear round the outbuildings, so none of them stands on bare grass.
+  for (const [x, y, kind, variant] of [
+    [17, 11, 'barrel', 'barrel_b'], [13, 17, 'wood_pile', undefined],
+    [19, 30, 'cart', 'cart_b'], [43, 27, 'crates_wood', undefined],
+    [47, 6, 'barrel', 'barrel_c'], [24, 37, 'wood_pile', undefined],
+    [39, 14, 'barrels_stacked', undefined], [12, 28, 'crates_wood', undefined],
+  ] as const) put(kind as TownProp['kind'], x, y, variant);
 
   // The yard fence, with the yard's mouth left open onto the track.
   for (let x = YARD.x - 6; x <= YARD.x + 7; x += 2) {
@@ -335,6 +461,12 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
         const keep = FILL[d];
         if (keep <= 0) continue;
         if (keep < 1 && ((x * 13 + y * 7) % 100) / 100 >= keep) continue;
+        // NO TREE THROUGH A ROOF (it.107). The border belt is grown from every
+        // tile that is not land or water, and a meadow of overlapping lobes has
+        // those notches INSIDE it too - so the wood was coming up in the farmyard
+        // and burying the buildings it grew next to. A trunk keeps its distance
+        // from every roof that is already standing.
+        if (nearBuilding(x, y)) continue;
         const set = d <= 1 ? NEAR : DEEP;
         const v = set[(x * 7 + y * 11) % set.length];
         decal({
@@ -434,6 +566,27 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   fishing.length = Math.min(fishing.length, 6); // enough that one is always near
   for (const f of fishing) decal({ kind: 'fishspot', x: f.x, y: f.y });
 
+  /**
+   * THE FARM'S OWN ANGLERS (it.107). A river with nobody on it is a texture; a
+   * river with three men sat along it watching their lines is a place people
+   * live. They are render-only bodies with an idle of their own - they never
+   * move, never path, and never take part in a tick - and they are kept well
+   * clear of the hero's own marks so the bank never has two rods on one tile.
+   */
+  const anglers: RiverLayout['anglers'] = [];
+  for (const s2 of shoreTiles) {
+    if (anglers.length >= 3) break;
+    if (onTrack[idx(s2.x, s2.y)] || grid[idx(s2.x, s2.y)] !== TILE_FLOOR) continue;
+    if (fishing.some((f) => Math.hypot(f.x - s2.x, f.y - s2.y) < 4)) continue;
+    if (anglers.some((a) => Math.hypot(a.x - s2.x, a.y - s2.y) < 7)) continue;
+    if (props.some((q) => q.x === s2.x && q.y === s2.y && q.kind !== 'reeds')) continue;
+    let to: { x: number; y: number } | null = null;
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) if (isWater(s2.x + dx, s2.y + dy)) to = { x: s2.x + dx, y: s2.y + dy };
+    if (!to) continue;
+    anglers.push({ x: s2.x, y: s2.y, toX: to.x, toY: to.y });
+  }
+  for (const a of anglers) decal({ kind: 'angler', x: a.x, y: a.y });
+
   const map: TownMap = {
     width: W,
     height: H,
@@ -463,6 +616,7 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     kin,
     bandits,
     fishing,
+    anglers,
     water: water.filter((w) => tileKind[idx(w.x, w.y)] === KIND_WATER && grid[idx(w.x, w.y)] !== TILE_FLOOR),
     bridge: { ...BRIDGE },
     safe,

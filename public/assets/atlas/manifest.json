@@ -6296,6 +6296,66 @@
    "w": 47,
    "h": 27,
    "nearest": false
+  },
+  "water_00": {
+   "file": "single_water_00.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_01": {
+   "file": "single_water_01.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_02": {
+   "file": "single_water_02.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_03": {
+   "file": "single_water_03.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_04": {
+   "file": "single_water_04.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_05": {
+   "file": "single_water_05.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_06": {
+   "file": "single_water_06.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_07": {
+   "file": "single_water_07.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_08": {
+   "file": "single_water_08.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "water_09": {
+   "file": "single_water_09.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
   }
  }
 }

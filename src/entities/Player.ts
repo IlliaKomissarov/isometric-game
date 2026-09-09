@@ -200,6 +200,12 @@ export class Player extends Entity {
   fishing = false;
   /** Render-side seconds spent fishing, for the rod's slow bob; -1 when not. */
   fishClock = 0;
+  /** Put the rod away. Called whenever the pose ends, for any reason. */
+  stopFishing(): void {
+    this.fishing = false;
+    this.fishClock = 0;
+    this.rod.visible = false;
+  }
   private readonly restFrom = { x: 0, y: 0 };
   /** Ticks spent lying (the lying-down animation, and a slow mend). */
   restTicks = 0;
@@ -246,6 +252,7 @@ export class Player extends Entity {
   private readonly paperdollLayers = new Map<EquipmentSlot, Container>();
   private readonly body: Sprite;
   private readonly slash: Sprite;
+  private readonly rod: Sprite;
   private readonly shadow: Sprite;
   /** All body parts that animate together (body + paperdoll), above the shadow. */
   private readonly rig: Container;
@@ -597,6 +604,15 @@ export class Player extends Entity {
     mainHand.pivot.set(10, -8);
     mainHand.position.set(10, -8);
 
+    // THE ROD (it.107): held out over the water while fishing, hidden otherwise.
+    // Its own child of the rig, because the paperdoll layers are switched off
+    // entirely once the sprite rig is on (see `enableKnightRig`), so the
+    // schematic overlay machinery cannot carry it.
+    this.rod = new Sprite(assets.get('fishing_rod'));
+    this.rod.anchor.set(0.14, 0.86); // the grip, so it swings from the hand
+    this.rod.visible = false;
+    this.rig.addChild(this.rod);
+
     // Slash arc VFX flashed at the strike frame; tinted by the outcome.
     this.slash = new Sprite(assets.get('slash'));
     this.slash.anchor.set(0.1, 0.5);
@@ -877,6 +893,7 @@ export class Player extends Entity {
     let animName: AnimName;
     let frame: number;
     const fcOf = (name: AnimName): number => spriteLib.anim(name).frameCount;
+    if (this.rod.visible && !this.fishing) this.rod.visible = false;
 
     if (this.action === 'dead') {
       // The death anim plays out before main respawns us (PLAYER_DEATH_TICKS).
@@ -893,6 +910,16 @@ export class Player extends Entity {
       frame = Math.min(fc - 1, Math.floor(e * fc));
       this.wakeClock = 0;
     } else if (this.fishing && this.action === 'idle' && !this.moving) {
+      // THE ROD IS IN HIS HANDS (it.107). Shown here rather than on the state
+      // change, so it can never be left on screen by a frame that skipped the
+      // transition: this branch is the only one that draws a fishing hero.
+      this.rod.visible = true;
+      // Held on the side the hero faces, and dipping with the same slow bob the
+      // body has, so the line and the shoulders move together.
+      const right = this.facing.x >= 0;
+      this.rod.scale.set(right ? 0.92 : -0.92, 0.92);
+      this.rod.position.set(right ? 5 : -5, -6);
+      this.rod.rotation = (right ? 1 : -1) * (0.06 + Math.sin(this.fishClock * 1.6) * 0.05);
       // THE CAST, HELD. The class's ranged/spell sheet is the one frame set in
       // every rig where the body stands square with an arm out in front of it,
       // which is a fisherman. It is held in the FIRST THIRD of that sheet - past

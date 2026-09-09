@@ -63,8 +63,26 @@ export const STREET_FOLK: ReadonlyArray<FolkSheet> = [
 ];
 /** Coats, aprons and cloaks: a colour per walker, multiplied into the scene's light. */
 const FOLK_COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
-/** How close two of the folk may stand before they shoulder each other apart (it.102). */
-const FOLK_SPACING = 0.66;
+/**
+ * PERSONAL SPACE (it.102, made real it.107).
+ *
+ * `FOLK_SPACING` is the hard floor - closer than this and the shoulder pass at
+ * the bottom of `update` prises them apart. It was 0.66, which is well inside
+ * the width of a drawn body, so two of the folk could stand visibly inside one
+ * another and still be "apart" by the rule.
+ *
+ * `FOLK_PERSONAL` is the wider radius they STEER out of, and it is the half that
+ * was missing. Up to it.106 the folk each walked their own A* road knowing
+ * nothing about anybody else, and the only thing keeping them off each other was
+ * a positional shove applied after the fact - so they walked into each other,
+ * overlapped, and were slowly pushed out again, every time. The squad learned
+ * this in it.103; the town's people learn it here. The point is to never REACH
+ * the shoulder pass.
+ */
+const FOLK_SPACING = 0.92;
+const FOLK_PERSONAL = 1.45;
+/** How hard a neighbour bends a walker's heading (0 = none, 1 = straight away). */
+const FOLK_AVOID = 0.75;
 const GUARD_IDLE = 'poacher_idle';
 /** The gatekeeper wears the guard's mail (it.87). */
 const KEEPER_IDLE = 'guard_idle';
@@ -513,14 +531,57 @@ export class Villagers {
           } else v.pause = 1.2 + Math.random() * 3.5;
         } else {
           const step = Math.min(dist, WALK_SPEED * dt);
-          const nx = v.x + (dx / dist) * step;
-          const ny = v.y + (dy / dist) * step;
+          // ---- GIVE WAY (it.107) -------------------------------------------
+          // A repulsion off every neighbour inside `FOLK_PERSONAL`, weighted by
+          // how far inside it they are, blended into the heading BEFORE the step
+          // is taken. This is what stops two walkers meeting at all; the
+          // positional pass below is only the backstop for what steering cannot
+          // solve (someone pinned against a wall by two others).
+          let ux = dx / dist;
+          let uy = dy / dist;
+          let sx = 0;
+          let sy = 0;
+          for (const o of this.folk) {
+            if (o === v) continue;
+            const ox = v.x - o.x;
+            const oy = v.y - o.y;
+            const od = Math.hypot(ox, oy);
+            if (od >= FOLK_PERSONAL) continue;
+            if (od < 1e-4) {
+              // Exactly on top of one another: split on a fixed axis so the
+              // degenerate case always resolves the same way.
+              sx += v.x < o.x ? -1 : 1;
+              continue;
+            }
+            const push = (FOLK_PERSONAL - od) / FOLK_PERSONAL;
+            sx += (ox / od) * push;
+            sy += (oy / od) * push;
+          }
+          const sl = Math.hypot(sx, sy);
+          if (sl > 1e-4) {
+            const w = FOLK_AVOID * Math.min(1.4, sl);
+            ux += (sx / sl) * w;
+            uy += (sy / sl) * w;
+            const n = Math.hypot(ux, uy) || 1;
+            ux /= n;
+            uy /= n;
+          }
+          const nx = v.x + ux * step;
+          const ny = v.y + uy * step;
           // The way was open when it was found; if a tile shut since, stand a moment and think again.
           if (this.isWalkable(Math.floor(nx), Math.floor(ny))) {
             v.x = nx;
             v.y = ny;
             v.walkClock += step * CYCLES_PER_TILE;
             v.dir = stableDir(dx / dist, dy / dist, v.dir);
+          } else if (this.isWalkable(Math.floor(v.x + ux * step), Math.floor(v.y))) {
+            // Slide along whatever is in the way rather than stopping dead: a
+            // walker bent into a fence by a neighbour used to give up and stand.
+            v.x += ux * step;
+            v.walkClock += step * CYCLES_PER_TILE;
+          } else if (this.isWalkable(Math.floor(v.x), Math.floor(v.y + uy * step))) {
+            v.y += uy * step;
+            v.walkClock += step * CYCLES_PER_TILE;
           } else {
             v.path.length = 0;
             v.pause = 0.6 + Math.random() * 1.2;
@@ -535,24 +596,36 @@ export class Villagers {
     // and read as a single body with a rendering fault. One shoulder pass, in list
     // order, over at most a dozen people: the same rule the squad and the
     // processions use, so a crowd behaves the same way everywhere.
-    for (let i = 0; i < this.folk.length; i++) {
-      const a = this.folk[i];
-      for (let j = i + 1; j < this.folk.length; j++) {
-        const b = this.folk[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const d = Math.hypot(dx, dy);
-        if (d >= FOLK_SPACING || d === 0) continue;
-        const push = (FOLK_SPACING - d) / 2;
-        const ux = dx / d;
-        const uy = dy / d;
-        if (this.isWalkable(Math.floor(a.x - ux * push), Math.floor(a.y - uy * push))) {
-          a.x -= ux * push;
-          a.y -= uy * push;
-        }
-        if (this.isWalkable(Math.floor(b.x + ux * push), Math.floor(b.y + uy * push))) {
-          b.x += ux * push;
-          b.y += uy * push;
+    // IT.107: twice, not once. One pass moves each of a pair half the overlap,
+    // which for two people set down on the same tile leaves them still touching;
+    // a second pass finishes it in the same frame instead of over several.
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < this.folk.length; i++) {
+        const a = this.folk[i];
+        for (let j = i + 1; j < this.folk.length; j++) {
+          const b = this.folk[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let d = Math.hypot(dx, dy);
+          if (d >= FOLK_SPACING) continue;
+          if (d === 0) {
+            // Perfectly stacked: pick a fixed axis off their list order, so the
+            // pair always separates instead of dividing by zero and staying put.
+            dx = i < j ? -1 : 1;
+            dy = 0;
+            d = 1;
+          }
+          const push = (FOLK_SPACING - d) / 2;
+          const ux = dx / d;
+          const uy = dy / d;
+          if (this.isWalkable(Math.floor(a.x - ux * push), Math.floor(a.y - uy * push))) {
+            a.x -= ux * push;
+            a.y -= uy * push;
+          }
+          if (this.isWalkable(Math.floor(b.x + ux * push), Math.floor(b.y + uy * push))) {
+            b.x += ux * push;
+            b.y += uy * push;
+          }
         }
       }
     }

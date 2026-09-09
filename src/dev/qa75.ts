@@ -5,6 +5,15 @@
  *
  *     await import('/src/dev/qa75.ts'); await __qa75({ seed: 3, cls: 'mage' })
  *
+ * !! IT DESTROYS SAVE SLOT 1 !! (recorded it.105, after it ate a level-32 rogue.)
+ * The run begins with `beginRun(cls, 0, { slot: 1 })` and the slot is written
+ * through as the harness plays, so whatever was in slot 1 is gone and there is
+ * no backup. Copy `localStorage['iso-arpg-save-1']` somewhere before running it
+ * on a machine that has a real game on it.
+ *
+ * It also STALLS IN A BACKGROUNDED TAB: the rAF-driven waits never resolve, so
+ * the tab must stay in the foreground for the whole run.
+ *
  * and it drives a whole run through the public debug handles — town, the
  * panels, a fight, loot, skills, draughts, five floors, a warden, the town
  * portal both ways, a save and a reload, a death and a rising, the chart,

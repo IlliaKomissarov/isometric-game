@@ -5115,13 +5115,61 @@
       /* ENEMIES REMAINING (it.88): the forest's tally in the corner column. */
       #hud-tl > #quest-hud { display: none; position: static; font: 700 11px/1.2 'Cinzel', 'Georgia', serif; letter-spacing: 0.16em; color: #ffd070; text-shadow: 0 1px 3px #000; padding: 3px 8px; border: 1px solid var(--ds-gold-line, #6a5630); background: rgba(10, 8, 12, 0.72); white-space: nowrap; }
       #hud-tl > #quest-hud.show { display: block; }
+      /* A SMALL SCREEN GETS THE NUMBER (it.101): the wording goes, the count
+         stays. The full label is wider than the corner may be on a 240 px
+         handset, and a tally whose centre lands mid-screen fails the sweep. */
+      body.tier-micro #quest-hud .qh-w, body.tier-compact #quest-hud .qh-w, body.short-screen #quest-hud .qh-w { display: none; }
+      body.tier-micro #quest-hud, body.tier-compact #quest-hud, body.short-screen #quest-hud { font-size: 10px; padding: 2px 6px; }
+      /* A 640x290 letterbox has the joystick and the draught under the corner
+         already: there is no row left for a tally, and the screen-edge chevrons
+         carry the same information without one (it.101). */
+      body.tiny-height #hud-tl > #quest-hud.show { display: none; }
+      body.tier-micro #quest-hud::before, body.short-screen #quest-hud::before { content: '⚔ '; }
 
       /* ---- 8b1. THE EASTERN QUARTER (it.91): the reclaiming's letterbox, the target pointers ---- */
       #cine-layer { position: fixed; inset: 0; z-index: 45; pointer-events: auto; }
+      /* A CLEAN FRAME (it.101). While a cutscene runs the page wears `cine` and
+         EVERY head-up layer is hidden here, in one place, instead of each panel
+         being asked to remember. Only the canvas, the letterbox and the fade
+         are left on screen, so nothing can bleed over or under the black bars. */
+      body.cine #hud-bar,
+      body.cine #hud-tl,
+      body.cine #hud-tr,
+      body.cine #skill-bar,
+      body.cine #status-frame,
+      body.cine #system-bar,
+      body.cine #minimap,
+      body.cine #timer,
+      body.cine #depth-label,
+      body.cine #zone-label,
+      body.cine #quest-hud,
+      body.cine #wave-hud,
+      body.cine #wave-banner,
+      body.cine #boss-bar,
+      body.cine #boss-note,
+      body.cine #hud-buffs,
+      body.cine #player-buffs,
+      body.cine #foe-over,
+      body.cine #foe-pointers,
+      body.cine #ally-over,
+      body.cine #party-hud,
+      body.cine #touch-controls,
+      body.cine #tp-button,
+      body.cine #fullscreen-btn,
+      body.cine #interact-hint,
+      body.cine #hint-banner,
+      body.cine #reward-note,
+      body.cine #item-tip,
+      body.cine #inv-tooltip,
+      body.cine #chat,
+      body.cine #levelup-banner,
+      body.cine #level-flash,
+      body.cine #minimap-frame { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.35s ease; }
       #cine-layer .cine-bar { position: absolute; left: 0; right: 0; height: 0; background: #050307; transition: height 0.9s cubic-bezier(0.2, 0.7, 0.2, 1); }
       #cine-layer .cine-bar.top { top: 0; }
       #cine-layer .cine-bar.bottom { bottom: 0; }
-      #cine-layer.show .cine-bar { height: 11vh; }
+      /* Deeper bars with a hard edge (it.101): no seam of HUD under them. */
+      #cine-layer.show .cine-bar { height: 12vh; box-shadow: 0 0 0 2px #050307; }
       #cine-layer .cine-title { position: absolute; left: 0; right: 0; top: 15vh; text-align: center; opacity: 0; transform: translateY(8px); transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none; }
       #cine-layer.titled .cine-title { opacity: 1; transform: none; }
       #cine-layer .cine-title b { display: block; font: 700 26px/1.1 'Cinzel', 'Georgia', serif; letter-spacing: 0.34em; color: #ffd070; text-shadow: 0 0 22px rgba(255, 208, 112, 0.55), 0 2px 6px #000; }

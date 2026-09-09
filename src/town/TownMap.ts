@@ -160,12 +160,17 @@ export type TownPropKind =
   // THE FARMLANDS (it.100): the crop, the fires in it, and the roads not yet built.
   | 'farmcrop'
   | 'fieldfire'
-  | 'farmgate';
+  | 'farmgate'
+  // THE FARMLANDS (it.101): the road home to the marsh gate, and the western road on.
+  | 'farmroad'
+  | 'farmway';
 
 /** THE FARMLANDS (it.100): what main needs of the fields. */
 export interface FarmLayout {
-  /** Where the company musters, and where the hero is set down. */
+  /** Where the company musters, and where the hero is set down (the EAST edge, it.101). */
   entry: { x: number; y: number };
+  /** THE ROAD HOME (it.101): the signpost on the east verge, back to the marsh gate. */
+  home: { x: number; y: number };
   /** The ground the enemy general holds. */
   general: { x: number; y: number };
   /** Where the city's guards form up behind the hero. */
@@ -174,6 +179,8 @@ export interface FarmLayout {
   fires: Array<{ x: number; y: number }>;
   /** The barricaded ways on, and what they are called. */
   gates: Array<{ x: number; y: number; label: string }>;
+  /** THE WESTERN ROAD (it.101): open ground on the far side, leading on. */
+  west: { x: number; y: number; label: string };
   /** True once the field is taken: no fire, no company, and the folk are back. */
   won: boolean;
 }

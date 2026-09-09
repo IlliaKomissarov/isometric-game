@@ -1,5 +1,84 @@
 # Development Log
 
+## 2026-09-09 (iteration 101) - The farmlands, fought properly
+
+it.100 built the campaign. it.101 is the pass that makes it read like one: the
+compass is fixed, the way home works, the guards actually fight, and nothing of
+the HUD is left standing in front of a cutscene.
+
+### The two bugs underneath it all
+`isBossFloor` is a plain `floor % 5 === 0`, and THE FARMLANDS are floor 105. The
+fields were therefore being dressed as a warden's depth: a blood-red seal in the
+middle of the corn with a PENTAGRAM turning on it, and - far worse - the floor's
+STAIR replaced by that seal, which is why there was no way back to town from the
+fields at all. Both the sigil and the broken exit were the same line of code.
+Nothing past the town gate is a depth floor now, and none of them may take a
+depth floor's furniture.
+
+### The compass (`src/scenes/Farmlands.ts`)
+The marsh gateway stands on the WEST side of the city, so the road out of town
+runs west - which means the hero and the squad arrive on the field's EAST edge
+and fight westward into it. Everything follows from that: the muster ground and
+the road home are east, the company and its general hold the west, and past them
+THE WESTERN ROAD stands open, lit and unbarred, pointing at country the campaign
+has not reached yet. The north road is the one that is still barricaded.
+
+The field itself is no longer a rectangle. It is the union of five overlapping
+lobes with a wobbled verge, 64x48, and every tile on its border carries a tree -
+so the map is outlined in wood instead of ending at an edge. It draws no wall
+cubes at all (`wallsFromProps`), because an organic border touches open ground
+on every side and the scene's grey blocks were standing up in the corn wherever
+the hedge did not happen to cover one. Three steadings stand on the land - the
+home farm by the city road, one in the middle field, and the western one the
+company came through - each with a farmhouse, an outbuilding and a fenced yard.
+
+### The guards who came with you (`src/systems/Squad.ts`)
+In it.100 the squad held a line around the spot it was set down and the enemy
+ignored it, which read as two battles happening beside each other. Now:
+
+- the formation is anchored to the HERO, so the line marches with the assault;
+- a guard breaks off at anything inside the leash and runs it down, taking his
+  own place on a ring round the body (dealt by id on the golden angle) so a
+  squad arrives as a melee instead of as one sprite on one tile;
+- guards shoulder each other apart, and a guard wedged against a hedge for a
+  third of a second picks a side and walks round it;
+- HOSTILES FIGHT BACK. `EnemyAIDeps.getPlayerPos` hands each body one quarry;
+  on the fields that answer is now the nearest GUARD when a guard is closer than
+  the hero. There is still no faction field anywhere and the hero's own target
+  picking still only ever sees enemies, so friendly fire remains impossible by
+  construction - only the answer to "who is in front of me" changed;
+- a guard can be hurt and can be put down, and gets up again after seven
+  seconds. The officer takes none: a field with no officer left on it would have
+  nobody to end the scene;
+- the ranks wear four different plates and the officer is a head taller in white
+  under the city's colours, so the leader is picked out of a melee at a glance.
+
+### The theatre
+- THE MUSTER is now a rally: the watch drawn up on the yard, fifteen townsfolk
+  standing round them and twelve more still coming up the road, every one of
+  them out of a different sheet. The CITIZENS do the asking - five of them, in
+  turn - and CAPTAIN ORDWAY answers last, under the colours, which is what puts
+  him at the centre of the frame when the dialogue opens on him a beat later.
+- THE GENERAL'S ORDERS: arriving on the fields crosses the camera to the far
+  end of the burning rows, where the company's general orders the crop and the
+  farmers put to the torch. Once, on arrival, while the field is contested.
+- THE GENERAL wears the wardens' own health bar - name, level and numbers at the
+  top of the screen - but it waits until the hero sights him for real, so it is
+  not pinned across the whole march west.
+- A CLEAN FRAME. While a cutscene runs the page wears `cine` and every head-up
+  layer is hidden in ONE stylesheet rule instead of each panel remembering to
+  hide itself. The world's own name plates go with them, and the folk stop
+  talking - a word about the weather floating over a letterboxed rally is
+  exactly the bleed-through the bars are for. The bars themselves are deeper.
+- A PROCESSION IS A CROWD. Walkers are dealt from the town's civilian sheets
+  with a coat apiece, each keeps a FIXED place in the column (the goal used to
+  be recomputed from the walker's own live position, which is what made the
+  column wobble and swap), and each one now tests the ground in front of it and
+  slides along what it cannot cross instead of walking through hedges and carts.
+
+### Also
+- The refugee at the eastern barricade called Coleslaw "she". He is a man.
+
 ## 2026-09-09 (iteration 100) - The farmlands campaign
 
 The city's third errand, and its first pitched battle. It unlocks on its own once

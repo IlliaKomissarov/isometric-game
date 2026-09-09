@@ -135,8 +135,22 @@ function speak(b: Bubble, words: string[]): void {
   b.node.alpha = 0;
 }
 
+/**
+ * THE CLEAN FRAME (it.101): while a cutscene is running the folk keep their
+ * mouths shut and their bubbles off screen - a word about the weather floating
+ * over a letterboxed rally is exactly the bleed-through the bars are for.
+ */
+let bubblesOff = false;
+export function setBubblesHidden(off: boolean): void {
+  bubblesOff = off;
+}
+
 /** Tick a bubble: fade in, hold, fade out; seat it over the head at (sx, sy). */
 function tickBubble(b: Bubble, dt: number, words: string[] | undefined, sx: number, sy: number, depth: number): void {
+  if (bubblesOff) {
+    b.node.visible = false;
+    return;
+  }
   if (!words || !words.length) return;
   if (b.life > 0) {
     b.life -= dt;

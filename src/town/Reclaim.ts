@@ -21,12 +21,15 @@
 import { Container, Sprite } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
-import { spriteLib, stableDir } from '@/render/SpriteLibrary';
+import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
+import type { FolkSheet } from '@/town/Villagers';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
 
 const WALK = 'folk_walk';
 const FOLK_HEIGHT = 56;
+/** Coats and cloaks: a colour per walker, so a crowd is not one dyed man (it.101). */
+const COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
 
 interface Tween {
   sprite: Sprite;
@@ -112,6 +115,23 @@ export interface ProcessionHooks {
   titles: [[string, string], [string, string]];
   /** How many walk (default 8). */
   walkers?: number;
+  /**
+   * THE CROWD IS NOT ONE MAN (it.101). The sheets the walkers are dealt from,
+   * round-robin, each with its own painted height and anchor. Without this every
+   * body in a procession was the same `folk_walk` peasant in the same coat.
+   */
+  sheets?: ReadonlyArray<FolkSheet>;
+  /**
+   * WALLS (it.101): a walker slides along what it cannot cross instead of
+   * clipping through the props on its route. Omitted, the route is walked blind.
+   */
+  isWalkable?: (gx: number, gy: number) => boolean;
+  /** Figures who stand in the scene rather than walk it - the officer, the general (it.101). */
+  cast?: ReadonlyArray<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }>;
+  /** What is said over the scene, and when: `t` is seconds from the bars closing (it.101). */
+  speech?: ReadonlyArray<{ t: number; x: number; y: number; text: string; crit?: boolean }>;
+  /** How a line is put on screen (main hands in the floating text). */
+  say?: (x: number, y: number, text: string, crit: boolean) => void;
   /** THE CELLAR (it.97): a shorter hold, for a scene with nobody walking in it. */
   hold?: number;
   /** The folk stay where they arrived when the scene ends (they die with the floor). */
@@ -134,12 +154,22 @@ interface Walker {
   clock: number;
   speed: number;
   done: boolean;
+  /** This walker's own sheet, so a crowd is a crowd of different people (it.101). */
+  anim: AnimName;
+  fc: number;
+  coat: number;
+  /** The place it keeps in the column - fixed at birth, so the goal never jitters (it.101). */
+  offX: number;
+  offY: number;
 }
 
 /** The letterboxed homecoming. */
 export class ProcessionScene {
   private t = 0;
   private readonly walkers: Walker[] = [];
+  private readonly cast: Container[] = [];
+  /** Which lines have been said already (it.101). */
+  private said = 0;
   private opened = false;
   private toppled = false;
   private cheered = false;
@@ -164,28 +194,66 @@ export class ProcessionScene {
     this.sub = this.overlay.querySelector('.cine-title i')!;
     void this.overlay.offsetWidth; // Commit the closed bars, then open them (no animation frame needed: a hidden tab has none).
     this.overlay.classList.add('show');
-    // The procession: the folk, each on the road a beat after the last.
-    if (spriteLib.hasAnim(WALK)) {
-      const painted = spriteLib.paintedHeight(WALK) || 50;
-      const scale = FOLK_HEIGHT / painted;
-      const n = h.walkers ?? 8;
+    // THOSE WHO STAND (it.101): the officer at the head of the muster, the
+    // general over his line. Placed once; they do not walk anywhere.
+    for (const c of h.cast ?? []) {
+      if (!spriteLib.hasAnim(c.anim)) continue;
+      const painted = spriteLib.paintedHeight(c.anim) || 60;
+      const root = new Container();
+      root.scale.set(0.8);
+      const shadow = new Sprite(assets.get('shadow'));
+      shadow.anchor.set(0.5, 0.5);
+      shadow.alpha = 0.6;
+      root.addChild(shadow);
+      const body = new Sprite(spriteLib.frame(c.anim, c.dir ?? 4, 0));
+      body.anchor.set(0.5, 1);
+      body.scale.set((c.height ?? 66) / painted / 0.8);
+      body.position.set(0, 2);
+      if (c.tint !== undefined) body.tint = c.tint;
+      root.addChild(body);
+      const s = worldToScreen(c.x + 0.5, c.y + 0.5, vec2());
+      root.position.set(s.x, s.y);
+      root.zIndex = depthKey(c.x + 0.5, c.y + 0.5);
+      h.layer.addChild(root);
+      this.cast.push(root);
+    }
+    // The procession: the folk, each on the road a beat after the last, and each
+    // out of a different sheet - a homecoming of one repeated man is not a crowd.
+    {
+      const pool = (h.sheets ?? []).filter((sh) => spriteLib.hasAnim(sh.anim));
+      const fallback: FolkSheet[] = spriteLib.hasAnim(WALK) ? [{ anim: WALK as AnimName, feet: true, height: FOLK_HEIGHT }] : [];
+      const sheets = pool.length ? pool : fallback;
+      const n = sheets.length ? (h.walkers ?? 8) : 0;
       for (let i = 0; i < n; i++) {
+        const sheet = sheets[i % sheets.length];
+        const painted = spriteLib.paintedHeight(sheet.anim) || 50;
+        // A shade of height per body, dealt from the INDEX: the shared random
+        // stream must not move for a cosmetic (it.98).
+        const scale = (sheet.height * (0.95 + ((i * 5) % 7) * 0.017)) / painted;
         const root = new Container();
         root.scale.set(0.8);
         const shadow = new Sprite(assets.get('shadow'));
         shadow.anchor.set(0.5, 0.5);
         shadow.alpha = 0.6;
         root.addChild(shadow);
-        const body = new Sprite(spriteLib.frame(WALK, 2, 0));
-        body.anchor.set(0.5, 1);
+        const body = new Sprite(spriteLib.frame(sheet.anim, 2, 0));
+        body.anchor.set(0.5, sheet.feet ? 1 : 0.94);
         body.scale.set(scale / 0.8);
         body.position.set(0, 2);
+        body.tint = COATS[(i * 3 + 1) % COATS.length];
         root.addChild(body);
         root.visible = false;
         h.layer.addChild(root);
-        const ox = (i % 2) * 0.9 - 0.45 + (Math.random() - 0.5) * 0.4;
-        const oy = Math.floor(i / 2) * 0.7 - 1 + (Math.random() - 0.5) * 0.4;
-        this.walkers.push({ root, body, x: h.from.x + 0.5 + ox, y: h.from.y + 0.5 + oy, leg: 0, delay: this.walkAt + i * 0.55, dir: 2, clock: Math.random(), speed: 1.35 + Math.random() * 0.25, done: false });
+        // Two loose files, and a fixed lateral place inside the file: computed
+        // ONCE, so the goal a walker steers at never moves under it (it.101).
+        const offX = ((i % 2) - 0.5) * 1.1 + (((i * 7) % 5) - 2) * 0.08;
+        const offY = ((i % 3) - 1) * 0.55 + (((i * 11) % 5) - 2) * 0.07;
+        this.walkers.push({
+          root, body, x: h.from.x + 0.5 + offX, y: h.from.y + 0.5 + offY, leg: 0,
+          delay: this.walkAt + i * 0.42, dir: 2, clock: (i % 7) / 7, speed: 1.3 + ((i * 3) % 5) * 0.06,
+          done: false, anim: sheet.anim, fc: spriteLib.anim(sheet.anim).frameCount,
+          coat: COATS[(i * 3 + 1) % COATS.length], offX, offY,
+        });
       }
     }
   }
@@ -234,32 +302,56 @@ export class ProcessionScene {
       if (h.carts.length) h.sfx('crowd');
       this.setTitle(h.titles[1][0], h.titles[1][1]);
     }
+    // WHAT IS SAID OVER IT (it.101): each line once, when its beat arrives.
+    const speech = h.speech;
+    if (speech && h.say) {
+      while (this.said < speech.length && t >= speech[this.said].t) {
+        const line = speech[this.said++];
+        h.say(line.x + 0.5, line.y + 0.5, line.text, !!line.crit);
+      }
+    }
     // The procession walks the route; the camera drifts with its head.
     let head: Walker | null = null;
-    const fc = spriteLib.hasAnim(WALK) ? spriteLib.anim(WALK).frameCount : 1;
     for (const w of this.walkers) {
       if (t < w.delay || w.root.destroyed) continue;
       w.root.visible = true;
       const goal = h.route[Math.min(w.leg, h.route.length - 1)];
-      const gx = goal.x + 0.5 + ((w.x * 7) % 1) * 0.8 - 0.4;
-      const gy = goal.y + 0.5 + ((w.y * 5) % 1) * 0.8 - 0.4;
+      // The walker's place in the column is FIXED (it.101): the goal it steers at
+      // stops moving under it, which is what made the old column wobble and swap.
+      const gx = goal.x + 0.5 + w.offX;
+      const gy = goal.y + 0.5 + w.offY;
       const dx = gx - w.x;
       const dy = gy - w.y;
       const dist = Math.hypot(dx, dy);
-      if (dist < 0.2) {
+      if (dist < 0.25) {
         if (w.leg < h.route.length - 1) w.leg++;
         else w.done = true;
       } else if (!w.done) {
         const step = Math.min(dist, w.speed * dt);
-        w.x += (dx / dist) * step;
-        w.y += (dy / dist) * step;
+        const nx = w.x + (dx / dist) * step;
+        const ny = w.y + (dy / dist) * step;
+        // Slide along a wall rather than walk through it (it.101). Without the
+        // test a homecoming crossed hedges, carts and the corner of a house.
+        const ok = h.isWalkable;
+        if (!ok || ok(Math.floor(nx), Math.floor(ny))) {
+          w.x = nx;
+          w.y = ny;
+        } else if (ok(Math.floor(nx), Math.floor(w.y))) {
+          w.x = nx;
+        } else if (ok(Math.floor(w.x), Math.floor(ny))) {
+          w.y = ny;
+        } else {
+          w.leg = Math.min(w.leg + 1, h.route.length - 1); // boxed in: take the next mark
+        }
         w.clock += step * 0.5;
         w.dir = stableDir(dx / dist, dy / dist, w.dir);
       }
-      w.body.texture = spriteLib.frame(WALK, w.dir, w.done ? 0 : Math.floor(w.clock * fc) % fc);
+      w.body.texture = spriteLib.frame(w.anim, w.dir, w.done ? 0 : Math.floor(w.clock * w.fc) % w.fc);
       const s = worldToScreen(w.x, w.y, this.scratch);
       w.root.position.set(s.x, s.y);
-      w.root.zIndex = depthKey(w.x, w.y);
+      // A whole tile of depth bias keeps a walker clear of the ground decal it
+      // stands on, which is what the clipping at the tile seams was (it.101).
+      w.root.zIndex = depthKey(w.x, w.y) + 2;
       if (!head || w.leg > head.leg || (w.leg === head.leg && w.x + w.y > head.x + head.y)) head = w;
     }
     if (t >= this.walkAt + 1.8 && head) h.focus(head.x, head.y);
@@ -285,6 +377,8 @@ export class ProcessionScene {
   destroy(): void {
     if (!this.h.keepWalkers) for (const w of this.walkers) w.root.destroy({ children: true });
     this.walkers.length = 0;
+    for (const c of this.cast) c.destroy({ children: true });
+    this.cast.length = 0;
     this.overlay.remove();
     this.finished = true;
   }

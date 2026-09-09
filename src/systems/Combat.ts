@@ -98,6 +98,14 @@ interface SwingState {
   recover: number;
 }
 
+/** THE CITY'S OWN (it.101): what the fight is lent of the squad, and nothing more. */
+export interface AllyHooks {
+  /** The nearest guard on his feet within `max` tiles, or null. */
+  nearest(x: number, y: number, max: number): { id: number; x: number; y: number } | null;
+  /** A blow lands on him; true if it was taken. */
+  hurt(id: number, amount: number): boolean;
+}
+
 export class CombatSystem {
   private readonly rand: Rng;
   /** THE STATUS ENGINE (it.80): set by main once the floor stands. */
@@ -453,6 +461,19 @@ export class CombatSystem {
    * enemy AI exactly at its strike tick — the range re-check here is what
    * makes telegraphed attacks dodgeable.
    */
+  /**
+   * THE CITY'S OWN (it.101): main lends the fight a way to see the squad, so a
+   * hostile with a guard in front of it swings at the guard. It is deliberately
+   * NOT a faction system - a guard is not an entity, nothing else in combat can
+   * address one, and the hero's own target picking still only ever sees enemies,
+   * which is what keeps friendly fire impossible.
+   */
+  setAllies(a: AllyHooks | null): void {
+    this.allies = a;
+  }
+
+  private allies: AllyHooks | null = null;
+
   enemyStrike(
     source: Entity,
     minDamage: number,
@@ -463,6 +484,17 @@ export class CombatSystem {
   ): void {
     // The body hunted the nearest unhidden hero (it.59): that is who it swings at.
     const p = this.nearestPlayer(source.pos.x, source.pos.y);
+    // ...unless one of the city's guards is closer, in which case the guard is
+    // what is in front of it (it.101). Mirrors main's quarry choice exactly.
+    const guard = this.allies?.nearest(source.pos.x, source.pos.y, reach) ?? null;
+    if (guard) {
+      const dg = Math.hypot(guard.x - source.pos.x, guard.y - source.pos.y);
+      const dh = p && p.action !== 'dead' ? Math.hypot(p.pos.x - source.pos.x, p.pos.y - source.pos.y) : Infinity;
+      if (dg <= reach && dg < dh) {
+        if (this.rand() < toHit) this.allies?.hurt(guard.id, randInt(this.rand, minDamage, maxDamage));
+        return;
+      }
+    }
     if (!p || p.action === 'dead') return;
     const dx = p.pos.x - source.pos.x;
     const dy = p.pos.y - source.pos.y;

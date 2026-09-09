@@ -860,6 +860,25 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The forest cutscene lighting re-verified end to end
 - [x] Playthrough; clean build
 
+## Iteration 101 - The farmlands, fought properly (2026-09-09)
+
+- [x] The fields are no longer dressed as a warden's depth: no pentagram in the corn, and the exit works
+- [x] THE ROAD HOME: a signpost on the east verge that walks the hero back to the marsh gate
+- [x] The compass fixed: the city lies east, the hero enters from the east edge, the company holds the west
+- [x] THE WESTERN ROAD stands open, lit and unbarred, and its plate and note say so
+- [x] The field is an organic union of lobes, not a rectangle, with a hedge of trees round every edge
+- [x] Three steadings with farmhouses, outbuildings and fenced yards; no wall cubes anywhere
+- [x] The squad marches on the hero, charges, and takes a place each on a ring round the body it fights
+- [x] Hostiles fight the guards back; a guard can be put down and gets up again; the officer cannot fall
+- [x] Four ranks of plate, and an officer a head taller in white under the city's colours
+- [x] THE MUSTER: a standing crowd of townsfolk and the watch, five citizens pleading, the officer answering
+- [x] THE GENERAL'S ORDERS: a cinematic on arrival - burn the crop, put the farmers against the wall
+- [x] The general wears the mini-boss health bar, held back until he is sighted
+- [x] Every HUD layer, name plate and speech bubble off while the bars are down
+- [x] Processions are a crowd of different people, on fixed places in the column, that walk round walls
+- [x] The refugee calls the innkeeper "he"
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

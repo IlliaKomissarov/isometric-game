@@ -91,7 +91,7 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { RECLAIMED_WORDS, REFUGEE_WORDS, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { RECLAIMED_WORDS, REFUGEE_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { Squad } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
@@ -185,6 +185,8 @@ interface World {
     interactables: Interactable[];
     /** Label manager hook (it.50): the E-prompt's spot, so its plate stands down. */
     setPromptAt: (x: number | null, y?: number) => void;
+    /** THE CLEAN FRAME (it.101): the world's name plates are UI, and go with the HUD. */
+    setPlatesHidden: (off: boolean) => void;
     /** A plate re-titled or hidden (it.91). */
     setPlate: (x: number, y: number, label: string | null) => void;
     stashSprite: Sprite | null;
@@ -223,6 +225,8 @@ const INN_FLOOR = 103;
 const CELLAR_FLOOR = 104;
 /** THE FARMLANDS (it.100): the burning fields along the marsh path. */
 const FARM_FLOOR = 105;
+/** THE COMPANY FIGHTS BACK (it.101): how far a hostile will look for a guard to fight instead of the hero. */
+const ALLY_AGGRO = 9;
 const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
 const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
 /** THE CELLAR (it.97): what crawled in under the inn - vermin and the risen, no men. */
@@ -1727,7 +1731,7 @@ async function boot(): Promise<void> {
     /** LOOTABLE CHESTS (it.92): a district's chest the save says was opened. */
     const townChestOpened = (floorNum: number, x: number, y: number): boolean => (quests.chests ?? '').split(';').includes(`${floorNum}:${x},${y}`);
     /** THE EASTERN QUARTER (it.91): how the town is built from the errand's state. */
-    /** THE CELLAR (it.97): the keeper has asked, so her back door is unbolted. */
+    /** THE CELLAR (it.97): the keeper has asked, so his back door is unbolted. */
     const cellarAsked = (): boolean => quests.cellar === 'active' || quests.cellar === 'done';
     const eastStateOf = (): EastState => (quests.east === 'done' || quests.east === 'cleared' ? 'cleared' : quests.east === 'open' ? 'open' : 'sealed');
     const LOOTER_LEVEL = 5;
@@ -1896,7 +1900,13 @@ async function boot(): Promise<void> {
       // teleports into the arena. Arena stairs sit at the hall's far east end, hidden
       // until every combatant inside the seal is dead.
       const arenaRoom = dungeon.rooms[0];
-      const isPortalFloor = !isArena && !isHub && isBossFloor(floorNum);
+      // THE FIELDS ARE NOT A WARDEN'S FLOOR (it.101). `isBossFloor` is a plain
+      // `floor % 5 === 0`, and THE FARMLANDS are floor 105 - so the fields were
+      // being dressed with the wardens' seal (a pentagram turning in the corn)
+      // and, worse, their STAIR was replaced by that seal, which is why there was
+      // no way back to town from them. None of the places past the town gate are
+      // depth floors; none of them may take a depth floor's furniture.
+      const isPortalFloor = !isArena && !isHub && floorNum < FOREST_FLOOR && isBossFloor(floorNum);
       // THE QUARRY'S SEAL (it.88): the keeper's hall carries a seal like the
       // wardens' floors; past it lies the hydra's own arena. Once that arena
       // is cleared the hall holds the way home instead (the remembered clear).
@@ -2096,6 +2106,9 @@ async function boot(): Promise<void> {
         pendingIdBase = null;
       }
       const idBase = state.nextId;
+      // THE CITY'S OWN (it.100): declared before the pool, because the pool's quarry
+      // hook has to be able to see the squad (it.101).
+      let squad: Squad | null = null;
       const enemies = new EnemyPool(
         viewport,
         {
@@ -2103,7 +2116,17 @@ async function boot(): Promise<void> {
           isWalkable: scene.isWalkable,
           isOpaque: scene.isOpaque,
           // CO-OP (it.59): every body hunts the nearest unhidden living hero.
-          getPlayerPos: (self) => combat.nearestPlayer(self.pos.x, self.pos.y)?.pos ?? player.pos,
+          // THE COMPANY FIGHTS BACK (it.101): on the fields the city's guards are
+          // offered as quarry too, so a hostile with a guard between it and the hero
+          // fights the guard. There is still exactly ONE quarry per body and no
+          // faction field anywhere - only a different answer to `who is in front`.
+          getPlayerPos: (self) => {
+            const hero = combat.nearestPlayer(self.pos.x, self.pos.y)?.pos ?? player.pos;
+            if (!squad) return hero;
+            const dh = Math.hypot(hero.x - self.pos.x, hero.y - self.pos.y);
+            const g = squad.nearest(self.pos.x, self.pos.y, Math.min(dh, ALLY_AGGRO));
+            return g ? { x: g.x, y: g.y } : hero;
+          },
           meleeStrike: (src, min, max, toHit, reach, effect) =>
             combat.enemyStrike(src, min, max, toHit, reach, effect),
           shootArrow: (src, tx, ty, min, max, toHit) => {
@@ -2183,7 +2206,12 @@ async function boot(): Promise<void> {
         // THE GENERAL (it.100) stands at the head of the lane his company holds. He
         // is spawned with them, before the tally is taken, so the field is not
         // "clear" while he is still on it.
-        if (isFarm && farm) generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel + 2);
+        if (isFarm && farm) {
+          generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel + 2);
+          // THE GENERAL'S PLATE (it.101): he takes the wardens' own health bar, so a
+          // mini-boss reads as one - name, level and numbers at the top of the screen.
+          boss = generalBody;
+        }
         // THE QUARRY'S KEEPER (it.88) waits in its arena past the hall's seal, not in the hall.
       }
       // ENEMIES REMAINING (it.88): what the floor woke with.
@@ -2258,6 +2286,7 @@ async function boot(): Promise<void> {
           occluders: dressing.occluders,
           interactables: dressing.interactables,
           setPromptAt: dressing.setPromptAt,
+          setPlatesHidden: dressing.setPlatesHidden,
           setPlate: dressing.setPlate,
           stashSprite: dressing.stashSprite,
           cellarGirl: dressing.cellarGirl,
@@ -2288,11 +2317,28 @@ async function boot(): Promise<void> {
 
       // THE CITY'S OWN (it.100): the guards and their officer form up on the muster
       // ground. Only while the field is contested - once it is won they have gone home.
-      let squad: Squad | null = null;
       if (isFarm && farm) {
         ambience.setSmoke(!farm.farm.won); // The crypt's mist reads as smoke over a burning field.
-        if (!farm.farm.won) squad = new Squad(viewport.objectLayer, scene.isWalkable, farm.farm.squad, { rate: 1.0, damage: 11, leash: 17 });
+        if (!farm.farm.won) squad = new Squad(viewport.objectLayer, scene.isWalkable, farm.farm.squad, { rate: 1.05, damage: 12, leash: 13, toughness: 110 });
       }
+      // THE COMPANY FIGHTS BACK (it.101): the fight is lent a way to see the squad,
+      // so a hostile with a guard in front of it swings at the guard.
+      combat.setAllies(
+        squad
+          ? {
+              nearest: (x, y, max) => squad?.nearest(x, y, max) ?? null,
+              hurt: (id, amount) => {
+                const at = squad?.posOf(id) ?? null;
+                const took = squad?.hurt(id, amount) ?? false;
+                if (took && at) {
+                  ambience.bloodSpray(at.x, at.y, undefined, undefined, 9);
+                  dmgText.show(at.x, at.y - 1.1, String(Math.round(amount)), 'enemy');
+                }
+                return took;
+              },
+            }
+          : null,
+      );
 
       // Target ring: unmistakable marker under whatever the player is striking.
       const targetRing = new Sprite(assets.get('targetRing'));
@@ -3601,7 +3647,7 @@ async function boot(): Promise<void> {
           // the treasure erupt — a clear, earned pause before the reward.
           // Tick-clocked (it.59): loot is sim state, so the beat counts ticks.
           bossLoot = { x: bx, y: by, ticks: 198, world: w };
-          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88).
+          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : floor === FARM_FLOOR ? 'THE GENERAL FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88); the company's general (it.101).
           bossNote?.classList.add('show');
           later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
@@ -3825,7 +3871,7 @@ async function boot(): Promise<void> {
      * `atGate` walks the party out of the passage they actually used (it.98) instead
      * of dropping them in the middle of the old quarter, half the town from it.
      */
-    const goHome = (atGate?: 'forest'): void =>
+    const goHome = (atGate?: 'forest' | 'farm'): void =>
       withFade(async () => {
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
@@ -3952,7 +3998,7 @@ async function boot(): Promise<void> {
       }
     };
     // ---- THE EASTERN QUARTER (it.91): the barricade, the errand, the looters, the reclaiming, the inn ----
-    /** The innkeeper's face: the peasant body's front frame in her warm coat. */
+    /** The innkeeper's face: the peasant body's front frame in his warm coat. */
     let innFace: HTMLCanvasElement | null | undefined;
     const innPortrait = (): HTMLCanvasElement | null => {
       if (innFace === undefined) innFace = spriteLib.loaded && spriteLib.hasAnim('folk_walk') ? portraitFromTexture(spriteLib.frame('folk_walk', 6, 0), 0xe8d8b8) : null;
@@ -4052,7 +4098,7 @@ async function boot(): Promise<void> {
           portrait: refugeePortrait(),
           lines: ['They came over the east wall at night. By morning the quarter was burning.', 'Looters. Twenty of them, the militia says. They\'re still in there, in our houses.'],
           choices: [
-            { label: 'TALK TO THE INNKEEPER', sub: 'she has work for you', value: 'next' },
+            { label: 'TALK TO THE INNKEEPER', sub: 'he has work for you', value: 'next' },
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
@@ -4290,9 +4336,9 @@ async function boot(): Promise<void> {
       saveNow();
     };
     // ================= THE CELLAR (it.97) =================================
-    // The keeper's second errand: her stock is in the vault under the taproom
+    // The keeper's second errand: his stock is in the vault under the taproom
     // and something has moved in among the casks. The back door is locked until
-    // she asks; the woman at the deep end is not seen until the dark is cleared.
+    // he asks; the woman at the deep end is not seen until the dark is cleared.
     /** Ticks left before the rescue's dialogue, once the cutscene has played. */
     let cellarSceneTicks = -1;
     /**
@@ -4453,8 +4499,18 @@ async function boot(): Promise<void> {
     // `quests.farm`:  new -> 'active' (the muster is taken) -> 'done' (the field is the city's).
     /** True once the woods and the eastern quarter are both settled. */
     const farmOffered = (): boolean => quests.forest === 'done' && quests.east === 'done';
+    /** Coats for the standing crowd, so a rally is not one dyed man repeated (it.101). */
+    const FOLK_COATS_RALLY: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
     /** Ticks left before the officer's word, once the rally has played. */
     let rallyTicks = -1;
+    /**
+     * THE MUSTER PLAYS ONCE (it.101). Without this the rally re-fired on the very
+     * next tick for as long as the hero stood on the yard and had not yet said
+     * yes - and because a running scene clears the command queue by design, the
+     * "I WILL COME" that would have stopped it was eaten every time. Standing on
+     * the training ground with the errand unclaimed was an infinite cutscene.
+     */
+    let rallyShown = false;
     /** Ticks left before the victory scene pays out. */
     let farmWonTicks = -1;
     /** The general's next taunt, and the cooldown on his hand. */
@@ -4470,25 +4526,76 @@ async function boot(): Promise<void> {
     const officerPortrait = (): HTMLCanvasElement | null => keeperPortrait();
     const goFarm = (): void => goPlace(FARM_FLOOR, 'out to the fields');
 
-    /** The muster: the crowd gathers on the yard and the officer speaks. */
+    /** How a cutscene puts a word on screen: floating text over whoever said it (it.101). */
+    const cineSay = (x: number, y: number, text: string, crit: boolean): void => {
+      // Always the gold face: a shout across a dark field has to be readable, and
+      // the emphasis is carried by the embers under it instead (it.101).
+      world.dmgText.show(x, y - 1.9, text, 'crit');
+      if (crit) world.ambience.burst(x, y, 0xffd070, 14, { lowEnergy: true });
+    };
+    /** The scene's own walkable test, so a procession slides along walls (it.101). */
+    const cineWalk = (gx: number, gy: number): boolean => world.scene.isWalkable(gx, gy);
+
+    /**
+     * THE MUSTER (it.100, rebuilt it.101). The city gathers on the training yard:
+     * a standing crowd of townsfolk with the watch drawn up beside them, more of
+     * them still coming up the road, and CAPTAIN ORDWAY at the head of it under
+     * the colours. The citizens do the asking - the errand is the city's, not the
+     * officer's - and he answers them last, which is what puts him at the centre
+     * of the scene when the dialogue opens on him a beat later.
+     */
     const startRally = (): void => {
       if (reclaim || !world.town) return;
       const yard = world.town.layout.training?.mark ?? { x: 16, y: 72 };
-      const from = { x: 22, y: 70 };
-      const route = [{ x: 20, y: 71 }, { x: 18, y: 72 }, { x: yard.x + 1, y: yard.y }];
+      const from = { x: 24, y: 69 };
+      const route = [{ x: 21, y: 70 }, { x: 19, y: 71 }, { x: yard.x + 2, y: yard.y + 1 }];
       lightTheWayIn(from, route);
+      // Those already on the yard: two ranks of the watch behind the officer, and
+      // the townsfolk pressed in on three sides of them.
+      const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [
+        { anim: 'guard_idle', x: yard.x, y: yard.y - 1, height: 74, tint: 0xfff2d0, dir: 4 }, // ORDWAY
+        { anim: 'guard_idle', x: yard.x - 2, y: yard.y - 2, height: 60, tint: 0xdfe6f2 },
+        { anim: 'guard_idle', x: yard.x + 2, y: yard.y - 2, height: 60, tint: 0xd8c090 },
+        { anim: 'guard_idle', x: yard.x - 3, y: yard.y, height: 60, tint: 0xaebad2 },
+        { anim: 'guard_idle', x: yard.x + 3, y: yard.y, height: 60, tint: 0xc8d8c0 },
+      ];
+      const CROWD = ([0, 1, 2, 3, 4, 5, 6, 7].map((i) => `crowd_m${i}`) as AnimName[]).filter((a) => spriteLib.hasAnim(a));
+      const seats: ReadonlyArray<readonly [number, number]> = [
+        [-4, 3], [-2, 4], [0, 4], [2, 4], [4, 3], [-5, 1], [5, 1], [-4, -1], [4, -1],
+        [-2, 5], [2, 5], [-6, 2], [6, 2], [-1, 6], [1, 6],
+      ];
+      seats.forEach(([dx, dy], i) => {
+        if (!CROWD.length) return;
+        const gx = yard.x + dx;
+        const gy = yard.y + dy;
+        if (!world.scene.isWalkable(gx, gy)) return;
+        cast.push({ anim: CROWD[i % CROWD.length], x: gx, y: gy, height: 54 + ((i * 5) % 7), tint: FOLK_COATS_RALLY[(i * 3) % FOLK_COATS_RALLY.length] });
+      });
       reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
         ambience: world.ambience,
         fx: gateFx,
         carts: [],
-        at: { x: yard.x, y: yard.y },
+        at: { x: yard.x, y: yard.y - 1 },
         from,
         route,
-        titles: [['THE FIELDS ARE BURNING', 'the city gathers at the training ground'], ['A COMPANY HOLDS THE ROWS', 'the officer calls for a sword']],
-        walkers: 10,
+        titles: [['THE CITY IS HUNGRY', 'the whole ward is on the training ground'], ['A COMPANY HOLDS THE ROWS', 'the officer calls for a sword']],
+        walkers: 12,
+        sheets: STREET_FOLK,
+        isWalkable: cineWalk,
+        cast,
+        say: cineSay,
+        speech: [
+          // Kept low and south of the yard so a shout never lands on the title.
+          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'THERE IS NO BREAD IN THE MARKET' },
+          { t: 2.1, x: yard.x + 4, y: yard.y + 4, text: 'MY CHILDREN HAVE NOT EATEN IN THREE DAYS' },
+          { t: 3.3, x: yard.x - 5, y: yard.y + 5, text: 'THEY ARE BURNING THE FIELDS WHILE WE STAND HERE' },
+          { t: 4.5, x: yard.x + 2, y: yard.y + 6, text: 'TAKE THE FARMLANDS BACK!' },
+          { t: 5.6, x: yard.x - 2, y: yard.y + 5, text: 'THE WATCH MUST MARCH - TAKE THEM BACK!' },
+          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'THE WATCH WILL MARCH. I NEED A SWORD I CAN TRUST.', crit: true },
+        ],
         keepWalkers: true,
-        hold: 6,
+        hold: 8,
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
@@ -4496,6 +4603,57 @@ async function boot(): Promise<void> {
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
           rallyTicks = 1;
+        },
+      });
+    };
+
+    /**
+     * THE GENERAL'S ORDERS (it.101). The first thing the fields do is show you
+     * why you came: the camera crosses to the far end of the burning rows and the
+     * company's general gives the order to put the crop and the farmers to the
+     * torch. It plays once, on arrival, and only while the field is contested.
+     */
+    let farmIntroShown = false;
+    const startFarmIntro = (): void => {
+      if (reclaim || !world.town?.layout.farm) return;
+      const g = world.town.layout.farm.general;
+      lightTheWayIn({ x: g.x, y: g.y }, [{ x: g.x + 4, y: g.y + 3 }, { x: g.x - 3, y: g.y + 2 }]);
+      const line: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [
+        { anim: 'captain_idle', x: g.x, y: g.y, height: 82, tint: 0xa8524c, dir: 0 },
+      ];
+      for (const [dx, dy] of [[2, 2], [-2, 2], [3, -1], [-3, -1], [0, 3], [1, -3]] as const) {
+        if (world.scene.isWalkable(g.x + dx, g.y + dy)) line.push({ anim: 'captain_idle', x: g.x + dx, y: g.y + dy, height: 62, tint: 0xd8887a, dir: 4 });
+      }
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: g.x, y: g.y },
+        from: { x: g.x, y: g.y },
+        route: [{ x: g.x, y: g.y }],
+        titles: [['THE FARMLANDS', 'a free company holds every row of it'], ['THE GENERAL GIVES HIS ORDERS', 'and the city has one answer for him']],
+        walkers: 0,
+        cast: line,
+        say: cineSay,
+        speech: [
+          { t: 1.0, x: g.x, y: g.y, text: 'BURN IT. BURN EVERY ROW.', crit: true },
+          { t: 2.4, x: g.x + 2, y: g.y + 2, text: 'THE CITY EATS ASHES THIS WINTER' },
+          { t: 3.8, x: g.x, y: g.y, text: 'ANY FARMER STILL BREATHING - PUT HIM AGAINST THE WALL', crit: true },
+          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'AND IF THE WATCH COMES, LET THEM COME' },
+        ],
+        hold: 6,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          // The scene showed him; the BAR still waits until the hero sights him
+          // for real, so it is not pinned across the whole march west (it.101).
+          world.bossSeen = false;
+          document.getElementById('boss-bar')?.classList.remove('show');
+          audio.sfx('bossHorn');
         },
       });
     };
@@ -4534,23 +4692,41 @@ async function boot(): Promise<void> {
       if (v === 'go') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'farm', step: 'accept' });
     };
 
-    /** The victory: the officer, then the folk back onto the land. */
+    /**
+     * The victory: the officer, then the folk back onto the land. They come up the
+     * CITY ROAD, which lies east (it.101), and walk west into the rows they were
+     * driven off - a different variety of person each, on the map's own paths.
+     */
     const startFarmVictory = (): void => {
       if (reclaim) return;
-      const at = world.town?.layout.farm?.entry ?? { x: 5, y: 33 };
-      const from = { x: 2, y: 33 };
-      const route = [{ x: 8, y: 32 }, { x: 16, y: 28 }, { x: 26, y: 22 }, { x: 34, y: 18 }, { x: 40, y: 14 }];
+      const f = world.town?.layout.farm;
+      const home = f?.home ?? { x: 61, y: 24 };
+      const from = { x: home.x + 1, y: home.y };
+      const route = [{ x: 54, y: 24 }, { x: 44, y: 26 }, { x: 35, y: 24 }, { x: 26, y: 22 }, { x: 18, y: 24 }];
       lightTheWayIn(from, route);
+      const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [];
+      const off = world.squad?.positions().find((m) => m.officer);
+      if (off) cast.push({ anim: 'guard_idle', x: Math.floor(off.x), y: Math.floor(off.y), height: 74, tint: 0xfff2d0, dir: 4 });
       reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
         ambience: world.ambience,
         fx: gateFx,
         carts: [],
-        at: { x: at.x + 2, y: at.y - 2 },
+        at: { x: 44, y: 25 },
         from,
         route,
         titles: [['THE FIELD IS TAKEN', 'the company is broken and its general is down'], ['THE PEOPLE COME OUT', 'there will be a harvest after all']],
-        walkers: 9,
+        walkers: 12,
+        sheets: STREET_FOLK,
+        isWalkable: cineWalk,
+        cast,
+        say: cineSay,
+        speech: [
+          { t: 1.2, x: 44, y: 25, text: 'THAT WAS FOUGHT, NOT BRAWLED', crit: true },
+          { t: 3.0, x: 40, y: 26, text: 'THE ROWS ARE OURS AGAIN' },
+          { t: 5.0, x: 32, y: 24, text: 'WE CAN SOW BEFORE THE FROST' },
+          { t: 7.0, x: 26, y: 22, text: 'THERE WILL BE BREAD BY THE WEEK\'S END' },
+        ],
         keepWalkers: true,
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
@@ -4576,10 +4752,11 @@ async function boot(): Promise<void> {
         void officerTalk();
         return;
       }
-      if (!farmOffered() || (quests.farm ?? 'new') !== 'new') return;
+      if (rallyShown || !farmOffered() || (quests.farm ?? 'new') !== 'new') return;
       const yard = world.town.layout.training?.mark;
       if (!yard) return;
       if (Math.hypot(player.pos.x - (yard.x + 0.5), player.pos.y - (yard.y + 0.5)) > 5) return;
+      rallyShown = true;
       rallyTicks = 0;
       audio.sfx('questDone');
       startRally();
@@ -4592,6 +4769,12 @@ async function boot(): Promise<void> {
     const tickFarmQuest = (): void => {
       if (floor !== FARM_FLOOR || transitioning) return;
       if (quests.farm !== 'active') return;
+      // THE GENERAL'S ORDERS (it.101): the first thing the fields do, once.
+      if (!farmIntroShown && !reclaim) {
+        farmIntroShown = true;
+        startFarmIntro();
+        return;
+      }
       // THE GENERAL'S WORD (it.100): while he is on his feet and the hero is in
       // his reach, he shreds their plate and takes their legs, and says so.
       const gen = world.farmGeneral;
@@ -4800,6 +4983,7 @@ async function boot(): Promise<void> {
         const H = screenLayout.state.h;
         for (const m of squad.positions()) {
           if (n >= els.length) break;
+          if (m.down) continue; // A man on the ground wears no chevron (it.101).
           const c = world.camera.worldToCanvas(m.x, m.y, ptrScratch);
           const px = rect.left + c.x;
           const py = rect.top + c.y - 74 * world.camera.currentZoom;
@@ -4967,7 +5151,8 @@ async function boot(): Promise<void> {
               chat?.system('Leader returning to town. Warping party...');
               // THE ROAD HOME (it.98): out of the woods you step back onto the eastern
               // road, where you left it - not into the middle of the old quarter.
-              goHome(floor === FOREST_FLOOR ? 'forest' : undefined);
+              // THE FIELDS (it.101) come back the same way, onto the marsh gate.
+              goHome(floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : undefined);
             } else if (cmd.to === 'floor' && cmd.n !== undefined) {
               chat?.system(`Leader fast-travelling to depth ${ROMAN[cmd.n - 1] ?? cmd.n}. Warping party...`);
               jumpToFloor(cmd.n);
@@ -5000,7 +5185,7 @@ async function boot(): Promise<void> {
           world.enemies.forEachActive((e) => {
             if (e.hp > 0 && e.action !== 'dead') foes.push(e);
           });
-          world.squad.step(dt, foes, (targetId, amount) => world.combat.dealDamage({ sourceId: player.id, targetId, amount }));
+          world.squad.step(dt, foes, (targetId, amount) => world.combat.dealDamage({ sourceId: player.id, targetId, amount }), player.pos);
         }
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
@@ -5228,7 +5413,10 @@ async function boot(): Promise<void> {
         // The town gate opens on CONTACT (it.44): touching the archway's front tile descends at once.
         const gateReach = world.town ? 1.05 : 0.8;
         if (lead.action !== 'dead' && stairsDist < gateReach) {
-          if (!world.isArena && floor > 0 && isBossFloor(floor)) {
+          // THE FIELDS ARE NOT A DEPTH (it.101): floor 105 divides by five, so
+          // without the bound the farmlands' hidden stair offered the wardens'
+          // arena. Nothing past the town gate descends anywhere.
+          if (!world.isArena && floor > 0 && floor < FOREST_FLOOR && isBossFloor(floor)) {
             pendingArena = true; // Fallback portal (the seal itself).
           } else if (world.isArena && !world.arenaCleared) {
             tutorial.notify('bossgate', 'The arena is sealed. Nothing leaves while anything inside still breathes.');
@@ -5471,6 +5659,12 @@ async function boot(): Promise<void> {
           world.squad?.draw(alpha, (x, y) => world.lighting.getTintAt(x, y, 0.85));
           gateFx.update(frameDt); // THE BARRICADE (it.91): a cart aside, or every cart down.
           reclaim?.update(frameDt);
+          // A CLEAN FRAME (it.101): while the bars are down the page wears `cine`,
+          // and every HUD layer is hidden by the stylesheet rather than by each
+          // panel remembering to hide itself. Nothing can bleed over the bars.
+          document.body.classList.toggle('cine', !!reclaim);
+          world.town?.setPlatesHidden(!!reclaim);
+          setBubblesHidden(!!reclaim);
           // THE SLEEPER (it.92): a few pale motes rise from the bed while the hero rests.
           if (player.resting) {
             restGlint += frameDt;
@@ -5482,6 +5676,12 @@ async function boot(): Promise<void> {
         }
         world.loot.updateBeacons((x, y) => world.lighting.isVisible(x, y), timeSec); // THE KEY BEACONS (it.87).
         // ENEMIES REMAINING (it.88): the forest's tally under the plate. LOOTERS REMAINING (it.91): the quarter's.
+        // A SMALL SCREEN GETS THE NUMBER (it.101): on a 240 px handset the full
+        // wording is wider than the corner is allowed to be, and a tally whose
+        // centre lands mid-screen is exactly what the device sweep forbids. The
+        // words are marked up so the stylesheet can drop them and keep the count.
+        const tallyText = (label: string, n: number, of: number): string =>
+          `<span class="qh-w">${label} · </span>${n} / ${of}`;
         let questTargets: Array<{ x: number; y: number }> | null = null;
         if (floor === FOREST_FLOOR && world.foesAtStart > 0) {
           let alive = 0;
@@ -5493,8 +5693,8 @@ async function boot(): Promise<void> {
             }
           });
           if (quests.forest === 'active') questTargets = targets;
-          const tally = `ENEMIES REMAINING · ${alive} / ${world.foesAtStart}`;
-          if (questHud.textContent !== tally) questHud.textContent = tally;
+          const tally = tallyText('ENEMIES REMAINING', alive, world.foesAtStart);
+          if (questHud.innerHTML !== tally) questHud.innerHTML = tally;
           questHud.classList.add('show');
         } else if (floor === FARM_FLOOR && quests.farm === 'active' && world.foesAtStart > 0) {
           // TROOPS REMAINING (it.100): the company's count, and a chevron on each of
@@ -5505,8 +5705,8 @@ async function boot(): Promise<void> {
             if (e.hp > 0 && e.action !== 'dead') targets.push({ x: e.pos.x, y: e.pos.y });
           });
           questTargets = targets;
-          const tally = `TROOPS REMAINING · ${targets.length} / ${world.foesAtStart}`;
-          if (questHud.textContent !== tally) questHud.textContent = tally;
+          const tally = tallyText('TROOPS REMAINING', targets.length, world.foesAtStart);
+          if (questHud.innerHTML !== tally) questHud.innerHTML = tally;
           questHud.classList.add('show');
         } else if (floor === 0 && quests.east === 'open' && world.town?.layout.east) {
           const targets: Array<{ x: number; y: number }> = [];
@@ -5514,8 +5714,8 @@ async function boot(): Promise<void> {
             if (e.hp > 0 && e.action !== 'dead' && LOOTER_KINDS.has(e.def.kind)) targets.push({ x: e.pos.x, y: e.pos.y });
           });
           questTargets = targets;
-          const tally = `LOOTERS REMAINING · ${targets.length} / ${LOOTER_COUNT}`;
-          if (questHud.textContent !== tally) questHud.textContent = tally;
+          const tally = tallyText('LOOTERS REMAINING', targets.length, LOOTER_COUNT);
+          if (questHud.innerHTML !== tally) questHud.innerHTML = tally;
           questHud.classList.add('show');
         } else if (questHud.classList.contains('show')) questHud.classList.remove('show');
         updateFoePointers(questTargets);
@@ -5830,6 +6030,17 @@ async function boot(): Promise<void> {
         else goCellar();
         return;
       }
+      if (it.kind === 'farmroad') {
+        // THE ROAD HOME (it.101): the signpost on the east verge is the way back
+        // to the marsh gate, and it is the ONLY way off the fields.
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
+        return;
+      }
+      if (it.kind === 'farmway') {
+        tutorial.say(it.note ?? 'The western road is open.');
+        return;
+      }
       if (it.kind === 'farmgate') {
         tutorial.say(it.note ?? 'The way past the fields is still barricaded.');
         return;
@@ -5881,8 +6092,10 @@ async function boot(): Promise<void> {
       else if (it.kind === 'forge') craftUI.open();
       else if (it.kind === 'training') {
         // THE MUSTER (it.100): once the woods and the quarter are settled, the post
-        // at the yard is where the officer stands.
-        if (farmOffered() && quests.farm !== undefined) void officerTalk();
+        // at the yard is where the officer stands. Once the rally has been CALLED
+        // (it.101) he stands there whether or not the errand was taken - otherwise
+        // walking away from the muster left no way back to it at all.
+        if (farmOffered() && (rallyShown || quests.farm !== undefined)) void officerTalk();
         else void offerTraining();
       }
       else stashUI.open();
@@ -6360,12 +6573,13 @@ export function isBossFloor(floor: number): boolean {
 function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
-  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
+  // THE MUSTER (it.101): the standing crowd on the training yard rides the coliseum's spectator sheets.
+  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
   if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   // THE FARMLANDS (it.100): the company, the city's guards, the fires and the folk who come back.
   if (mode === 'farm') {
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of FARM_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

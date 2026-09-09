@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 100, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 101, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 356 checks at it.100) | 0 failures | 356/356 on seed 3 (mage), incl. the farmlands campaign end to end - the muster, the burning field, the squad, the general's shred, the payout and the quiet field after; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 375 checks at it.101) | 0 failures | 375/375 on seed 3 (mage), incl. the farmlands campaign end to end - the muster with the HUD off the screen, the general's orders, the compass, the open western road, the squad charging and drawing blood, the road home, the payout and the quiet field after; the eleven-device sweep clean with the tally on screen; 10 earlier sessions, seeds 1-10, all classes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -243,6 +243,19 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 101 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| No way back to town from the fields, and a demonic sigil turning in the corn | High (bug) | ONE cause: `isBossFloor` is `floor % 5 === 0` and the farmlands are floor 105, so the fields were dressed as a warden's depth - pentagram, blood-red seal, and the floor's STAIR replaced by that seal. Nothing past the town gate is a depth floor now |
+| The hero entered the fields facing the wrong way | Medium (design) | The marsh gate is on the city's WEST side, so the road out runs west: entry, muster ground and the road home moved to the field's EAST edge, the company and its general to the west, and the open western road past them |
+| The field was a rectangle with grey wall cubes standing in the corn | Medium | rebuilt as the union of five wobbled lobes at 64x48 with a tree hedge on every border tile, and `wallsFromProps` so the scene draws no cubes at all |
+| Allied guards held a spot and the enemy ignored them | High (design) | the formation anchors on the HERO and marches; a guard runs down anything inside the leash and takes his own place on a ring round it; and `getPlayerPos` now answers "the nearest guard" when a guard is closer than the hero, so hostiles fight the squad. Still no faction field, still no friendly fire - only a different answer to who is in front |
+| Every guard was the same body, and the leader was not readable | Medium | four ranks of plate, and an officer a head taller in white under the city's colours (`banner`), with a gold footing halo and the larger chevron |
+| A cutscene ran with the HUD, the world's name plates and villager chatter on top of it | Medium | `body.cine` hides every head-up layer in one stylesheet rule; `setPlatesHidden` and `setBubblesHidden` take the world's own UI with them; the bars are deeper |
+| A procession was one repeated peasant that walked through hedges | Medium | walkers are dealt from the town's civilian sheets with a coat apiece, keep a FIXED place in the column (the goal used to be recomputed from the walker's live position and wobbled), and test the ground before each step |
+| The refugee called the male innkeeper "she" | Low (text) | "he has work for you" |
 
 ### Iteration 100 additions
 

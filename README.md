@@ -80,7 +80,10 @@
   they run at the enemy and fight on their own, and you cannot hurt them - into a burning
   field held by men under arms and a general who shreds your armour and taunts you for it.
   Take it and the fields are the city's for good: fires out, corn standing, the people back
-  on the rows, chests in the yards, and the marsh road beyond still barricaded. Villagers walk the streets of every district and have a word for
+  on the rows, chests in the yards, and the western road open past them. The muster is a
+  rally the whole ward turns out for - the citizens do the asking, and the officer answers
+  them under the colours - and the fields open on the enemy general giving the order to
+  burn the crop and put the farmers against the wall. Villagers walk the streets of every district and have a word for
   you; small chests wait in the corners; every quest target wears a mark, on screen and off. The eastern
   road out of the Market Ward stays shut until the gatekeeper hands you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
   and the road opens for good, a hundred gold in hand, the woods a safe road with folk in the

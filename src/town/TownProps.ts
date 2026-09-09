@@ -34,7 +34,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'farmway';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
@@ -61,6 +61,8 @@ export interface TownDressing {
   gates: Map<string, Sprite>;
   /** A plate re-titled, or hidden (it.91: the east gate's, once the carts are gone). */
   setPlate: (x: number, y: number, label: string | null) => void;
+  /** THE CLEAN FRAME (it.101): every name plate off while a cutscene is running. */
+  setPlatesHidden: (off: boolean) => void;
   /** Render-frame update: gate fog drift, brazier flicker. */
   update: (dt: number) => void;
   destroy: () => void;
@@ -645,8 +647,33 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'farmgate': {
         // A road that is not built yet, and a plate that says which one.
-        plate(p.x, p.y, `${p.variant ?? 'THE ROAD'} · NOT YET OPEN`, 74);
-        interactables.push({ id: nextId++, kind: 'farmgate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE ROAD'}`, tiles: [{ x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y }], note: 'The way past the fields is still barricaded.' });
+        plate(p.x, p.y, `${p.variant ?? 'THE ROAD'} · BARRICADED`, 74);
+        interactables.push({ id: nextId++, kind: 'farmgate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE ROAD'}`, tiles: [{ x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y }], note: 'The north road is still barricaded - the militia have not cut it open yet.' });
+        break;
+      }
+      case 'farmroad': {
+        // THE ROAD HOME (it.101): the signpost on the east verge. The fields lie
+        // WEST of the city, so the way back is the way the company marched in.
+        standing(p, 'signpost', 0.95);
+        glowAt(p.x, p.y, 0xd8a85c, 0.38, 1.4, 12);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 190, 110, 0.55);
+        interactables.push({ id: nextId++, kind: 'farmroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK TO THE CITY', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x - 2, y: p.y }] });
+        plate(p.x, p.y, 'THE ROAD TO THE CITY', 92);
+        break;
+      }
+      case 'farmway': {
+        // THE WESTERN ROAD (it.101): an OPEN way on, not a sealed one. The arch
+        // stands lit and unbarred, and the plate says the road is open - what is
+        // not built yet is the country past its far end, and the note says so.
+        const spr = animated(p.x, p.y, 'gateway', 12, 0.96, 1, 0);
+        if (spr) {
+          spr.blendMode = 'add';
+          spr.alpha = 0.9;
+        }
+        glowAt(p.x, p.y, 0xffcf8a, 0.7, 2.6, 46);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 5.4, 255, 200, 130, 0.95);
+        interactables.push({ id: nextId++, kind: 'farmway', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE WESTERN ROAD'} · OPEN`, tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 2, y: p.y }], note: 'The western road is open, and the marsh country lies at the end of it. Nothing walks it yet.' });
+        plate(p.x, p.y, `${p.variant ?? 'THE WESTERN ROAD'} · OPEN`, 104);
         break;
       }
       // ---- THE CELLAR (it.97) ----
@@ -873,12 +900,17 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
 
   settlePlates();
   let clock = 0;
+  /** THE CLEAN FRAME (it.101): the name plates are UI too, and go with the rest. */
+  let platesOff = false;
+  const setPlatesHidden = (off: boolean): void => {
+    platesOff = off;
+  };
   const update = (dt: number): void => {
     clock += dt;
     const k = 1 - Math.exp(-10 * dt);
     for (const pl of plates) {
       pl.node.position.y = pl.baseY + Math.sin(clock * 1.3 + pl.phase) * 2.5;
-      const hide = !!promptAt && Math.hypot(promptAt.x - pl.wx, promptAt.y - pl.wy) < 2.4;
+      const hide = platesOff || (!!promptAt && Math.hypot(promptAt.x - pl.wx, promptAt.y - pl.wy) < 2.4);
       pl.alpha += ((hide ? 0 : 1) - pl.alpha) * k;
       pl.node.alpha = pl.alpha;
       pl.node.visible = pl.alpha > 0.02;
@@ -895,5 +927,5 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate };
+  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate, setPlatesHidden };
 }

@@ -79,6 +79,9 @@ export const VENDOR_WORDS = ['Take a look.', 'Fair prices.', 'Fresh stock today.
 export const GUARD_WORDS = ['All quiet.', 'Move along.', 'Long shift.', 'Evening.', 'Nothing to report.'];
 export const REFUGEE_WORDS = ['We lost everything.', 'Our house is in there.', 'Is it safe yet?', 'Cold night.', 'Any news?', 'They took it all.', 'We wait.'];
 export const RECLAIMED_WORDS = ['We\'re home.', 'So much to rebuild.', 'Thank you.', 'The roof needs work.', 'Good to be back.', 'Nice weather today.', 'Back to work.'];
+/** THE RIVERSIDE FARM (it.106): what Oscar's people say once the farm is theirs. */
+export const RIVER_WORDS = ['The nets are set.', 'Quiet water today.', 'You are welcome here.', 'The fish are running.', 'Mind the jetty, it is slick.', 'We owe you the roof over us.', 'Good current this morning.', 'Stay and rest a while.', 'The bridge will hold, with the pass.'];
+
 export const TAVERN_WORDS = ['Another round.', 'Long day.', 'Good stew tonight.', 'Cheers.', 'Warm in here.', 'Heard the news?', 'One more, then home.'];
 
 export interface VillagerOptions {

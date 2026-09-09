@@ -16,6 +16,9 @@ import { Graphics, Matrix, Texture, type Renderer } from 'pixi.js';
 import { mulberry32 } from '@/utils/rng';
 import { PALETTE, TILE_H, TILE_W, WALL_Z } from './config';
 
+/** How many phases the river loop is cut into (it.106). */
+export const WATER_PHASES = 8;
+
 export class AssetManager {
   private readonly textures = new Map<string, Texture>();
   private renderer!: Renderer;
@@ -65,6 +68,109 @@ export class AssetManager {
     this.register('waystone', this.buildWaystone());
     this.register('chest_closed', this.buildChest(false));
     this.register('chest_open', this.buildChest(true));
+  }
+
+  /**
+   * THE RIVER (it.106). The pack has no water in it, so the river is generated
+   * the way the stone floors were before real art landed: vector geometry into
+   * a GPU texture.
+   *
+   * `WATER_PHASES` diamonds are built, and they are PHASES OF ONE LOOP rather
+   * than four unrelated variants - every wave band is drawn at `phase / N` of a
+   * full period, so playing them in order and wrapping is a seamless, endlessly
+   * scrolling current. The scene cycles them in place (`Riverside`'s ripple
+   * pass), which is why they must stay in phase order under their keys.
+   *
+   * Registered as `floor_town_<KIND_WATER>_<phase>` so `SceneManager` picks them
+   * up through the ordinary town-ground path with no special case, and as
+   * `water_phase_<n>` so the cycling pass can find them again by index.
+   */
+  buildRiverGround(): void {
+    for (let i = 0; i < WATER_PHASES; i++) {
+      const tex = this.renderer.generateTexture({ target: this.buildWaterTile(i / WATER_PHASES), antialias: true });
+      this.textures.get(`water_phase_${i}`)?.destroy(true);
+      this.textures.set(`water_phase_${i}`, tex);
+      // The four the SceneManager will lay down at build time.
+      this.textures.set(`floor_town_9_${i}`, tex);
+    }
+    this.textures.set('floor_town_9', this.textures.get('water_phase_0')!);
+    for (let v = 0; v < this.floorVariants; v++) {
+      const tex = this.renderer.generateTexture({ target: this.buildShoreTile(v), antialias: true });
+      this.textures.get(`floor_town_10_${v}`)?.destroy(true);
+      this.textures.set(`floor_town_10_${v}`, tex);
+    }
+    this.textures.set('floor_town_10', this.textures.get('floor_town_10_0')!);
+    this.textures.get('water_ripple')?.destroy(true);
+    this.textures.set('water_ripple', this.renderer.generateTexture({ target: this.buildRipple(), antialias: true }));
+  }
+
+  /**
+   * One phase of the river. Dark green-black water, three bands of wave
+   * travelling across the diamond at different rates, and a cold sky glint on
+   * the crests. `t` is the phase in [0, 1); every term is periodic in it, so
+   * phase 0 and phase 1 are the same picture and the loop does not jump.
+   */
+  private buildWaterTile(t: number): Graphics {
+    const g = new Graphics();
+    const w = TILE_W;
+    const h = TILE_H;
+    const diamond = [w / 2, 0, w, h / 2, w / 2, h, 0, h / 2];
+    // The body of the water: deep, cold, and darker toward the middle.
+    g.poly(diamond).fill(0x16242c);
+    g.poly([w / 2, 2, w - 4, h / 2, w / 2, h - 2, 4, h / 2]).fill({ color: 0x1d3038, alpha: 0.85 });
+    g.poly([w / 2, 6, w - 12, h / 2, w / 2, h - 6, 12, h / 2]).fill({ color: 0x24404a, alpha: 0.6 });
+    // THE CURRENT: bands that run along the diamond and slide with the phase.
+    // Drawn as thin horizontal lozenges clipped to the tile by their own width.
+    for (let b = 0; b < 5; b++) {
+      const speed = 1 + (b % 3) * 0.5;
+      const phase = (t * speed + b * 0.19) % 1;
+      const y = phase * h;
+      const spanAt = (yy: number): number => (yy < h / 2 ? (yy / (h / 2)) * (w / 2) : ((h - yy) / (h / 2)) * (w / 2));
+      const half = spanAt(y) * (0.35 + 0.4 * Math.sin(b * 2.1 + t * Math.PI * 2));
+      if (half <= 1) continue;
+      const thick = 1.1 + (b % 2) * 0.7;
+      g.ellipse(w / 2 + Math.sin(b * 1.7 + t * 6.283) * 5, y, half, thick).fill({
+        color: b % 2 === 0 ? 0x3d6674 : 0x2b4d58,
+        alpha: 0.34 + 0.16 * Math.sin(t * Math.PI * 2 + b),
+      });
+    }
+    // The glint: a short bright crest that runs the length of the tile once per
+    // loop, so the water reads as MOVING and not merely as textured.
+    {
+      const y = ((t * 1.3) % 1) * h;
+      const spanAt = (yy: number): number => (yy < h / 2 ? (yy / (h / 2)) * (w / 2) : ((h - yy) / (h / 2)) * (w / 2));
+      const half = spanAt(y) * 0.3;
+      if (half > 1) g.ellipse(w / 2, y, half, 0.9).fill({ color: 0x8fc4d4, alpha: 0.3 });
+    }
+    return g;
+  }
+
+  /** The wet shore: dark mud, grit, and a damp sheen where the water reaches. */
+  private buildShoreTile(variant: number): Graphics {
+    const g = new Graphics();
+    const rand = mulberry32(0x5117 + variant * 977);
+    const w = TILE_W;
+    const h = TILE_H;
+    g.poly([w / 2, 0, w, h / 2, w / 2, h, 0, h / 2]).fill(0x3a3428);
+    g.poly([w / 2, 3, w - 6, h / 2, w / 2, h - 3, 6, h / 2]).fill({ color: 0x463d2c, alpha: 0.8 });
+    for (let i = 0; i < 14; i++) {
+      const u = rand();
+      const v = rand();
+      // A point inside the diamond, in its own barycentric-ish coordinates.
+      const px = w / 2 + (u - v) * (w / 2) * 0.82;
+      const py = h / 2 + (u + v - 1) * (h / 2) * 0.82;
+      g.circle(px, py, 0.6 + rand() * 1.1).fill({ color: rand() < 0.5 ? 0x59503c : 0x2b2620, alpha: 0.5 + rand() * 0.3 });
+    }
+    g.poly([w / 2, 0, w, h / 2, w / 2, h, 0, h / 2]).stroke({ width: 1, color: 0x2a2519, alpha: 0.5 });
+    return g;
+  }
+
+  /** A shoreline ripple: a thin bright ring the water pass fades in and out. */
+  private buildRipple(): Graphics {
+    const g = new Graphics();
+    g.ellipse(TILE_W / 2, TILE_H / 2, TILE_W * 0.34, TILE_H * 0.34).stroke({ width: 1.4, color: 0x9fd0dc, alpha: 0.9 });
+    g.ellipse(TILE_W / 2, TILE_H / 2, TILE_W * 0.2, TILE_H * 0.2).stroke({ width: 1, color: 0x7fb4c4, alpha: 0.6 });
+    return g;
   }
 
   /** Register an already-built texture (atlas singles reused as floor tiles, it.39). */

@@ -53,6 +53,14 @@ export const KIND_CELLAR_FLAG = 6;
 export const KIND_CELLAR_DIRT = 7;
 /** THE FARMLANDS' scorched earth, where the fire has been through (it.100). */
 export const KIND_FARM_ASH = 8;
+/**
+ * THE RIVERSIDE FARM (it.106): the river itself, and the wet shore it runs on.
+ * Both are built procedurally in `AssetManager.buildRiverGround` - the pack has
+ * no water in it - and the river's four variants are four PHASES of one loop
+ * rather than four different tiles, so the scene can cycle them in place.
+ */
+export const KIND_WATER = 9;
+export const KIND_SHORE = 10;
 
 export type TownPropKind =
   | 'house'
@@ -162,7 +170,21 @@ export type TownPropKind =
   | 'fieldfire'
   | 'farmgate'
   // THE FARMLANDS (it.101): the signpost home to the marsh gate.
-  | 'farmroad';
+  | 'farmroad'
+  // THE RIVERSIDE FARM (it.106): the river's own furniture.
+  /** A plank jetty running out over the water (drawn on the ground layer). */
+  | 'jetty'
+  /** Reeds and rushes along the waterline. */
+  | 'reeds'
+  /** A place the hero may stand and fish: the rod comes out on its own. */
+  | 'fishspot'
+  /** The signpost back through the river gate to the quarter. */
+  | 'riverroad'
+  /** The burned bridge north-east, and the pass that opens it. */
+  | 'bridgegate'
+  /** Oscar, and the two of his family the bandits had cornered. */
+  | 'oscar'
+  | 'oscarkin';
 
 /** THE FARMLANDS (it.100): what main needs of the fields. */
 export interface FarmLayout {
@@ -180,6 +202,36 @@ export interface FarmLayout {
   gates: Array<{ x: number; y: number; label: string }>;
   /** True once the field is taken: no fire, no company, and the folk are back. */
   won: boolean;
+}
+
+/**
+ * THE RIVERSIDE FARM (it.106): what main needs of the water meadow.
+ *
+ * Two states, and the layout is a pure function of which one it is in:
+ *
+ *   THREATENED  three bandits have Oscar's family against the barn wall. This
+ *               is the ambush.
+ *   SAFE        the bandits are down, the family is out on the land, and the
+ *               farm is a haven - no hostiles spawn here again.
+ */
+export interface RiverLayout {
+  /** Where the hero comes through the river gate. */
+  entry: { x: number; y: number };
+  /** The signpost back to the quarter. */
+  home: { x: number; y: number };
+  /** Where Oscar stands, and where the two of his kin stand behind him. */
+  oscar: { x: number; y: number };
+  kin: Array<{ x: number; y: number }>;
+  /** Where the three bandits are standing over them when the hero walks in. */
+  bandits: Array<{ x: number; y: number }>;
+  /** Every tile the hero may fish from, and the water tile each one faces. */
+  fishing: Array<{ x: number; y: number; toX: number; toY: number }>;
+  /** Every water tile on the map, for the ripple pass and the ambience. */
+  water: Array<{ x: number; y: number }>;
+  /** The burned bridge out of the north-east, and whether the pass opens it. */
+  bridge: { x: number; y: number };
+  /** True once the three are down: the farm is a haven. */
+  safe: boolean;
 }
 
 /** THE CELLAR (it.97): what main needs of the floor under the taproom. */
@@ -317,7 +369,7 @@ export interface TownLayout {
   /** The guild's bounty board. */
   notice: { x: number; y: number };
   /** Passages: a `dest` leads somewhere (it.85: the forest); without one the way is not built yet. */
-  gateways: Array<{ x: number; y: number; label: string; note: string; dest?: 'forest' | 'farm' }>;
+  gateways: Array<{ x: number; y: number; label: string; note: string; dest?: 'forest' | 'farm' | 'river' }>;
   /** Street tiles (it.85): the ones a standing prop must never take. */
   road?: Uint8Array;
   /** THE GATEKEEPER (it.87): the sentry at the eastern road who hands out the forest's first errand. */
@@ -338,6 +390,8 @@ export interface TownLayout {
   cellar?: CellarLayout;
   /** THE FARMLANDS (it.100): the fields only. */
   farm?: FarmLayout;
+  /** THE RIVERSIDE FARM (it.106): the water meadow past the river gate only. */
+  river?: RiverLayout;
   /** LOOTABLE CHESTS (it.92): where the district's small chests stand (the `chest` props' tiles). */
   chests?: Array<{ x: number; y: number }>;
 }
@@ -349,7 +403,7 @@ export interface TownMap extends DungeonMap {
 }
 
 /** Build the town: grid + footprints + prop list. Pure and deterministic. */
-export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean } = {}): TownLayout {
+export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; riverOpen?: boolean } = {}): TownLayout {
   const eastState: EastState = opts.east ?? 'sealed';
   const W = TOWN_W;
   const H = TOWN_H;
@@ -951,7 +1005,10 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean } =
   // Blocked gateways: the north road, the river gate, the south fields.
   const eastGateways: TownLayout['gateways'] = [
     { x: 88, y: 10, label: 'THE NORTH ROAD', note: 'The north road is blocked with wrecked carts. Not open yet.' },
-    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut. The bridge beyond it burned.' },
+    // THE RIVER GATE (it.91, opened it.106). Chained shut until the fields are
+    // the city's; after that the chain comes off and the water meadow behind it
+    // is a road like any other. The note is what a hero is told before then.
+    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut. The bridge beyond it burned.', dest: opts.riverOpen ? 'river' : undefined },
     { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: 'The south fields are empty. The way is not open yet.' },
     { x: 105, y: 13, label: 'THE HILL ROAD', note: 'The hill road climbs out of the quarter. Not open yet.' },
   ];

@@ -34,13 +34,13 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'riverroad' | 'bridgegate' | 'oscar';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
   note?: string;
   /** Where an open gateway leads (it.85). */
-  dest?: 'forest' | 'farm';
+  dest?: 'forest' | 'farm' | 'river';
   x: number;
   y: number;
   label: string;
@@ -676,6 +676,86 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 190, 110, 0.55);
         interactables.push({ id: nextId++, kind: 'farmroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK TO THE CITY', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x - 2, y: p.y }] });
         plate(p.x, p.y, 'THE ROAD TO THE CITY', 92);
+        break;
+      }
+      // ---- THE RIVERSIDE FARM (it.106) ----
+      case 'jetty': {
+        // A plank walk over the river. It is laid on the GROUND layer, over the
+        // water tile, because the hero walks along it - anything on the object
+        // layer would sort in front of or behind him instead of under his feet.
+        const v = `inn_boards_${(p.x * 5 + p.y * 11) % 4}`;
+        if (!has(v)) break;
+        const spr = new Sprite(spriteLib.single(v));
+        const sc = worldToScreen(p.x, p.y, scratch);
+        spr.position.set(sc.x - TILE_W / 2, sc.y);
+        spr.tint = 0xa89070; // weathered, wet timber
+        viewport.groundLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'reeds': {
+        // Rushes on the waterline. Drawn where they stand so the hero wades
+        // THROUGH them rather than round them, and cooled toward the water.
+        if (!has('grassclump')) break;
+        const spr = new Sprite(spriteLib.single('grassclump'));
+        spr.anchor.set(0.5, 0.94);
+        const sc = worldToScreen(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0), scratch);
+        spr.position.set(sc.x, sc.y + 4);
+        spr.scale.set(1.15 + (((p.x * 7 + p.y * 3) % 5) - 2) * 0.06);
+        spr.tint = 0x7f9068;
+        spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 1;
+        viewport.objectLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'fishspot': {
+        // A place the water is worth a line. It carries NO prompt and no plate:
+        // the rod comes out on its own when the hero stands here (it.106), so
+        // the only thing on screen is a faint disturbance on the water.
+        glowAt(p.x, p.y, 0x6fa8bc, 0.16, 1.1, 2);
+        break;
+      }
+      case 'riverroad': {
+        // The signpost by the river gate: the way back into the quarter.
+        standing(p, 'signpost', 0.95);
+        glowAt(p.x, p.y, 0xd8a85c, 0.38, 1.4, 12);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 190, 110, 0.55);
+        interactables.push({ id: nextId++, kind: 'riverroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK TO THE QUARTER', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 2, y: p.y }] });
+        plate(p.x, p.y, 'THE RIVER GATE', 92);
+        break;
+      }
+      case 'bridgegate': {
+        // THE BURNED BRIDGE. The one way on from the meadow, and the reason
+        // Oscar's pass is worth having: the arch stands, the span does not, and
+        // the prompt says so until the seal is in the hero's hand.
+        const spr = animated(p.x, p.y, 'gateway', 12, 0.96, 1, 0);
+        if (spr) {
+          spr.blendMode = 'add';
+          spr.alpha = 0.55;
+        }
+        glowAt(p.x, p.y, 0xd8a060, 0.42, 2.2, 40);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 5, 230, 170, 110, 0.7);
+        plate(p.x, p.y, `${p.variant ?? 'THE BRIDGE'} · BURNED`, 96);
+        interactables.push({ id: nextId++, kind: 'bridgegate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE BRIDGE'}`, tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }], note: 'The span is burned through and the far side is barred. Nothing crosses here yet.' });
+        break;
+      }
+      case 'oscar':
+      case 'oscarkin': {
+        // THE FAMILY. Render-only bodies: they are people, not entities, and
+        // nothing on this floor may swing at them. The anchor and scale come off
+        // the sheet's painted bounds, the way every other body has since it.104.
+        const anim = p.kind === 'oscar' ? 'cit_farmer_walk' : p.variant === 'maid' ? 'cit_maid_walk' : 'cit_goodwife_walk';
+        if (!spriteLib.loaded || !spriteLib.hasAnim(anim)) break;
+        const spr = new Sprite(spriteLib.frame(anim, 2, 0));
+        const foot = spriteLib.footAnchor(anim);
+        spr.anchor.set(foot.x, foot.y);
+        spr.scale.set((p.kind === 'oscar' ? 60 : 55) / (spriteLib.paintedHeight(anim) || 90) / 0.8);
+        const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+        spr.position.set(sc.x, sc.y + 4);
+        spr.tint = p.kind === 'oscar' ? 0xe8d8b8 : 0xd8c8e0;
+        spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
+        viewport.objectLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
         break;
       }
       // ---- THE CELLAR (it.97) ----

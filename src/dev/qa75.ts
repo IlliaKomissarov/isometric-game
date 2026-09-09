@@ -2269,6 +2269,123 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('chests wait in the yards', (g.town.layout.chests ?? []).length >= 3 && (g.town.layout.chests ?? []).every((c: { x: number; y: number }) => !!g.chests.findNearestUnopened(c.x + 0.5, c.y + 0.5, 0.9)), String((g.town.layout.chests ?? []).length));
       check('the road home still stands when the field is quiet', g.town.interactables.some((i: { kind: string }) => i.kind === 'farmroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'farmgate'));
       check('the crop stands whole', (g.town.layout.props as Array<{ kind: string; variant?: string }>).filter((q) => q.kind === 'farmcrop' && String(q.variant).includes('burnt')).length === 0);
+
+      // ---- THE RIVERSIDE FARM (it.106) ------------------------------------
+      // The fields being the city's is what unchains the river gate, so this
+      // runs here, on the far side of that, and never needs to fake the state.
+      {
+        check('the river gate is open once the fields are the city own', (game().town?.layout?.gateways ?? []).length >= 0); // shape only; the town is rebuilt below
+        g = game();
+        await g.travel(106);
+        await until(() => game() && game().floor === 106, 15000);
+        g = game();
+        await fadeClear();
+        driveRender(400);
+        const r = g.riverside as {
+          entry: { x: number; y: number };
+          oscar: { x: number; y: number };
+          kin: Array<{ x: number; y: number }>;
+          bandits: Array<{ x: number; y: number }>;
+          fishing: Array<{ x: number; y: number; toX: number; toY: number }>;
+          water: Array<{ x: number; y: number }>;
+          bridge: { x: number; y: number };
+          safe: boolean;
+        } | null;
+        check('the water meadow stands behind the river gate', !!r && g.floor === 106, `${g.floor} ${!!r}`);
+        if (r) {
+          const map = g.town.layout.map as { width: number; height: number; grid: Uint8Array; tileKind: Uint8Array };
+          const kindAt = (x: number, y: number): number => map.tileKind[y * map.width + x];
+          const walk = (x: number, y: number): boolean => g.scene.isWalkable(x, y);
+          // THE RIVER IS A RIVER. Wide, and it runs OFF the map at both ends -
+          // water that stops inside the border reads as a pond, not a current.
+          check('the river is a broad band of water, not a puddle', r.water.length > 200, `${r.water.length} water tiles`);
+          {
+            const onEdge = r.water.filter((t) => t.x === 0 || t.y === 0 || t.x === map.width - 1 || t.y === map.height - 1);
+            check('and it runs off the map at both ends', onEdge.length >= 4, `${onEdge.length} tiles on the border`);
+          }
+          // NOBODY WALKS INTO THE RIVER. Every water tile is unwalkable EXCEPT
+          // the planks laid over it, which is the only place a hero stands on it.
+          {
+            const wet = r.water.filter((t) => walk(t.x, t.y));
+            check('the river cannot be walked into', wet.length === 0, `${wet.length} walkable water tiles`);
+            const planks = (g.town.layout.props as Array<{ kind: string; x: number; y: number }>).filter((q) => q.kind === 'jetty');
+            check('but the jetties are laid over it and carry you', planks.length >= 3 && planks.every((q) => walk(q.x, q.y) && kindAt(q.x, q.y) === 9), `${planks.length} planks`);
+          }
+          // THE AMBUSH is three, in the yard, and nothing else on the floor.
+          {
+            const roster: string[] = [];
+            g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
+              if (e.hp > 0) roster.push(e.def.kind);
+            });
+            check('three of the company are in the yard, and nothing else is', roster.length === 3, roster.join());
+            check('and they are men, not monsters', roster.every((k) => ['brigand', 'bandit', 'mercenary'].includes(k)), roster.join());
+            check('the family is standing where they were cornered', r.kin.length === 2 && r.bandits.length === 3);
+            const yardTight = r.bandits.every((b) => Math.hypot(b.x - r.oscar.x, b.y - r.oscar.y) < 8);
+            check('the three are on top of them, not scattered over the farm', yardTight, JSON.stringify(r.bandits));
+          }
+          // THE FISHING MARKS: every one is standable, and the water it faces is
+          // real water. A mark facing dry land is a rod cast into a field.
+          {
+            const bad = r.fishing.filter((f) => !walk(f.x, f.y) || kindAt(f.toX, f.toY) !== 9);
+            check('every fishing mark stands on land and faces real water', r.fishing.length >= 3 && bad.length === 0, `${r.fishing.length} marks, ${bad.length} bad`);
+          }
+          // THE WAY BACK, AND THE WAY ON.
+          check('the signpost home and the burned bridge both stand', g.town.interactables.some((i: { kind: string }) => i.kind === 'riverroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'bridgegate'));
+          check('chests are scattered over the farm', (g.town.layout.chests ?? []).length >= 3, String((g.town.layout.chests ?? []).length));
+          // THE WATER MOVES. The pass is render-only and rides the wall clock, so
+          // it is checked by driving frames and watching a tile's texture change.
+          {
+            const before = (g.water as { tiles?: Array<{ shown: number }> } | null);
+            driveRender(600);
+            check('the river has an animation pass on it', !!g.water, 'no water pass');
+            const phases = new Set<number>();
+            for (let i = 0; i < 6; i++) {
+              driveRender(140);
+              const t = (g.water as unknown as { tiles: Array<{ shown: number }> }).tiles[0];
+              if (t) phases.add(t.shown);
+            }
+            check('and the current actually moves through its phases', phases.size >= 2, `${[...phases].join()} (${before ? 'seeded' : 'unseeded'})`);
+          }
+          // THE ROD COMES OUT ON ITS OWN. Stand on a mark, do nothing, and the
+          // pose is on; step off it and it is gone. No key, no prompt, no state
+          // that can stick.
+          {
+            const mark = r.fishing[0];
+            warp(mark.x, mark.y);
+            g.loop.step(20);
+            driveRender(120);
+            const onMark = g.player.fishing === true;
+            warp(r.entry.x, r.entry.y);
+            g.loop.step(20);
+            driveRender(120);
+            check('the rod comes out on the mark and goes away off it', onMark && g.player.fishing === false, `on ${onMark} off ${g.player.fishing}`);
+          }
+        }
+        // THE TRAINING DUMMY NEVER FALLS (it.106) - checked here because a hero
+        // this far in hits for more than the post's whole life bar.
+        {
+          g = game();
+          await g.travel(0);
+          await until(() => game() && game().floor === 0, 12000);
+          g = game();
+          await fadeClear();
+          const post = g.town.layout.training;
+          if (post) {
+            warp(post.mark.x, post.mark.y);
+            driveRender(120);
+            let dummy: { id: number; hp: number; hpMax: number; def: { kind: string } } | null = null;
+            g.enemies.forEachActive((e: { hp: number; hpMax: number; id: number; def: { kind: string } }) => {
+              if (/^dummy/.test(e.def.kind)) dummy = e;
+            });
+            if (dummy) {
+              const d = dummy as { id: number; hp: number; hpMax: number };
+              for (let i = 0; i < 8; i++) g.combat.dealDamage({ sourceId: g.player.id, targetId: d.id, amount: 999999, pure: true });
+              g.loop.step(10);
+              check('the training dummy takes anything and never dies', d.hp > 0, `${d.hp}/${d.hpMax}`);
+            } else check('a training dummy stands on the yard', false, 'none found');
+          }
+        }
+      }
       // THE WAY HOME (it.101): the signpost on the east verge, not a travel call.
       warp(g.town.layout.farm.home.x, g.town.layout.farm.home.y);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });

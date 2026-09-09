@@ -76,11 +76,13 @@ import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
-import { buildTownLayout, LOOTER_COUNT, type EastState, type TownLayout } from '@/town/TownMap';
+import { buildTownLayout, KIND_WATER, LOOTER_COUNT, type EastState, type RiverLayout, type TownLayout } from '@/town/TownMap';
 import { GateFx, ProcessionScene, type SpeechBeat } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
 import { buildCellarLayout } from '@/scenes/Cellar';
 import { buildFarmLayout } from '@/scenes/Farmlands';
+import { buildRiversideLayout } from '@/scenes/Riverside';
+import { RiverWater } from '@/render/RiverWater';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
@@ -91,7 +93,7 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { RECLAIMED_WORDS, REFUGEE_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { RECLAIMED_WORDS, REFUGEE_WORDS, RIVER_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { CineDialogue } from '@/ui/CineDialogue'; // THE CORNER WORD (it.102).
 import { Squad, SQUAD_ANIMS } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
@@ -214,9 +216,12 @@ interface World {
   squad: Squad | null;
   /** THE FARMLANDS (it.100): the man who commands the company, while he stands. */
   farmGeneral: Enemy | null;
+  /** THE RIVERSIDE FARM (it.106): the water's own animation pass, and the layout. */
+  water: RiverWater | null;
+  riverside: RiverLayout | null;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm' | 'river';
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
 const MINES_FLOOR = 102;
@@ -232,6 +237,16 @@ const FARM_FLOOR = 105;
  * being an errand and becomes a raid with a warden at the end of it.
  */
 const FARM_MAX_LEVEL = 8;
+/** THE RIVERSIDE FARM (it.106): the water meadow past the eastern quarter's river gate. */
+const RIVER_FLOOR = 106;
+/**
+ * THE THREE (it.106). The riverside is not a floor of foes - it is ONE fight,
+ * placed by hand in Oscar's yard, and nothing spawns there from a pool ever.
+ * These are stragglers of the same free company the fields were taken from, so
+ * they are the same men in the same rig, which is what lets them recognise the
+ * hero on sight.
+ */
+const RIVER_AMBUSH: EnemyKind[] = ['brigand', 'bandit', 'brigand'];
 /** THE COMPANY FIGHTS BACK (it.101): how far a hostile will look for a guard to fight instead of the hero. */
 const ALLY_AGGRO = 14;
 /**
@@ -250,7 +265,7 @@ const CELLAR_POOL: EnemyKind[] = ['spider', 'spider', 'spider', 'zombie', 'zombi
 /** THE FARMLANDS (it.100): a company that took the fields - men under arms, nothing else. */
 const FARM_POOL: EnemyKind[] = ['mercenary', 'mercenary', 'mercenary', 'brigand', 'bandit', 'poacher'];
 /** The mode a floor number stands for (the arena is decided by the caller). */
-const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : 'normal');
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : f === RIVER_FLOOR ? 'river' : 'normal');
 
 /** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
 interface MinesState {
@@ -412,6 +427,10 @@ async function boot(): Promise<void> {
   } catch (err) {
     console.warn('[boot] Sprite atlases unavailable — using procedural art.', err);
   }
+  // THE RIVER (it.106). Built here, unconditionally and outside the try: the
+  // packs contain no water, so this is generated geometry like the stone floors
+  // were, and it must exist whether or not the atlases loaded.
+  assets.buildRiverGround();
   loadingOverlay?.classList.add('done');
 
   const settings = new SettingsUI();
@@ -1696,7 +1715,7 @@ async function boot(): Promise<void> {
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
-      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : floor === FARM_FLOOR ? 'THE FARMLANDS' : null;
+      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : floor === FARM_FLOOR ? 'THE FARMLANDS' : floor === RIVER_FLOOR ? 'THE RIVERSIDE FARM' : null;
       if (depthLabel) depthLabel.textContent = place ?? (floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`);
       setZoneLabel(place ?? (floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`));
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
@@ -1768,7 +1787,8 @@ async function boot(): Promise<void> {
       const isInn = mode === 'inn';
       const isCellar = mode === 'cellar';
       const isFarm = mode === 'farm';
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : isFarm ? (baseSeed ^ 0xfa27) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isRiver = mode === 'river'; // THE RIVERSIDE FARM (it.106).
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : isFarm ? (baseSeed ^ 0xfa27) >>> 0 : isRiver ? (baseSeed ^ 0x21ce2) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
@@ -1808,7 +1828,11 @@ async function boot(): Promise<void> {
        */
       const partyLevel = party.reduce((n, seat) => (seat && !seat.gone ? Math.max(n, seat.player.level) : n), 1);
       const farmLevel = Math.max(2, Math.min(FARM_MAX_LEVEL, Math.max(deepestFloor + 1, Math.round(partyLevel * 0.5))));
-      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : floorNum;
+      // THE RIVERSIDE (it.106) is an errand on the far side of the same gate the
+      // farmlands' officer sends you through, so it is pitched at the same
+      // measure - and capped the same way, for the same reason.
+      const riverLevel = farmLevel;
+      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : isRiver ? riverLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
       // THE GILDED STAG (it.96/97): the room opens once the errand is paid; the
@@ -1819,8 +1843,11 @@ async function boot(): Promise<void> {
       // THE FARMLANDS (it.100): burning while the company holds them, quiet once they do not.
       const farmWon = quests.farm === 'done';
       const farm = isFarm ? buildFarmLayout(seed, farmWon) : null;
-      const layout = isHub ? buildTownLayout({ east: eastStateOf(), farmOpen: quests.farm === 'active' || quests.farm === 'done' }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : farm ? farm.layout : null;
-      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn || isCellar || isFarm ? undefined : floors[memKey(floorNum, isArena)];
+      // THE RIVERSIDE FARM (it.106): safe once the three are down, and it stays so.
+      const riverSafe = quests.river === 'done';
+      const riverside = isRiver ? buildRiversideLayout(seed, riverSafe) : null;
+      const layout = isHub ? buildTownLayout({ east: eastStateOf(), farmOpen: quests.farm === 'active' || quests.farm === 'done', riverOpen: quests.farm === 'done' }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : farm ? farm.layout : riverside ? riverside.layout : null;
+      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
@@ -1830,7 +1857,7 @@ async function boot(): Promise<void> {
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub || isColiseum || isForest || isInn || isCellar || isFarm) {
+      if (isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver) {
         hearths = []; // The town, the coliseum, the forest, the inn, its cellar and the fields light themselves.
       } else if (isArena) {
         const room = dungeon.rooms[0];
@@ -1893,6 +1920,8 @@ async function boot(): Promise<void> {
           ? 'cellar'
         : isFarm
           ? 'town'
+        : isRiver
+          ? 'town'
         : isMines || isMinesArena
           ? 'stone'
         : floorNum <= 2
@@ -1902,7 +1931,16 @@ async function boot(): Promise<void> {
             : floorNum <= 14
               ? 'frost'
               : 'ember';
-      scene.build(dungeon, viewport, lighting, theme);
+      // THE RIVER RUNS (it.106). The water pass takes the ground sprites of the
+      // water tiles as they are made; on every other floor it is never built and
+      // the hook is never passed, so nothing else pays for it.
+      const water = isRiver ? new RiverWater() : null;
+      const waterKind = riverside ? (riverside.layout.map as TownMap).tileKind : null;
+      scene.build(dungeon, viewport, lighting, theme, water && waterKind
+        ? (gx, gy, spr) => {
+            if (waterKind[gy * dungeon.width + gx] === KIND_WATER) water.add(gx, gy, spr);
+          }
+        : undefined);
       // THE ZONES SING (it.89): the forest and the quarry carry their own beds.
       if (isHub) {
         audio.setMusic('town'); // The title theme keeps the town (Tristram rule).
@@ -1917,6 +1955,10 @@ async function boot(): Promise<void> {
         // A burning field is a pitched battle and now sounds like one; a taken
         // field falls back to the town's bed.
         audio.setMusic(quests.farm === 'done' ? 'town' : 'battle', floorNum);
+      } else if (isRiver) {
+        // THE RIVERSIDE (it.106): the ambush has drums; a farm that is safe has
+        // the town's tune - and under either of them, the river itself.
+        audio.setMusic(quests.river === 'done' ? 'town' : 'battle', floorNum);
       } else if (isCellar) {
         audio.setMusic('mines', floorNum); // Under the boards the tune goes cold (it.97).
       } else if (isMines) {
@@ -1927,6 +1969,11 @@ async function boot(): Promise<void> {
         // moment the arena builds — and back to the dungeon BGM when we leave.
         audio.setBossMusic(isArena, floorNum);
       }
+
+      // THE RIVER IS HEARD (it.106) on the riverside and nowhere else. Set on
+      // every world build, so travel, a rebuild in place, a death and a load all
+      // agree without any of them having to remember to turn it off.
+      audio.setRiver(isRiver);
 
       const ambience = new Ambience(viewport);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
@@ -1941,8 +1988,8 @@ async function boot(): Promise<void> {
       // (The SIGHT radius is deliberately left short of the map: `revealAll` is
       // what kills the pop-in, and widening sight as well would have put the
       // general's health bar on screen from halfway across the field.)
-      if (isFarm) lighting.revealAll();
-      const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      if (isFarm || isRiver) lighting.revealAll(); // open country is known ground (it.103, it.106)
+      const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -2026,7 +2073,7 @@ async function boot(): Promise<void> {
       const loot = new LootSystem(viewport, seed);
       loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub && !isColiseum && !isForest && !isInn && !isCellar && !isFarm) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      if (!isArena && !isHub && !isColiseum && !isForest && !isInn && !isCellar && !isFarm && !isRiver) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
       // LOOTABLE CHESTS (it.92): the districts' small chests, on the layout's spots, the opened ones remembered by the save.
       if (layout?.chests) for (const c of layout.chests) if (!townChestOpened(floorNum, c.x, c.y)) chests.spawnAt(c.x, c.y, false, true);
       // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
@@ -2245,7 +2292,7 @@ async function boot(): Promise<void> {
       let generalBody: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done') || (isFarm && farmWon)) {
+      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done') || (isFarm && farmWon) || isRiver) {
         // No enemies in town; a cleared arena stays empty with its stair open; a cleared forest is a safe road (it.87).
       } else if (isArena) {
         const room = dungeon.rooms[0];
@@ -2285,6 +2332,21 @@ async function boot(): Promise<void> {
         }
         // THE QUARRY'S KEEPER (it.88) waits in its arena past the hall's seal, not in the hall.
       }
+      /**
+       * THE THREE (it.106). The riverside spawns nothing from a pool - it took
+       * the `isRiver` branch above, which spawns nothing at all - so its only
+       * hostiles are these, placed on the exact tiles the layout put them on,
+       * standing over Oscar's family in the yard. Once the farm is safe they are
+       * never placed again.
+       *
+       * They are pitched at the field's own measure and given no affixes: this
+       * is three men shaking down a farmer, not an elite pack.
+       */
+      if (isRiver && riverside && !riverSafe) {
+        for (const [i, spot] of riverside.river.bandits.entries()) {
+          enemies.spawn(RIVER_AMBUSH[i % RIVER_AMBUSH.length], spot.x + 0.5, spot.y + 0.5, floorLevel);
+        }
+      }
       // ENEMIES REMAINING (it.88): what the floor woke with.
       let foesAtStart = 0;
       enemies.forEachActive((e) => {
@@ -2323,11 +2385,16 @@ async function boot(): Promise<void> {
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isFarm
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, farmWon ? 8 : 0, null, [], null, {}, null, { chatter: farmWon ? TOWN_WORDS : undefined, sheets: STREET_FOLK })
+          : isRiver
+            // THE RIVERSIDE (it.106): nobody wanders while the three are in the
+            // yard - Oscar and his two are placed by the layout, and a farm with
+            // people strolling through an ambush reads as a farm with no ambush.
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, [], null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: STREET_FOLK })
           : isInn
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
             : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
-        const villagers2 = isForest || isInn || isCellar || isFarm
+        const villagers2 = isForest || isInn || isCellar || isFarm || isRiver
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
           : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
@@ -2386,6 +2453,24 @@ async function boot(): Promise<void> {
         }
       }
 
+      // THE SHORELINE (it.106): the ripples go on the water tiles that touch
+      // land, which is where a real river actually breaks. Computed here rather
+      // than in the layout because it is a render concern and nothing else wants it.
+      if (isRiver && riverside && water) {
+        const rk = (riverside.layout.map as TownMap).tileKind;
+        const rw = dungeon.width;
+        const edge = riverside.river.water.filter((t) => {
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nx = t.x + dx;
+            const ny = t.y + dy;
+            if (nx < 0 || ny < 0 || nx >= rw || ny >= dungeon.height) continue;
+            if (rk[ny * rw + nx] !== KIND_WATER) return true;
+          }
+          return false;
+        });
+        water.seedRipples(viewport.ambienceLayer, edge);
+        ambience.setSmoke(false);
+      }
       // THE CITY'S OWN (it.100): the guards and their officer form up on the muster
       // ground. Only while the field is contested - once it is won they have gone home.
       if (isFarm && farm) {
@@ -2654,6 +2739,8 @@ async function boot(): Promise<void> {
         foesAtStart,
         squad,
         farmGeneral: generalBody,
+        water,
+        riverside: riverside?.river ?? null,
       };
     };
 
@@ -2667,6 +2754,7 @@ async function boot(): Promise<void> {
       w.town?.destroyDressing();
       w.coliseum?.destroy();
       w.squad?.destroy();
+      w.water?.destroy(); // THE RIVER (it.106): its ripples go with the floor.
       teleporterFx = null;
       w.input.destroy();
       hideItemTip(); // No card outlives its floor (it.77).
@@ -3992,7 +4080,7 @@ async function boot(): Promise<void> {
      * `atGate` walks the party out of the passage they actually used (it.98) instead
      * of dropping them in the middle of the old quarter, half the town from it.
      */
-    const goHome = (atGate?: 'forest' | 'farm'): void =>
+    const goHome = (atGate?: 'forest' | 'farm' | 'river'): void =>
       withFade(async () => {
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
@@ -4662,6 +4750,14 @@ async function boot(): Promise<void> {
      * marsh path: it asks the moment the hero walks back through the gate.
      */
     const farmOffered = (): boolean => quests.forest === 'done';
+    /**
+     * THE RIVER GATE OPENS (it.106). The chain comes off once the fields are the
+     * city's: the stragglers who ran from that field are what is waiting on the
+     * far bank, which is why they know the hero on sight. Kept as a function for
+     * the gateway handler; `buildWorld` inlines the same test, because these
+     * arrow consts are not hoisted and it is defined above them.
+     */
+    const riverOffered = (): boolean => quests.farm === 'done';
     /** Coats for the standing crowd, so a rally is not one dyed man repeated (it.101). */
     const FOLK_COATS_RALLY: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
     /** Ticks left before the officer's word, once the rally has played. */
@@ -4714,6 +4810,8 @@ async function boot(): Promise<void> {
       return faceOf(sheets[which % sheets.length], dyes[which % dyes.length]);
     };
     const goFarm = (): void => goPlace(FARM_FLOOR, 'out to the fields');
+    /** THE RIVER GATE (it.106): through the chain, onto the water meadow. */
+    const goRiver = (): void => goPlace(RIVER_FLOOR, 'through the river gate');
 
     /**
      * How a cutscene puts a word on screen (it.101, doubled it.102): the floating
@@ -5112,6 +5210,255 @@ async function boot(): Promise<void> {
       audio.sfx('crowd');
     };
 
+    // ---- THE RIVERSIDE FARM (it.106) --------------------------------------
+    /**
+     * `quests.river`:  new -> 'active' (the hero has walked in on it) -> 'done'.
+     * `quests.riverPass`: 'held' once Oscar has put his seal in the hero's hand.
+     *
+     * The whole errand lives on its own floor and needs no offer in town: walking
+     * through the river gate IS taking it. That is deliberate - the gate only
+     * unchains once the fields are the city's, so the errand cannot be found
+     * before the story that explains why the men behind it know the hero's face.
+     */
+    let riverIntroShown = false;
+    let riverWonTicks = -1;
+
+    const oscarPortrait = (): HTMLCanvasElement | null => faceOf('cit_farmer_walk', 0xe8d8b8, 2);
+    const banditPortrait = (): HTMLCanvasElement | null => faceOf('poacher_idle', 0xb08878, 0);
+
+    /**
+     * THE AMBUSH (it.106). The hero comes through the gate and walks in on it:
+     * three of the free company's stragglers have Oscar and two of his family
+     * against the barn wall, counting out what is left of their coin. They
+     * recognise the hero halfway through their own demand, cut it short, and come
+     * at once - they do not wait to be walked up to one at a time.
+     */
+    const startRiverAmbush = (): void => {
+      const r = world.riverside;
+      if (reclaim || !r) return;
+      const o = r.oscar;
+      lightTheWayIn({ x: o.x, y: o.y }, r.bandits.map((b) => ({ x: b.x, y: b.y })));
+      const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [];
+      for (const b of r.bandits) cast.push({ anim: 'poacher_idle', x: b.x, y: b.y, height: 62, tint: 0xb08878, dir: 4 });
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: o.x, y: o.y },
+        from: { x: o.x, y: o.y },
+        route: [{ x: o.x, y: o.y }],
+        titles: [['THE RIVERSIDE FARM', 'the water meadow past the river gate'], ['THEY CAME DOWNRIVER', 'and they have not finished taking things yet']],
+        walkers: 0,
+        cast,
+        say: cineSay,
+        sayDone: () => cineSpeak.clear(),
+        speech: [
+          { t: 1.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THE REST OF IT, FARMER. ALL OF IT.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true },
+          { t: 2.5, x: o.x, y: o.y, text: 'There is nothing left. You have had the season already.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait() },
+          { t: 4.0, x: r.bandits[1].x, y: r.bandits[1].y, text: 'THEN WE TAKE THE BOAT, AND THE GIRL CARRIES IT DOWN —', speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true },
+          { t: 5.6, x: r.bandits[2].x, y: r.bandits[2].y, text: 'WAIT. WAIT — THAT IS THE ONE FROM THE FIELDS.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'seeing who walked in', portrait: banditPortrait(), foe: true },
+          { t: 7.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THAT IS THE ONE WHO PUT VARRICK IN THE DIRT. TAKE THEM — ALL THREE AT ONCE!', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, hold: 3 },
+        ],
+        hold: 4,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          settleWalkers();
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          // THE COORDINATED RUSH (it.106). The scene cut their demand short, so
+          // all three are woken here rather than one at a time as the hero
+          // wanders into each one's own sight radius.
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead') e.aiState = 'chase';
+          });
+          audio.sfx('bossHorn');
+          world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THEY COME AT ONCE', 'crit');
+        },
+      });
+    };
+
+    /**
+     * THE THANKS (it.106). The three are down; Oscar comes off the barn wall and
+     * puts his sealed pass in the hero's hand. The farm is a haven from here.
+     */
+    const startRiverThanks = (): void => {
+      const r = world.riverside;
+      if (reclaim || !r) return;
+      const o = r.oscar;
+      lightTheWayIn({ x: o.x, y: o.y }, r.kin.map((k) => ({ x: k.x, y: k.y })));
+      const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [
+        { anim: 'cit_farmer_walk', x: o.x, y: o.y, height: 60, tint: 0xe8d8b8, dir: 2 },
+      ];
+      for (const [i, k] of r.kin.entries()) cast.push({ anim: i === 0 ? 'cit_goodwife_walk' : 'cit_maid_walk', x: k.x, y: k.y, height: 55, tint: 0xd8c8e0, dir: 2 });
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: o.x, y: o.y },
+        from: { x: o.x, y: o.y },
+        route: [{ x: o.x, y: o.y }],
+        titles: [['THE FARM STANDS', 'and the people on it are still on it'], ['THE RIVERSIDE FARM', 'a haven on the far bank']],
+        walkers: 0,
+        cast,
+        say: cineSay,
+        sayDone: () => cineSpeak.clear(),
+        speech: [
+          { t: 1.0, x: o.x, y: o.y, text: 'You came through that gate at the right hour. An hour later and there would have been nothing here worth thanking you for.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait() },
+          { t: 3.2, x: r.kin[0] ? r.kin[0].x : o.x, y: r.kin[0] ? r.kin[0].y : o.y, text: 'He would not give them the boat. He would not give them anything.', speaker: 'OSCAR’S WIFE', role: 'at the barn wall', portrait: faceOf('cit_goodwife_walk', 0xd8c8e0, 2) },
+          { t: 5.2, x: o.x, y: o.y, text: 'Take this. My grandfather carried the river trade under the old charter, and the seal is still good — the watch on the far bank will honour it.', crit: true, speaker: 'OSCAR', role: 'putting the seal in your hand', portrait: oscarPortrait() },
+          { t: 7.4, x: o.x, y: o.y, text: 'The bridge is burned through, so it buys you nothing today. But it will. And there is a bed and a fire here for you whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4 },
+        ],
+        hold: 5,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          settleWalkers();
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          riverWonTicks = 30; // a half second, then the reward and the rebuild
+        },
+      });
+    };
+
+    /**
+     * The floor's own tick: run the ambush once, then watch the yard and close
+     * the errand when the last of the three is down.
+     */
+    const tickRiverQuest = (): void => {
+      if (floor !== RIVER_FLOOR || transitioning) return;
+      if (quests.river === 'done') return;
+      if (!riverIntroShown && !reclaim) {
+        riverIntroShown = true;
+        quests.river = 'active';
+        startRiverAmbush();
+        return;
+      }
+      if (reclaim) return; // a scene is on: the yard holds its breath
+      if (riverWonTicks === 0) return; // the thanks are being spoken
+      if (riverWonTicks > 0) {
+        if (--riverWonTicks > 0) return;
+        riverWonTicks = -1;
+        quests.river = 'done';
+        quests.riverPass = 'held';
+        for (const seat of liveSeats()) seat.player.gold += 150;
+        eventBus.emit('inventory:changed', {});
+        showReward('REWARD RECEIVED · 150 GOLD · OSCAR’S SEALED PASS');
+        audio.sfx('questDone');
+        world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 30);
+        saveNow();
+        // THE FARM CHANGES UNDER THEIR FEET (it.102's rule, kept here): the
+        // meadow is rebuilt in place the moment the errand closes, so the land
+        // is a haven while the hero is still standing on it - not after a walk
+        // home and back out again.
+        withFade(async () => {
+          await preloadFloor(RIVER_FLOOR, 'river');
+          const at = { x: player.pos.x, y: player.pos.y };
+          if (!swapWorld(() => buildWorld(RIVER_FLOOR, 'river'))) return;
+          placeParty(at.x, at.y, world.scene.isWalkable);
+          updateDepth();
+          player.action = 'idle';
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          minimap.markDirty();
+          updateOrb();
+          void dialogue.open({
+            speaker: 'OSCAR',
+            role: 'of the riverside farm',
+            portrait: oscarPortrait(),
+            lines: [
+              'The nets are back in the water and the girl has stopped shaking. That is your doing.',
+              'A hundred and fifty is every coin we had buried, and you are having it, so do not start.',
+              'The seal is yours. Rest here when the road gets long — nobody on this bank will ask you a thing.',
+            ],
+            choices: [{ label: 'THE FARM IS SAFE', value: 'ok' }],
+          });
+        }, 'the farm is safe');
+        return;
+      }
+      let alive = 0;
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead') alive++;
+      });
+      if (alive > 0) return;
+      riverWonTicks = 0;
+      world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE YARD IS CLEAR', 'crit');
+      audio.sfx('questDone');
+      startRiverThanks();
+    };
+
+    /**
+     * THE LINE IS IN THE WATER (it.106) — the riverside's fishing.
+     *
+     * A PROXIMITY trigger, not a prompt: there is no key to press and no menu.
+     * Stand on one of the layout's fishing marks with nothing else going on and
+     * the rod comes out on its own; move, swing, take a hit or step off the mark
+     * and it is gone again. It is a pose on the hero (`player.fishing`), so
+     * nothing about movement or combat is gated on it and there is no state that
+     * can be got stuck in - walking away cancels it because THIS stops setting
+     * it, not because anything has to be undone.
+     *
+     * Two things happen while it is on: the water in front of the hero takes a
+     * ring of ripples, and now and then something takes the line. The bite is
+     * flavour - it pays nothing and costs nothing - so a player who never
+     * notices the mechanic has lost no reward by it.
+     */
+    let fishBiteTicks = 0;
+    /** Where the hero stood last tick, so "is walking" needs nothing private. */
+    const fishLast = { x: NaN, y: NaN };
+    const tickFishing = (): void => {
+      const r = world.riverside;
+      if (!r || floor !== RIVER_FLOOR) {
+        if (player.fishing) player.fishing = false;
+        return;
+      }
+      // Nothing while a scene is on, while a panel is up, or while the hero is
+      // doing literally anything else.
+      const walking = Math.hypot(player.pos.x - fishLast.x, player.pos.y - fishLast.y) > 0.002;
+      fishLast.x = player.pos.x;
+      fishLast.y = player.pos.y;
+      const busy =
+        !!reclaim ||
+        player.action !== 'idle' ||
+        player.resting ||
+        player.hp <= 0 ||
+        walking;
+      const hereX = Math.floor(player.pos.x);
+      const hereY = Math.floor(player.pos.y);
+      const mark = busy ? undefined : r.fishing.find((f) => f.x === hereX && f.y === hereY);
+      if (!mark) {
+        if (player.fishing) {
+          player.fishing = false;
+          player.fishClock = 0;
+          fishBiteTicks = 0;
+        }
+        return;
+      }
+      if (!player.fishing) {
+        player.fishing = true;
+        player.fishClock = 0;
+        fishBiteTicks = 240 + Math.floor(Math.random() * 300);
+        // Face the water, so the rod is out over the river and not the field.
+        const fx = mark.toX - hereX;
+        const fy = mark.toY - hereY;
+        const fd = Math.hypot(fx, fy) || 1;
+        player.facing.x = fx / fd;
+        player.facing.y = fy / fd;
+        world.dmgText.show(player.pos.x, player.pos.y - 1.6, 'A GOOD SPOT', 'player');
+      }
+      // The float on the water in front of them.
+      if (state.tick % 20 === 0) world.ambience.burst(mark.toX + 0.5, mark.toY + 0.5, 0x7fb4c4, 3);
+      if (--fishBiteTicks <= 0) {
+        fishBiteTicks = 300 + Math.floor(Math.random() * 420);
+        world.dmgText.show(mark.toX + 0.5, mark.toY + 0.5, 'A BITE!', 'crit');
+        world.ambience.burst(mark.toX + 0.5, mark.toY + 0.5, 0xbfe4f0, 14);
+        audio.sfx('gateOpen');
+      }
+    };
+
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
     /** THE GILDED STAG (it.92): through the door into the inn's own floor, and back out to its step. */
     const goInn = (): void => goPlace(INN_FLOOR, 'into the Gilded Stag');
@@ -5441,7 +5788,7 @@ async function boot(): Promise<void> {
               // THE ROAD HOME (it.98): out of the woods you step back onto the eastern
               // road, where you left it - not into the middle of the old quarter.
               // THE FIELDS (it.101) come back the same way, onto the marsh gate.
-              goHome(floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : undefined);
+              goHome(floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : floor === RIVER_FLOOR ? 'river' : undefined);
             } else if (cmd.to === 'floor' && cmd.n !== undefined) {
               chat?.system(`Leader fast-travelling to depth ${ROMAN[cmd.n - 1] ?? cmd.n}. Warping party...`);
               jumpToFloor(cmd.n);
@@ -5468,6 +5815,8 @@ async function boot(): Promise<void> {
           tickCellarQuest(); // THE CELLAR (it.97).
           tickRally(); // THE MUSTER (it.100).
           tickFarmQuest(); // THE FARMLANDS (it.100).
+          tickRiverQuest(); // THE RIVERSIDE FARM (it.106).
+          tickFishing(); // ...and the line in the water (it.106).
         }
         // THE CITY'S OWN (it.100): the squad fights on the sim tick, so a co-op
         // party stays in step and `dealDamage` remains the only hp mutator.
@@ -5634,7 +5983,7 @@ async function boot(): Promise<void> {
             if (audio.currentMusic !== 'death' && audio.currentMusic !== 'gameover') musicBeforeDeath = audio.currentMusic;
             audio.setMusic(hardcore ? 'gameover' : 'death', floor);
             runMenus.showDeath(
-              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : floor === FARM_FLOOR ? 'The farmlands' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
+              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : floor === FARM_FLOOR ? 'The farmlands' : floor === RIVER_FLOOR ? 'The riverside farm' : floor === INN_FLOOR ? 'The Gilded Stag' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
               hardcore,
             );
           }
@@ -5800,6 +6149,10 @@ async function boot(): Promise<void> {
         world.loot.updateRender(timeSec, world.lighting);
         world.projectiles.updateRender(world.lighting, world.ambience, frameDt);
         world.vfx.update(frameDt);
+        // THE RIVER RUNS (it.106) on the WALL clock, so the current keeps moving
+        // through a cutscene's freeze - a river that stops dead reads as a bug,
+        // and it is render-only, so nothing the sim can see is touched.
+        world.water?.update(frameDt);
         {
           // HUD occlusion (it.41): overhead bars and numbers hold screen size at any zoom.
           const z = world.camera.currentZoom;
@@ -6399,6 +6752,14 @@ async function boot(): Promise<void> {
           else goFarm();
           return;
         }
+        // THE RIVER GATE (it.106): chained until the fields are the city's, an
+        // open road after. The note the plate carries is what says so before then.
+        if (it.label.includes('RIVER')) {
+          if (!riverOffered()) tutorial.say(it.note ?? 'The way is not open yet.');
+          else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+          else goRiver();
+          return;
+        }
         if (it.dest === 'forest') {
           if (coop && localSlot !== leaderSlot) leaderOnlyNote();
           else void gatekeeper();
@@ -6406,6 +6767,19 @@ async function boot(): Promise<void> {
       } else if (it.kind === 'quarry') {
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else goMines();
+      } else if (it.kind === 'riverroad') {
+        // Back through the gate into the quarter, the way the hero came.
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
+      } else if (it.kind === 'bridgegate') {
+        // THE BURNED BRIDGE (it.106). Oscar's sealed pass is clearance to cross
+        // it - but the far side is not built, so what the pass buys today is the
+        // right to be told so by name instead of being waved off.
+        tutorial.say(
+          quests.riverPass === 'held' // Oscar's seal, handed over when the three are down (it.106)
+            ? "Oscar's seal is in your pack — the watch on the far bank would honour it. The span itself is still burned through."
+            : (it.note ?? 'The span is burned through. Nothing crosses here yet.'),
+        );
       } else if (it.kind === 'townroad') inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
@@ -6772,7 +7146,7 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR || target === RIVER_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
         const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
@@ -6904,6 +7278,15 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
     // some OTHER system happened to need, and the watch was guards and knights.
     const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', 'captain_idle', ...SQUAD_ANIMS, ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of FARM_POOL) for (const a of animsForKind(k)) out.add(a);
+    return [...out];
+  }
+  // THE RIVERSIDE FARM (it.106): the three, the family's own sheets, the folk
+  // who come back to the land once it is theirs, and the gateway light on the
+  // burned bridge. The family is drawn from the STREET_FOLK sheets, so they come
+  // in with the rest rather than as a special case.
+  if (mode === 'river') {
+    const out = new Set<string>(['torch', 'campfire', 'gateway', 'banner', 'folk_walk', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    for (const k of RIVER_AMBUSH) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
   // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.

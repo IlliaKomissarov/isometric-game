@@ -39,8 +39,15 @@ export class SceneManager {
   private readonly scratch = vec2();
   private themeSuffix = '';
 
-  /** Build sprites into the viewport layers and register them for lighting. */
-  build(map: DungeonMap, viewport: Viewport, lighting: Lighting, theme: FloorTheme = 'stone'): void {
+  /**
+   * Build sprites into the viewport layers and register them for lighting.
+   *
+   * `onFloor` (it.106) hands each ground sprite back as it is made, so a floor
+   * that animates its own ground - the riverside's water - can keep the sprites
+   * it needs without this module knowing anything about rivers. Lighting still
+   * owns their tint; the caller owns only their texture.
+   */
+  build(map: DungeonMap, viewport: Viewport, lighting: Lighting, theme: FloorTheme = 'stone', onFloor?: (gx: number, gy: number, sprite: Sprite) => void): void {
     this.map = map;
     this.theme = theme;
     this.themeSuffix = THEME_SUFFIX[theme];
@@ -51,7 +58,7 @@ export class SceneManager {
         const tile = grid[gy * width + gx];
         if (tile === TILE_FLOOR || tile === TILE_BLOCKED || tile === TILE_DOOR) {
           // Blocked-prop tiles (hearths) render floor UNDER the solid prop.
-          this.addFloorSprite(gx, gy, viewport, lighting);
+          this.addFloorSprite(gx, gy, viewport, lighting, onFloor);
         } else if (this.bordersFloor(gx, gy) && !(map as { wallsFromProps?: boolean }).wallsFromProps) {
           // THE GILDED STAG (it.96): the inn's walls are tileset pieces the dresser places, not cubes.
           this.addWallSprite(gx, gy, viewport, lighting);
@@ -92,7 +99,7 @@ export class SceneManager {
 
   private theme: FloorTheme = 'stone';
 
-  private addFloorSprite(gx: number, gy: number, viewport: Viewport, lighting: Lighting): void {
+  private addFloorSprite(gx: number, gy: number, viewport: Viewport, lighting: Lighting, onFloor?: (gx: number, gy: number, sprite: Sprite) => void): void {
     // Variant chosen deterministically from tile coords (stable across peers).
     const variant = (gx * 7 + gy * 13) % assets.floorVariants;
     // TOWN (it.39): the map's tileKind layer paints cobble / grass / dirt.
@@ -113,6 +120,7 @@ export class SceneManager {
     sprite.position.set(s.x - TILE_W / 2, s.y);
     viewport.groundLayer.addChild(sprite);
     lighting.registerFloor(gx, gy, sprite);
+    onFloor?.(gx, gy, sprite);
   }
 
   private addWallSprite(gx: number, gy: number, viewport: Viewport, lighting: Lighting): void {

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 105, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 106, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -57,6 +57,8 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `tutorial/TutorialSystem` (it.90) | `TutorialHooks` (hero, dummies, panels, viewport, world-to-page), the command stream, `entity:damaged` | the spotlight, arrow, card and chapter overlay; panels opened on cue | render-side only; steps are data; `shouldAutoStart` is the onboarding switch |
 | `town/Reclaim` (it.91) | the barricade's sprites, the ambience, a grid-open hook, a camera-focus hook | `GateFx` (a cart aside, carts toppling) and `ReclaimScene` (the letterboxed procession) | render-side only; the grid opens through main's hook on the QUEST tick |
 | `systems/Squad` (it.100, cut loose it.102, scaled it.105) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt`, three sheets a rank (idle/run/blow) | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor. Life and blow are handed in scaled to the floor's level, as every foe on it is |
+| `scenes/Riverside` + `render/RiverWater` (it.106) | the town's prop set, `KIND_WATER`/`KIND_SHORE`, `SceneManager.build`'s `onFloor` hook | the water meadow past the river gate: the river, its jetties, Oscar's steading, the fishing marks | the layout is a pure function of `safe`; the water pass is RENDER-ONLY and rides the wall clock, never a tick |
+| `AssetManager.buildRiverGround` / `AudioManager.setRiver` (it.106) | the Pixi renderer; the shared noise buffer | eight phase textures for the current, a ripple ring, and a synthesised river bed on the ambience bus | the packs contain no water, no boat and no river recording - all three are generated, never faked with the wrong art |
 | `ui/CineDialogue` (it.102) | `SpeechBeat` from a running scene, main's `portraitFromTexture` | the lower-left portrait box: who is speaking, and what they said | render-side only; the ONE head-up element `body.cine` leaves on screen |
 | `ProcessionScene.awaiting` (it.103) | Space / Enter / E / a tap on the letterbox | the beat queue, and whether the bars may lift | a named beat holds the page; the walk, the camera and the light keep running under it |
 | `cineHold` in the sim tick (it.104) | `reclaim?.running` | movement, combat, projectiles, status, every entity's update, `enemies.separate`, the squad, the quest ticks | while the bars are down the WHOLE tick is skipped, so the freeze is identical on every peer |

@@ -1106,6 +1106,92 @@ export class AudioManager {
     return this.musicState;
   }
 
+  /**
+   * THE RIVER (it.106) — flowing water, synthesised.
+   *
+   * The pack has no water recording in it, so the river is BUILT, the same way
+   * its tiles are: moving water is broadband noise with the top rolled off and
+   * a slow wander in the filter, which is exactly what a bandpass over the
+   * shared noise buffer gives. Two layers, detuned against each other -
+   * a low body for the current and a brighter one for the break over the shore -
+   * with their cutoffs drifting on slow LFOs so the loop never lands on a
+   * repeat the ear can catch. It costs one buffer source per layer and no
+   * download at all.
+   *
+   * It rides the AMBIENCE bus, so the player's ambience slider and the modal
+   * duck both own it for free.
+   */
+  private riverNodes: AudioNode[] = [];
+  private riverGain: GainNode | null = null;
+
+  setRiver(on: boolean): void {
+    if (on && this.riverGain) return;
+    if (!on) {
+      if (!this.riverGain) return;
+      const g = this.riverGain;
+      const nodes = this.riverNodes;
+      this.riverGain = null;
+      this.riverNodes = [];
+      try {
+        const t = this.ctx ? this.ctx.currentTime : 0;
+        g.gain.cancelScheduledValues(t);
+        g.gain.setTargetAtTime(0, t, 0.4);
+        window.setTimeout(() => {
+          for (const n of nodes) {
+            try {
+              (n as AudioBufferSourceNode).stop?.();
+            } catch {
+              /* already stopped */
+            }
+            n.disconnect();
+          }
+          g.disconnect();
+        }, 1600);
+      } catch {
+        /* the graph is gone: nothing to wind down */
+      }
+      return;
+    }
+    if (!this.ctx || !this.noiseBuffer) return;
+    try {
+      const ctx = this.ctx;
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      out.connect(this.ambGain);
+      const nodes: AudioNode[] = [];
+      // Two layers: the body of the current, and the break over the shingle.
+      for (const [freq, q, gain, lfoHz, sweep] of [
+        [420, 0.7, 0.5, 0.07, 140],
+        [1750, 0.9, 0.22, 0.11, 520],
+      ] as const) {
+        const src = ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        src.loop = true;
+        const band = ctx.createBiquadFilter();
+        band.type = 'bandpass';
+        band.frequency.value = freq;
+        band.Q.value = q;
+        const lvl = ctx.createGain();
+        lvl.gain.value = gain;
+        // The wander: a slow sine on the filter, so the water breathes.
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = lfoHz;
+        const lfoAmt = ctx.createGain();
+        lfoAmt.gain.value = sweep;
+        lfo.connect(lfoAmt).connect(band.frequency);
+        src.connect(band).connect(lvl).connect(out);
+        src.start();
+        lfo.start();
+        nodes.push(src, lfo, band, lvl, lfoAmt);
+      }
+      out.gain.setTargetAtTime(0.5, ctx.currentTime, 1.2); // fade the river up
+      this.riverGain = out;
+      this.riverNodes = nodes;
+    } catch (err) {
+      console.warn('[audio] river bed unavailable', err);
+    }
+  }
+
   /** Modal ducking: music and ambience sink to a murmur while true. */
   duck(on: boolean): void {
     if (this.ducked === on) return;

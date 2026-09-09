@@ -187,6 +187,19 @@ export class Player extends Entity {
    * carried onto the bed's tile and put back on the floor tile it rose from.
    */
   resting = false;
+  /**
+   * THE LINE IS IN THE WATER (it.106). Set by the riverside's proximity pass
+   * while the hero stands on a fishing mark and is doing nothing else; cleared
+   * the instant they move, swing, are hit, or walk off the mark.
+   *
+   * It is a POSE, not an action: `action` stays `idle`, so nothing about
+   * movement, combat, collision or the command stream is gated on it and there
+   * is no state to get stuck in. Walking away cancels it because the thing that
+   * sets it stops setting it - not because anything has to undo it.
+   */
+  fishing = false;
+  /** Render-side seconds spent fishing, for the rod's slow bob; -1 when not. */
+  fishClock = 0;
   private readonly restFrom = { x: 0, y: 0 };
   /** Ticks spent lying (the lying-down animation, and a slow mend). */
   restTicks = 0;
@@ -879,6 +892,17 @@ export class Player extends Entity {
       const e = 1 - (1 - k) * (1 - k) * (1 - k);
       frame = Math.min(fc - 1, Math.floor(e * fc));
       this.wakeClock = 0;
+    } else if (this.fishing && this.action === 'idle' && !this.moving) {
+      // THE CAST, HELD. The class's ranged/spell sheet is the one frame set in
+      // every rig where the body stands square with an arm out in front of it,
+      // which is a fisherman. It is held in the FIRST THIRD of that sheet - past
+      // the wind-up, short of the release - and bobbed slowly, so the rod dips
+      // and lifts on the water instead of a swing playing over and over.
+      animName = rig.rangedAttack ?? rig.attacks[0];
+      const fc = fcOf(animName);
+      this.fishClock += 0.016;
+      const bob = (Math.sin(this.fishClock * 1.6) + 1) / 2; // 0..1, ~4 s a cycle
+      frame = Math.max(0, Math.min(fc - 1, Math.floor(bob * fc * 0.34)));
     } else if (this.wakeClock >= 0 && this.wakeClock < 0.5 && this.action === 'idle' && !this.moving) {
       // THE WAKING (it.92): the fall played back, half a second, before the idle.
       animName = rig.death;

@@ -1,5 +1,96 @@
 # Development Log
 
+## 2026-09-09 (iteration 106) - The riverside farm, and a post that will not fall
+
+### The training dummy never falls (`src/systems/Combat.ts`)
+It carried a real 400-life bar and a real death, so a hero who hits for more
+than that KILLED the post they were practising on - which then died, dropped
+loot and paid XP like a foe. Its life is floored at 1 instead of 0, so the whole
+death path is never entered for it. The blow still lands, still flashes, still
+rocks it on its post, still prints its number: `entity:damaged` fires either way.
+Combat is the sole hp mutator, so one clamp closes every route to it.
+
+### The riverside farm (`src/scenes/Riverside.ts`)
+The eastern quarter has had a river gate on it since it.91, chained shut, noted
+"the bridge beyond it burned". This is what is behind it. The chain comes off
+once the fields are the city's - which is also why the men waiting on the far
+bank know the hero's face.
+
+A 56x44 water meadow: four lobes of land with the river cut through them as a
+BAND (water runs in a line, not an ellipse), a wet shore either side, rushes on
+the waterline, two plank jetties out over the current, Oscar's steading in the
+middle, and the burned bridge at the north-east - the one way on from here.
+
+The river is unwalkable everywhere except the jetties, and it runs OFF the map
+at both ends: water that stops inside the border reads as a pond.
+
+### The water is generated, because the packs have none
+There is no water tileset in `public/assets`, and no boat, and no river
+recording. Three things were built rather than faked:
+
+- **The tiles.** `AssetManager.buildRiverGround` cuts one wave loop into eight
+  phase textures - vector geometry into a GPU texture, the way the stone floors
+  were before real art landed. `RiverWater` cycles them in place, with each
+  tile's offset taken ALONG the current, so the crests travel downstream instead
+  of the whole river blinking together. Render-only, on the wall clock, so the
+  water keeps moving through a cutscene's freeze.
+- **The sound.** `AudioManager.setRiver` synthesises it: two bandpassed layers
+  over the shared noise buffer - a low body for the current, a brighter one for
+  the break over the shore - with their cutoffs drifting on slow LFOs so the loop
+  never lands on a repeat the ear can catch. It rides the ambience bus, so the
+  player's slider and the modal duck own it for free. No download at all.
+- **The boat, which does not exist.** The nearest thing in the packs is the
+  cellar's stone pier, and standing it on the water read as a wall that hid
+  whoever was fishing behind it. It is gone; the jetties get a cask and a crate
+  on the BANK instead, which is what a working dock actually looks like.
+
+### Oscar's family, and the ambush
+Walking through the gate IS taking the errand - there is no offer in town,
+because the gate cannot be opened before the story that explains it.
+
+Three of the free company's stragglers have Oscar and two of his family against
+the barn wall, counting out what is left of their coin. They recognise the hero
+halfway through their own demand ("THAT IS THE ONE WHO PUT VARRICK IN THE
+DIRT"), cut it short, and all three are woken at once rather than one at a time
+as the hero wanders into each one's sight radius.
+
+Put them down and Oscar comes off the wall, thanks the hero properly, and hands
+over his grandfather's sealed pass under the old river charter. The farm is a
+haven from then on: no hostile spawns there again, his people are back on the
+land, and the floor is rebuilt IN PLACE the moment the errand closes (it.102's
+rule) so the land is safe while the hero is still standing on it.
+
+The pass buys nothing today - the span is burned through - and the bridge says
+so BY NAME once you hold it, instead of waving you off.
+
+### The line in the water (`src/entities/Player.ts`, `main`)
+A proximity trigger, not a prompt: no key, no menu. Stand on one of the layout's
+fishing marks with nothing else going on and the rod comes out on its own; move,
+swing, take a hit or step off and it is gone.
+
+It is a POSE (`player.fishing`), not an action - `action` stays `idle`, so
+nothing about movement, combat or the command stream is gated on it and there is
+no state that can get stuck. Walking away cancels it because the thing that sets
+it stops setting it, not because anything has to be undone. The class's
+ranged/spell sheet is held in its first third and bobbed, which in every rig is a
+body standing square with an arm out: a fisherman.
+
+**Bug found and fixed by its own check:** the shore is found by walking out from
+the water, and water has TWO banks - so half the marks were on the far one,
+which the connectivity pass then blocked off as unreachable. Three of six marks
+could never fire. They are filtered after connectivity now, from a wider pool.
+
+### Verification
+`npx tsc --noEmit` and `vite build` clean, zero console errors across
+river/town/river travel and a walk over the whole map. The device matrix
+(`__qa66`) is 74/74 while standing on the new floor. Fourteen riverside
+assertions were run directly against a live floor: the river is 407 tiles and
+runs off both borders, nothing can walk into it, the jetties carry you, the
+ambush is three men and nothing else, every fishing mark stands on land and
+faces real water, the current moves through its phases, and the rod comes out on
+the mark and goes away off it. The full ~400-check suite still stalls in a
+backgrounded tab (it.105) and was not run end to end.
+
 ## 2026-09-09 (iteration 105) - The field pitched as an errand, and a company that fights
 
 Six reports from one session on the farmlands, and five of them had a single

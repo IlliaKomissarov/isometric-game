@@ -635,7 +635,16 @@ export class CombatSystem {
     const fx = sourceHero?.uniqueEffects;
     if (fx?.has('echo') && !event.reflected && !event.pure && this.rand() < 0.1) amount *= 2;
     if (fx?.has('cull') && !targetHero && !passiveTarget && !event.reflected && !event.pure && target.hp < target.hpMax * 0.15) amount = Math.max(amount, target.hp);
-    target.hp = Math.max(0, target.hp - amount);
+    /**
+     * THE TRAINING DUMMY NEVER FALLS (it.106). It carried a real 400-life bar
+     * and a real death: a hero who hits for more than that killed the post he
+     * was practising on, which then died, dropped loot and paid XP like a foe.
+     * Its life is floored at 1 instead of 0, so the whole death path below -
+     * `entity:died`, the drop, the XP, the cull - is never entered for it. The
+     * blow still lands, still flashes, still rocks it on its post and still
+     * prints its damage number: `entity:damaged` fires either way.
+     */
+    target.hp = Math.max(passiveTarget ? 1 : 0, target.hp - amount);
     if (fx?.has('lifesteal') && sourceHero && !event.reflected && sourceHero.hp > 0 && !targetHero) {
       const heal = Math.max(1, Math.ceil(amount * 0.08));
       sourceHero.hp = Math.min(sourceHero.hpMax, sourceHero.hp + heal);

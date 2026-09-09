@@ -1,5 +1,130 @@
 # Development Log
 
+## 2026-09-09 (iteration 105) - The field pitched as an errand, and a company that fights
+
+Six reports from one session on the farmlands, and five of them had a single
+cause underneath that no amount of tuning the visible numbers could reach.
+
+### The general was a hyper-boss because the FIELD was, not because he was
+
+The report: "you turned the General into a hyper-boss instead of a mini-boss",
+and "they all have way too much HP". Both true, and neither was about the
+general's own design.
+
+Every other zone scales off `deepestFloor`, because every other zone is reached
+by going down. The farmlands are not - since it.103 the city asks the moment the
+woods are clear - so it.104 gave them a second term, the party's own level, to
+stop a level-one hero arriving at a depth-III field. That term was
+`Math.round(partyLevel * 0.8)`, clamped to `MAX_DEPTH`.
+
+Hero levels and dungeon depths are not the same scale. Twenty depths are walked
+at something like forty levels, so 0.8 maps a level-32 hero onto depth 26 and
+the clamp parks the field on **20 - the deepest ground in the game**. Measured
+live on the reporter's own save:
+
+| | before | after |
+| --- | --- | --- |
+| field level | 20 | 8 |
+| Free Company Blade | 765 | 121 |
+| brigand | 924 | 146 |
+| The Field General | **3427** | **540** |
+
+The Tomb Warden, the boss of depth V, is 420 base. The general was carrying
+eight times that on an errand offered right after the woods. The multiplier was
+17x, which is why it.105's first pass - cutting his base from 460 to 230 - moved
+the number the player sees by almost nothing.
+
+The slope is now 0.5, the honest level-to-depth ratio, and the whole thing is
+capped at `FARM_MAX_LEVEL` (8): the field may rise to meet a hero who came late,
+but a one-time errand may never become a deep raid.
+
+### The allies were weak because they were the only thing NOT scaling
+
+"Allied soldiers are far too weak." Every foe on the floor climbs
+`levelHpScale(floorLevel)` in both life and damage; the guards were eight fixed
+constants - 150 life, 18 a blow - that never moved. On the field at level 8 that
+is company men of 121 life hitting for 24-41 against guards of a flat 150: four
+blows to drop one, and half the company on the ground inside ten seconds.
+
+They now climb the same curve as the men they are sent against. Life on the full
+curve (surviving is what the report was about), the blow on its square root -
+with both on the full curve the company cleared all twenty-one bodies AND the
+general in thirty seconds without losing a man, and the hero stood and watched,
+which is its own kind of broken. Measured now over sixty seconds: the field is
+taken, every man is still standing, and the company comes out of it between 47
+and 378 of 378.
+
+### They stood in place, and they were photographs of men running
+
+Two separate faults behind one report.
+
+The animation: up to it.104 a `SquadKit` owned ONE sheet and the draw drew frame
+0 of it whenever a man was not moving. A guard in a melee was a still photograph
+of a man mid-run. Each rank now carries three - `idle`, the run, and the blow -
+and the draw picks between them (swinging beats walking beats standing),
+re-deriving the scale and foot anchor on each change because the three sheets are
+different rigs with different painted heights.
+
+The standing: `MAX_ON_ONE` (it.104) stops eight guards piling onto one body, but
+it left the overflow with `foe === null`, and a man with no foe holds his mark on
+a line that creeps at a quarter pace while anyone is engaged. Late in a battle,
+with two brigands left and four claims between them, that is half the company
+standing still in a field. The cap still decides who SURROUNDS a body; it no
+longer decides who is allowed to move. The line's pace under contact went from a
+quarter to a half, which on a field sixty tiles across is the difference between
+walking and a halt.
+
+Measured over sixty seconds: all three rigs draw all three sheets, every man
+covers 64-126 tiles, and nobody wedges past the threshold that unsticks him.
+
+### The blur was the resolution ladder, on every machine
+
+`LADDER = [2, 1.5, 1, 0.75]` with the start rung SEARCHED in it by
+`findIndex(r => r <= ceiling)`. On any display whose ratio is not exactly on that
+list the game silently threw resolution away for ever - and 1.25 is a very common
+Windows scaling. This machine is 1.25: it started at rung `1`, rendered at 80% of
+native and upscaled to fill the window, from the first frame, with the frame
+budget nowhere near spent. Quality was read off the absolute resolution too, so a
+1x display was permanently "medium" - a calm sky and no colour grade on hardware
+holding 60 fps with room to spare.
+
+The top rung is the device's own ratio now, whatever it is, and quality is the
+RUNG rather than the number. Verified in the browser: `devicePixelRatio` 1.25,
+`renderer.resolution` 1.25.
+
+### The battle was fought in somebody's farmyard
+
+The general stood at (9,13) - the far west corner, hard against the western
+steading and the hedge - so every fight happened among farmhouses with bodies
+vanishing behind roofs. He stands at (24,17), the open middle of a 64x48 field,
+and the map is now built around a `CORRIDOR` band along the cart track that
+nothing blocking or occluding may enter, so the fighting has open ground by
+construction rather than by placement the next edit would undo. Verified: zero
+blockers within five tiles of him, 20 of 21 foes spawn clear of every prop, and
+the seven farms still stand off to the sides.
+
+### The black wall at the edge of the field
+
+Explored-but-unlit ground was tinted at zero - the crypt's answer, out of the
+torch and out of the world. Open country is not that dark, and the farmlands' belt
+of wood was four rings and some seven hundred trees, which at zero stacked into a
+black wall that filled the screen near the border. Floors may now say what their
+explored ground is worth (`exploredLight`); the farmlands say 0.3. The belt is
+three thinner rings, and every tree behind the first is marked `bare` - drawn, but
+out of the cutaway pass that measures every occluder against every body every
+frame and reads `sprite.width`. 309 occluders now, from over seven hundred; the
+alpha churn on their edges was the "flicker".
+
+Verified by walking the whole western belt with real movement commands: 540
+frames, minimum light 0.98, no black frame.
+
+### Verification
+
+`npx tsc --noEmit` clean. The farmlands checks in `src/dev/qa75.ts` were run
+directly against a live field and all twelve pass, including the four added here.
+The full 400-check suite was NOT run to completion this session: it stalls in a
+backgrounded tab, which the scorecard already records as a known limitation.
+
 ## 2026-09-09 (iteration 104) - Feet on the ground, and a field that holds its breath
 
 Five reports, and four of them turned out to have a measurable cause underneath

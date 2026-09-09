@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 104, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 105, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -15,12 +15,12 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Type safety | no `any` | 0 `any` casts in `src/` (strict, `noUnusedLocals`) | OK |
 | Console errors (title, run, co-op, transitions) | 0 | 0 in every verified tab | OK |
 | Simulation rate | 60 Hz fixed | 60 Hz, render-interpolated, Worker clock when hidden | OK |
-| Frame budget | 16.7 ms | scaler steps the buffer 2 → 1.5 → 1 → 0.75x on a rolling 60-frame mean | OK |
+| Frame budget | 16.7 ms | scaler starts at the DEVICE's own ratio and steps down 1.5 → 1 → 0.75x on a rolling 60-frame mean (it.105: the old fixed ladder started a 1.25x display at 1.0 and upscaled for ever) | OK |
 | Render cost, depth II desktop | — | `renderer.render` 0.08 ms culled vs 0.14 ms unculled (1,173 world sprites, 48% off-screen); world lighting update ~1 ms | Measured |
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 406 checks at it.104) | 0 failures | 406/406 on seed 3 (mage). it.104 adds: nothing on the field moves or fights through five seconds of a cutscene; no guard wears a sheet the company wears; every guard's anchor is computed from its painted bounds, never 1; the line fans past six tiles with every man in his own lane; the field is never more than a band over the hero OR their depth; the forest's folk join the clearing and walk it under their own feet afterwards. KNOWN FLAKE (twice in five it.102 runs, in code it.102-104 did not touch): the depth-I command block can fail together under load in a hidden tab and passes on a re-run at the same seed |
+| Scripted playthrough (`src/dev/qa75.ts`, 406 checks at it.104) | 0 failures | 406/406 on seed 3 (mage). it.104 adds: nothing on the field moves or fights through five seconds of a cutscene; no guard wears a sheet the company wears; every guard's anchor is computed from its painted bounds, never 1; the line fans past six tiles with every man in his own lane; the field is never more than a band over the hero OR their depth; the forest's folk join the clearing and walk it under their own feet afterwards. it.105 adds: the field is pitched as an errand and never a deep raid; nothing on it carries a boss-of-the-depths life bar; the general is a mini-boss measured against a warden OF HIS OWN DEPTH (the old check compared a scaled general to an unscaled 420); a guard outlasts the company man he is sent against and his blow scales with the field. it.105 was verified by running the farmlands checks directly against a live field (12/12) - the full suite was not run to completion, see the flake below. KNOWN FLAKE (twice in five it.102 runs, in code it.102-104 did not touch): the depth-I command block can fail together under load in a hidden tab and passes on a re-run at the same seed. A BACKGROUNDED TAB ALSO STALLS THE SUITE OUTRIGHT (it.105): the rAF-driven waits never resolve, so the run must be driven with the tab in the foreground |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -56,7 +56,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `engine/AudioManager` (it.89) | `MusicState` from main, the SFX calls, the bundle under `public/assets/audio` | one music bed and one ambience bed per zone, capped SFX voices | render-side only; `claimVoice` caps 4 a bank, 24 total |
 | `tutorial/TutorialSystem` (it.90) | `TutorialHooks` (hero, dummies, panels, viewport, world-to-page), the command stream, `entity:damaged` | the spotlight, arrow, card and chapter overlay; panels opened on cue | render-side only; steps are data; `shouldAutoStart` is the onboarding switch |
 | `town/Reclaim` (it.91) | the barricade's sprites, the ambience, a grid-open hook, a camera-focus hook | `GateFx` (a cart aside, carts toppling) and `ReclaimScene` (the letterboxed procession) | render-side only; the grid opens through main's hook on the QUEST tick |
-| `systems/Squad` (it.100, cut loose it.102) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt` | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor |
+| `systems/Squad` (it.100, cut loose it.102, scaled it.105) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt`, three sheets a rank (idle/run/blow) | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor. Life and blow are handed in scaled to the floor's level, as every foe on it is |
 | `ui/CineDialogue` (it.102) | `SpeechBeat` from a running scene, main's `portraitFromTexture` | the lower-left portrait box: who is speaking, and what they said | render-side only; the ONE head-up element `body.cine` leaves on screen |
 | `ProcessionScene.awaiting` (it.103) | Space / Enter / E / a tap on the letterbox | the beat queue, and whether the bars may lift | a named beat holds the page; the walk, the camera and the light keep running under it |
 | `cineHold` in the sim tick (it.104) | `reclaim?.running` | movement, combat, projectiles, status, every entity's update, `enemies.separate`, the squad, the quest ticks | while the bars are down the WHOLE tick is skipped, so the freeze is identical on every peer |

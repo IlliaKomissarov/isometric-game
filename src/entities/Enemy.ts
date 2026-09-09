@@ -548,7 +548,10 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
     kind: 'mercenary',
     armor: 2,
     name: 'Free Company Blade',
-    hp: 62,
+    // IT.105: 62 put a company man at 98 life once the field scaled, which is a
+    // twenty-swing body for a low-level hero and a wall of them. This kind is
+    // the farmlands' alone, so it can be tuned without touching any other floor.
+    hp: 44,
     minDamage: 8,
     maxDamage: 14,
     toHit: 0.72,
@@ -570,14 +573,21 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       ownShadow: true,
     },
   },
-  /** THE GENERAL (it.100): the same man, a head taller and in darker colours. */
+  /**
+   * THE GENERAL (it.100, cut down to size it.105). He is a MINI-boss - the wall
+   * at the end of an errand, not a warden. At 460 he had MORE LIFE THAN THE TOMB
+   * WARDEN (420), the boss of depth V, on a floor the city offers you the moment
+   * the woods are clear; scaled to the field he came out at 626 and read as a
+   * hyper-boss, which is exactly what he was. 230 puts him at roughly four of his
+   * own men, which is what a mini-boss should be.
+   */
   general: {
     kind: 'general',
-    armor: 5,
+    armor: 4,
     name: 'The Field General',
-    hp: 460,
-    minDamage: 14,
-    maxDamage: 24,
+    hp: 230,
+    minDamage: 13,
+    maxDamage: 21,
     toHit: 0.8,
     speedMult: 0.62,
     windupTicks: 36,

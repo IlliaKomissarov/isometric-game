@@ -254,6 +254,15 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
 ]);
 
 export interface TownProp {
+  /**
+   * DRAWN, BUT NOT TRACKED (it.105). The cutaway pass measures EVERY occluder
+   * against every body on screen, every frame - and reads `sprite.width`, which
+   * forces a bounds computation. The farmlands' belt of wood put seven hundred
+   * trees in that loop, none of which anything can ever stand behind, and the
+   * alpha churn on their edges is what "textures flicker" was. Set on a piece
+   * that is scenery and nothing else.
+   */
+  bare?: boolean;
   kind: TownPropKind;
   /** Top-left tile of the footprint (or the tile itself for 1×1 props). */
   x: number;

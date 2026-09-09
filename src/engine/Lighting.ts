@@ -61,7 +61,13 @@ export function tintForLight(light: number): number {
   return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
 }
 
-const EXPLORED_TINT = tintForLight(0);
+/**
+ * The tint of ground that has been SEEN but is not lit right now. Zero is the
+ * crypt's answer - out of the torch, out of the world. Open country is not that
+ * dark, and a floor may say so with `exploredLight` (it.105): the farmlands'
+ * belt of wood is four rings thick and 700 sprites, and at zero it stacked into
+ * a black wall that filled the screen whenever the hero walked near the border.
+ */
 const HIDDEN_TINT = 0x000000;
 
 export class Lighting {
@@ -101,18 +107,21 @@ export class Lighting {
   /** The radii the floor was built with, so a scene can borrow them and give them back. */
   private baseSight = FOG_RADIUS;
   private baseFull = LIGHT_FULL_RADIUS;
+  /** What SEEN-but-unlit ground is tinted at on this floor (it.105). */
+  private exploredTint = tintForLight(0);
 
   build(
     width: number,
     height: number,
     isOpaque: (gx: number, gy: number) => boolean,
-    opts?: { sightRadius?: number; fullRadius?: number },
+    opts?: { sightRadius?: number; fullRadius?: number; exploredLight?: number },
   ): void {
     this.width = width;
     this.height = height;
     this.isOpaque = isOpaque;
     this.sight = opts?.sightRadius ?? FOG_RADIUS;
     this.full = opts?.fullRadius ?? LIGHT_FULL_RADIUS;
+    this.exploredTint = tintForLight(Math.max(0, Math.min(1, opts?.exploredLight ?? 0)));
     this.baseSight = this.sight;
     this.baseFull = this.full;
     this.states = new Uint8Array(width * height).fill(FogState.HIDDEN);
@@ -158,7 +167,7 @@ export class Lighting {
     const idx = gy * this.width + gx;
     const st = this.states[idx];
     sprite.visible = st !== FogState.HIDDEN;
-    sprite.tint = st === FogState.HIDDEN ? HIDDEN_TINT : EXPLORED_TINT; // Visible tiles retint next frame.
+    sprite.tint = st === FogState.HIDDEN ? HIDDEN_TINT : this.exploredTint; // Visible tiles retint next frame.
     const list = this.propSprites.get(idx);
     if (list) list.push(sprite);
     else this.propSprites.set(idx, [sprite]);
@@ -301,11 +310,11 @@ export class Lighting {
       if (!newVisible.has(idx)) {
         this.states[idx] = FogState.EXPLORED;
         const floor = this.floorSprites[idx];
-        if (floor) floor.tint = EXPLORED_TINT;
+        if (floor) floor.tint = this.exploredTint;
         const wall = this.wallSprites[idx];
-        if (wall) wall.tint = EXPLORED_TINT;
+        if (wall) wall.tint = this.exploredTint;
         const props = this.propSprites.get(idx);
-        if (props) for (const p of props) p.tint = EXPLORED_TINT;
+        if (props) for (const p of props) p.tint = this.exploredTint;
       }
     }
     for (const idx of newVisible) {
@@ -399,18 +408,18 @@ export class Lighting {
       const floor = this.floorSprites[idx];
       if (floor) {
         floor.visible = true;
-        floor.tint = EXPLORED_TINT;
+        floor.tint = this.exploredTint;
       }
       const wall = this.wallSprites[idx];
       if (wall) {
         wall.visible = true;
-        wall.tint = EXPLORED_TINT;
+        wall.tint = this.exploredTint;
       }
       const props = this.propSprites.get(idx);
       if (props)
         for (const p of props) {
           p.visible = true;
-          p.tint = EXPLORED_TINT;
+          p.tint = this.exploredTint;
         }
     }
   }
@@ -439,18 +448,18 @@ export class Lighting {
       const floor = this.floorSprites[i];
       if (floor) {
         floor.visible = true;
-        floor.tint = EXPLORED_TINT;
+        floor.tint = this.exploredTint;
       }
       const wall = this.wallSprites[i];
       if (wall) {
         wall.visible = true;
-        wall.tint = EXPLORED_TINT;
+        wall.tint = this.exploredTint;
       }
       const props = this.propSprites.get(i);
       if (props)
         for (const p of props) {
           p.visible = true;
-          p.tint = EXPLORED_TINT;
+          p.tint = this.exploredTint;
         }
     }
   }

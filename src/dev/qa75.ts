@@ -159,6 +159,15 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     if (!g) throw new Error('no run');
     g.loop.step(30);
     check('starts in town', g.floor === 0 && !!g.town);
+    // NOTHING IS SILENTLY SOFT (it.105). The resolution ladder used to be a fixed
+    // list the start rung was SEARCHED in, so any display whose ratio was not on
+    // it (1.25x, very common on Windows) rendered below native from the first
+    // frame and was upscaled - the whole game, blurry, with the budget to spare.
+    {
+      const app = (window as unknown as { __app: { renderer: { resolution: number } } }).__app;
+      const want = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+      check('the renderer starts at the display own pixel ratio', Math.abs(app.renderer.resolution - want) < 0.001, `${app.renderer.resolution} vs ${want}`);
+    }
     check('first skill on slot 1', !!g.player.loadout[0], JSON.stringify(g.player.loadout));
     check('status plate present', !!document.getElementById('status-frame'));
     check('system bar has 8 entries', document.querySelectorAll('#system-bar .ds-icon-btn').length === 8); // The codex joined (it.81).
@@ -1981,7 +1990,23 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // THE COMPASS (it.102): the road down from the city lands in the NORTH-EAST
       // corner, the company is dug in west of it, and the fight runs the long
       // diagonal between the two.
-      check('the hero comes in at the top-right corner and the enemy holds the west', farm.entry.x > g.dungeon.width * 0.75 && farm.entry.y < g.dungeon.height * 0.3 && farm.general.x < g.dungeon.width * 0.25, `entry ${farm.entry.x},${farm.entry.y} general ${farm.general.x},${farm.general.y} of ${g.dungeon.width}x${g.dungeon.height}`);
+      check('the hero comes in at the top-right corner and the enemy holds the middle', farm.entry.x > g.dungeon.width * 0.75 && farm.entry.y < g.dungeon.height * 0.3 && farm.general.x < g.dungeon.width * 0.45, `entry ${farm.entry.x},${farm.entry.y} general ${farm.general.x},${farm.general.y} of ${g.dungeon.width}x${g.dungeon.height}`);
+      // THE BATTLE IS FOUGHT IN THE OPEN (it.105). The general used to stand in
+      // the far west corner against the western steading, so every fight happened
+      // among farmhouses with bodies vanishing behind roofs. Nothing that blocks
+      // or occludes may stand within five tiles of where he waits.
+      {
+        const blockers = (g.town.layout.props as Array<{ kind: string; x: number; y: number; w?: number; h?: number }>)
+          .filter((q) => ['house', 'barracks', 'smithy', 'watchtower', 'barn', 'stall', 'cart', 'well', 'barrel', 'barrels_stacked', 'crates_wood', 'wood_pile', 'tree', 'pine', 'bigtree', 'fence'].includes(q.kind))
+          .filter((q) => Math.hypot(q.x - farm.general.x, q.y - farm.general.y) < 5);
+        check('the general waits on open ground, with nothing to hide behind', blockers.length === 0, blockers.map((q) => `${q.kind}@${q.x},${q.y}`).join(' '));
+        const houses = (g.town.layout.props as Array<{ kind: string }>).filter((q) => ['house', 'barracks', 'smithy'].includes(q.kind)).length;
+        check('and the farms still stand, off to the sides of it', houses >= 5, String(houses));
+      }
+      // THE CUTAWAY LOOP IS BOUNDED (it.105). It measures every occluder against
+      // every body on screen, every frame; the belt of wood is scenery and nothing
+      // can stand behind it, so it must not be in there.
+      check('the belt of wood is not in the per-frame cutaway loop', g.town.occluders.length < 340, `${g.town.occluders.length} occluders for ${(g.town.layout.props as Array<{ kind: string }>).filter((q) => ['tree', 'pine', 'bigtree'].includes(q.kind)).length} trees`);
       check('and the muster ground is under that corner with it', farm.squad.length >= 5 && farm.squad.every((sp: { x: number; y: number }) => sp.x > g.dungeon.width * 0.7 && sp.y < g.dungeon.height * 0.35), JSON.stringify(farm.squad[0]));
       check('the field is not a rectangle', (() => {
         const rowW: number[] = [];
@@ -2037,6 +2062,25 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         // FEET ON THE GROUND (it.104): the anchor is computed from the sheet's
         // painted bounds, never the naive 1 that hung a guard over his shadow.
         check('every guard stands on his own shadow', roster.every((m) => m.anchorY > 0.5 && m.anchorY < 0.999), roster.map((m) => `${m.anim}:${m.anchorY.toFixed(2)}`).join(' '));
+        // THEY WALK, THEY STAND AND THEY SWING (it.105). Up to it.104 the squad
+        // owned one sheet and drew frame 0 of it whenever a man was not moving,
+        // so a guard in a melee was a still photograph of a man running. Every
+        // sheet the squad can draw is watched here, through a real fight.
+        {
+          const seen = new Set<string>();
+          const lib = g.sprites;
+          const realFrame = lib.frame.bind(lib);
+          lib.frame = (n: string, d: number, f: number) => {
+            seen.add(n);
+            return realFrame(n, d, f);
+          };
+          for (let i = 0; i < 4; i++) driveRender(2500);
+          lib.frame = realFrame;
+          const walks = [...seen].filter((n) => /_(run|walk)$/.test(n) && /knight|ranger|rogue/.test(n));
+          const idles = [...seen].filter((n) => /_idle$/.test(n) && /knight|ranger|rogue/.test(n));
+          const blows = [...seen].filter((n) => /_(melee|attack)$/.test(n) && /knight|ranger|rogue/.test(n));
+          check('the guards walk, stand and swing on three different sheets', walks.length > 0 && idles.length > 0 && blows.length > 0, `walk ${walks.join()} | idle ${idles.join()} | blow ${blows.join()}`);
+        }
         // Not `hp === hpMax`: the company goes in by itself the moment the floor
         // stands (it.102), so by the time the harness reads the roster somebody is
         // usually already bleeding. What must hold is that each man has a life of
@@ -2068,6 +2112,46 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         const ceiling = Math.max(hero, deep) + 2;
         check('the company is no more than a band over the hero or their depth', lvls.every((l) => l <= ceiling), `hero ${hero}, depth ${deep} -> ceiling ${ceiling}, worst ${Math.max(...lvls)}`);
         check('and its general no more than one band past that', generalLvl > 0 && generalLvl <= ceiling + 1, `ceiling ${ceiling} vs general ${generalLvl}`);
+        // A MINI-BOSS, NOT A WARDEN (it.105). He carried more life than the Tomb
+        // Warden - the boss of depth V - on an errand the city offers the moment
+        // the woods are clear.
+        //
+        // MEASURED AGAINST A WARDEN OF HIS OWN DEPTH, not against the Warden's
+        // BASE number: everything on a floor climbs `levelHpScale`, so comparing
+        // a scaled general to an unscaled 420 compares two different things and
+        // passes or fails on the field's level rather than on his design.
+        let genHp = 0;
+        let worstMan = 0;
+        g.enemies.forEachActive((e: { hp: number; hpMax: number; def: { kind: string } }) => {
+          if (e.hp <= 0) return;
+          if (e.def.kind === 'general') genHp = e.hpMax;
+          else worstMan = Math.max(worstMan, e.hpMax);
+        });
+        // `levelHpScale` from the enemy table, inlined: this harness takes no
+        // imports (it is loaded from the console and never reaches a build).
+        const hpScale = (lvl: number): number => Math.pow(1.08, Math.max(1, Math.min(100, 1 + 2 * (Math.max(1, lvl) - 1))) - 1);
+        const wardenHere = 420 * hpScale(generalLvl);
+        check('the general is a mini-boss, not a warden', genHp > 0 && genHp < wardenHere && genHp < worstMan * 7, `${genHp} life vs a warden of his own depth (${Math.round(wardenHere)}) and a company man's ${worstMan}`);
+        /**
+         * AN ERRAND STAYS AN ERRAND (it.105). it.104 mapped hero LEVEL onto
+         * DEPTH at 0.8 and let it run to MAX_DEPTH, which are not the same scale:
+         * a level-32 hero pitched this field at depth 20 - the deepest ground in
+         * the game - for company men of 765 life and a general of 3427. No tuning
+         * of the base numbers could reach that, because the multiplier was 17x.
+         */
+        check('the field is pitched as an errand, never as a deep raid', generalLvl <= 8, `the general came out at level ${generalLvl}`);
+        check('and nothing on it carries a boss-of-the-depths life bar', worstMan > 0 && worstMan < 260, `the worst company man has ${worstMan}`);
+        /**
+         * THE CITY'S OWN CLIMB THE SAME CURVE (it.105). Every foe here scales
+         * with the field and the guards were eight fixed numbers, so half the
+         * company was on the ground inside ten seconds - "allied soldiers are far
+         * too weak". A guard must outlast the man he is sent against.
+         */
+        {
+          const sq = g.squad as { members: Array<{ hpMax: number }>; damage: number } | null;
+          check('a guard outlasts the company man he is sent against', !!sq && sq.members[0].hpMax > worstMan * 1.5, `guard ${sq?.members[0].hpMax} vs company man ${worstMan}`);
+          check('and his blow scales with the field too', !!sq && sq.damage >= 16, `${sq?.damage} a blow`);
+        }
       }
       check('the company is men, not monsters', roster.length >= 8 && roster.every((k) => ['mercenary', 'general', 'bandit', 'brigand', 'poacher', 'archer'].includes(k)), roster.join());
       check('no hostile wears the city own guard rig', !roster.includes('guard'));

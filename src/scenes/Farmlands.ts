@@ -80,8 +80,23 @@ const ROAD: ReadonlyArray<{ x: number; y: number }> = [
   { x: 55, y: 8 },
   { x: 52, y: 11 },
 ];
-/** The lane the enemy holds, and the general's ground at the far west of it. */
-const GENERAL = { x: 9, y: 13 };
+/**
+ * WHERE THE BATTLE IS (it.105). The general used to stand at (9,13) - which is
+ * the far west corner, hard against the western steading and the hedge. Every
+ * fight therefore happened among farmhouses and trees, with bodies disappearing
+ * behind roofs and trunks and the cutaway ghosting half the screen. He stands in
+ * THE OPEN MIDDLE of the great field now, on the cart track, where there is
+ * nothing to hide behind and nothing to hide him.
+ */
+const GENERAL = { x: 24, y: 17 };
+/**
+ * THE BATTLE CORRIDOR (it.105). A band along the cart track - the line the whole
+ * battle is fought down - inside which NOTHING that blocks or occludes may be
+ * built. The steadings, their yards, the barrels and the crop stands are all
+ * pushed out of it, so the fighting happens on open ground by construction
+ * rather than by careful placement that the next edit would undo.
+ */
+const CORRIDOR = 6;
 /**
  * THE ONE LOCKED GATE (it.102). The map has exactly one road that does not go
  * anywhere yet, it is on the WEST edge, and it is barricaded. Everything else
@@ -160,6 +175,16 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
         if (isFloor(x, y) && (x + y * 3) % 7 < 5) tileKind[idx(x, y)] = KIND_FARM_ASH;
   }
 
+  /**
+   * How far a tile is from the middle of the cart track, in rows. Everything the
+   * battle needs to be clear of is tested against this.
+   */
+  const offTrack = (x: number, y: number): number => Math.abs(y - trackY(x));
+  const inCorridor = (x: number, y: number, w = 1, h = 1): boolean => {
+    for (let yy = y - 1; yy < y + h + 1; yy++) for (let xx = x - 1; xx < x + w + 1; xx++) if (offTrack(xx, yy) < CORRIDOR) return true;
+    return false;
+  };
+
   const props: TownProp[] = [];
   const block = (p: TownProp): void => {
     props.push(p);
@@ -175,11 +200,12 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     decal({ kind: 'farmcrop', x, y, variant, ox: (rand() - 0.5) * 0.5, oy: (rand() - 0.5) * 0.5 });
   };
   const put = (kind: TownProp['kind'], x: number, y: number, variant?: string): void => {
-    if (!isFloor(x, y)) return;
+    if (!isFloor(x, y) || inCorridor(x, y)) return; // nothing stands in the battle's way (it.105)
     block({ kind, x, y, variant });
   };
   /** A building: only where its whole footprint is open ground, with a door column carved back out. */
   const steading = (kind: TownProp['kind'], x: number, y: number, w: number, h: number, variant?: string): boolean => {
+    if (inCorridor(x, y, w, h)) return false; // no roof over the fighting (it.105)
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (!isFloor(xx, yy)) return false;
     block({ kind, x, y, w, h, variant });
     const dx = x + Math.floor(w / 2);
@@ -197,7 +223,7 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       if (!isFloor(x, y) || tileKind[idx(x, y)] === KIND_GRASS) continue;
-      if (Math.abs(y - trackY(x)) <= 1) continue; // the cart track stays clear
+      if (offTrack(x, y) <= CORRIDOR - 2) continue; // the battle's ground stays clear (it.105)
       if ((x * 5 + y * 3) % 4 !== 0) continue;
       const burnt = !won && x < BURN_X;
       crop(burnt ? (rand() < 0.5 ? 'farm_burnt_a' : 'farm_burnt_b') : rand() < 0.34 ? 'farm_crop_c' : rand() < 0.5 ? 'farm_crop_b' : 'farm_crop_a', x, y);
@@ -230,32 +256,38 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
   // Three farms on the land: the home farm by the city road, one in the middle
   // field, and the western steading the company overran on its way in.
   const yard = (x0: number, y0: number, x1: number, y1: number): void => {
+    const post = (x: number, y: number): void => {
+      if (inCorridor(x, y)) return; // a fence across the battle is a fence in the way (it.105)
+      decal({ kind: 'fence', x, y });
+    };
     for (let x = x0; x <= x1; x += 2) {
-      decal({ kind: 'fence', x, y: y0 });
-      decal({ kind: 'fence', x, y: y1 });
+      post(x, y0);
+      post(x, y1);
     }
     for (let y = y0 + 2; y < y1; y += 2) {
-      decal({ kind: 'fence', x: x0, y });
-      decal({ kind: 'fence', x: x1, y });
+      post(x0, y);
+      post(x1, y);
     }
   };
-  // THE HOME FARM (east, by the road in)
+  // THE HOME FARM (south-east of the road in). IT.105: every roof is pushed
+  // clear of the battle corridor, so the farms are the field's EDGES and the
+  // fighting has the middle of it - a body is never lost behind a gable.
   steading('house', 52, 26, 3, 3, 'house_a');
-  steading('house', 55, 18, 3, 3, 'house_b');
-  steading('barracks', 47, 20, 3, 3); // the great barn
+  steading('house', 56, 30, 3, 3, 'house_b');
+  steading('barracks', 47, 29, 3, 3); // the great barn
   put('well', 51, 23);
-  put('cart', 49, 29);
-  put('barrels_stacked', 56, 30);
-  put('wood_pile', 46, 27);
+  put('cart', 49, 32);
+  put('barrels_stacked', 56, 34);
+  put('wood_pile', 46, 26);
   put('stall', 58, 27, 'stall_a');
-  yard(45, 17, 59, 31);
-  // THE MIDDLE FARM
-  steading('house', 33, 9, 3, 3, 'house_c');
-  steading('smithy', 37, 12, 3, 3); // the implement shed
-  put('cart', 31, 13, 'cart_b');
-  put('crates_wood', 36, 8);
-  put('barrel', 30, 10, 'barrel_b');
-  yard(29, 7, 41, 16);
+  yard(45, 22, 60, 36);
+  // THE SOUTH FARM (the middle field's own steading, off the track)
+  steading('house', 34, 32, 3, 3, 'house_c');
+  steading('smithy', 38, 30, 3, 3); // the implement shed
+  put('cart', 31, 33, 'cart_b');
+  put('crates_wood', 37, 35);
+  put('barrel', 30, 30, 'barrel_b');
+  yard(28, 27, 42, 38);
   // THE WESTERN STEADING - the company came through this one
   steading('house', 12, 30, 3, 3, 'house_d');
   steading('house', 17, 34, 3, 3, 'house_e');
@@ -264,12 +296,12 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
   put('crates_wood', 9, 28);
   put('wood_pile', 15, 38);
   yard(8, 27, 22, 40);
-  // A watchtower on the northern verge, and stalls along the track.
-  steading('watchtower', 24, 6, 2, 2);
+  // A watchtower on the northern verge, and stalls off the track.
+  steading('watchtower', 44, 6, 2, 2);
   put('stall', 27, 26, 'stall_c');
   put('stall', 43, 34, 'stall_d');
-  for (const [x, y] of [[6, 18], [21, 20], [38, 28], [44, 12], [26, 38], [54, 34]] as const) put('barrel', x, y, 'barrel_b');
-  for (const [x, y] of [[19, 16], [35, 33], [46, 39], [11, 22], [58, 21]] as const) decal({ kind: 'rock', x, y, variant: 'rock_c' });
+  for (const [x, y] of [[6, 30], [21, 30], [38, 28], [44, 4], [26, 38], [54, 34]] as const) put('barrel', x, y, 'barrel_b');
+  for (const [x, y] of [[19, 30], [35, 33], [46, 39], [11, 32], [58, 21]] as const) decal({ kind: 'rock', x, y, variant: 'rock_c' });
 
   // ---- THE HEDGE -------------------------------------------------------
   // Every tile on the field's border carries a tree, so the map is outlined in
@@ -317,7 +349,10 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     // wall of wood - and it thins behind them so the far edge is a wood rather
     // than a fence. Deterministic in the tile's own coordinates: the border must
     // not move the shared random stream (it.98).
-    const FILL = [0, 1, 1, 0.72, 0.5] as const;
+    // IT.105: three rings, not four, and the back two are thinner. Seven hundred
+    // trees was both a black wall at the map's edge and seven hundred entries in
+    // the per-frame cutaway loop; this is a wood you can see past and afford.
+    const FILL = [0, 1, 0.8, 0.45, 0] as const;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const d = depth[idx(x, y)];
@@ -329,7 +364,9 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
         // field's edge stays readable. Behind it the wood is heavy timber.
         const set = d <= 1 ? NEAR_TREES : DEEP_TREES;
         const v = set[(x * 7 + y * 11) % set.length];
-        decal({ kind: v.startsWith('bigtree') ? 'bigtree' : v.startsWith('pine') ? 'pine' : 'tree', x, y, variant: v, ox: (((x * 5 + y * 3) % 7) - 3) * 0.06, oy: (((x * 3 + y * 11) % 7) - 3) * 0.06 });
+        // Only the ring the field actually touches can have anything behind it,
+        // so only that ring is tracked for the cutaway (it.105).
+        decal({ kind: v.startsWith('bigtree') ? 'bigtree' : v.startsWith('pine') ? 'pine' : 'tree', x, y, variant: v, bare: d > 1, ox: (((x * 5 + y * 3) % 7) - 3) * 0.06, oy: (((x * 3 + y * 11) % 7) - 3) * 0.06 });
       }
     }
   }
@@ -390,14 +427,18 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     grid,
     // rooms[0] is the muster ground by the road in and is never stocked; the
     // rest are the company's line, thickening westward toward the general.
+    // IT.105: rooms[0] is the muster ground and is never stocked; the rest are
+    // the company's line, and every one of them now sits ON the cart track's
+    // band, so the men the hero meets are standing in the open middle of the
+    // field rather than in somebody's farmyard.
     rooms: [
       { x: 49, y: 4, w: 10, h: 9 }, // the muster ground under the city road (it.102)
-      { x: 40, y: 12, w: 11, h: 12 },
-      { x: 28, y: 10, w: 12, h: 14 },
-      { x: 30, y: 28, w: 12, h: 12 },
-      { x: 16, y: 22, w: 12, h: 14 },
-      { x: 5, y: 8, w: 14, h: 12 },
-      { x: 10, y: 32, w: 12, h: 10 },
+      { x: 42, y: 9, w: 10, h: 9 },
+      { x: 33, y: 11, w: 10, h: 10 },
+      { x: 25, y: 13, w: 10, h: 10 },
+      { x: 17, y: 15, w: 10, h: 10 },
+      { x: 9, y: 16, w: 10, h: 10 },
+      { x: 28, y: 14, w: 10, h: 8 },
     ],
     spawn: { ...ENTRY },
     seed,

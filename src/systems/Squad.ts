@@ -84,7 +84,17 @@ export interface SquadTarget {
 
 /** One rank of the city's soldiery: a sheet, how tall it is painted, its plate. */
 export interface SquadKit {
+  /** The walk / run cycle. */
   anim: AnimName;
+  /**
+   * THE OTHER TWO THINGS A SOLDIER DOES (it.105). Up to it.104 the squad owned
+   * ONE sheet and drew frame 0 of it whenever a man was not moving - so a guard
+   * in a melee was a still photograph of a man running, which is exactly what
+   * "they stand in place without attacking and their animations aren't working"
+   * looks like. He idles when he is standing and swings when he swings.
+   */
+  idle: AnimName;
+  attack: AnimName;
   height: number;
   tint: number;
 }
@@ -109,18 +119,25 @@ export interface SquadKit {
  * `poacher_*`, the brigands are `guard_*`), so friend and foe never share a
  * silhouette again.
  */
+const KNIGHT = { anim: 'knight_run', idle: 'knight_idle', attack: 'knight_melee' } as const;
+const RANGER = { anim: 'ranger_run', idle: 'ranger_idle', attack: 'ranger_attack' } as const;
+const SCOUT = { anim: 'rogue_run', idle: 'rogue_idle', attack: 'rogue_attack' } as const;
 export const SQUAD_RANKS: ReadonlyArray<SquadKit> = [
-  { anim: 'knight_run', height: 63, tint: 0xdfe6f2 }, // a household knight, in steel
-  { anim: 'ranger_run', height: 60, tint: 0xbcd8b4 }, // a ranger of the eastern road
-  { anim: 'knight_run', height: 61, tint: 0xe2d2a8 }, // a knight in gilt
-  { anim: 'rogue_run', height: 57, tint: 0xb4c0d4 }, // a scout of the ward
-  { anim: 'ranger_run', height: 59, tint: 0xd0c8a0 }, // a bowman of the militia
-  { anim: 'knight_run', height: 62, tint: 0xaebad2 }, // a knight in blued plate
-  { anim: 'rogue_run', height: 56, tint: 0xc8d8e0 }, // a second of the ward's scouts
-  { anim: 'ranger_run', height: 58, tint: 0xc0c8b0 }, // a second bowman
+  { ...KNIGHT, height: 63, tint: 0xdfe6f2 }, // a household knight, in steel
+  { ...RANGER, height: 60, tint: 0xbcd8b4 }, // a ranger of the eastern road
+  { ...KNIGHT, height: 61, tint: 0xe2d2a8 }, // a knight in gilt
+  { ...SCOUT, height: 57, tint: 0xb4c0d4 }, // a scout of the ward
+  { ...RANGER, height: 59, tint: 0xd0c8a0 }, // a bowman of the militia
+  { ...KNIGHT, height: 62, tint: 0xaebad2 }, // a knight in blued plate
+  { ...SCOUT, height: 56, tint: 0xc8d8e0 }, // a second of the ward's scouts
+  { ...RANGER, height: 58, tint: 0xc0c8b0 }, // a second bowman
 ];
 /** The officer: a head taller, in white plate, and he carries the colours. */
-export const SQUAD_OFFICER: SquadKit = { anim: 'knight_run', height: 72, tint: 0xfff2d0 };
+export const SQUAD_OFFICER: SquadKit = { ...KNIGHT, height: 72, tint: 0xfff2d0 };
+/** Every sheet the squad can ever draw, for the floor's preload (it.105). */
+export const SQUAD_ANIMS: ReadonlyArray<AnimName> = [
+  ...new Set([...SQUAD_RANKS, SQUAD_OFFICER].flatMap((k) => [k.anim, k.idle, k.attack])),
+];
 
 export interface SquadOptions {
   /** Blows a second, per guard. */
@@ -203,7 +220,14 @@ interface Member {
   pack: number;
   /** His own pace - no two of them walk at quite the same speed (it.103). */
   paceMul: number;
+  /** His three sheets, and which one is on the sprite right now (it.105). */
   anim: AnimName;
+  idle: AnimName;
+  attack: AnimName;
+  shown: AnimName | null;
+  /** Ticks left of the swing being played; 0 is not swinging. */
+  swing: number;
+  height: number;
   scale: number;
   tint: number;
   fc: number;
@@ -246,6 +270,8 @@ const WEDGED = 18;
 /** How long a guard lies before the others get him up again. */
 const DOWN_TICKS = 420;
 const FLASH_TICKS = 7;
+/** How long a blow is PLAYED for - a quarter second, whatever the cadence is (it.105). */
+const SWING_TICKS = 15;
 /** How many of them may take the same body before the rest look elsewhere (it.104). */
 const MAX_ON_ONE = 2;
 /** Ticks between A* recuts, per man (staggered by id so they never all cut at once). */
@@ -270,6 +296,8 @@ export class Squad {
   private readonly objY: number;
   /** Whose tick it is to recut a road: one man a tick, so A* never spikes. */
   private tick = 0;
+  /** Render-side clock for the idle cycle (it.105) - never read by the sim. */
+  private idleClock = 0;
   /** Set false once the field is won: the squad stands down and stops swinging. */
   fighting = true;
   /**
@@ -377,7 +405,10 @@ export class Squad {
         hp: tough, hpMax: tough, down: 0, flash: 0, stuck: 0, slip: 0, wedges: 0,
         road: [], repath: 0, goalX: NaN, goalY: NaN,
         foe: null, slot: 0, pack: 1, paceMul: 0.86 + rand() * 0.28,
-        anim: kit.anim, scale, tint: kit.tint, fc: spriteLib.anim(kit.anim).frameCount,
+        anim: kit.anim, idle: spriteLib.hasAnim(kit.idle) ? kit.idle : kit.anim,
+        attack: spriteLib.hasAnim(kit.attack) ? kit.attack : kit.anim,
+        shown: null, swing: 0, height: kit.height,
+        scale, tint: kit.tint, fc: spriteLib.anim(kit.anim).frameCount,
         drawnHp: -1,
       });
     }
@@ -536,7 +567,10 @@ export class Squad {
       const d = Math.hypot(dx, dy);
       // A company under contact does not stop, it presses - at a quarter pace,
       // so the men who are actually swinging are never walked out from under.
-      const pace = this.fighting ? (engaged ? MARCH * 0.25 : MARCH) : MARCH;
+      // IT.105: a quarter pace under contact was slow enough to read as a halt on
+      // a field sixty tiles across. It still yields to the men who are swinging,
+      // but the company is visibly walking the whole time.
+      const pace = this.fighting ? (engaged ? MARCH * 0.5 : MARCH) : MARCH;
       const hold = !this.fighting && d < 3;
       if (!hold && d > 0.4) {
         const step = Math.min(d - 0.4, pace * dt);
@@ -587,9 +621,17 @@ export class Squad {
       let bd = this.leash;
       let crowded: SquadFoe | null = null;
       let cd = 2.2;
+      // NOBODY STANDS ABOUT (it.105). The nearest hostile in his leash, claimed
+      // or not - see below.
+      let anyone: SquadFoe | null = null;
+      let ad = this.leash;
       for (const f of foes) {
         if (f.hp <= 0 || f.action === 'dead') continue;
         const d = Math.hypot(f.pos.x - m.x, f.pos.y - m.y);
+        if (d < ad) {
+          ad = d;
+          anyone = f;
+        }
         // HIS OWN SIGHT (it.102): what HE can see, not what the hero walked into.
         if ((claims.get(f.id) ?? 0) >= MAX_ON_ONE) {
           if (d < cd) {
@@ -604,6 +646,18 @@ export class Squad {
         }
       }
       if (!m.foe) m.foe = crowded; // in the middle of it already: swing at what is there
+      /**
+       * A MAN WITH NOTHING TO DO WALKS TOWARD THE FIGHT (it.105). `MAX_ON_ONE`
+       * stops eight guards piling onto one body, but it left the overflow with
+       * `foe === null`, and a man with no foe holds his mark on the line - which
+       * creeps at a quarter pace while anyone is engaged. Late in a battle, with
+       * two brigands left and four claims between them, that is half the company
+       * standing still in a field: exactly the "they just stand in place" this
+       * iteration is about. The cap still decides who SURROUNDS a body; it no
+       * longer decides who is allowed to move. The ring widens with the pack, so
+       * the extra men close in behind rather than stacking on the same tile.
+       */
+      if (!m.foe) m.foe = anyone;
       if (m.foe) claims.set(m.foe.id, (claims.get(m.foe.id) ?? 0) + 1);
     }
     for (const m of this.members) {
@@ -626,6 +680,7 @@ export class Squad {
     for (const m of this.members) {
       if (m.cool > 0) m.cool--;
       if (m.flash > 0) m.flash--;
+      if (m.swing > 0) m.swing--;
       if (m.down > 0) {
         // On the ground: he takes no part, and gets up with half his wind back.
         if (--m.down === 0) {
@@ -789,6 +844,7 @@ export class Squad {
             m.y = ny;
           } else if (canStandAt(nx, m.y, this.isWalkable)) m.x = nx;
           else if (canStandAt(m.x, ny, this.isWalkable)) m.y = ny;
+          m.clock += step * 0.55; // he is walking sideways, so his legs move (it.105)
         }
       }
       // A body in reach is swung at whether or not he finished walking to his
@@ -801,6 +857,7 @@ export class Squad {
           m.dir = stableDir(fx / fd, fy / fd, m.dir);
           if (m.cool === 0) {
             m.cool = cooldown;
+            m.swing = Math.min(cooldown, SWING_TICKS);
             hit(best.id, this.damage, { x: m.x, y: m.y });
           }
         }
@@ -837,12 +894,32 @@ export class Squad {
 
   /** Render-only: interpolate between the last two ticks and light the bodies. */
   draw(alpha: number, tint: (x: number, y: number) => number): void {
+    // The idle cycle runs on the RENDER clock: standing still must still breathe.
+    this.idleClock += 1 / 60;
     for (const m of this.members) {
       const x = m.px + (m.x - m.px) * alpha;
       const y = m.py + (m.y - m.py) * alpha;
       const moving = Math.hypot(m.x - m.px, m.y - m.py) > 0.0005;
-      const frame = moving ? Math.floor(m.clock * m.fc) % m.fc : 0;
-      m.body.texture = spriteLib.frame(m.anim, m.dir, frame);
+      // WHICH OF THE THREE HE IS DOING (it.105): swinging beats walking beats
+      // standing. The sheets are different rigs with different painted heights,
+      // so the scale and the foot anchor are re-derived on every change - which
+      // is rare (a man changes sheet a few times a second at most).
+      const want = m.swing > 0 ? m.attack : moving ? m.anim : m.idle;
+      if (want !== m.shown) {
+        m.shown = want;
+        const painted = spriteLib.paintedHeight(want) || 90;
+        const foot = spriteLib.footAnchor(want);
+        m.body.anchor.set(foot.x, foot.y);
+        m.body.scale.set(m.height / painted / 0.8);
+        m.fc = spriteLib.anim(want).frameCount;
+      }
+      const frame =
+        m.swing > 0
+          ? Math.min(m.fc - 1, Math.floor((1 - m.swing / SWING_TICKS) * m.fc)) // one pass through the blow
+          : moving
+            ? Math.floor(m.clock * m.fc) % m.fc
+            : Math.floor(this.idleClock * 6 + m.id) % m.fc; // breathing on the spot
+      m.body.texture = spriteLib.frame(want, m.dir, Math.max(0, frame));
       // The scene's light, then the plate's own colour, then the white of a blow.
       const lit = tint(x, y);
       m.body.tint = m.flash > 0 ? 0xffffff : mul(lit, m.tint);

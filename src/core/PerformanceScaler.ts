@@ -23,8 +23,19 @@ import type { Application } from 'pixi.js';
 
 export type Quality = 'high' | 'medium' | 'low';
 
-/** The resolution ladder, richest first. */
-const LADDER = [2, 1.5, 1, 0.75];
+/**
+ * The rungs BELOW the device's own ratio. The top rung is always the device
+ * itself - see `attach`.
+ *
+ * IT.105: this used to be a fixed `[2, 1.5, 1, 0.75]` that the start rung was
+ * SEARCHED in with `findIndex(r => r <= ceiling)`. On any display whose ratio is
+ * not exactly on the ladder that silently threw resolution away for ever: a
+ * 1.25x screen (a very common Windows scaling) started at rung `1`, so the game
+ * rendered at 80% of native and was upscaled to fill the window, on every
+ * machine, from the first frame, with the budget nowhere near spent. That is
+ * what "all the models look blurry" was - not the art, and not the load.
+ */
+const BELOW = [1.5, 1, 0.75];
 const WINDOW = 60;
 /** 60 FPS is 16.7 ms. Over SLOW and we are missing frames; under FAST there is room to spare. */
 const SLOW_MS = 20.5;
@@ -42,6 +53,8 @@ export class PerformanceScaler {
   private fastFor = 0;
   private lastStepAt = 0;
   private ceiling = 2;
+  /** The resolution rungs for THIS device, richest first (built in `attach`). */
+  private ladder: number[] = [...BELOW];
   private running = false;
   /** Off means the ladder is frozen where it stands (a QA / settings switch). */
   auto = true;
@@ -50,9 +63,12 @@ export class PerformanceScaler {
   attach(app: Application): void {
     this.app = app;
     this.ceiling = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-    // Start at the device's own ratio, capped at 2 — the pre-it.63 behaviour.
-    this.step = Math.max(0, LADDER.findIndex((r) => r <= this.ceiling));
-    if (this.step < 0) this.step = 0;
+    // THE TOP RUNG IS THE DEVICE (it.105). Whatever the screen's ratio is, that
+    // is what the game starts at and returns to; the ladder below it is the
+    // usual steps down, minus any rung that is not actually a step down.
+    this.ladder = [this.ceiling, ...BELOW.filter((r) => r < this.ceiling - 1e-6)];
+    if (this.ladder.length === 1) this.ladder.push(this.ceiling * 0.75);
+    this.step = 0;
     this.start();
   }
 
@@ -94,13 +110,18 @@ export class PerformanceScaler {
   }
 
   get resolution(): number {
-    return Math.min(LADDER[this.step], this.ceiling);
+    return Math.min(this.ladder[this.step], this.ceiling);
   }
 
+  /**
+   * Quality is the RUNG, not the absolute number (it.105). Reading it off the
+   * resolution meant a 1x display was permanently "medium" and a 1.25x one too -
+   * a calm sky and no colour grade on hardware that was keeping 60 fps with room
+   * to spare. The top rung is what the device can do; that is `high`.
+   */
   get quality(): Quality {
-    const r = this.resolution;
-    if (r >= 1.5) return 'high';
-    return r >= 1 ? 'medium' : 'low';
+    if (this.step === 0) return 'high';
+    return this.step === 1 ? 'medium' : 'low';
   }
 
   /** How much atmosphere the device can afford (a multiplier on particle counts). */
@@ -121,10 +142,10 @@ export class PerformanceScaler {
       this.fastFor = 0;
     }
     if (now - this.lastStepAt < STEP_COOLDOWN_MS) return;
-    if (this.slowFor > 1000 && this.step < LADDER.length - 1) {
+    if (this.slowFor > 1000 && this.step < this.ladder.length - 1) {
       this.step++;
       this.applyResolution(now);
-    } else if (this.fastFor > 3000 && this.step > 0 && LADDER[this.step - 1] <= this.ceiling) {
+    } else if (this.fastFor > 3000 && this.step > 0 && this.ladder[this.step - 1] <= this.ceiling) {
       this.step--;
       this.applyResolution(now);
     }
@@ -158,7 +179,7 @@ export class PerformanceScaler {
       return;
     }
     this.auto = false;
-    const i = LADDER.indexOf(res);
+    const i = this.ladder.indexOf(res);
     this.step = i >= 0 ? i : this.step;
     this.setResolution(res);
   }

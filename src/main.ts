@@ -37,7 +37,7 @@ import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
 import { StatsManager } from '@/systems/StatsManager';
 import { dressColiseum, generateColiseumMap, type ColiseumMap } from '@/scenes/Coliseum';
-import { AFFIXES, FROST_AURA_RADIUS, LOOTER_KINDS } from '@/entities/Enemy';
+import { AFFIXES, FROST_AURA_RADIUS, levelHpScale, LOOTER_KINDS } from '@/entities/Enemy';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
@@ -93,7 +93,7 @@ import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { RECLAIMED_WORDS, REFUGEE_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { CineDialogue } from '@/ui/CineDialogue'; // THE CORNER WORD (it.102).
-import { Squad, SQUAD_OFFICER, SQUAD_RANKS } from '@/systems/Squad';
+import { Squad, SQUAD_ANIMS } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
@@ -226,6 +226,12 @@ const INN_FLOOR = 103;
 const CELLAR_FLOOR = 104;
 /** THE FARMLANDS (it.100): the burning fields along the marsh path. */
 const FARM_FLOOR = 105;
+/**
+ * The deepest the farmlands' battle may ever be pitched at (it.105). The errand
+ * is offered right after the woods and ends on a MINI-boss; past this it stops
+ * being an errand and becomes a raid with a warden at the end of it.
+ */
+const FARM_MAX_LEVEL = 8;
 /** THE COMPANY FIGHTS BACK (it.101): how far a hostile will look for a guard to fight instead of the hero. */
 const ALLY_AGGRO = 14;
 /**
@@ -1784,9 +1790,24 @@ async function boot(): Promise<void> {
        *
        * The field now takes the higher of the depth reached and the party's own
        * level, so it is a fair fight whether you come here first or last.
+       *
+       * BUT AN ERRAND STAYS AN ERRAND (it.105). it.104 mapped a hero's LEVEL onto
+       * a DEPTH at 0.8 and let it run to `MAX_DEPTH`, and those two numbers are
+       * not on the same scale: twenty depths are walked at something like forty
+       * levels, so 0.8 maps a level-32 hero onto depth 26 and the clamp parks the
+       * field on 20 - the deepest ground in the game. Measured on exactly that
+       * save: company men of 765 life, brigands of 924, and a general of 3427 -
+       * eight times the Tomb Warden of depth V. That is what "way too much HP"
+       * and "a hyper-boss instead of a mini-boss" were, and no amount of tuning
+       * the BASE numbers could reach it, because the multiplier was 17x.
+       *
+       * The slope is halved to the honest level-to-depth ratio, and the whole
+       * thing is capped at `FARM_MAX_LEVEL`: this is a one-time errand the city
+       * offers the moment the woods are clear, so it may rise to meet a hero who
+       * came late, but it may never become a deep raid.
        */
       const partyLevel = party.reduce((n, seat) => (seat && !seat.gone ? Math.max(n, seat.player.level) : n), 1);
-      const farmLevel = Math.max(2, Math.min(MAX_DEPTH, Math.max(deepestFloor + 1, Math.round(partyLevel * 0.8))));
+      const farmLevel = Math.max(2, Math.min(FARM_MAX_LEVEL, Math.max(deepestFloor + 1, Math.round(partyLevel * 0.5))));
       const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
@@ -1858,7 +1879,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 22, fullRadius: quests.farm === 'done' ? 26 : 10 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -2254,9 +2275,10 @@ async function boot(): Promise<void> {
         // is spawned with them, before the tally is taken, so the field is not
         // "clear" while he is still on it.
         if (isFarm && farm) {
-          // ONE band over the field, not two (it.104): at the bottom of the range
-          // `+2` was most of a doubling of his life, and he is already a wall.
-          generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel + 1);
+          // LEVEL WITH THE FIELD (it.105). Every band over it multiplies his life
+          // again, and it.104's own numbers still came out at 626 - more than the
+          // Tomb Warden. He is the wall at the end of an errand, not a warden.
+          generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel);
           // THE GENERAL'S PLATE (it.101): he takes the wardens' own health bar, so a
           // mini-boss reads as one - name, level and numbers at the top of the screen.
           boss = generalBody;
@@ -2374,10 +2396,34 @@ async function boot(): Promise<void> {
         // squad advances on the objective whether or not the hero follows.
         if (!farm.farm.won)
           squad = new Squad(viewport.objectLayer, scene.isWalkable, farm.farm.squad, {
-            rate: 1.05,
-            damage: 12,
+            // THE CITY'S OWN ARE SOLDIERS (it.105). At 12 a blow, once a second,
+            // eight guards took twenty seconds to put down one company man and
+            // were themselves cut apart doing it - they read as decoration with
+            // health bars. They now hit for about half what the hero does and
+            // carry enough to survive being hit back, which is what "far too
+            // weak" was asking for.
+            //
+            // AND THEY SCALE WITH THE FIELD THEY FIGHT ON (it.105). This was the
+            // real reason the company kept losing: every FOE on this floor climbs
+            // `levelHpScale(floorLevel)` in both life and damage, and the guards
+            // were eight fixed numbers that never moved. Measured on the field at
+            // level 8: company men of 121 life hitting for 24-41, against guards
+            // of a flat 150 - four blows to drop one, and half the company was on
+            // the ground inside ten seconds. The city's own now climb the same
+            // curve as the men they are sent against, so the fight reads the same
+            // whether the field is pitched at 2 or at 8.
+            //
+            // LIFE ON THE FULL CURVE, THE BLOW ON HALF OF IT (it.105). Both on
+            // the full curve and the company cleared all twenty-one bodies AND
+            // the general in thirty seconds without losing a man - the hero
+            // stood and watched, which is its own kind of broken. Surviving is
+            // what "far too weak" was actually about, so the life scales flat
+            // out and the blow climbs at the square root: they hold the line,
+            // they take losses, and the general is still the hero's to finish.
+            rate: 1.2,
+            damage: Math.round(16 * Math.sqrt(levelHpScale(floorLevel))),
             leash: 15,
-            toughness: 110,
+            toughness: Math.round(150 * levelHpScale(floorLevel)),
             objective: { x: farm.farm.general.x + 0.5, y: farm.farm.general.y + 0.5 },
             seed,
             pathfinder,
@@ -6856,7 +6902,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
     // THE RANKS TURN OUT (it.102): every sheet the squad can be dealt is pulled
     // in with the floor. Without this the bag could only ever deal the sheets
     // some OTHER system happened to need, and the watch was guards and knights.
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', 'captain_idle', ...SQUAD_RANKS.map((k) => k.anim), SQUAD_OFFICER.anim, ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', 'captain_idle', ...SQUAD_ANIMS, ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of FARM_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

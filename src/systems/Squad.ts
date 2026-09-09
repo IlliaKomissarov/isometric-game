@@ -90,24 +90,37 @@ export interface SquadKit {
 }
 
 /**
- * THE RANKS (it.101, widened it.102). The watch turns out in what it owns and in
- * whoever it could arm: files of the city guard in steel and in bronzed plate,
- * a pair of household knights in mail, and rangers of the eastern road in green.
- * Every sheet here is an EIGHT-DIRECTION rig that no hostile on this floor wears
- * — `captain_*` is the company's — so friend and foe never share a silhouette.
+ * THE RANKS (it.101, widened it.102, re-cast it.104). Household knights in
+ * plate, rangers of the eastern road, and scouts of the ward.
+ *
+ * `guard_walk` IS GONE FROM THIS LIST, for two reasons that are both fatal:
+ *
+ *   1. IT IS THE LOWEST-RESOLUTION HUMAN SHEET IN THE PACK. It is baked at half
+ *      resolution and its painted body is 48 atlas pixels tall - drawn at 60
+ *      units it is upscaled and soft, next to `ranger_run` at 168 and
+ *      `rogue_run` at 88, which are baked at full resolution.
+ *   2. THE BRIGAND WEARS IT. `FARM_POOL` contains `brigand`, whose sprite is
+ *      `guard_walk` - so on the one floor the squad exists, friend and foe were
+ *      the same silhouette in two tints. The it.101 comment here claimed the
+ *      opposite and was simply wrong.
+ *
+ * Every sheet below is an EIGHT-DIRECTION rig baked at full resolution that NO
+ * hostile on this floor wears (the company is `captain_*`, the bandits are
+ * `poacher_*`, the brigands are `guard_*`), so friend and foe never share a
+ * silhouette again.
  */
 export const SQUAD_RANKS: ReadonlyArray<SquadKit> = [
-  { anim: 'guard_walk', height: 60, tint: 0xdfe6f2 }, // the watch, in steel
-  { anim: 'knight_run', height: 63, tint: 0xc6d2ea }, // a household knight, in mail
-  { anim: 'ranger_run', height: 58, tint: 0xbcd8b4 }, // a ranger of the eastern road
-  { anim: 'guard_walk', height: 57, tint: 0xd8c090 }, // the watch, bronzed
-  { anim: 'rogue_run', height: 56, tint: 0xb4c0d4 }, // a scout of the ward
+  { anim: 'knight_run', height: 63, tint: 0xdfe6f2 }, // a household knight, in steel
+  { anim: 'ranger_run', height: 60, tint: 0xbcd8b4 }, // a ranger of the eastern road
   { anim: 'knight_run', height: 61, tint: 0xe2d2a8 }, // a knight in gilt
-  { anim: 'guard_walk', height: 62, tint: 0xaebad2 }, // the watch, blued
+  { anim: 'rogue_run', height: 57, tint: 0xb4c0d4 }, // a scout of the ward
   { anim: 'ranger_run', height: 59, tint: 0xd0c8a0 }, // a bowman of the militia
+  { anim: 'knight_run', height: 62, tint: 0xaebad2 }, // a knight in blued plate
+  { anim: 'rogue_run', height: 56, tint: 0xc8d8e0 }, // a second of the ward's scouts
+  { anim: 'ranger_run', height: 58, tint: 0xc0c8b0 }, // a second bowman
 ];
 /** The officer: a head taller, in white plate, and he carries the colours. */
-export const SQUAD_OFFICER: SquadKit = { anim: 'guard_walk', height: 70, tint: 0xfff2d0 };
+export const SQUAD_OFFICER: SquadKit = { anim: 'knight_run', height: 72, tint: 0xfff2d0 };
 
 export interface SquadOptions {
   /** Blows a second, per guard. */
@@ -144,9 +157,17 @@ interface Member {
   bar: Graphics;
   /** The colours over the officer's head, if he is the one carrying them. */
   flag: Sprite | null;
-  /** Where he stands in the line, RELATIVE to the company's front (it.102). */
-  ox: number;
-  oy: number;
+  /**
+   * HIS LANE (it.104). Where he stands relative to the company's front, but
+   * expressed in the frame the ADVANCE is in: `lane` is his place across the
+   * front (negative left, positive right of the march) and `depth` how far
+   * ahead of or behind it he walks. The front is rebuilt from these every tick
+   * against the current heading, so the company keeps a broad skirmish line
+   * that turns with the march instead of carrying the muster's shape - which
+   * was pointing north-east - around the map for the whole battle.
+   */
+  lane: number;
+  depth: number;
   x: number;
   y: number;
   /** The last drawn position, so the render can interpolate between ticks. */
@@ -168,6 +189,8 @@ interface Member {
   stuck: number;
   /** Which way he is sidestepping while unwedging himself, or 0. */
   slip: number;
+  /** How many sidesteps in a row have failed him (it.104): three and he is lifted clear. */
+  wedges: number;
   /** HIS OWN ROAD (it.102): the A* waypoints left, and the tick he repaths on. */
   road: Array<{ x: number; y: number }>;
   repath: number;
@@ -207,8 +230,15 @@ const SEPARATION_NEAR = 1.25;
 const SEPARATION_FAR = 0.55;
 /** Tiles a second a man shuffles sideways when he is on his mark but crowded. */
 const SHUFFLE = 1.1;
-/** The line's shape, opened out so the company holds a front instead of a knot. */
-const FORMATION = 1.9;
+/**
+ * THE SKIRMISH LINE (it.104). `LANE` is the gap between two men ACROSS the
+ * march and `DEPTH` the stagger along it: eight men at 2.3 hold a front some
+ * sixteen tiles wide, a quarter of the field, which is what "fan out" has to
+ * mean on a map this size. Wider than this and the flanks stop supporting each
+ * other; narrower and it reads as a column again.
+ */
+const LANE = 2.3;
+const DEPTH = 1.6;
 /** The golden angle: consecutive ids land on opposite sides of the same body. */
 const GOLDEN = 2.399963;
 /** Blocked this many ticks running and a guard picks a side and walks round. */
@@ -216,6 +246,8 @@ const WEDGED = 18;
 /** How long a guard lies before the others get him up again. */
 const DOWN_TICKS = 420;
 const FLASH_TICKS = 7;
+/** How many of them may take the same body before the rest look elsewhere (it.104). */
+const MAX_ON_ONE = 2;
 /** Ticks between A* recuts, per man (staggered by id so they never all cut at once). */
 const REPATH_TICKS = 42;
 /** The line stops advancing while anything hostile is this close to any of them. */
@@ -312,7 +344,12 @@ export class Squad {
       mark.position.set(0, 2);
       root.addChild(mark);
       const body = new Sprite(spriteLib.frame(kit.anim, 4, 0));
-      body.anchor.set(0.5, 1);
+      // HIS FEET ARE ON THE GROUND (it.104). A sliced frame keeps its original
+      // size, and the packs leave wildly different amounts of air under a body -
+      // `anchor.set(0.5, 1)` hung a guard seventy screen pixels over his own
+      // shadow. `footAnchor` is that number computed from the painted bounds.
+      const foot = spriteLib.footAnchor(kit.anim);
+      body.anchor.set(foot.x, foot.y);
       body.scale.set(scale / 0.8);
       body.position.set(0, 2);
       root.addChild(body);
@@ -334,16 +371,25 @@ export class Squad {
       layer.addChild(root);
       this.members.push({
         root, body, mark, bar, flag,
-        ox: (s.x + 0.5 - cx) * FORMATION, oy: (s.y + 0.5 - cy) * FORMATION,
+        lane: 0, depth: 0,
         x: s.x + 0.5, y: s.y + 0.5, px: s.x + 0.5, py: s.y + 0.5,
         dir: 4, clock: 0, cool: 0, officer: !!s.officer, id: nextId++,
-        hp: tough, hpMax: tough, down: 0, flash: 0, stuck: 0, slip: 0,
+        hp: tough, hpMax: tough, down: 0, flash: 0, stuck: 0, slip: 0, wedges: 0,
         road: [], repath: 0, goalX: NaN, goalY: NaN,
         foe: null, slot: 0, pack: 1, paceMul: 0.86 + rand() * 0.28,
         anim: kit.anim, scale, tint: kit.tint, fc: spriteLib.anim(kit.anim).frameCount,
         drawnHp: -1,
       });
     }
+    // THE LINE IS DEALT ACROSS THE FRONT (it.104). Lanes run symmetrically out
+    // from the centre - officer in the middle, everyone else alternating left
+    // and right - and each man is given his own depth, so the company advances
+    // as a ragged skirmish line a dozen tiles wide instead of a knot.
+    const order = [...this.members].sort((p, q) => (p.officer === q.officer ? p.id - q.id : p.officer ? -1 : 1));
+    order.forEach((m, i) => {
+      m.lane = i === 0 ? 0 : (Math.ceil(i / 2) * (i % 2 === 1 ? -1 : 1));
+      m.depth = ((m.id * 7) % 3) - 1;
+    });
     for (const m of this.members) this.redrawBar(m);
   }
 
@@ -358,24 +404,26 @@ export class Squad {
    * that has clumped reads as a `min` near zero; a squad that is flocking keeps
    * `min` at about `PERSONAL` even in the middle of a melee.
    */
-  spacing(): { min: number; mean: number; n: number } {
+  spacing(): { min: number; mean: number; span: number; n: number } {
     const up = this.members.filter((m) => m.down === 0);
     let min = Infinity;
+    let span = 0;
     let sum = 0;
     let pairs = 0;
     for (let i = 0; i < up.length; i++)
       for (let j = i + 1; j < up.length; j++) {
         const d = Math.hypot(up[j].x - up[i].x, up[j].y - up[i].y);
         if (d < min) min = d;
+        if (d > span) span = d;
         sum += d;
         pairs++;
       }
-    return { min: pairs ? min : 0, mean: pairs ? sum / pairs : 0, n: up.length };
+    return { min: pairs ? min : 0, mean: pairs ? sum / pairs : 0, span, n: up.length };
   }
 
   /** The ranks, for the harness: which sheet each man turned out in (it.102). */
-  roster(): Array<{ id: number; anim: AnimName; officer: boolean; hp: number; hpMax: number }> {
-    return this.members.map((m) => ({ id: m.id, anim: m.anim, officer: m.officer, hp: m.hp, hpMax: m.hpMax }));
+  roster(): Array<{ id: number; anim: AnimName; officer: boolean; hp: number; hpMax: number; anchorY: number; lane: number }> {
+    return this.members.map((m) => ({ id: m.id, anim: m.anim, officer: m.officer, hp: m.hp, hpMax: m.hpMax, anchorY: m.body.anchor.y, lane: m.lane }));
   }
 
   /** Where the company's own front stands (it.102) - not the hero's position. */
@@ -503,25 +551,60 @@ export class Squad {
         else if (canStandAt(this.lx, ny, this.isWalkable)) this.ly = ny;
       }
     }
+    // WHICH WAY THE COMPANY IS FACING (it.104): from the front to the ground it
+    // is taking. The skirmish line is laid out ACROSS this, so it turns with the
+    // march. A degenerate heading (the line standing on its objective) falls
+    // back to due west, which is the way this floor's battle runs.
+    let headX = this.fighting ? this.objX - this.lx : (rally?.x ?? this.lx) - this.lx;
+    let headY = this.fighting ? this.objY - this.ly : (rally?.y ?? this.ly) - this.ly;
+    const headLen = Math.hypot(headX, headY);
+    if (headLen < 0.001) {
+      headX = -1;
+      headY = 0;
+    } else {
+      headX /= headLen;
+      headY /= headLen;
+    }
+    const perpX = -headY;
+    const perpY = headX;
     // ---- WHO EACH MAN IS FIGHTING (it.103) --------------------------------
     // Chosen for everybody first, because the RING a man takes round a body
     // depends on how many others picked the SAME body. Six men converging on one
     // brigand used to be dealt six angles off the whole squad's id space, which
     // put four of them on the same side of him; now they are dealt the angles of
     // a circle divided by however many actually came, so they surround him.
+    // TWO MEN TO A BODY, NO MORE (it.104). Nearest-foe-per-man sent all eight at
+    // whichever knot of the company the squad met first, and the "fan out" the
+    // lanes had just built collapsed back into one scrum three tiles across.
+    // Every hostile takes at most `MAX_ON_ONE` claimants, in member order; a
+    // guard who finds nothing unclaimed in his sight takes the next thing along
+    // instead - which is what makes the company spread across several fights at
+    // once. He only breaks the cap for a body already on top of him.
+    const claims = new Map<number, number>();
     for (const m of this.members) {
       m.foe = null;
       if (m.down > 0 || !this.fighting) continue;
       let bd = this.leash;
+      let crowded: SquadFoe | null = null;
+      let cd = 2.2;
       for (const f of foes) {
         if (f.hp <= 0 || f.action === 'dead') continue;
         const d = Math.hypot(f.pos.x - m.x, f.pos.y - m.y);
         // HIS OWN SIGHT (it.102): what HE can see, not what the hero walked into.
+        if ((claims.get(f.id) ?? 0) >= MAX_ON_ONE) {
+          if (d < cd) {
+            cd = d;
+            crowded = f;
+          }
+          continue;
+        }
         if (d < bd) {
           bd = d;
           m.foe = f;
         }
       }
+      if (!m.foe) m.foe = crowded; // in the middle of it already: swing at what is there
+      if (m.foe) claims.set(m.foe.id, (claims.get(m.foe.id) ?? 0) + 1);
     }
     for (const m of this.members) {
       if (!m.foe) {
@@ -551,8 +634,8 @@ export class Squad {
         }
         continue;
       }
-      const homeX = this.lx + m.ox;
-      const homeY = this.ly + m.oy;
+      const homeX = this.lx + perpX * m.lane * LANE + headX * m.depth * DEPTH;
+      const homeY = this.ly + perpY * m.lane * LANE + headY * m.depth * DEPTH;
       const best = m.foe;
       // THE RING ROUND A BODY (it.101, dealt properly it.103). His place is his
       // index among the men who came for THIS body, spread over a full circle and
@@ -657,9 +740,37 @@ export class Squad {
           m.stuck = 0;
         } else if (++m.stuck > WEDGED) {
           m.stuck = 0;
+          m.wedges++;
           m.slip = m.slip !== 0 ? -m.slip : (m.id % 2 === 0 ? 1 : -1);
           m.road.length = 0; // the road he was on does not work: cut a new one
           m.repath = 0;
+          // PINNED (it.104). Sidestepping solves a hedge; it does not solve a man
+          // shouldered into the corner of a barn by two others, and a guard who
+          // spends the battle vibrating against a wall is the "pathfinding
+          // blockage" the field reads as. After three failed sidesteps he is put
+          // on the nearest tile he can actually stand on - searched outward in a
+          // fixed order, so every peer moves him to the same one.
+          if (m.wedges >= 3) {
+            m.wedges = 0;
+            for (let r = 1; r <= 3 && m.stuck === 0; r++) {
+              let placed = false;
+              for (let oy = -r; oy <= r && !placed; oy++)
+                for (let ox = -r; ox <= r; ox++) {
+                  if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+                  const tx = Math.floor(m.x) + ox + 0.5;
+                  const ty = Math.floor(m.y) + oy + 0.5;
+                  if (!canStandAt(tx, ty, this.isWalkable)) continue;
+                  m.x = tx;
+                  m.y = ty;
+                  m.px = tx;
+                  m.py = ty;
+                  m.slip = 0;
+                  placed = true;
+                  break;
+                }
+              if (placed) break;
+            }
+          }
         }
         if (m.slip !== 0 && m.stuck === 0 && dist < 1.2) m.slip = 0; // arrived: walk straight again
         m.clock += step * 0.55;

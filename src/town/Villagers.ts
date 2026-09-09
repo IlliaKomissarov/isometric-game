@@ -219,11 +219,14 @@ export class Villagers {
   private alchemist: { body: Sprite; clock: number; scale: number; bubble: Bubble; x: number; y: number } | null = null;
   private readonly opts: VillagerOptions;
   private readonly keeperAnim: AnimName;
+  /** The object layer these people live in, kept so more can be taken in later (it.104). */
+  private readonly layer: Container;
 
   constructor(
     layer: Container,
     private readonly isWalkable: (gx: number, gy: number) => boolean,
-    private readonly area: Room,
+    /** Where these people live. It GROWS when a procession is handed over (it.104). */
+    private area: Room,
     count: number,
     merchantAt: { x: number; y: number } | null,
     guardsAt: ReadonlyArray<{ x: number; y: number }> = [],
@@ -236,6 +239,7 @@ export class Villagers {
     opts: VillagerOptions = {},
   ) {
     this.opts = opts;
+    this.layer = layer;
     this.keeperAnim = (opts.keeperAnim && spriteLib.hasAnim(opts.keeperAnim) ? opts.keeperAnim : KEEPER_IDLE) as AnimName;
     // Only the sheets this floor actually loaded are on the street (it.98).
     const sheets = (opts.sheets ?? TAVERN_FOLK).filter((f) => spriteLib.hasAnim(f.anim));
@@ -255,7 +259,10 @@ export class Villagers {
         shadow.alpha = 0.6;
         root.addChild(shadow);
         const body = new Sprite(spriteLib.frame(sheet.anim, 6, 0));
-        body.anchor.set(0.5, sheet.feet ? 1 : 0.86);
+        // FEET ON THE GROUND (it.104): computed from the sheet's painted bounds
+        // rather than guessed at 1 or 0.86, so nobody floats and nobody sinks.
+        const fa = spriteLib.footAnchor(sheet.anim);
+        body.anchor.set(fa.x, fa.y);
         body.scale.set(scale / 0.8); // Undo the shadow root's scale.
         body.position.set(0, 2);
         root.addChild(body);
@@ -362,10 +369,17 @@ export class Villagers {
    */
   private findPath(sx: number, sy: number, tx: number, ty: number): Array<{ x: number; y: number }> | null {
     const m = 3;
-    const x0 = this.area.x - m;
-    const y0 = this.area.y - m;
-    const w = this.area.w + m * 2;
-    const h = this.area.h + m * 2;
+    // THE BOX FOLLOWS THE WALKER (it.104). The search box used to be the wander
+    // area and nothing else, so a body standing OUTSIDE it could never find a
+    // way anywhere - it sat still for ever, asking four times a second. That is
+    // exactly what happened to a procession's folk when they were handed over:
+    // a homecoming ends where the bars lift, which is halfway up the road, not
+    // on the wander patch. The box is now the union of the area and both ends of
+    // the walk, so somebody out on the road can always walk home.
+    const x0 = Math.min(this.area.x, Math.floor(Math.min(sx, tx))) - m;
+    const y0 = Math.min(this.area.y, Math.floor(Math.min(sy, ty))) - m;
+    const w = Math.max(this.area.x + this.area.w, Math.ceil(Math.max(sx, tx))) + m - x0;
+    const h = Math.max(this.area.y + this.area.h, Math.ceil(Math.max(sy, ty))) + m - y0;
     const inBox = (x: number, y: number): boolean => x >= x0 && y >= y0 && x < x0 + w && y < y0 + h;
     if (!inBox(sx, sy) || !inBox(tx, ty)) return null;
     const prev = new Int32Array(w * h).fill(-1);
@@ -407,6 +421,64 @@ export class Villagers {
   }
 
   /** Render-frame update: stroll, pause, breathe; scene-lit by the caller's tint. */
+  /**
+   * A WALKER BECOMES A RESIDENT (it.104). A procession's folk used to be left
+   * standing exactly where the bars lifted, for ever - twelve people frozen
+   * mid-stride in a forest clearing is the first thing you see when a homecoming
+   * ends. The scene hands them over instead: each one is re-made here as one of
+   * the district's own, on the spot it arrived at, and from its next tick it
+   * paths, wanders, pauses and talks like anybody else who lives here.
+   */
+  /** How many of the district's own are on the street (it.104, for the harness). */
+  get count(): number {
+    return this.folk.length;
+  }
+
+
+  adopt(at: { x: number; y: number }, anim: AnimName, coat: number): boolean {
+    if (!spriteLib.hasAnim(anim)) return false;
+    // THIS IS WHERE THEY LIVE NOW (it.104). A floor that was not expecting anyone
+    // carries a placeholder wander patch - the un-cleared forest's is literally
+    // one tile at the origin, inside a wall - so a body handed over to it could
+    // never find anywhere to walk and stood still for ever. The patch grows to
+    // take in whoever arrives: the clearing they came home to IS their ground.
+    const box = { x: Math.max(0, Math.floor(at.x) - 5), y: Math.max(0, Math.floor(at.y) - 5), w: 11, h: 11 };
+    if (this.area.w * this.area.h <= 1) this.area = box;
+    else {
+      const x1 = Math.max(this.area.x + this.area.w, box.x + box.w);
+      const y1 = Math.max(this.area.y + this.area.h, box.y + box.h);
+      this.area = { x: Math.min(this.area.x, box.x), y: Math.min(this.area.y, box.y), w: 0, h: 0 };
+      this.area.w = x1 - this.area.x;
+      this.area.h = y1 - this.area.y;
+    }
+    const painted = spriteLib.paintedHeight(anim) || 50;
+    const i = this.folk.length;
+    const sheet = (this.opts.sheets ?? TAVERN_FOLK).find((f) => f.anim === anim);
+    const scale = ((sheet?.height ?? FOLK_HEIGHT) / painted) * (0.94 + ((i * 5) % 7) * 0.02);
+    const root = new Container();
+    root.scale.set(0.8);
+    const shadow = new Sprite(assets.get('shadow'));
+    shadow.anchor.set(0.5, 0.5);
+    shadow.alpha = 0.6;
+    root.addChild(shadow);
+    const body = new Sprite(spriteLib.frame(anim, 6, 0));
+    const fa = spriteLib.footAnchor(anim);
+    body.anchor.set(fa.x, fa.y);
+    body.scale.set(scale / 0.8);
+    body.position.set(0, 2);
+    root.addChild(body);
+    this.layer.addChild(root);
+    this.folk.push({
+      root, body, anim, scale, fc: spriteLib.anim(anim).frameCount, coat,
+      x: at.x, y: at.y, tx: at.x, ty: at.y,
+      // A staggered first pause, so the crowd does not all set off on one tick.
+      pause: 0.5 + Math.random() * 3.5,
+      dir: 6, walkClock: 0, idleClock: Math.random() * 10,
+      bubble: makeBubble(this.layer, 3 + Math.random() * 10), path: [],
+    });
+    return true;
+  }
+
   update(dt: number, tint: (x: number, y: number) => number): void {
     for (const v of this.folk) {
       if (v.pause > 0) {

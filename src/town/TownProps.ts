@@ -641,8 +641,15 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // throws embers up off it without a single new sprite.
         animated(p.x, p.y, 'inn_fire', 10, 0.95, 1.15, 8);
         glowAt(p.x, p.y, 0xff7a28, 0.85, 2.6, 18);
+        // THE FIRE'S FOOTPRINT (it.104). A flame sprite is tall and narrow, so
+        // from across a dark field you could see THAT something was burning but
+        // not how much ground it stood on. A wide, low, dim ring on the earth
+        // says where the fire actually is; the embers below rise off that ring
+        // rather than off one point, so its edge is legible while moving.
+        glowAt(p.x, p.y, 0xff5a1a, 0.26, 4.6, 2);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 7, 255, 150, 60, 0.95);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        for (const [hx, hy] of [[0.75, 0], [-0.75, 0], [0, 0.75], [0, -0.75]] as const) hotspots.push({ x: p.x + 0.5 + hx, y: p.y + 0.5 + hy });
         break;
       }
       case 'farmgate': {

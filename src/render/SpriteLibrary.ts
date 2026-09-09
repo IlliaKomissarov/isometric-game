@@ -404,6 +404,25 @@ export class SpriteLibrary {
   }
 
   /**
+   * WHERE THE FEET ARE (it.104). A sliced frame keeps its ORIGINAL frame size
+   * (the trim is restored), and the packs do not agree about how much empty air
+   * they leave under a body: `captain_walk` leaves one pixel, `guard_walk` leaves
+   * 114 of 320. So `anchor.set(0.5, 1)` - the obvious thing, and what the squad
+   * and the cutscene cast both did - hangs a guard SEVENTY SCREEN PIXELS above
+   * his own shadow, while a captain stands correctly. Every enemy def works
+   * around this with a hand-tuned `anchorY`, one per sheet, found by eye.
+   *
+   * This is that number, computed: the anchor that puts the PAINTED bottom of
+   * the body on the tile and its painted centre over the tile's centre. Returns
+   * the naive (0.5, 1) when the sheet is unknown.
+   */
+  footAnchor(name: string): { x: number; y: number } {
+    const e = this.entry(name);
+    if (!e || !e.origH || !e.origW) return { x: 0.5, y: 1 };
+    return { x: (e.painted.left + e.painted.right + 1) / 2 / e.origW, y: (e.painted.bottom + 1) / e.origH };
+  }
+
+  /**
    * Make the named animations resident (fetch + slice their atlases).
    * Unknown names are ignored; already-resident names are free; concurrent
    * calls for the same atlas share one fetch. Resolves when ALL are ready.

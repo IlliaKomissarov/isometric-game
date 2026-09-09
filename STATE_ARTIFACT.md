@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 103, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 104, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 397 checks at it.103) | 0 failures | 397/397 on seed 3 (mage), incl. the farmlands campaign end to end - the muster called by coming home from the woods (34 tiles from the yard), six spoken lines each waited on and advanced by hand, the company's word in red with a name on it, the belt of wood at 739 trees three rings deep with none of it still fogged, the flock holding 0.93 between its closest pair and a 2.47 mean in a melee, the squad going in on its own, the field transforming in place, and both jobs of the post at the yard; the eleven-device sweep clean. KNOWN FLAKE (observed twice in five it.102 runs, in code it.102/103 did not touch): the depth-I command block (`click-attack`, `pickup`, `skill 1`, `a draught`) can fail together under load in a hidden tab and passes on a re-run at the same seed | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 406 checks at it.104) | 0 failures | 406/406 on seed 3 (mage). it.104 adds: nothing on the field moves or fights through five seconds of a cutscene; no guard wears a sheet the company wears; every guard's anchor is computed from its painted bounds, never 1; the line fans past six tiles with every man in his own lane; the field is never more than a band over the hero OR their depth; the forest's folk join the clearing and walk it under their own feet afterwards. KNOWN FLAKE (twice in five it.102 runs, in code it.102-104 did not touch): the depth-I command block can fail together under load in a hidden tab and passes on a re-run at the same seed |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -59,6 +59,8 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `systems/Squad` (it.100, cut loose it.102) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt` | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor |
 | `ui/CineDialogue` (it.102) | `SpeechBeat` from a running scene, main's `portraitFromTexture` | the lower-left portrait box: who is speaking, and what they said | render-side only; the ONE head-up element `body.cine` leaves on screen |
 | `ProcessionScene.awaiting` (it.103) | Space / Enter / E / a tap on the letterbox | the beat queue, and whether the bars may lift | a named beat holds the page; the walk, the camera and the light keep running under it |
+| `cineHold` in the sim tick (it.104) | `reclaim?.running` | movement, combat, projectiles, status, every entity's update, `enemies.separate`, the squad, the quest ticks | while the bars are down the WHOLE tick is skipped, so the freeze is identical on every peer |
+| `spriteLib.footAnchor` (it.104) | the manifest's painted bounds | the sprite anchor for the squad, the cutscene cast and every villager | the packs disagree about air under a body by up to 114 px of 320; this is that number computed, not guessed |
 
 ## 3. Audit log and refactoring summary (iteration 74)
 

@@ -1119,8 +1119,20 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.loop.step(75);
       g.loop.callbacks.render(1);
       check('the last beast falls: the folk walk back in before the road home', !!g.reclaim && !!document.querySelector('#cine-layer.show'), String(!!g.reclaim));
-      for (let i = 0; i < 40 && game()?.reclaim; i++) driveRender(1000);
+      const folkBefore = g.town.villagers.count;
+      readScene();
       check('the forest\'s homecoming ends', !game()?.reclaim);
+      // THE PEOPLE STAY (it.104). The walkers used to be left standing exactly
+      // where the bars lifted, for ever. They are handed to the clearing's own
+      // `Villagers` on the way out, and must be WALKING a moment later.
+      {
+        g = game();
+        check('the folk who walked in join the clearing instead of freezing', g.town.villagers.count > folkBefore, `${folkBefore} -> ${g.town.villagers.count}`);
+        const spotsBefore = g.town.villagers.positions().map((v: { x: number; y: number }) => `${v.x.toFixed(2)},${v.y.toFixed(2)}`).join('|');
+        driveRender(6000);
+        const spotsAfter = g.town.villagers.positions().map((v: { x: number; y: number }) => `${v.x.toFixed(2)},${v.y.toFixed(2)}`).join('|');
+        check('and they walk the clearing under their own feet afterwards', spotsBefore !== spotsAfter, 'nobody moved after the bars lifted');
+      }
       g.loop.step(5);
       await wait(120);
       check('the errand is paid in the clearing, no road home', g.floor === 101 && g.quests.forest === 'done', `${g.floor} ${g.quests.forest}`);
@@ -1941,6 +1953,24 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // RENDER pass, and a `loop.step` burst would leave it running for ever.
       g.loop.step(6);
       check('the fields open on the general giving his orders', await until(() => !!document.querySelector('#cine-layer'), 8000));
+      // THE FIELD HOLDS ITS BREATH (it.104). While the bars are down NOTHING on
+      // the floor is stepped - not the company, not the squad, not the hero's own
+      // wounds - so a scene that waits for a keypress cannot be waited through
+      // while the hero is killed off screen.
+      {
+        const snap = (): string => {
+          const gg = game();
+          const out: string[] = [];
+          gg.enemies.forEachActive((e: { pos: { x: number; y: number }; hp: number }) => out.push(`${e.pos.x.toFixed(4)},${e.pos.y.toFixed(4)},${e.hp}`));
+          out.push('#' + (gg.squad?.positions() ?? []).map((m: { x: number; y: number }) => `${m.x.toFixed(4)},${m.y.toFixed(4)}`).join('|'));
+          out.push('#' + gg.player.pos.x.toFixed(4) + ',' + gg.player.pos.y.toFixed(4) + ',' + gg.player.hp);
+          return out.join('|');
+        };
+        driveRender(600);
+        const before = snap();
+        driveRender(5000);
+        check('nothing on the field moves or fights while the bars are down', before === snap(), 'the world was stepped under a cutscene');
+      }
       check("the company's word waits to be read, in red", await until(() => !!game()?.reclaim?.waiting, 6000, 60) || (driveRender(1200), !!game()?.reclaim?.waiting), String(document.getElementById('cine-speak')?.className));
       check('and it names who is speaking', /VARRICK/.test(document.querySelector('#cine-speak .cs-who')?.textContent ?? ''), document.querySelector('#cine-speak .cs-who')?.textContent ?? '');
       const turnedFarm = readScene();
@@ -1992,8 +2022,21 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // THE RANKS ARE DIFFERENT MEN (it.102): dealt off the floor seed, so the
       // watch turns out in more than one silhouette.
       {
-        const roster = g.squad.roster() as Array<{ anim: string; officer: boolean; hp: number; hpMax: number }>;
+        const roster = g.squad.roster() as Array<{ anim: string; officer: boolean; hp: number; hpMax: number; anchorY: number; lane: number }>;
         check('the ranks are drawn from more than one sheet', new Set(roster.filter((m) => !m.officer).map((m) => m.anim)).size >= 3, roster.map((m) => m.anim).join());
+        // FRIEND AND FOE ARE NEVER THE SAME BODY (it.104). The brigand's sheet is
+        // `guard_walk`; the squad wore it until it.104, so on this one floor the
+        // city's own and the enemy were one silhouette in two tints.
+        const foeSheets = new Set<string>();
+        g.enemies.forEachActive((e: { hp: number; def: { sprite?: { walk?: string; idle?: string } } }) => {
+          if (e.hp <= 0) return;
+          if (e.def.sprite?.walk) foeSheets.add(e.def.sprite.walk);
+          if (e.def.sprite?.idle) foeSheets.add(e.def.sprite.idle);
+        });
+        check('no guard on the field wears a sheet the company wears', roster.every((m) => !foeSheets.has(m.anim)), `allies ${[...new Set(roster.map((m) => m.anim))].join()} vs foes ${[...foeSheets].join()}`);
+        // FEET ON THE GROUND (it.104): the anchor is computed from the sheet's
+        // painted bounds, never the naive 1 that hung a guard over his shadow.
+        check('every guard stands on his own shadow', roster.every((m) => m.anchorY > 0.5 && m.anchorY < 0.999), roster.map((m) => `${m.anim}:${m.anchorY.toFixed(2)}`).join(' '));
         // Not `hp === hpMax`: the company goes in by itself the moment the floor
         // stands (it.102), so by the time the harness reads the roster somebody is
         // usually already bleeding. What must hold is that each man has a life of
@@ -2005,6 +2048,27 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
         if (e.hp > 0) roster.push(e.def.kind);
       });
+      // A FAIR FIGHT AT THE LEVEL YOU ARRIVE (it.104). The city asks the moment
+      // the woods are clear, so the hero can walk in at level one; the field
+      // scales to whoever turns up rather than to how deep they have been.
+      {
+        const lvls: number[] = [];
+        let generalLvl = 0;
+        g.enemies.forEachActive((e: { hp: number; level: number; def: { kind: string } }) => {
+          if (e.hp <= 0) return;
+          if (e.def.kind === 'general') generalLvl = e.level;
+          else lvls.push(e.level);
+        });
+        // The field takes the HARDER of the depth reached and the party's own
+        // level, and is never more than a band over either - so it is a fair
+        // fight whether the hero comes here first (level one, depth zero) or
+        // last (deep, and expecting one).
+        const hero = g.player.level;
+        const deep = g.deepestFloor;
+        const ceiling = Math.max(hero, deep) + 2;
+        check('the company is no more than a band over the hero or their depth', lvls.every((l) => l <= ceiling), `hero ${hero}, depth ${deep} -> ceiling ${ceiling}, worst ${Math.max(...lvls)}`);
+        check('and its general no more than one band past that', generalLvl > 0 && generalLvl <= ceiling + 1, `ceiling ${ceiling} vs general ${generalLvl}`);
+      }
       check('the company is men, not monsters', roster.length >= 8 && roster.every((k) => ['mercenary', 'general', 'bandit', 'brigand', 'poacher', 'archer'].includes(k)), roster.join());
       check('no hostile wears the city own guard rig', !roster.includes('guard'));
       // ONE LOCKED GATE, AND IT IS ON THE WEST EDGE (it.102).
@@ -2043,6 +2107,10 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         const sp = g.squad.spacing();
         check('the company does not clump into one body', sp.n >= 4 && sp.min > 0.45, `closest pair ${sp.min.toFixed(2)}, mean ${sp.mean.toFixed(2)} over ${sp.n}`);
         check('and it holds a front rather than a knot', sp.mean > 1.6, `mean ${sp.mean.toFixed(2)}`);
+        // TACTICAL DISPERSION (it.104): a skirmish line across the march, not a
+        // column behind the hero - so the company covers ground, not one lane.
+        check('the line fans out across the field', sp.span > 6.5, `widest pair ${sp.span.toFixed(1)} tiles`);
+        check('and every man has his own lane in it', new Set((g.squad.roster() as Array<{ lane: number }>).map((m) => m.lane)).size === g.squad.size, 'two men share a lane');
         const front1 = g.squad.front;
         check('and the line itself has advanced on the enemy ground', Math.hypot(front1.x - farm.general.x, front1.y - farm.general.y) < Math.hypot(front0.x - farm.general.x, front0.y - farm.general.y) - 1, `${front0.x.toFixed(1)},${front0.y.toFixed(1)} -> ${front1.x.toFixed(1)},${front1.y.toFixed(1)}`);
         let foeHp2 = 0;

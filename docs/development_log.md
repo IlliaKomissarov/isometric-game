@@ -1,5 +1,129 @@
 # Development Log
 
+## 2026-09-09 (iteration 104) - Feet on the ground, and a field that holds its breath
+
+Five reports, and four of them turned out to have a measurable cause underneath
+that was worse than the symptom. This iteration is mostly those causes.
+
+### The field holds its breath (`src/main.ts`)
+A cutscene only ever took the COMMANDS away: `inputQueue.clear()`, and the sim
+carried on underneath. So the letterboxed scene played over a battle that was
+still being fought - guards charged, the company closed, the general shredded the
+hero's plate through the general's own speech - and now that it.103 made a scene
+WAIT for a keypress, a player could be killed off screen while reading a line.
+
+While the bars are down, nothing about the world is stepped: the movement
+systems, swings in flight, projectiles, wounds over time, every entity's own
+state machine, the foes' separation pass, the squad, and the quest ticks. The
+whole tick is skipped rather than parts of it, which also makes the freeze
+exactly reproducible on every peer.
+
+### Feet on the ground (`src/render/SpriteLibrary.ts`)
+`spriteLib.footAnchor(name)`, and it is the fix for the "sinking and clipping".
+
+A sliced frame keeps its ORIGINAL frame size (the trim is restored), and the
+packs do not agree about how much empty air they leave under a body:
+`captain_walk` leaves one pixel of 66, `guard_walk` leaves **114 of 320**. So
+`anchor.set(0.5, 1)` - the obvious thing, and what the squad, the procession cast
+and the procession walkers all did - hung a guard **seventy screen pixels above
+his own shadow** while a captain stood correctly. Every enemy def in the game
+works around this with a hand-tuned `anchorY` found by eye, one per sheet.
+
+`footAnchor` computes it: the anchor that puts the painted bottom of the body on
+the tile and its painted centre over the tile's centre. The squad, the cutscene
+cast, the procession walkers and the town's own villagers all use it now.
+
+### The allies were the enemy, in a different tint
+`SQUAD_RANKS` opened with `guard_walk`, three times. Two things wrong with that:
+
+1. It is **the lowest-resolution human sheet in the pack** - baked at half
+   resolution, painted body 48 atlas pixels tall, drawn at 60 units. Next to
+   `ranger_run` at 168 and `rogue_run` at 88, both baked at full resolution.
+2. **`brigand` wears it.** `FARM_POOL` contains `brigand`, whose sprite is
+   `guard_walk` - so on the one floor the squad exists, friend and foe were the
+   same silhouette in two tints. The it.101 comment in that file claimed the
+   opposite and was simply wrong.
+
+The ranks are household knights, rangers of the eastern road and scouts of the
+ward now - `knight_run`, `ranger_run`, `rogue_run`, all full-resolution, none
+worn by anything hostile on this floor. The harness checks that directly: it
+reads the live foes' sheets and asserts no guard shares one.
+
+**And a man who is pinned gets lifted clear.** Sidestepping solves a hedge; it
+does not solve a guard shouldered into the corner of a barn by two others, and
+one vibrating against a wall for the whole battle is what "pathfinding blockage"
+looks like. Three failed sidesteps and he is put on the nearest tile he can
+actually stand on, searched outward in a fixed order.
+
+### Tactical dispersion
+The lanes are dealt in the frame the ADVANCE is in, not the muster's: `lane`
+across the front, `depth` along it, rebuilt every tick against the current
+heading, so the line turns with the march instead of carrying the muster's
+north-east shape around the map. Eight men at 2.3 tiles hold a front sixteen
+tiles wide.
+
+And **two men to a body, no more.** Nearest-foe-per-man sent all eight at
+whichever knot of the company they met first, and the fan the lanes had just
+built collapsed into one scrum three tiles across. Every hostile takes at most
+two claimants, in member order; a guard who finds nothing unclaimed in his sight
+takes the next thing along, and only breaks the cap for a body already on top of
+him. Measured through a battle: the widest pair goes 13 -> 15 -> 25 -> 31 tiles
+as they spread over four fights at once.
+
+### The farmlands did not have fire damage
+**There is no environmental burn in the codebase.** `fieldfire` is a flame
+sprite, a light and an ember hotspot; `farm.fires` is read by the layout and by
+nothing else. Nothing on that floor has ever taken a point of health off the
+hero for standing anywhere. So there was no burn tick to nerf, and I have not
+invented one - a warning marker on a harmless thing is a lie in the UI.
+
+What DOES take a low-level hero apart is the company, and it.103 made that far
+more likely by moving the errand to right after the forest. Measured, before:
+**a level-1 hero (150 HP, 3-7 damage a swing) against 22 bodies of 84-98 at
+levels 3-4, and a mini-boss of 851.** Not a hard fight - an impossible one.
+
+Every other zone scales off `deepestFloor`, which works because every other zone
+is reached by going DOWN. The farmlands are not. The field now takes the higher
+of the depth reached and the party's own level, the general is one band over the
+field instead of two, and his shout reaches eight tiles instead of eleven with a
+third off the shred and a longer cooldown - it was re-applying before it expired.
+Measured, after: **14 bodies at levels 2-3 and a general of 626**, and a driven
+run has the squad clearing the field down to the general alone, losing two men
+doing it, with the hero standing still.
+
+The fires did get the **footprint ring** the report asked for, as what it honestly
+is: a flame sprite is tall and narrow, so from across a dark field you could see
+that something was burning but not how much ground it stood on. A wide, low, dim
+ring on the earth says where the fire is, and its embers now rise off that ring
+rather than off one point, so the edge is legible while moving.
+
+### The people stay (`src/town/Villagers.ts`, `src/town/Reclaim.ts`)
+A procession's folk were left standing exactly where the bars lifted, for ever -
+twelve people frozen mid-stride in a clearing is the first thing you see when a
+homecoming ends. Every scene now hands its walkers to the district's own
+`Villagers` on the way out: same spot, same body, same coat, and from the next
+tick they path, wander, pause and talk like anybody else who lives there.
+
+Two bugs had to be fixed under it before that worked at all:
+
+- **The wander BFS could not reach a body outside its area.** The search box was
+  the wander patch and nothing else, so somebody standing on the road could never
+  find a way anywhere - it sat still for ever, asking four times a second. The box
+  is the union of the patch and both ends of the walk now.
+- **The un-cleared forest's wander patch is one tile at the origin, inside a
+  wall** (it is only given a real patch when the forest is `safe`). Anyone handed
+  to it had nowhere legal to walk to. `adopt` grows the patch to take in whoever
+  arrives: the clearing they came home to IS their ground.
+
+### Verified
+`npm run build` clean, 0 TypeScript errors. `__qa75({ seed: 3, cls: 'mage' })`:
+**406/406, no console errors**, with nine new checks - nothing on the field moving
+or fighting through five seconds of a cutscene, no guard wearing a sheet the
+company wears, every guard's anchor computed rather than 1, the line fanning past
+six tiles with every man in his own lane, the field never more than a band over
+the hero or their depth, and the forest's folk joining the clearing and walking it
+under their own feet afterwards. Device matrix 74/74.
+
 ## 2026-09-09 (iteration 103) - The company flocks, the page is turned by hand
 
 it.102 cut the squad loose and gave the cutscenes a voice. it.103 fixes how both

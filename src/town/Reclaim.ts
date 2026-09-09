@@ -308,7 +308,10 @@ export class ProcessionScene {
       shadow.alpha = 0.6;
       root.addChild(shadow);
       const body = new Sprite(spriteLib.frame(c.anim, c.dir ?? 4, 0));
-      body.anchor.set(0.5, 1);
+      // FEET ON THE GROUND (it.104): the cast had the same floating-body bug the
+      // squad did - an officer standing seventy pixels over his own shadow.
+      const fa = spriteLib.footAnchor(c.anim);
+      body.anchor.set(fa.x, fa.y);
       body.scale.set((c.height ?? 66) / painted / 0.8);
       body.position.set(0, 2);
       if (c.tint !== undefined) body.tint = c.tint;
@@ -339,7 +342,8 @@ export class ProcessionScene {
         shadow.alpha = 0.6;
         root.addChild(shadow);
         const body = new Sprite(spriteLib.frame(sheet.anim, 2, 0));
-        body.anchor.set(0.5, sheet.feet ? 1 : 0.94);
+        const fa = spriteLib.footAnchor(sheet.anim);
+        body.anchor.set(fa.x, fa.y);
         body.scale.set(scale / 0.8);
         body.position.set(0, 2);
         body.tint = COATS[(i * 3 + 1) % COATS.length];
@@ -575,6 +579,23 @@ export class ProcessionScene {
       window.setTimeout(() => this.overlay.remove(), 700);
       h.onDone();
     }
+  }
+
+  /**
+   * THE PEOPLE WHO WALKED IN (it.104): where each of them ended up, and in what
+   * sheet and coat. Main hands these to the floor's `Villagers` so they carry on
+   * living there instead of standing where the bars left them. The walkers are
+   * taken down as it reports them - whoever adopts them owns them now.
+   */
+  handover(): Array<{ x: number; y: number; anim: AnimName; coat: number }> {
+    const out: Array<{ x: number; y: number; anim: AnimName; coat: number }> = [];
+    for (const w of this.walkers) {
+      if (w.root.destroyed) continue;
+      if (w.root.visible) out.push({ x: w.x, y: w.y, anim: w.anim, coat: w.coat });
+      w.root.destroy({ children: true });
+    }
+    this.walkers.length = 0;
+    return out;
   }
 
   /** Tear the procession down (the world is rebuilt right after). */

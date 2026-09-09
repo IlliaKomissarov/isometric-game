@@ -1771,7 +1771,22 @@ async function boot(): Promise<void> {
       // THE CELLAR (it.97) fights a step under the forest's measure: it is the errand a hero takes early.
       const cellarLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
       // THE FARMLANDS (it.100) are a pitched battle, so they fight a step above the woods.
-      const farmLevel = Math.max(3, Math.min(MAX_DEPTH, deepestFloor + 2));
+      /**
+       * THE FIELD MEETS THE HERO WHERE THEY ARE (it.104). Every other zone scales
+       * off `deepestFloor`, which works because every other zone is reached by
+       * going DOWN. The farmlands are not: since it.103 the city asks the moment
+       * the woods are clear, so a hero who went straight out of town, into the
+       * forest and home again arrives here at LEVEL ONE with `deepestFloor` 0 -
+       * and the old formula floored the field at 3 and gave the general 5. That
+       * is a level-one hero swinging 3-7 damage at twenty-two bodies of 84-98 and
+       * a mini-boss of 851. It is not a hard fight, it is an impossible one, and
+       * it is what "instant health depletion in the farmlands" actually was.
+       *
+       * The field now takes the higher of the depth reached and the party's own
+       * level, so it is a fair fight whether you come here first or last.
+       */
+      const partyLevel = party.reduce((n, seat) => (seat && !seat.gone ? Math.max(n, seat.player.level) : n), 1);
+      const farmLevel = Math.max(2, Math.min(MAX_DEPTH, Math.max(deepestFloor + 1, Math.round(partyLevel * 0.8))));
       const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
@@ -2239,7 +2254,9 @@ async function boot(): Promise<void> {
         // is spawned with them, before the tally is taken, so the field is not
         // "clear" while he is still on it.
         if (isFarm && farm) {
-          generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel + 2);
+          // ONE band over the field, not two (it.104): at the bottom of the range
+          // `+2` was most of a doubling of his life, and he is already a wall.
+          generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel + 1);
           // THE GENERAL'S PLATE (it.101): he takes the wardens' own health bar, so a
           // mini-boss reads as one - name, level and numbers at the top of the screen.
           boss = generalBody;
@@ -4242,6 +4259,19 @@ async function boot(): Promise<void> {
      */
     const cineSpeak = new CineDialogue();
     subs.push(() => cineSpeak.destroy());
+    /**
+     * THE PEOPLE STAY (it.104). A procession's folk used to be left standing
+     * exactly where the bars lifted - twelve people frozen mid-stride in a
+     * clearing, which is the first thing you see when a homecoming ends. Every
+     * scene now hands its walkers to the district's own `Villagers` on the way
+     * out: same spot, same body, same coat, and from the next tick they path,
+     * wander, pause and talk like anybody else who lives there.
+     */
+    const settleWalkers = (): void => {
+      const t = world.town;
+      if (!t || !reclaim) return;
+      for (const w of reclaim.handover()) t.villagers.adopt(w, w.anim, w.coat);
+    };
     /** The tile the scene's fog was last opened from, so it is only recomputed on a change. */
     let cineFogTile = -1;
     const cineFocusHooks = {
@@ -4291,6 +4321,7 @@ async function boot(): Promise<void> {
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
+          settleWalkers(); // THE PEOPLE STAY (it.104).
           reclaim?.destroy();
           reclaim = null;
           withFade(async () => {
@@ -4372,6 +4403,7 @@ async function boot(): Promise<void> {
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
+          settleWalkers(); // THE PEOPLE STAY (it.104).
           reclaim?.destroy();
           reclaim = null;
           forestReturnTicks = 1; // The next tick pays the errand, here in the forest.
@@ -4475,6 +4507,7 @@ async function boot(): Promise<void> {
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
+          settleWalkers(); // THE PEOPLE STAY (it.104).
           reclaim?.destroy();
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y)); // The sight comes back to the hero.
@@ -4747,6 +4780,7 @@ async function boot(): Promise<void> {
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
+          settleWalkers(); // THE PEOPLE STAY (it.104).
           reclaim?.destroy();
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
@@ -4797,6 +4831,7 @@ async function boot(): Promise<void> {
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
+          settleWalkers(); // THE PEOPLE STAY (it.104).
           reclaim?.destroy();
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
@@ -4895,6 +4930,7 @@ async function boot(): Promise<void> {
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
+          settleWalkers(); // THE PEOPLE STAY (it.104).
           reclaim?.destroy();
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
@@ -4951,11 +4987,14 @@ async function boot(): Promise<void> {
       if (gen && gen.hp > 0 && gen.action !== 'dead') {
         const d = Math.hypot(gen.pos.x - player.pos.x, gen.pos.y - player.pos.y);
         if (generalCool > 0) generalCool--;
-        else if (d < 11) {
-          generalCool = 300; // once every five seconds at most
+        else if (d < 8) {
+          // IT.104: eight tiles, not eleven, and a third off the shred. He was
+          // reaching across most of a screen to strip a low-level hero's armour
+          // permanently - the effect never had time to expire between shouts.
+          generalCool = 420; // once every seven seconds at most
           for (const seat of liveSeats()) {
-            seat.player.applyShred(240, 0.35);
-            seat.player.applySlow(120);
+            seat.player.applyShred(180, 0.22);
+            seat.player.applySlow(90);
           }
           world.dmgText.show(gen.pos.x, gen.pos.y - 1.9, GENERAL_LINES[generalLine % GENERAL_LINES.length], 'crit');
           generalLine++;
@@ -5307,7 +5346,22 @@ async function boot(): Promise<void> {
         state.forEach((entity) => entity.beginTick());
         // THE COMMAND STREAM (it.59): solo drains the local queue; co-op ships
         // it and executes the party's merged frame for this tick.
-        if (reclaim?.running) inputQueue.clear(); // THE RECLAIMING (it.91): the hero watches.
+        // THE FIELD HOLDS ITS BREATH (it.104). Up to it.103 a cutscene only took
+        // the COMMANDS away: the hero could not act, but the sim kept running
+        // underneath, so a letterboxed scene played over a battle that carried on
+        // without anybody watching it. Guards charged, the company closed, the
+        // general shredded the hero's plate through the general's own speech, and
+        // a scene that now waits for a keypress could be waited through while the
+        // hero was killed off screen.
+        //
+        // While the bars are down, everything that MOVES or FIGHTS holds: the
+        // movement systems, swings in flight, projectiles, wounds over time,
+        // every entity's own state machine, the foes' separation pass, and the
+        // squad. Nothing about the world is stepped at all - which also makes the
+        // freeze exactly reproducible on every peer, because the whole tick is
+        // skipped rather than parts of it.
+        const cineHold = !!reclaim?.running;
+        if (cineHold) inputQueue.clear(); // THE RECLAIMING (it.91): the hero watches.
         const local = inputQueue.drain();
         const commands = lockstep ? lockstep.frame(tick, local) : local;
         if (leaderNoteCooldown > 0) leaderNoteCooldown--;
@@ -5364,12 +5418,14 @@ async function boot(): Promise<void> {
         if (world.mines) tickMines(); // THE IRON GATES (it.85): a key at a gate opens it.
         tickForestQuest(); // THE FOREST ERRAND (it.87).
         tickEastQuest(); // THE EASTERN QUARTER (it.91).
-        tickCellarQuest(); // THE CELLAR (it.97).
-        tickRally(); // THE MUSTER (it.100).
-        tickFarmQuest(); // THE FARMLANDS (it.100).
+        if (!cineHold) {
+          tickCellarQuest(); // THE CELLAR (it.97).
+          tickRally(); // THE MUSTER (it.100).
+          tickFarmQuest(); // THE FARMLANDS (it.100).
+        }
         // THE CITY'S OWN (it.100): the squad fights on the sim tick, so a co-op
         // party stays in step and `dealDamage` remains the only hp mutator.
-        if (world.squad) {
+        if (world.squad && !cineHold) {
           const foes: Array<{ id: number; hp: number; action: string; pos: { x: number; y: number } }> = [];
           const foePos = new Map<number, { x: number; y: number }>();
           world.enemies.forEachActive((e) => {
@@ -5433,12 +5489,14 @@ async function boot(): Promise<void> {
           pendingPortal = false;
           castPortal();
         }
-        for (const mv of world.movements) mv?.update(dt);
-        world.combat.update();
-        for (const sk of skillSystems) sk?.update();
+        if (!cineHold) {
+          for (const mv of world.movements) mv?.update(dt);
+          world.combat.update();
+          for (const sk of skillSystems) sk?.update();
+          world.projectiles.update(dt);
+          world.status.update(); // Wounds over time (it.80).
+        }
         if (++sheetClock % 60 === 0) charSheetUI.tick();
-        world.projectiles.update(dt);
-        world.status.update(); // Wounds over time (it.80).
         // SEEKER (it.80): the party's best drop luck rides the floor's loot.
         let seek = 0;
         for (const seat of liveSeats()) seek = Math.max(seek, seat.player.traitPower('seeker'));
@@ -5447,8 +5505,10 @@ async function boot(): Promise<void> {
         // other peer pulls its copy toward the leader's.
         hostSync?.sample(tick);
         clientSync?.apply(tick);
-        state.forEach((entity) => entity.update(dt));
-        world.enemies.separate();
+        if (!cineHold) {
+          state.forEach((entity) => entity.update(dt));
+          world.enemies.separate();
+        }
         // FROST-TOUCHED AURAS (it.53): a chilled hero inside three tiles of a frost champion.
         world.enemies.forEachActive((e) => {
           if (e.affix !== 'frost' || e.hp <= 0) return;

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 108, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 109, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -37,7 +37,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `systems/Combat` | seeded RNG, seats, movement | damage events, deaths, XP | sole hp mutator (state sync is the one override) |
 | `systems/Skills` / `SkillTree` | player, combat RNG | casts, buffs, cooldowns | learn/unlock via commands only |
 | `entities/EnemyPool` / `Enemy` | Pathfinding, Collision, lighting | AI, spawns, phases | ids assigned at pool construction (snapshot id base) |
-| `engine/Lighting` | dungeon grid, player tile | per-tile tint, visible set, cutaway | NO FOG OF WAR since it.107: `omniscient` defaults true, every tile is VISIBLE, the shroud's states are never entered. The LIGHT is untouched - a crypt is still dark away from the torch. `omniscient = false` restores the shroud intact |
+| `engine/Lighting` | dungeon grid, player tile | per-tile tint, visible set, cutaway | owns sprite `visible` for fog. `omniscient` is the COLISEUM's switch only (it.53); it.107 defaulted it on game-wide and it.109 put it back. The farmlands and the riverside call `revealAll` deliberately - open country is drawn from the first frame (it.103) - which is a different thing from having no fog |
 | `render/Culling` | viewport, camera | `renderable` on static sprites | never touches entities or `visible` |
 | `engine/Camera` | app screen, layout `stageZoom` | world transform | destroyed with its world |
 | `core/OrientationManager` | layout viewport, touch detection, settings | CSS custom properties + body classes | the only source of layout truth |

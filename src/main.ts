@@ -1927,7 +1927,7 @@ async function boot(): Promise<void> {
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
       lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
-      // (it.53's `omniscient` for the trial is the default for every floor now, it.107.)
+      if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53; restored it.109).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
       const theme = !spriteLib.loaded
@@ -2008,10 +2008,13 @@ async function boot(): Promise<void> {
       // (The SIGHT radius is deliberately left short of the map: `revealAll` is
       // what kills the pop-in, and widening sight as well would have put the
       // general's health bar on screen from halfway across the field.)
-      // IT.107: `revealAll` is a no-op now that nothing is ever HIDDEN - kept
-      // for the two floors that asked for it explicitly, so turning the fog back
-      // on (`lighting.omniscient = false`) restores their it.103/it.106
-      // behaviour rather than silently changing them too.
+      // NO POP-IN ON OPEN COUNTRY (it.103, and the riverside with it, it.106).
+      // These two floors are fields: a hero on the road can SEE the far hedge,
+      // and fogging it made the border fade in ring by ring as they walked at it,
+      // which read as the trees loading. The whole floor is explored from the
+      // first frame; the torch's own radius still says what is LIT, so the dark
+      // still matters - it is only the shape of the land that is known. The crypt
+      // keeps its fog: that is the crypt's whole point (it.109).
       if (isFarm || isRiver) lighting.revealAll();
       const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
@@ -6519,22 +6522,27 @@ async function boot(): Promise<void> {
           // EVERY BODY BEHIND A TREE (it.87): the other heroes and every foe in
           // sight fade the trunk in front of them too, so nothing fights unseen.
           //
-          // ON SCREEN, NOT MERELY UNFOGGED (it.107). This list used to be gated on
-          // `lighting.isVisible`, which was doing two jobs at once: "the player can
-          // see this body" AND, by accident, "this body is near the player". With
-          // the fog gone (it.107) every tile on the floor is visible, so EVERY
-          // villager and EVERY foe anywhere on the map went into the list - and a
-          // roof only has to have somebody standing behind it, anywhere, to be
-          // ghosted. That is the "houses are permanently see-through" bug, and the
-          // fog was the only thing that had ever been holding it back.
-          //
-          // The right bound was always the CAMERA: a cutaway exists so a body the
-          // player is looking at is not hidden by a roof, which can only matter for
-          // bodies on screen. `CUTAWAY_RANGE` tiles comfortably covers the viewport
-          // at the widest zoom, and it caps the work this loop does as well.
+          /**
+           * SEEN, AND ON SCREEN (it.107, both halves it.109).
+           *
+           * This list was gated on `lighting.isVisible` alone, which was quietly
+           * doing two jobs: "the player can see this body" AND, by accident,
+           * "this body is near the player". it.107 took the fog out of the game
+           * and the second meaning evaporated with it - every villager and foe
+           * ANYWHERE on the floor went into the list, and a roof only had to have
+           * somebody standing behind it, anywhere, to be ghosted for ever.
+           *
+           * The fog is back (it.109), so `isVisible` means something again - but
+           * it was never the whole rule. A cutaway exists so a body the player is
+           * LOOKING at is not hidden by a roof, which can only matter for bodies
+           * on screen. Both tests are applied now, and neither is standing in for
+           * the other: a body must be out of the fog AND within the viewport.
+           * `CUTAWAY_RANGE` also caps the work this loop does.
+           */
           const bodies: Array<{ x: number; y: number; depth: number }> = [];
           const onScreen = (x: number, y: number): boolean =>
-            Math.abs(x - cameraFocus.x) + Math.abs(y - cameraFocus.y) < CUTAWAY_RANGE;
+            Math.abs(x - cameraFocus.x) + Math.abs(y - cameraFocus.y) < CUTAWAY_RANGE &&
+            world.lighting.isVisible(Math.floor(x), Math.floor(y));
           for (const seat of liveSeats()) if (seat.player !== player && seat.player.hp > 0 && onScreen(seat.player.pos.x, seat.player.pos.y)) {
             const ps = worldToScreen(seat.player.pos.x, seat.player.pos.y, vec2());
             bodies.push({ x: ps.x, y: ps.y, depth: (seat.player.pos.x + seat.player.pos.y) * 16 });
@@ -7311,6 +7319,14 @@ async function boot(): Promise<void> {
         floorActiveTicks = 0;
         player.action = 'idle';
         if (floor <= MAX_DEPTH) levelSelect.unlock(floor);
+        // THE FIRST LOOK (it.109). Every real way onto a floor does this -
+        // `goPlace`, the stairs, the portal - but this dev jump never did, so a
+        // floor entered through the harness stayed entirely HIDDEN until the
+        // hero happened to step across a tile boundary. Harmless in a build (no
+        // player can reach this), and thoroughly misleading in a test: it is why
+        // restoring the fog first looked like a black screen.
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
         updateOrb();
       };
       Object.defineProperty(window, '__game', {

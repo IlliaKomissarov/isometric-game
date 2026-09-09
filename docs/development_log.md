@@ -1,5 +1,79 @@
 # Development Log
 
+## 2026-09-09 (iteration 109) - The fog put back, and anglers that hold their size
+
+### The fog of war is back (`src/engine/Lighting.ts`)
+it.107 defaulted `omniscient` to true and took the shroud out of the whole game.
+That was asked for and it was wrong for this game: the crypt without fog is a
+different crypt, and a map known before it is walked is a different game.
+
+`omniscient` is the Coliseum's own switch again (it.53) and nothing else sets
+it. A floor starts mostly HIDDEN and is walked into view, exactly as before.
+
+Two things from the fog-off work were kept ON PURPOSE, because neither of them
+was about the fog:
+
+- **The farmlands and the riverside still `revealAll`.** That is it.103's own
+  decision for open country - a hero on the road can SEE the far hedge, and
+  fogging it made the tree-line border fade in ring by ring as they walked at
+  it, which read as the trees loading. Those two floors are drawn from the first
+  frame and always were; the torch's radius still says what is LIT.
+- **The riverside's lighting radii.** it.106 never added it to the lighting
+  chain, so it inherited the CRYPT's radii and was pitched dark. That was a
+  plain bug, unrelated to fog.
+
+**The cutaway now applies BOTH tests.** it.107 replaced its `isVisible` gate
+with a camera-range bound, because with no fog `isVisible` was true for every
+tile on the map and every villager anywhere ghosted every roof. The fog makes
+`isVisible` mean something again - but it was never the whole rule either. A
+body must now be *out of the fog* AND *within the viewport*, and neither test
+stands in for the other.
+
+**`devTravel` now reveals on arrival.** Every real way onto a floor calls
+`updateVisibility`; the dev jump never did, so a floor entered through the
+harness stayed entirely black until the hero crossed a tile boundary. Harmless
+in a build - no player can reach it - and it is why restoring the fog first
+looked like a black screen when tested.
+
+### The anglers were growing and shrinking without bound
+Reported as "they are scaling up and down in size", and that is literally what
+was happening. it.107 wrote their breath as:
+
+```ts
+a.body.scale.y = Math.abs(a.body.scale.y) * (1 + Math.sin(t * 1.7) * 0.012);
+```
+
+which reads the value it set **last frame** and multiplies it **again**, sixty
+times a second. That is a compounding loop, and the product of `(1 + 0.012 sin)`
+does not return to one - its second-order term is always negative. Simulated
+over one minute at the real clock:
+
+| | after 60 s | range |
+| --- | --- | --- |
+| it.107 | **0.68x** (38% smaller) | 0.44x - 1.26x |
+| it.109 | 1.109 (base 1.096) | 1.082 - 1.109 |
+
+Every other breathing body in the codebase already measures from a constant -
+the villagers from `v.scale`, the vendors from their own, the hero from
+`rigScale`. The anglers capture `baseY` once at creation and measure from that.
+Verified live over 2,400 frames: spread 0.026 (the intended +/-1.2%), drift
+0.0018.
+
+### ...and the hero's fishing breath was never undone
+The same pass found a smaller version of the same class of bug: the wait pose
+bends the hero's `scale.y` a hair off `rigScale`, and nothing put it back. A
+hero who had fished once carried whatever fraction the sine happened to be on
+for the rest of the run. Restored on every frame the pose is not active.
+
+### Verification
+`tsc` clean, zero console errors across town / depth I / depth V / forest /
+farmlands / riverside, device matrix 74/74. Checked live: the town is 9,151 of
+11,368 tiles unseen and the crypt 1,870 of 1,936, while the room the hero stands
+in is shown; the riverside has 0 tiles still HIDDEN (open country, by its own
+`revealAll`, with `omniscient` false); the anglers hold their size; the hero is
+at rig scale before a cast, within 0.7% during it, and exactly back at rig scale
+after. The full ~400-check suite still stalls in a backgrounded tab (it.105).
+
 ## 2026-09-09 (iteration 108) - A river with no grid in it, a throw that happens once
 
 ### The water read as a grid of boxes, for three separate reasons

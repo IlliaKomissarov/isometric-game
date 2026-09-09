@@ -80,21 +80,19 @@ export class Lighting {
   private propSprites = new Map<number, Sprite[]>();
   private visibleSet = new Set<number>();
   /**
-   * NO FOG OF WAR (it.107). This was the Coliseum's own switch (it.53); it is
-   * now the whole game's, and it defaults ON.
+   * THE COLISEUM (it.53): no fog at all - every tile stays in sight.
    *
-   * What it removes is the SHROUD - the HIDDEN black over ground the hero has
-   * not walked to, and the dimmed EXPLORED tint over ground they have left.
-   * Every tile is VISIBLE from the first frame, so the shape of a floor is
-   * known and the minimap is whole.
+   * IT.107 made this default TRUE for every floor, which took the fog of war out
+   * of the whole game. IT.109 PUT IT BACK: the shroud is the crypt's point, and
+   * a map that is known before it is walked is a different game. This is the
+   * trial's own switch again, and nothing else sets it.
    *
-   * What it does NOT remove is the LIGHT. A torch still has a radius, a crypt is
-   * still dark away from it, and `updateRender` still tints every tile by what
-   * reaches it. Fog and darkness were always two systems; only the first is
-   * gone. Setting this false restores the old behaviour intact - nothing was
-   * deleted, so a floor that wants a shroud can still ask for one.
+   * (Fog and darkness remain two systems: this is the HIDDEN / EXPLORED shroud,
+   * not the torch radius. `revealAll` is still how an open-country floor says
+   * "the shape of this land is not a secret" - see the farmlands and the
+   * riverside, which use it deliberately and always did.)
    */
-  omniscient = true;
+  omniscient = false;
   private allTiles: Set<number> | null = null;
   private isOpaque!: (gx: number, gy: number) => boolean;
 

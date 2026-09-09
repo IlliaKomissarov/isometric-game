@@ -906,6 +906,11 @@ export class Player extends Entity {
     let frame: number;
     const fcOf = (name: AnimName): number => spriteLib.anim(name).frameCount;
     if (this.rod.visible && !this.fishing) this.rod.visible = false;
+    // ...and the fishing breath goes with it (it.109). The wait pose bends
+    // `scale.y` a hair off `rigScale`; nothing put it back, so a hero who had
+    // fished once carried whatever fraction the sine happened to be on for the
+    // rest of the run. Restored here, where every frame passes.
+    if (!this.fishing && this.body.scale.y !== this.rigScale) this.body.scale.y = this.rigScale;
 
     if (this.action === 'dead') {
       // The death anim plays out before main respawns us (PLAYER_DEATH_TICKS).
@@ -958,7 +963,7 @@ export class Player extends Entity {
         const t = (this.fishClock - FISH_CAST) * 1.5;
         this.body.scale.y = this.rigScale * (1 + Math.sin(t) * 0.012);
       } else if (this.body.scale.y !== this.rigScale) {
-        this.body.scale.y = this.rigScale;
+        this.body.scale.y = this.rigScale; // the throw itself is not a breath
       }
       /**
        * THE HAND (it.108). The rod is pinned to where the hand actually is, and

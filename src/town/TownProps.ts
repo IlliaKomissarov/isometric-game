@@ -75,7 +75,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const hotspots: Array<{ x: number; y: number }> = [];
   const fog: Array<{ sprite: Sprite; x: number; y: number; phase: number; speed: number }> = [];
   /** THE ANGLERS (it.107): render-only bodies sat at the bank, each with its own idle. */
-  const anglers: Array<{ root: Container; body: Sprite; rod: Sprite; phase: number }> = [];
+  const anglers: Array<{ root: Container; body: Sprite; rod: Sprite; phase: number; baseY: number }> = [];
   let stashSprite: Sprite | null = null;
   let cellarGirl: { sprite: Sprite | null; id: number } | null = null;
   const gates = new Map<string, Sprite>();
@@ -775,7 +775,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         viewport.objectLayer.addChild(root);
         lighting.registerProp(p.x, p.y, body);
         lighting.registerProp(p.x, p.y, rod);
-        anglers.push({ root, body, rod, phase: ((p.x * 7 + p.y * 13) % 100) / 100 });
+        // `baseY` is the scale the breath is measured FROM, captured once (it.109).
+        anglers.push({ root, body, rod, phase: ((p.x * 7 + p.y * 13) % 100) / 100, baseY: body.scale.y });
         break;
       }
       case 'oscar':
@@ -1028,11 +1029,26 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   };
   const update = (dt: number): void => {
     clock += dt;
-    // THE ANGLERS (it.107): each breathes and dips his rod on his own slow
-    // cycle, seeded off his tile, so three men on one bank never move together.
+    /**
+     * THE ANGLERS (it.107, made to hold still it.109): each breathes and dips his
+     * rod on his own slow cycle, seeded off his tile, so three men on one bank
+     * never move together.
+     *
+     * THE BREATH IS MEASURED FROM `baseY`, NOT FROM ITSELF. it.107 wrote
+     * `scale.y = Math.abs(scale.y) * (1 + sin * 0.012)`, which reads the value it
+     * set last frame and multiplies it AGAIN - a compounding loop, sixty times a
+     * second. The product of `(1 + 0.012 sin)` does not return to one: its
+     * second-order term is always negative, so the men shrank as they pulsed, and
+     * the pulse itself accumulated. That is the "scaling up and down" - they were
+     * growing and shrinking without bound.
+     *
+     * Every other breathing body in this codebase already measures from a
+     * constant (the villagers from `v.scale`, the vendors from their own, the
+     * hero from `rigScale`). This one now does too.
+     */
     for (const a of anglers) {
       const t = clock * 0.9 + a.phase * 6.283;
-      a.body.scale.y = Math.abs(a.body.scale.y) * (1 + Math.sin(t * 1.7) * 0.012);
+      a.body.scale.y = a.baseY * (1 + Math.sin(t * 1.7) * 0.012);
       a.rod.rotation = 0.05 + Math.sin(t) * 0.07;
       a.rod.position.y = -6 + Math.sin(t * 1.3) * 0.8;
     }

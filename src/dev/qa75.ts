@@ -169,18 +169,20 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     g.loop.step(30);
     check('starts in town', g.floor === 0 && !!g.town);
     /**
-     * NO FOG OF WAR (it.107). Not "revealed as you walk" - gone. Every tile of
-     * every floor is visible from the first frame, and the shroud's own state
-     * (HIDDEN / EXPLORED) is never entered. The LIGHT is untouched: a crypt is
-     * still dark away from the torch, which is a different system entirely.
+     * THE FOG OF WAR IS BACK (it.109). it.107 defaulted `omniscient` on and took
+     * the shroud out of the whole game; the crypt without it is a different game.
+     * It is the Coliseum's own switch again (it.53) and nothing else sets it, so
+     * a fresh floor starts mostly HIDDEN and is walked into view.
+     *
+     * The two OPEN-COUNTRY floors are the deliberate exception and always were:
+     * the farmlands and the riverside call `revealAll` so their tree-line border
+     * does not fade in ring by ring as the hero walks at it (it.103).
      */
     {
-      const all = (): boolean => {
-        const gg = game();
-        for (let y = 0; y < gg.dungeon.height; y++) for (let x = 0; x < gg.dungeon.width; x++) if (!gg.lighting.isVisible(x, y)) return false;
-        return true;
-      };
-      check('the fog of war is off, and the whole town is in sight', g.lighting.omniscient === true && all());
+      const gg = game();
+      let hidden = 0;
+      for (let y = 0; y < gg.dungeon.height; y++) for (let x = 0; x < gg.dungeon.width; x++) if (!gg.lighting.isVisible(x, y)) hidden++;
+      check('the fog of war is on, and the town is not all in sight at once', gg.lighting.omniscient === false && hidden > 0, `omniscient ${gg.lighting.omniscient}, ${hidden} tiles unseen`);
     }
     // NOTHING IS SILENTLY SOFT (it.105). The resolution ladder used to be a fixed
     // list the start rung was SEARCHED in, so any display whose ratio was not on

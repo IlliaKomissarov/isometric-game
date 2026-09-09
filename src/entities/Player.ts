@@ -253,10 +253,25 @@ export class Player extends Entity {
   slowTicks = 0;
   /** FROST-TOUCHED aura (it.53): −25 % move and attack speed while inside it. */
   chillTicks = 0;
+  /**
+   * ARMOUR SHRED (it.100): the enemy general's word takes the edge off a hero's
+   * plate for a while. Statuses proper are enemy-only (`StatusSystem.inflict`
+   * takes an `Enemy`), so a debuff on the hero is a bespoke pair of fields, the
+   * way `slowTicks` has always been.
+   */
+  shredTicks = 0;
+  shredFrac = 0;
 
   applySlow(ticks: number): void {
     this.slowTicks = Math.max(this.slowTicks, ticks);
     this.buffMax.slow = Math.max(this.buffMax.slow, this.slowTicks);
+  }
+
+  /** ARMOUR SHRED (it.100): `frac` of the hero's plate, gone for `ticks`. */
+  applyShred(ticks: number, frac: number): void {
+    this.shredTicks = Math.max(this.shredTicks, ticks);
+    this.shredFrac = Math.max(this.shredFrac, Math.min(0.9, frac));
+    this.buffMax.shred = Math.max(this.buffMax.shred, this.shredTicks);
   }
 
   // Hero sprite mode (external art per class, it.32) — render-only state.
@@ -297,7 +312,7 @@ export class Player extends Entity {
   /** Poison Blade: melee hits coat targets while ticks remain. */
   poisonBladeTicks = 0;
   /** Buff durations at cast (it.48): the HUD rings count down against these. */
-  readonly buffMax = { dmg: 0, dr: 0, haste: 0, stealth: 0, poison: 0, slow: 0, chill: 30 };
+  readonly buffMax = { dmg: 0, dr: 0, haste: 0, stealth: 0, poison: 0, slow: 0, chill: 30, shred: 0 };
   /** Every coin ever scooped this run (it.48 records board). */
   goldCollected = 0;
 
@@ -315,6 +330,7 @@ export class Player extends Entity {
     push('poison', 'Poison Blade', 'poison', '☠', this.poisonBladeTicks, this.buffMax.poison);
     push('slow', 'Frostbitten', null, '❄', this.slowTicks, this.buffMax.slow, true);
     push('chill', 'Frost-touched', null, '✧', this.chillTicks, this.buffMax.chill, true);
+    push('shred', 'Armour Shred', null, '⚔', this.shredTicks, this.buffMax.shred, true);
     return out;
   }
 
@@ -690,6 +706,7 @@ export class Player extends Entity {
     this.breathPhase += dt * 2.1;
     if (this.slowTicks > 0) this.slowTicks--;
     if (this.chillTicks > 0) this.chillTicks--;
+    if (this.shredTicks > 0 && --this.shredTicks === 0) this.shredFrac = 0;
     if (this.flashTicks > 0 && --this.flashTicks === 0) this.body.tint = 0xffffff;
 
     // Skill economy (it.32): resource trickles back; timed buffs burn down.
@@ -986,7 +1003,8 @@ export class Player extends Entity {
     let total = ARCHETYPES[this.archetype].armorBase + this.passiveBonus('armor');
     for (const id of this.equipped.values()) total += itemDef(id)?.armor ?? 0;
     // GUARDIAN (it.80): a warding weapon lifts every plate.
-    return total * (1 + 0.12 * this.traitPower('guardian'));
+    // ARMOUR SHRED (it.100): and the general's word takes a share of it away.
+    return total * (1 + 0.12 * this.traitPower('guardian')) * (this.shredTicks > 0 ? 1 - this.shredFrac : 1);
   }
 
   getEquipped(slot: EquipmentSlot): string | null {

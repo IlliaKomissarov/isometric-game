@@ -1825,6 +1825,107 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the folk speak a word now and then', bubbles > 0, String(bubbles));
     }
 
+    // ---- THE FARMLANDS (it.100): the muster, the squad, the general, the field kept ----
+    {
+      // The muster is only offered once the woods and the quarter are settled;
+      // both are, by the time the harness reaches here.
+      const dl = (): HTMLElement | null => document.querySelector('#dialogue-panel.open');
+      const warp = (x: number, y: number): void => {
+        g.player.pos.x = x + 0.5;
+        g.player.pos.y = y + 0.5;
+        g.player.prevPos.x = x + 0.5;
+        g.player.prevPos.y = y + 0.5;
+        g.lighting.updateVisibility(x, y);
+        g.loop.step(2);
+        g.loop.callbacks.render(1);
+      };
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 12000);
+        g = game();
+      }
+      await fadeClear();
+      dl()?.querySelector<HTMLElement>('[data-close]')?.click(); // nothing of the last errand still open
+      await wait(60);
+      g.quests.farm = undefined;
+      check('the city is ready to muster', g.floor === 0 && g.quests.forest === 'done' && g.quests.east === 'done', `${g.floor} ${g.quests.forest} ${g.quests.east}`);
+      const yard = g.town.layout.training.mark;
+      check('the training ground is where the city gathers', !!yard);
+      // Walking onto the yard calls the rally.
+      warp(yard.x, yard.y);
+      g.loop.step(6);
+      check('the muster is called on the training ground', await until(() => !!document.querySelector('#cine-layer'), 8000));
+      for (let i = 0; i < 30 && game()?.reclaim; i++) driveRender(1000);
+      g = game();
+      check('the officer asks for a sword', await until(() => !!dl() && /ORDWAY/.test(dl()?.textContent ?? ''), 15000));
+      check('the errand names the fields and the marsh path', /marsh path/i.test(dl()?.textContent ?? '') && /fields/i.test(dl()?.textContent ?? ''));
+      const goBtn = dl()?.querySelector<HTMLElement>('[data-choice=go]');
+      goBtn?.click();
+      await wait(120);
+      g.loop.step(6);
+      check('the muster is taken', await until(() => game()?.quests.farm === 'active', 8000), `${!!goBtn} floor ${game()?.floor} farm ${game()?.quests.farm}`);
+      g = game();
+      // Out to the fields.
+      await g.travel(105);
+      await until(() => game() && game().floor === 105, 15000);
+      g = game();
+      await fadeClear();
+      const farm = g.town.layout.farm;
+      check('the fields are burning', !!farm && farm.won === false && farm.fires.length >= 10 && document.body.classList.contains('afire'));
+      check('the squad went in with the hero', !!g.squad && g.squad.size >= 4);
+      check('the general commands the company', !!g.farmGeneral && g.farmGeneral.hp > 0);
+      // Men under arms, and not one monster among them.
+      const roster: string[] = [];
+      g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
+        if (e.hp > 0) roster.push(e.def.kind);
+      });
+      check('the company is men, not monsters', roster.length >= 8 && roster.every((k) => ['mercenary', 'general', 'bandit', 'brigand', 'poacher', 'archer'].includes(k)), roster.join());
+      check('no hostile wears the city own guard rig', !roster.includes('guard'));
+      check('two roads out stay barricaded', farm.gates.length === 2 && g.town.interactables.filter((i: { kind: string }) => i.kind === 'farmgate').length === 2);
+      // The general leans on the hero.
+      const armour0 = g.player.armor;
+      warp(farm.general.x - 1, farm.general.y + 1);
+      g.loop.step(60);
+      check('the general shreds the hero plate and takes their legs', g.player.shredTicks > 0 && g.player.armor < armour0 + 0.001 && g.player.shredFrac > 0, `${armour0.toFixed(1)} -> ${g.player.armor.toFixed(1)}`);
+      // The field is taken.
+      const gold0 = g.player.gold;
+      const ids: number[] = [];
+      g.enemies.forEachActive((e: { hp: number; id: number }) => {
+        if (e.hp > 0) ids.push(e.id);
+      });
+      for (const id of ids) g.combat.dealDamage({ sourceId: g.player.id, targetId: id, amount: 999999 });
+      g.loop.step(20);
+      check('the last of them down brings the letterbox in', await until(() => !!document.querySelector('#cine-layer'), 10000));
+      for (let i = 0; i < 40 && game()?.reclaim; i++) driveRender(1000);
+      g = game();
+      driveRender(2000);
+      check('the field is the city own, and paid for', await until(() => game()?.quests.farm === 'done' && game().player.gold >= gold0 + 250, 12000), `${game().player.gold - gold0} ${game()?.quests.farm}`);
+      dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
+      await wait(60);
+      // And it stays taken.
+      g = game();
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 12000);
+      g = game();
+      await fadeClear();
+      await g.travel(105);
+      await until(() => game() && game().floor === 105, 15000);
+      g = game();
+      await fadeClear();
+      const quiet = g.town.layout.farm;
+      let aliveNow = 0;
+      g.enemies.forEachActive((e: { hp: number }) => {
+        if (e.hp > 0) aliveNow++;
+      });
+      check('the fields are quiet, lit and worked again', quiet.won === true && quiet.fires.length === 0 && aliveNow === 0 && !document.body.classList.contains('afire') && !g.squad, `${quiet.won} ${quiet.fires.length} ${aliveNow}`);
+      check('chests wait in the yards', (g.town.layout.chests ?? []).length >= 2 && (g.town.layout.chests ?? []).every((c: { x: number; y: number }) => !!g.chests.findNearestUnopened(c.x + 0.5, c.y + 0.5, 0.9)), String((g.town.layout.chests ?? []).length));
+      check('the crop stands whole', (g.town.layout.props as Array<{ kind: string; variant?: string }>).filter((q) => q.kind === 'farmcrop' && String(q.variant).includes('burnt')).length === 0);
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 12000);
+      g = game();
+      await fadeClear();
+    }
+
     // ---- the device matrix in this state ------------------------------------------------
     await import('./qa66');
     const m = W.__qa66(true);

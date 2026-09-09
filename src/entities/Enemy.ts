@@ -62,7 +62,10 @@ export type EnemyKind =
   | 'dummyB'
   // THE EASTERN QUARTER (it.91): the looters who hold it - men, not monsters.
   | 'bandit'
-  | 'brigand';
+  | 'brigand'
+  // THE FARMLANDS (it.100): the company that took the fields, and the man who leads it.
+  | 'mercenary'
+  | 'general';
 
 /** THE LOOTERS (it.91): the two human kinds the east quarter's errand counts. */
 export const LOOTER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['bandit', 'brigand']);
@@ -532,6 +535,65 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       scale: 0.42, // it.14: was a "tiny spearman" at 0.3 — normalized.
       tint: 0xffffff,
       stride: 0.52,
+      ownShadow: true,
+    },
+  },
+  /**
+   * THE COMPANY (it.100). A hired man-at-arms in a surcoat, on the only
+   * eight-direction soldier rig in the packs that is not already the city's own
+   * guard - because an enemy that shares a silhouette with your squad is a bug,
+   * not a style. Dyed crimson so the livery reads across a burning field.
+   */
+  mercenary: {
+    kind: 'mercenary',
+    armor: 2,
+    name: 'Free Company Blade',
+    hp: 62,
+    minDamage: 8,
+    maxDamage: 14,
+    toHit: 0.72,
+    speedMult: 0.7,
+    windupTicks: 30,
+    recoverTicks: 30,
+    reach: 1.5,
+    hitRecoveryTicks: 13,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'captain_walk',
+      idle: 'captain_idle',
+      death: 'captain_death',
+      attack: 'captain_attack',
+      anchorY: 0.94,
+      scale: 0.95,
+      tint: 0xd8887a,
+      stride: 0.5,
+      ownShadow: true,
+    },
+  },
+  /** THE GENERAL (it.100): the same man, a head taller and in darker colours. */
+  general: {
+    kind: 'general',
+    armor: 5,
+    name: 'The Field General',
+    hp: 460,
+    minDamage: 14,
+    maxDamage: 24,
+    toHit: 0.8,
+    speedMult: 0.62,
+    windupTicks: 36,
+    recoverTicks: 30,
+    reach: 1.8,
+    hitRecoveryTicks: 18,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'captain_walk',
+      idle: 'captain_idle',
+      death: 'captain_death',
+      attack: 'captain_attack',
+      anchorY: 0.94,
+      scale: 1.3,
+      tint: 0xa8524c,
+      stride: 0.5,
       ownShadow: true,
     },
   },

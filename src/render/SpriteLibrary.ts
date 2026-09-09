@@ -206,6 +206,11 @@ export type AnimName =
   | 'cit_maid_walk'
   | 'cit_labourer_walk'
   | 'cit_carter_walk'
+  // THE FARMLANDS (it.100): the free company's man-at-arms, and its general.
+  | 'captain_idle'
+  | 'captain_walk'
+  | 'captain_attack'
+  | 'captain_death'
   | 'well';
 
 export interface PaintedBounds {
@@ -325,6 +330,9 @@ const DIR_ROW_FIX: ReadonlyArray<[prefix: string, fix: (d: number) => number]> =
   ['grave_', ROTATE_SW], // IT.48 re-audit: rows run counter-clockwise from SW, like the peasant sheets.
   ['folk_', FROM_SOUTH],
   ['poacher_', FROM_SOUTH],
+  // THE COMPANY (it.100): the same studio's `<dir><frame>` naming as the archer
+  // pack, and the same row order - file row 0 is the face.
+  ['captain_', FROM_SOUTH],
   ['spider_', CLOCKWISE], // IT.55 audit: the widow's rows run clockwise from east.
   ['villager_', ROTATE_SW],
   ['merchant_', ROTATE_SW],

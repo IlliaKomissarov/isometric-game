@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 99, 2026-09-08)
+- **Project version:** 0.1.0 (iteration 100, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 339 checks at it.98) | 0 failures | 339/339 on seed 3 (mage), incl. the cellar errand end to end and the locked and unlocked inn room; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 356 checks at it.100) | 0 failures | 356/356 on seed 3 (mage), incl. the farmlands campaign end to end - the muster, the burning field, the squad, the general's shred, the payout and the quiet field after; 280/280 on seed 42 (warrior, deep) with the eleven-device tutorial sweep; 10 earlier sessions, seeds 1-10, all classes | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -243,6 +243,17 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 100 additions
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| No campaign past the quarter and the woods | Feature | THE FARMLANDS: a rally at the training ground, a squad deployment, a pitched battle on a new floor, a mini-boss, a victory scene and a permanent safe zone |
+| The game had no allied units at all | Feature | `systems/Squad.ts`. Allies are NOT enemies with a flag: hostiles chase one quarry (the hero, passed into `Enemy.update`), so an ally is invisible to them by construction - no faction check anywhere, friendly fire impossible, and no `Enemy.ts` AI change. Blows go through `dealDamage` credited to the hero, on the fixed sim tick, so co-op stays in step |
+| An enemy soldier would have shared the squad's silhouette | High (design) | `guard_*` was already the ally rig, so the hostile roster drops `guard` entirely and the company rides the one unbaked eight-direction man-at-arms in the packs, dyed crimson |
+| The hero could not be debuffed | Feature | `StatusSystem.inflict` is `Enemy`-typed, so ARMOUR SHRED is a bespoke `shredTicks`/`shredFrac` pair on `Player` in the shape `slowTicks` has always had, felt in `get armor()` and shown in the buff HUD |
+| A whole-map fire effect would cost a phone dearly | Medium (perf) | the fires feed `Ambience.setHotspots`, so embers cluster on them with no new sprites; the mist field is re-tinted into smoke rather than added to; and the warm overlay is one CSS rule on the existing vignette, not a shader pass |
+| Nothing pointed the way past the fields | Feature | both roads on stay barricaded with a plate naming them, so the marsh path is visibly the next thing |
 
 ### Iteration 99 additions
 

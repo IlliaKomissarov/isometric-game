@@ -80,6 +80,7 @@ import { buildTownLayout, LOOTER_COUNT, type EastState, type TownLayout } from '
 import { GateFx, ProcessionScene } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
 import { buildCellarLayout } from '@/scenes/Cellar';
+import { buildFarmLayout } from '@/scenes/Farmlands';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
@@ -91,6 +92,7 @@ import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { RECLAIMED_WORDS, REFUGEE_WORDS, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { Squad } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
@@ -205,9 +207,13 @@ interface World {
   mines: MinesState | null;
   /** ENEMIES REMAINING (it.88): how many foes the floor woke with, for the forest's tally. */
   foesAtStart: number;
+  /** THE FARMLANDS (it.100): the city's guards who went in with the hero. */
+  squad: Squad | null;
+  /** THE FARMLANDS (it.100): the man who commands the company, while he stands. */
+  farmGeneral: Enemy | null;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm';
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
 const MINES_FLOOR = 102;
@@ -215,12 +221,16 @@ const MINES_FLOOR = 102;
 const INN_FLOOR = 103;
 /** THE CELLAR (it.97): the vault under the taproom. */
 const CELLAR_FLOOR = 104;
+/** THE FARMLANDS (it.100): the burning fields along the marsh path. */
+const FARM_FLOOR = 105;
 const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
 const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
 /** THE CELLAR (it.97): what crawled in under the inn - vermin and the risen, no men. */
 const CELLAR_POOL: EnemyKind[] = ['spider', 'spider', 'spider', 'zombie', 'zombie', 'ahoul', 'skeleton', 'shambler'];
+/** THE FARMLANDS (it.100): a company that took the fields - men under arms, nothing else. */
+const FARM_POOL: EnemyKind[] = ['mercenary', 'mercenary', 'mercenary', 'brigand', 'bandit', 'poacher'];
 /** The mode a floor number stands for (the arena is decided by the caller). */
-const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : 'normal');
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : 'normal');
 
 /** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
 interface MinesState {
@@ -374,7 +384,7 @@ async function boot(): Promise<void> {
     if (spriteLib.hasSingle('chest_closed_iso')) assets.registerTexture('chest_closed', spriteLib.single('chest_closed_iso'));
     if (spriteLib.hasSingle('chest_open_iso')) assets.registerTexture('chest_open', spriteLib.single('chest_open_iso'));
     // Town ground (it.39): the tileset's cobble / grass / dirt diamonds.
-    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'inn_boards', 'inn_stone', 'cellar_flag', 'cellar_dirt'].forEach((name, i) => {
+    ['town_cobble', 'town_grass', 'town_dirt', 'town_sand', 'inn_boards', 'inn_stone', 'cellar_flag', 'cellar_dirt', 'farm_ash'].forEach((name, i) => {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
@@ -1666,10 +1676,11 @@ async function boot(): Promise<void> {
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
-      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : null;
+      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : floor === FARM_FLOOR ? 'THE FARMLANDS' : null;
       if (depthLabel) depthLabel.textContent = place ?? (floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`);
       setZoneLabel(place ?? (floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`));
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
+      document.body.classList.toggle('afire', floor === FARM_FLOOR && quests.farm !== 'done'); // THE FIELD BURNS (it.100).
       if (floor > 0 && floor <= MAX_DEPTH) stats.noteDepth(floor);
     };
     updateOrb();
@@ -1736,7 +1747,8 @@ async function boot(): Promise<void> {
       const isMines = mode === 'mines';
       const isInn = mode === 'inn';
       const isCellar = mode === 'cellar';
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      const isFarm = mode === 'farm';
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : isFarm ? (baseSeed ^ 0xfa27) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
@@ -1744,7 +1756,9 @@ async function boot(): Promise<void> {
       const isMinesArena = isArena && floorNum === MINES_FLOOR; // THE QUARRY ARENA (it.88): past the hall's seal.
       // THE CELLAR (it.97) fights a step under the forest's measure: it is the errand a hero takes early.
       const cellarLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
-      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : floorNum;
+      // THE FARMLANDS (it.100) are a pitched battle, so they fight a step above the woods.
+      const farmLevel = Math.max(3, Math.min(MAX_DEPTH, deepestFloor + 2));
+      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
       // THE GILDED STAG (it.96/97): the room opens once the errand is paid; the
@@ -1752,8 +1766,11 @@ async function boot(): Promise<void> {
       // the bar once she has been walked up out of the dark.
       const inn = isInn ? buildInnLayout(seed, quests.east === 'done', cellarAsked(), quests.cellar === 'done') : null;
       const cellar = isCellar ? buildCellarLayout(seed, quests.cellar === 'done') : null;
-      const layout = isHub ? buildTownLayout({ east: eastStateOf() }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : null;
-      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn || isCellar ? undefined : floors[memKey(floorNum, isArena)];
+      // THE FARMLANDS (it.100): burning while the company holds them, quiet once they do not.
+      const farmWon = quests.farm === 'done';
+      const farm = isFarm ? buildFarmLayout(seed, farmWon) : null;
+      const layout = isHub ? buildTownLayout({ east: eastStateOf(), farmOpen: quests.farm === 'active' || quests.farm === 'done' }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : farm ? farm.layout : null;
+      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn || isCellar || isFarm ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
@@ -1763,8 +1780,8 @@ async function boot(): Promise<void> {
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub || isColiseum || isForest || isInn || isCellar) {
-        hearths = []; // The town, the coliseum, the forest, the inn and its cellar light themselves.
+      if (isHub || isColiseum || isForest || isInn || isCellar || isFarm) {
+        hearths = []; // The town, the coliseum, the forest, the inn, its cellar and the fields light themselves.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
@@ -1812,7 +1829,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 20, fullRadius: quests.farm === 'done' ? 24 : 9 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -1824,6 +1841,8 @@ async function boot(): Promise<void> {
           ? 'inn'
         : isCellar
           ? 'cellar'
+        : isFarm
+          ? 'town'
         : isMines || isMinesArena
           ? 'stone'
         : floorNum <= 2
@@ -1843,6 +1862,8 @@ async function boot(): Promise<void> {
         audio.setMusic('forest', floorNum);
       } else if (isInn) {
         audio.setMusic('town'); // The inn keeps the town's tune (it.92).
+      } else if (isFarm) {
+        audio.setMusic(quests.farm === 'done' ? 'town' : 'forest', floorNum); // The fields fight, then they rest (it.100).
       } else if (isCellar) {
         audio.setMusic('mines', floorNum); // Under the boards the tune goes cold (it.97).
       } else if (isMines) {
@@ -1857,7 +1878,7 @@ async function boot(): Promise<void> {
       const ambience = new Ambience(viewport);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
-      const goldPiles = isHub || isColiseum || isForest || isInn || isCellar ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -1921,7 +1942,7 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: isForest || isInn || isCellar ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
+            ? { at: isForest || isInn || isCellar || isFarm ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
             : isMines
               ? { hidden: true, at: { x: 1, y: 1 } } // The quarry has no stair (a wall tile no one can touch): the way home is the teleporter after the hall (it.85).
             : isArena
@@ -1935,7 +1956,7 @@ async function boot(): Promise<void> {
       const loot = new LootSystem(viewport, seed);
       loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub && !isColiseum && !isForest && !isInn && !isCellar) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      if (!isArena && !isHub && !isColiseum && !isForest && !isInn && !isCellar && !isFarm) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
       // LOOTABLE CHESTS (it.92): the districts' small chests, on the layout's spots, the opened ones remembered by the save.
       if (layout?.chests) for (const c of layout.chests) if (!townChestOpened(floorNum, c.x, c.y)) chests.spawnAt(c.x, c.y, false, true);
       // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
@@ -2130,9 +2151,10 @@ async function boot(): Promise<void> {
       // small honor guard of the depth's flesh. Regular floors roll their
       // seeded packs — boss floors now spawn NO boss outside the arena.
       let boss: Enemy | null = null;
+      let generalBody: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done')) {
+      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done') || (isFarm && farmWon)) {
         // No enemies in town; a cleared arena stays empty with its stair open; a cleared forest is a safe road (it.87).
       } else if (isArena) {
         const room = dungeon.rooms[0];
@@ -2157,7 +2179,11 @@ async function boot(): Promise<void> {
           if (affixRoll < 0.15) guardBody.setAffix(AFFIXES[Math.floor((affixRoll / 0.15) * 3) % 3]); // Elite honor guard (it.53).
         }
       } else {
-        spawnFloorEnemies(dungeon, enemies, floorLevel, stairs, seed, killed, isForest ? FOREST_POOL : isMines ? MINES_POOL : isCellar ? CELLAR_POOL : undefined);
+        spawnFloorEnemies(dungeon, enemies, floorLevel, stairs, seed, killed, isForest ? FOREST_POOL : isMines ? MINES_POOL : isCellar ? CELLAR_POOL : isFarm ? FARM_POOL : undefined);
+        // THE GENERAL (it.100) stands at the head of the lane his company holds. He
+        // is spawned with them, before the tally is taken, so the field is not
+        // "clear" while he is still on it.
+        if (isFarm && farm) generalBody = enemies.spawn('general', farm.farm.general.x + 0.5, farm.farm.general.y + 0.5, floorLevel + 2);
         // THE QUARRY'S KEEPER (it.88) waits in its arena past the hall's seal, not in the hall.
       }
       // ENEMIES REMAINING (it.88): what the floor woke with.
@@ -2196,11 +2222,13 @@ async function boot(): Promise<void> {
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined, sheets: STREET_FOLK }) // A cleared forest keeps folk and sentries (it.87).
           : isCellar
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
+          : isFarm
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, farmWon ? 8 : 0, null, [], null, {}, null, { chatter: farmWon ? TOWN_WORDS : undefined, sheets: STREET_FOLK })
           : isInn
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
             : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
-        const villagers2 = isForest || isInn || isCellar
+        const villagers2 = isForest || isInn || isCellar || isFarm
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
           : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
@@ -2256,6 +2284,14 @@ async function boot(): Promise<void> {
           const at = townState.interactables.findIndex((i) => i.id === g.id);
           if (at >= 0) townState.interactables.splice(at, 1);
         }
+      }
+
+      // THE CITY'S OWN (it.100): the guards and their officer form up on the muster
+      // ground. Only while the field is contested - once it is won they have gone home.
+      let squad: Squad | null = null;
+      if (isFarm && farm) {
+        ambience.setSmoke(!farm.farm.won); // The crypt's mist reads as smoke over a burning field.
+        if (!farm.farm.won) squad = new Squad(viewport.objectLayer, scene.isWalkable, farm.farm.squad, { rate: 1.0, damage: 11, leash: 17 });
       }
 
       // Target ring: unmistakable marker under whatever the player is striking.
@@ -2450,6 +2486,8 @@ async function boot(): Promise<void> {
         victoryPortal: null,
         mines: minesPlan ? { ...minesPlan, gates: minesDressing?.gates ?? new Map(), level: minesLevel, dressing: minesDressing! } : null,
         foesAtStart,
+        squad,
+        farmGeneral: generalBody,
       };
     };
 
@@ -2462,6 +2500,7 @@ async function boot(): Promise<void> {
       w.town?.campHeroes.destroy();
       w.town?.destroyDressing();
       w.coliseum?.destroy();
+      w.squad?.destroy();
       teleporterFx = null;
       w.input.destroy();
       hideItemTip(); // No card outlives its floor (it.77).
@@ -4406,6 +4445,216 @@ async function boot(): Promise<void> {
       saveNow();
     };
 
+    // ================= THE FARMLANDS (it.100) =============================
+    // The city's third errand, and its first pitched battle: a free company has
+    // taken the fields along the marsh path and put the crop to the torch, and
+    // the officer at the training ground wants them off it.
+    //
+    // `quests.farm`:  new -> 'active' (the muster is taken) -> 'done' (the field is the city's).
+    /** True once the woods and the eastern quarter are both settled. */
+    const farmOffered = (): boolean => quests.forest === 'done' && quests.east === 'done';
+    /** Ticks left before the officer's word, once the rally has played. */
+    let rallyTicks = -1;
+    /** Ticks left before the victory scene pays out. */
+    let farmWonTicks = -1;
+    /** The general's next taunt, and the cooldown on his hand. */
+    let generalLine = 0;
+    let generalCool = 0;
+    const GENERAL_LINES = [
+        'HOLD THE ROWS',
+        'THE CITY STARVES',
+        'BURN IT ALL',
+        'YOU BROUGHT CHILDREN',
+        'NO ONE EATS TONIGHT',
+    ];
+    const officerPortrait = (): HTMLCanvasElement | null => keeperPortrait();
+    const goFarm = (): void => goPlace(FARM_FLOOR, 'out to the fields');
+
+    /** The muster: the crowd gathers on the yard and the officer speaks. */
+    const startRally = (): void => {
+      if (reclaim || !world.town) return;
+      const yard = world.town.layout.training?.mark ?? { x: 16, y: 72 };
+      const from = { x: 22, y: 70 };
+      const route = [{ x: 20, y: 71 }, { x: 18, y: 72 }, { x: yard.x + 1, y: yard.y }];
+      lightTheWayIn(from, route);
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: yard.x, y: yard.y },
+        from,
+        route,
+        titles: [['THE FIELDS ARE BURNING', 'the city gathers at the training ground'], ['A COMPANY HOLDS THE ROWS', 'the officer calls for a sword']],
+        walkers: 10,
+        keepWalkers: true,
+        hold: 6,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          rallyTicks = 1;
+        },
+      });
+    };
+
+    /** The officer's word at the yard, and the muster taken. */
+    const officerTalk = async (): Promise<void> => {
+      const who = { speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait() };
+      if (quests.farm === 'done') {
+        await dialogue.open({
+          ...who,
+          lines: ['The fields are ours, and the carts are running again. The city eats because you went out there.'],
+          choices: [{ label: 'GOOD', value: 'ok' }],
+        });
+        return;
+      }
+      if (quests.farm === 'active') {
+        await dialogue.open({
+          ...who,
+          lines: ['My men are on the muster ground and the road is open. Go when you are ready - and stay near them, they fight better with someone to follow.'],
+          choices: [{ label: 'UNDERSTOOD', value: 'ok' }],
+        });
+        return;
+      }
+      const v = await dialogue.open({
+        ...who,
+        lines: [
+          'You have heard it by now. There is no bread in the market and there will be none next week either.',
+          'A free company came up the marsh path and took the fields. They are burning the crop as they go - not to hold it, just so we cannot have it.',
+          'I am taking every guard I can arm and going out there tonight. I would rather go with you than without you.',
+        ],
+        choices: [
+          { label: 'I WILL COME', sub: 'the squad musters at the marsh gate', value: 'go' },
+          { label: 'NOT YET', value: 'stay' },
+        ],
+      });
+      if (v === 'go') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'farm', step: 'accept' });
+    };
+
+    /** The victory: the officer, then the folk back onto the land. */
+    const startFarmVictory = (): void => {
+      if (reclaim) return;
+      const at = world.town?.layout.farm?.entry ?? { x: 5, y: 33 };
+      const from = { x: 2, y: 33 };
+      const route = [{ x: 8, y: 32 }, { x: 16, y: 28 }, { x: 26, y: 22 }, { x: 34, y: 18 }, { x: 40, y: 14 }];
+      lightTheWayIn(from, route);
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: at.x + 2, y: at.y - 2 },
+        from,
+        route,
+        titles: [['THE FIELD IS TAKEN', 'the company is broken and its general is down'], ['THE PEOPLE COME OUT', 'there will be a harvest after all']],
+        walkers: 9,
+        keepWalkers: true,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          farmWonTicks = 1;
+        },
+      });
+    };
+
+    /**
+     * Each tick in town: once the woods and the quarter are settled, walking onto
+     * the training ground calls the muster - once, and never during a fade.
+     */
+    const tickRally = (): void => {
+      if (floor !== 0 || transitioning || !world.town) return;
+      if (rallyTicks === 0) return; // the rally is playing
+      if (rallyTicks > 0) {
+        if (--rallyTicks > 0) return;
+        rallyTicks = -1;
+        void officerTalk();
+        return;
+      }
+      if (!farmOffered() || (quests.farm ?? 'new') !== 'new') return;
+      const yard = world.town.layout.training?.mark;
+      if (!yard) return;
+      if (Math.hypot(player.pos.x - (yard.x + 0.5), player.pos.y - (yard.y + 0.5)) > 5) return;
+      rallyTicks = 0;
+      audio.sfx('questDone');
+      startRally();
+    };
+
+    /**
+     * Each tick in the fields: the general leans on the hero while he stands, and
+     * the last man down brings the people back out.
+     */
+    const tickFarmQuest = (): void => {
+      if (floor !== FARM_FLOOR || transitioning) return;
+      if (quests.farm !== 'active') return;
+      // THE GENERAL'S WORD (it.100): while he is on his feet and the hero is in
+      // his reach, he shreds their plate and takes their legs, and says so.
+      const gen = world.farmGeneral;
+      if (gen && gen.hp > 0 && gen.action !== 'dead') {
+        const d = Math.hypot(gen.pos.x - player.pos.x, gen.pos.y - player.pos.y);
+        if (generalCool > 0) generalCool--;
+        else if (d < 11) {
+          generalCool = 300; // once every five seconds at most
+          for (const seat of liveSeats()) {
+            seat.player.applyShred(240, 0.35);
+            seat.player.applySlow(120);
+          }
+          world.dmgText.show(gen.pos.x, gen.pos.y - 1.9, GENERAL_LINES[generalLine % GENERAL_LINES.length], 'crit');
+          generalLine++;
+          world.ambience.burst(player.pos.x, player.pos.y, 0xff6a4a, 16);
+          audio.sfx('bossHorn');
+        }
+      }
+      if (farmWonTicks === 0) return; // the victory scene is on
+      if (farmWonTicks > 0) {
+        if (--farmWonTicks > 0) return;
+        farmWonTicks = -1;
+        quests.farm = 'done';
+        for (const seat of liveSeats()) seat.player.gold += 250;
+        eventBus.emit('inventory:changed', {});
+        showReward('REWARD RECEIVED · 250 GOLD · THE FIELDS ARE THE CITYS');
+        audio.sfx('questDone');
+        world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 30);
+        saveNow();
+        void dialogue.open({
+          speaker: 'CAPTAIN ORDWAY',
+          role: 'on the taken ground',
+          portrait: officerPortrait(),
+          lines: [
+            'That was not a brawl, that was a battle, and you fought it like someone who has read one.',
+            'Two hundred and fifty from the city purse. The carts will be running by morning, and there will be bread in the market by the end of the week.',
+            'The marsh path is still barricaded. Whatever came up it once can come up it again - but that is a worry for another night.',
+          ],
+          choices: [{ label: 'IT WAS A GOOD DAY', value: 'ok' }],
+        });
+        return;
+      }
+      let alive = 0;
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead') alive++;
+      });
+      if (alive > 0) return;
+      farmWonTicks = 0;
+      if (world.squad) world.squad.fighting = false;
+      world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE FIELD IS TAKEN', 'crit');
+      audio.sfx('questDone');
+      startFarmVictory();
+    };
+
+    /** The ledger's one step: the muster is taken and the road out opens. */
+    const applyFarmStep = (step: string): void => {
+      if (step !== 'accept' || !farmOffered() || (quests.farm ?? 'new') !== 'new' || floor !== 0) return;
+      quests.farm = 'active';
+      saveNow();
+      audio.sfx('gateOpen');
+      tutorial.say('The squad musters at the marsh gate, south of the market plaza. Go out when you are ready.');
+    };
+
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
     /** THE GILDED STAG (it.92): through the door into the inn's own floor, and back out to its step. */
     const goInn = (): void => goPlace(INN_FLOOR, 'into the Gilded Stag');
@@ -4529,6 +4778,40 @@ async function boot(): Promise<void> {
     subs.push(() => foePointers.remove());
     const ptrScratch = vec2();
     /** OVERHEAD MARKS (it.92): a bobbing red chevron over every quest target on the screen; a pool of twenty-four. */
+    // THE CITY'S OWN (it.100): eight blue chevrons, enough for any squad.
+    const allyOver = document.createElement('div');
+    allyOver.id = 'ally-over';
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement('div');
+      p.className = 'ally-mk';
+      p.innerHTML = '<i></i>';
+      allyOver.appendChild(p);
+    }
+    document.body.appendChild(allyOver);
+    subs.push(() => allyOver.remove());
+    /** Blue chevrons over the squad, wherever they are on screen. */
+    const updateAllyMarks = (): void => {
+      const els = allyOver.children;
+      const squad = world.squad;
+      let n = 0;
+      if (squad && !reclaim) {
+        const rect = app.canvas.getBoundingClientRect();
+        const W = screenLayout.state.w;
+        const H = screenLayout.state.h;
+        for (const m of squad.positions()) {
+          if (n >= els.length) break;
+          const c = world.camera.worldToCanvas(m.x, m.y, ptrScratch);
+          const px = rect.left + c.x;
+          const py = rect.top + c.y - 74 * world.camera.currentZoom;
+          if (px < 8 || px > W - 8 || py < 8 || py > H - 8) continue;
+          const el = els[n++] as HTMLElement;
+          el.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+          el.classList.toggle('officer', m.officer);
+          el.classList.add('show');
+        }
+      }
+      for (let i = n; i < els.length; i++) (els[i] as HTMLElement).classList.remove('show');
+    };
     const foeOver = document.createElement('div');
     foeOver.id = 'foe-over';
     for (let i = 0; i < 24; i++) {
@@ -4669,6 +4952,7 @@ async function boot(): Promise<void> {
             if (coop && cmd.playerId !== leaderSlot) continue;
             if (cmd.id === 'east') applyEastStep(cmd.step);
       else if (cmd.id === 'cellar') applyCellarStep(cmd.step); // THE CELLAR (it.97).
+            else if (cmd.id === 'farm') applyFarmStep(cmd.step); // THE FARMLANDS (it.100).
           } else if (cmd.type === 'WARP') {
             if (coop && cmd.playerId !== leaderSlot) {
               if (cmd.playerId === localSlot) leaderOnlyNote();
@@ -4707,6 +4991,17 @@ async function boot(): Promise<void> {
         tickForestQuest(); // THE FOREST ERRAND (it.87).
         tickEastQuest(); // THE EASTERN QUARTER (it.91).
         tickCellarQuest(); // THE CELLAR (it.97).
+        tickRally(); // THE MUSTER (it.100).
+        tickFarmQuest(); // THE FARMLANDS (it.100).
+        // THE CITY'S OWN (it.100): the squad fights on the sim tick, so a co-op
+        // party stays in step and `dealDamage` remains the only hp mutator.
+        if (world.squad) {
+          const foes: Array<{ id: number; hp: number; action: string; pos: { x: number; y: number } }> = [];
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead') foes.push(e);
+          });
+          world.squad.step(dt, foes, (targetId, amount) => world.combat.dealDamage({ sourceId: player.id, targetId, amount }));
+        }
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
         for (const cmd of commands) {
@@ -4834,7 +5129,7 @@ async function boot(): Promise<void> {
             if (audio.currentMusic !== 'death' && audio.currentMusic !== 'gameover') musicBeforeDeath = audio.currentMusic;
             audio.setMusic(hardcore ? 'gameover' : 'death', floor);
             runMenus.showDeath(
-              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
+              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : floor === FARM_FLOOR ? 'The farmlands' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
               hardcore,
             );
           }
@@ -5171,6 +5466,9 @@ async function boot(): Promise<void> {
           t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
           t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
           t.villagers3?.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          // THE CITY'S OWN (it.100): drawn between the ticks they were moved on,
+          // and lit by the field they are standing in.
+          world.squad?.draw(alpha, (x, y) => world.lighting.getTintAt(x, y, 0.85));
           gateFx.update(frameDt); // THE BARRICADE (it.91): a cart aside, or every cart down.
           reclaim?.update(frameDt);
           // THE SLEEPER (it.92): a few pale motes rise from the bed while the hero rests.
@@ -5198,6 +5496,18 @@ async function boot(): Promise<void> {
           const tally = `ENEMIES REMAINING · ${alive} / ${world.foesAtStart}`;
           if (questHud.textContent !== tally) questHud.textContent = tally;
           questHud.classList.add('show');
+        } else if (floor === FARM_FLOOR && quests.farm === 'active' && world.foesAtStart > 0) {
+          // TROOPS REMAINING (it.100): the company's count, and a chevron on each of
+          // them - the same screen-edge pointers the forest uses, which already widen
+          // their margin on a touch screen.
+          const targets: Array<{ x: number; y: number }> = [];
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead') targets.push({ x: e.pos.x, y: e.pos.y });
+          });
+          questTargets = targets;
+          const tally = `TROOPS REMAINING · ${targets.length} / ${world.foesAtStart}`;
+          if (questHud.textContent !== tally) questHud.textContent = tally;
+          questHud.classList.add('show');
         } else if (floor === 0 && quests.east === 'open' && world.town?.layout.east) {
           const targets: Array<{ x: number; y: number }> = [];
           world.enemies.forEachActive((e) => {
@@ -5209,6 +5519,7 @@ async function boot(): Promise<void> {
           questHud.classList.add('show');
         } else if (questHud.classList.contains('show')) questHud.classList.remove('show');
         updateFoePointers(questTargets);
+        updateAllyMarks(); // THE CITY'S OWN (it.100).
         if (world.town) {
           const t = world.town;
           // THE ZONE CHIP (it.84): which district the hero stands in.
@@ -5519,6 +5830,10 @@ async function boot(): Promise<void> {
         else goCellar();
         return;
       }
+      if (it.kind === 'farmgate') {
+        tutorial.say(it.note ?? 'The way past the fields is still barricaded.');
+        return;
+      }
       if (it.kind === 'cellarup') {
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else leaveCellar();
@@ -5545,6 +5860,14 @@ async function boot(): Promise<void> {
       else if (it.kind === 'jeweler' || it.kind === 'scribe' || it.kind === 'bowyer') shopUI.open(it.kind);
       else if (it.kind === 'notice') noticeUI.open();
       else if (it.kind === 'gateway') {
+        // THE MARSH GATE (it.100): the road the fields lie along. Shut until the
+        // officer asks, and a plain road out to them after.
+        if (it.label.includes('MARSH')) {
+          if (!farmOffered() || (quests.farm ?? 'new') === 'new') tutorial.say(it.note ?? 'The way is not open yet.');
+          else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+          else goFarm();
+          return;
+        }
         if (it.dest === 'forest') {
           if (coop && localSlot !== leaderSlot) leaderOnlyNote();
           else void gatekeeper();
@@ -5556,7 +5879,12 @@ async function boot(): Promise<void> {
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
       else if (it.kind === 'forge') craftUI.open();
-      else if (it.kind === 'training') void offerTraining();
+      else if (it.kind === 'training') {
+        // THE MUSTER (it.100): once the woods and the quarter are settled, the post
+        // at the yard is where the officer stands.
+        if (farmOffered() && quests.farm !== undefined) void officerTalk();
+        else void offerTraining();
+      }
       else stashUI.open();
     };
     /** E in town / a click on the stall or stash: walk up, then open. */
@@ -5911,7 +6239,7 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
         const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
@@ -6035,6 +6363,12 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
   if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  // THE FARMLANDS (it.100): the company, the city's guards, the fires and the folk who come back.
+  if (mode === 'farm') {
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    for (const k of FARM_POOL) for (const a of animsForKind(k)) out.add(a);
+    return [...out];
+  }
   // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.
   if (mode === 'cellar') {
     const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'cellar_girl', 'folk_walk', ...VFX_ANIMS]);

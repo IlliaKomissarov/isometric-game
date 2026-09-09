@@ -1,5 +1,74 @@
 # Development Log
 
+## 2026-09-09 (iteration 100) - The farmlands campaign
+
+The city's third errand, and its first pitched battle. It unlocks on its own once
+the woods and the eastern quarter are both settled.
+
+### The muster (the training ground)
+Walking onto the training yard calls a rally: the letterbox comes down, the folk
+gather, and CAPTAIN ORDWAY of the city watch explains that a free company has come
+up the marsh path, taken the fields and started burning the crop - not to hold it,
+just so the city cannot have it. Taking the errand opens the marsh gateway south
+of the market plaza, which until then is a road with the boards still being laid.
+
+### The fields (`src/scenes/Farmlands.ts`, floor 105, mode `farm`)
+A 52x40 outdoor floor in the town's own idiom, so it sits beside the city rather
+than beside the crypt: grass headlands, six ploughed strips, a cart track down the
+middle, and scorched earth across the eastern half while the company holds it.
+
+- **The art** is the town's existing prop set - fences, carts, casks, crates, a
+  well, stalls, spiked barricades, trees - plus four pieces cut for this floor:
+  scorched ground (four variants the town theme picks between), standing corn in
+  three heights, the blackened stubble the fire leaves, and live coals. All from
+  the Ancient Isometric Tileset's own ground and nature art.
+- **The fire** is twenty-five burning stands in the corn, each a flame loop with
+  its own light and an ambience hotspot, so embers rise off the fires without a
+  single extra sprite. The mist field is re-tinted and thickened into smoke, and a
+  warm gradient sits over the whole screen - one CSS rule on the existing vignette,
+  so a phone pays nothing for it and it comes off the moment the field is won.
+
+### The squad (`src/systems/Squad.ts`)
+Six of the city's guards and their officer. A squad member is deliberately NOT an
+`Enemy` with a flag flipped: hostiles chase exactly one quarry (the hero, passed
+into `Enemy.update`), so an ally is invisible to them by construction. No faction
+check is needed anywhere, friendly fire is impossible because the hero's target
+picking only ever sees enemies, and a guard cannot be killed - which is the point,
+since a wiped squad would make the field unwinnable.
+
+They run at the nearest hostile inside their leash, swing on a cooldown, and deal
+their blows through `CombatSystem.dealDamage` credited to the hero, so experience,
+loot and the difficulty floor behave exactly as if the hero had swung. It all runs
+on the fixed sim tick, so a co-op party stays in step. Every friendly wears a cool
+halo at the feet and a blue chevron over the head - DOM, so it stays crisp at any
+zoom and legible on a phone.
+
+### The company and its general
+Hostile humans only. The rank and file are `mercenary`, on the one eight-direction
+man-at-arms rig in the packs that was NOT already the city's own guard - because an
+enemy that shares a silhouette with your squad is a bug, not a style. The
+`general` is the same body a head taller in darker colours, with 460 life.
+
+While he stands and the hero is within eleven tiles, he shreds their plate and
+takes their legs every five seconds and says so overhead. Statuses proper are
+enemy-only (`StatusSystem.inflict` takes an `Enemy`), so ARMOUR SHRED is a bespoke
+pair of fields on `Player` in the shape `slowTicks` has always had, felt inside
+`get armor()` and surfaced in the buff HUD as a debuff.
+
+### Taking it, and keeping it
+The last of them down brings the letterbox in again: the officer's thanks, the folk
+walking back onto the land, two hundred and fifty gold from the city purse. After
+that the fields are a lit, quiet safe zone - fires out, corn whole, eight of the
+city's people working the rows, three chests in the yards, and both roads on still
+barricaded, because the marsh beyond them is not the city's yet.
+
+### Also
+- The forest liberation's lighting, fixed in it.99, was re-verified end to end:
+  the entry, the middle of the route and the far end all read full brightness for
+  the length of the scene.
+- TROOPS REMAINING counts the company on the HUD, with the same screen-edge
+  chevrons the forest uses - which already widen their margin on a touch screen.
+
 ## 2026-09-08 (iteration 99) - A scene that carries its own light, and a town full of strangers
 
 ### The liberation scene was lit from the wrong place

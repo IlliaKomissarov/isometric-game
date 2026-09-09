@@ -125,6 +125,8 @@ export class Ambience {
   private readonly fx: FxSprite[] = [];
   private glintFrames: Texture[] | null = null;
   private hotspots: ReadonlyArray<{ x: number; y: number }> = [];
+  /** THE FIELD BURNS (it.100): the mist reads as smoke and sits a shade heavier. */
+  private smoke = false;
   /** Share of the mote and mist fields that run (PerformanceScaler, it.66). */
   private budget = 1;
   private readonly scratch = vec2();
@@ -196,6 +198,16 @@ export class Ambience {
 
   setHotspots(points: ReadonlyArray<{ x: number; y: number }>): void {
     this.hotspots = points;
+  }
+
+  /**
+   * SMOKE OVER A BURNING FIELD (it.100). The mist field already drifts wherever
+   * the camera goes, so a burning floor needs no new sprites - only a warmer
+   * tint and a little more body. `false` puts the crypt's cold mist back.
+   */
+  setSmoke(on: boolean): void {
+    for (const p of this.fogPatches) p.sprite.tint = on ? 0x9a7a62 : 0x8f96b4;
+    this.smoke = on;
   }
 
   /** Soft dust kick at a world point (footsteps, projectile wall impacts). */
@@ -621,7 +633,7 @@ export class Ambience {
       const envelope = Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
       const breathe = 0.85 + 0.15 * Math.sin(time * 0.4 + patch.phase);
       const light = getLight(patch.wx, patch.wy);
-      patch.sprite.alpha = envelope * breathe * (0.16 + light * 0.22);
+      patch.sprite.alpha = envelope * breathe * (0.16 + light * 0.22) * (this.smoke ? 1.8 : 1);
       const s = worldToScreen(patch.wx, patch.wy, this.scratch);
       patch.sprite.position.set(s.x, s.y - 4);
     }

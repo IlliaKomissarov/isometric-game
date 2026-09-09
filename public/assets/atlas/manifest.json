@@ -1,5 +1,5 @@
 {
- "generated": "2026-09-08T19:45:19.399998+00:00",
+ "generated": "2026-09-09T06:23:59.767846+00:00",
  "anims": {
   "knight_idle": {
    "file": "knight_idle.png",
@@ -2868,6 +2868,101 @@
     "bottom": 64,
     "left": 0,
     "right": 49
+   }
+  },
+  "captain_idle": {
+   "file": "captain_idle.png",
+   "cellW": 26,
+   "cellH": 65,
+   "frameCount": 1,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 26,
+   "origH": 65,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 64,
+    "left": 0,
+    "right": 25
+   }
+  },
+  "captain_walk": {
+   "file": "captain_walk.png",
+   "cellW": 33,
+   "cellH": 66,
+   "frameCount": 15,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 33,
+   "origH": 66,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 65,
+    "left": 0,
+    "right": 32
+   }
+  },
+  "captain_attack": {
+   "file": "captain_attack.png",
+   "cellW": 48,
+   "cellH": 66,
+   "frameCount": 18,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 48,
+   "origH": 66,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 65,
+    "left": 0,
+    "right": 47
+   }
+  },
+  "captain_death": {
+   "file": "captain_death.png",
+   "cellW": 72,
+   "cellH": 65,
+   "frameCount": 16,
+   "dirCount": 8,
+   "nearest": false,
+   "origW": 72,
+   "origH": 65,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 64,
+    "left": 0,
+    "right": 71
+   }
+  },
+  "farm_blaze": {
+   "file": "farm_blaze.png",
+   "cellW": 154,
+   "cellH": 71,
+   "frameCount": 12,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 154,
+   "origH": 71,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 70,
+    "left": 0,
+    "right": 153
    }
   }
  },
@@ -6122,6 +6217,84 @@
    "file": "single_cellar_girl_still.png",
    "w": 29,
    "h": 61,
+   "nearest": false
+  },
+  "farm_ash_0": {
+   "file": "single_farm_ash_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "farm_ash_1": {
+   "file": "single_farm_ash_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "farm_ash_2": {
+   "file": "single_farm_ash_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "farm_ash_3": {
+   "file": "single_farm_ash_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "farm_crop_a": {
+   "file": "single_farm_crop_a.png",
+   "w": 52,
+   "h": 51,
+   "nearest": false
+  },
+  "farm_crop_b": {
+   "file": "single_farm_crop_b.png",
+   "w": 46,
+   "h": 46,
+   "nearest": false
+  },
+  "farm_crop_c": {
+   "file": "single_farm_crop_c.png",
+   "w": 37,
+   "h": 37,
+   "nearest": false
+  },
+  "farm_burnt_a": {
+   "file": "single_farm_burnt_a.png",
+   "w": 49,
+   "h": 48,
+   "nearest": false
+  },
+  "farm_burnt_b": {
+   "file": "single_farm_burnt_b.png",
+   "w": 42,
+   "h": 42,
+   "nearest": false
+  },
+  "farm_coals_0": {
+   "file": "single_farm_coals_0.png",
+   "w": 47,
+   "h": 27,
+   "nearest": false
+  },
+  "farm_coals_1": {
+   "file": "single_farm_coals_1.png",
+   "w": 47,
+   "h": 27,
+   "nearest": false
+  },
+  "farm_coals_2": {
+   "file": "single_farm_coals_2.png",
+   "w": 47,
+   "h": 27,
+   "nearest": false
+  },
+  "farm_coals_3": {
+   "file": "single_farm_coals_3.png",
+   "w": 47,
+   "h": 27,
    "nearest": false
   }
  }

@@ -843,6 +843,23 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] `Villagers` takes a `sheets` roster, so a place chooses its own people
 - [x] Playthrough; clean build
 
+## Iteration 100 - The farmlands campaign (2026-09-09)
+
+- [x] Unlocks on its own once the forest and the eastern quarter are both settled
+- [x] Walking onto the training ground calls a rally: letterbox, a gathering crowd, and the officer's word
+- [x] Taking the errand opens the marsh gateway; before that the road is still being laid
+- [x] THE FARMLANDS: a 52x40 field floor, six ploughed strips, a cart track, scorched earth across the held half
+- [x] Twenty-five fires in the corn, each with its own light and an ambience hotspot for embers
+- [x] Smoke over the field (the mist field re-tinted and thickened) and a warm screen gradient, both off once it is won
+- [x] Six guards and an officer who run at the enemy and fight on their own, on the fixed sim tick
+- [x] Friendly fire impossible by construction; allies wear a footing halo and a DOM chevron over the head
+- [x] Hostiles are men under arms only - and none of them wears the city's own guard rig
+- [x] An enemy general who shreds the hero's plate, slows them, and taunts overhead
+- [x] TROOPS REMAINING on the HUD with screen-edge chevrons that widen on touch
+- [x] Victory scene, 250 gold, and a permanent lit safe zone with chests and barricaded roads on
+- [x] The forest cutscene lighting re-verified end to end
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

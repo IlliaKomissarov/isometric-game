@@ -73,7 +73,14 @@
   down since the looters left. The back door is bolted until she asks. Below it is a dark
   vault of black stone and round arches where the fog closes in at eight tiles, spiders and
   the risen among the casks, three chests in the corners, and - when the last of them is
-  down - a woman who has been hiding behind the crates since the night the quarter burned. Villagers walk the streets of every district and have a word for
+  down - a woman who has been hiding behind the crates since the night the quarter burned.
+  With the woods and the quarter both settled, walking onto the training ground calls THE
+  MUSTER: a free company has come up the marsh path, taken the city's fields and started
+  burning the crop. You go out to THE FARMLANDS with six of the watch and their officer -
+  they run at the enemy and fight on their own, and you cannot hurt them - into a burning
+  field held by men under arms and a general who shreds your armour and taunts you for it.
+  Take it and the fields are the city's for good: fires out, corn standing, the people back
+  on the rows, chests in the yards, and the marsh road beyond still barricaded. Villagers walk the streets of every district and have a word for
   you; small chests wait in the corners; every quest target wears a mark, on screen and off. The eastern
   road out of the Market Ward stays shut until the gatekeeper hands you the forest errand: clear THE DARK FOREST of every beast (a tally on the HUD counts them)
   and the road opens for good, a hundred gold in hand, the woods a safe road with folk in the

@@ -51,6 +51,8 @@ export const KIND_INN_STONE = 5;
 /** THE CELLAR's damp flags and the earth worn through them (it.97). */
 export const KIND_CELLAR_FLAG = 6;
 export const KIND_CELLAR_DIRT = 7;
+/** THE FARMLANDS' scorched earth, where the fire has been through (it.100). */
+export const KIND_FARM_ASH = 8;
 
 export type TownPropKind =
   | 'house'
@@ -154,7 +156,27 @@ export type TownPropKind =
   // THE CELLAR (it.97): the way down, the way back up, and the woman at the deep end.
   | 'cellardoor'
   | 'cellarup'
-  | 'cellargirl';
+  | 'cellargirl'
+  // THE FARMLANDS (it.100): the crop, the fires in it, and the roads not yet built.
+  | 'farmcrop'
+  | 'fieldfire'
+  | 'farmgate';
+
+/** THE FARMLANDS (it.100): what main needs of the fields. */
+export interface FarmLayout {
+  /** Where the company musters, and where the hero is set down. */
+  entry: { x: number; y: number };
+  /** The ground the enemy general holds. */
+  general: { x: number; y: number };
+  /** Where the city's guards form up behind the hero. */
+  squad: Array<{ x: number; y: number; officer?: boolean }>;
+  /** Every fire in the corn, for the embers and the light. */
+  fires: Array<{ x: number; y: number }>;
+  /** The barricaded ways on, and what they are called. */
+  gates: Array<{ x: number; y: number; label: string }>;
+  /** True once the field is taken: no fire, no company, and the folk are back. */
+  won: boolean;
+}
 
 /** THE CELLAR (it.97): what main needs of the floor under the taproom. */
 export interface CellarLayout {
@@ -222,6 +244,9 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'inndeco', 'innrug', 'sconce', 'innwall',
   // THE CELLAR (it.97): both doorways are drawn into a wall run, so the tile under them stays open.
   'cellardoor', 'cellarup',
+  // THE FARMLANDS (it.100): a field you cannot walk into is not a field, and the
+  // fire in it is paint - the corn parts around you.
+  'farmcrop', 'fieldfire', 'farmgate',
 ]);
 
 export interface TownProp {
@@ -279,7 +304,7 @@ export interface TownLayout {
   /** The guild's bounty board. */
   notice: { x: number; y: number };
   /** Passages: a `dest` leads somewhere (it.85: the forest); without one the way is not built yet. */
-  gateways: Array<{ x: number; y: number; label: string; note: string; dest?: 'forest' }>;
+  gateways: Array<{ x: number; y: number; label: string; note: string; dest?: 'forest' | 'farm' }>;
   /** Street tiles (it.85): the ones a standing prop must never take. */
   road?: Uint8Array;
   /** THE GATEKEEPER (it.87): the sentry at the eastern road who hands out the forest's first errand. */
@@ -298,6 +323,8 @@ export interface TownLayout {
   inn?: InnLayout;
   /** THE CELLAR (it.97): the floor under the taproom only. */
   cellar?: CellarLayout;
+  /** THE FARMLANDS (it.100): the fields only. */
+  farm?: FarmLayout;
   /** LOOTABLE CHESTS (it.92): where the district's small chests stand (the `chest` props' tiles). */
   chests?: Array<{ x: number; y: number }>;
 }
@@ -309,7 +336,7 @@ export interface TownMap extends DungeonMap {
 }
 
 /** Build the town: grid + footprints + prop list. Pure and deterministic. */
-export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
+export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean } = {}): TownLayout {
   const eastState: EastState = opts.east ?? 'sealed';
   const W = TOWN_W;
   const H = TOWN_H;
@@ -782,7 +809,9 @@ export function buildTownLayout(opts: { east?: EastState } = {}): TownLayout {
   // light, a plate that says so. Their tiles are blocked: no one walks into a
   // road that is not there.
   const gateways: TownLayout['gateways'] = [
-    { x: 31, y: 88, label: 'THE MARSH PATH', note: 'The marsh path is not open yet — the boards are still being laid.' },
+    // THE FARMLANDS (it.100): the road the fields lie along. It is only a road once
+    // the officer has asked for a sword; before that the boards are still being laid.
+    { x: 31, y: 88, label: 'THE MARSH PATH', note: 'The marsh path is not open yet — the boards are still being laid.', dest: opts.farmOpen ? 'farm' : undefined },
     { x: 52, y: 72, label: 'THE EASTERN ROAD', note: 'The road runs east into the dark forest, and the quarry beyond it.', dest: 'forest' },
   ];
   clearFor(29, 86, 5, 3, 0, KIND_COBBLE);

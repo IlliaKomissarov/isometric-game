@@ -34,13 +34,13 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
   note?: string;
   /** Where an open gateway leads (it.85). */
-  dest?: 'forest';
+  dest?: 'forest' | 'farm';
   x: number;
   y: number;
   label: string;
@@ -618,6 +618,35 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         glowAt(p.x, p.y, 0xffb060, 0.4, 1.2, 52, litS);
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 255, 180, 90, 0.62);
         hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      // ---- THE FARMLANDS (it.100) ----
+      case 'farmcrop': {
+        // Standing corn, or the stubble the fire left. Paint on the ground layer,
+        // sorted where it stands so a hero walks THROUGH the rows, not around them.
+        if (!has(p.variant ?? '')) break;
+        const spr = new Sprite(spriteLib.single(p.variant!));
+        spr.anchor.set(0.5, 0.92);
+        const sc = worldToScreen(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0), scratch);
+        spr.position.set(sc.x, sc.y + 4);
+        spr.zIndex = depthKey(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0)) - 1;
+        viewport.objectLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'fieldfire': {
+        // A fire in the corn: the flame, its light, and a hotspot so the ambience
+        // throws embers up off it without a single new sprite.
+        animated(p.x, p.y, 'inn_fire', 10, 0.95, 1.15, 8);
+        glowAt(p.x, p.y, 0xff7a28, 0.85, 2.6, 18);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 7, 255, 150, 60, 0.95);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'farmgate': {
+        // A road that is not built yet, and a plate that says which one.
+        plate(p.x, p.y, `${p.variant ?? 'THE ROAD'} · NOT YET OPEN`, 74);
+        interactables.push({ id: nextId++, kind: 'farmgate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE ROAD'}`, tiles: [{ x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y }], note: 'The way past the fields is still barricaded.' });
         break;
       }
       // ---- THE CELLAR (it.97) ----

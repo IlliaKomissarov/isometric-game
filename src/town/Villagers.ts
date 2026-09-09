@@ -97,8 +97,41 @@ export const VENDOR_WORDS = ['Take a look.', 'Fair prices.', 'Fresh stock today.
 export const GUARD_WORDS = ['All quiet.', 'Move along.', 'Long shift.', 'Evening.', 'Nothing to report.'];
 export const REFUGEE_WORDS = ['We lost everything.', 'Our house is in there.', 'Is it safe yet?', 'Cold night.', 'Any news?', 'They took it all.', 'We wait.'];
 export const RECLAIMED_WORDS = ['We\'re home.', 'So much to rebuild.', 'Thank you.', 'The roof needs work.', 'Good to be back.', 'Nice weather today.', 'Back to work.'];
-/** THE RIVERSIDE FARM (it.106): what Oscar's people say once the farm is theirs. */
-export const RIVER_WORDS = ['The nets are set.', 'Quiet water today.', 'You are welcome here.', 'The fish are running.', 'Mind the jetty, it is slick.', 'We owe you the roof over us.', 'Good current this morning.', 'Stay and rest a while.', 'The bridge will hold, with the pass.'];
+/**
+ * THE RIVERSIDE FARM (it.106, given a voice it.108).
+ *
+ * it.106's nine lines were pleasant and said nothing: "quiet water today", "the
+ * nets are set". Nobody on this bank had been robbed at knifepoint that morning
+ * to hear them talk. These are the people the hero found against a barn wall
+ * with three of the free company counting their coin, and they are Oscar's own
+ * household and neighbours - so they talk about THAT, about the river they live
+ * off, and about the burned bridge that is the reason the company came down it.
+ *
+ * Split in three so the bank does not sound like one person: what the household
+ * says, what the anglers say, and what any of them might say in passing.
+ */
+export const RIVER_WORDS = [
+  // The morning itself, still close.
+  'Three of them. Three, and he would not give them the boat.',
+  'I have not put the shutters back yet. I keep thinking I will need them.',
+  'The girl still runs inside when a cart comes up the track.',
+  'They took the seed corn in the spring. There was nothing left to take.',
+  'They came down the river, not the road. That is how nobody saw them.',
+  // The river, and the living got from it.
+  'The nets are set. Good current this morning.',
+  'Perch are running. They always run after a cold night.',
+  'Mind the jetty - it is slick where the planks have gone green.',
+  'That deep bend past the reeds is where the big ones sit.',
+  'We eat what the water gives us. It has been generous lately.',
+  // The bridge, and the road that is not open.
+  'The span burned the same week they came. I do not think that was chance.',
+  'Nothing crosses at the bridge. Not since the fire.',
+  'Oscar has his grandfather\u2019s seal. It will be worth something when the span is rebuilt.',
+  // And the hero.
+  'You are welcome at this fire whenever you want it.',
+  'We owe you the roof over us, and he knows it.',
+  'Stay and rest. Nobody on this bank will ask you a thing.',
+];
 
 export const TAVERN_WORDS = ['Another round.', 'Long day.', 'Good stew tonight.', 'Cheers.', 'Warm in here.', 'Heard the news?', 'One more, then home.'];
 

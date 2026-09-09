@@ -28,7 +28,7 @@ const COLOR_PLAYER = '#e04a2f';
 export interface MapMarker {
   x: number;
   y: number;
-  kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe';
+  kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe' | 'quest';
   /** A quest mark (it.91): drawn before the fog lifts. */
   always?: boolean;
 }
@@ -224,6 +224,34 @@ export class MinimapUI {
         ctx.strokeStyle = '#3a0808';
         ctx.beginPath();
         ctx.arc(cx, cy, 2.2 + Math.sin(time * 6 + m.x) * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (m.kind === 'quest') {
+        /**
+         * THE QUEST MARK (it.108): a gold star with a dark rim, and a soft ring
+         * pulsing out of it so the eye finds it on a map the size of the town's.
+         * Drawn `always` - a way that has just opened is exactly the thing a
+         * player has not walked to yet.
+         */
+        const t = (performance.now() / 1000) % 1.6;
+        ctx.strokeStyle = 'rgba(255, 214, 120, ' + (0.55 * (1 - t / 1.6)).toFixed(3) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.2 + t * 4.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#ffd670';
+        ctx.strokeStyle = '#3a2a08';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const a = -Math.PI / 2 + (i * Math.PI) / 5;
+          const rr = i % 2 === 0 ? 3.6 : 1.5;
+          const px2 = cx + Math.cos(a) * rr;
+          const py2 = cy + Math.sin(a) * rr;
+          if (i === 0) ctx.moveTo(px2, py2);
+          else ctx.lineTo(px2, py2);
+        }
+        ctx.closePath();
         ctx.fill();
         ctx.stroke();
       } else if (m.kind === 'boss') {

@@ -27,7 +27,7 @@
  */
 
 import type { Sprite } from 'pixi.js';
-import { assets, WATER_PHASES } from '@/core/AssetManager';
+import { assets, WATER_PERIOD, WATER_PHASES } from '@/core/AssetManager';
 
 /** How long one full pass of the wave loop takes, in seconds. */
 const PERIOD = 1.9;
@@ -36,6 +36,8 @@ interface WaterTile {
   sprite: Sprite;
   /** This tile's fixed offset into the loop, in phases. */
   offset: number;
+  /** Which member of the 3x3 spatial block this tile is (it.108). */
+  block: number;
   /** The phase currently on the sprite, so an unchanged tile is not rewritten. */
   shown: number;
 }
@@ -51,12 +53,16 @@ export class RiverWater {
    * water, because only the floor's own layout knows.
    */
   add(gx: number, gy: number, sprite: Sprite): void {
-    if (this.tiles.length === 0) this.ok = assets.has('water_phase_0');
+    if (this.tiles.length === 0) this.ok = assets.has('water_0_0');
     if (!this.ok) return;
     // The current runs down the map's diagonal, so the offset is taken along it:
-    // that is what makes the crests travel instead of pulsing in place.
+    // that is what makes the light travel instead of pulsing in place.
     const along = gx * 0.55 - gy * 0.8;
-    this.tiles.push({ sprite, offset: along, shown: -1 });
+    // ...and WHERE in the caustic field this tile sits, so the pattern is
+    // continuous with its neighbours rather than a copy of them (it.108).
+    const bx = ((gx % WATER_PERIOD) + WATER_PERIOD) % WATER_PERIOD;
+    const by = ((gy % WATER_PERIOD) + WATER_PERIOD) % WATER_PERIOD;
+    this.tiles.push({ sprite, offset: along, block: by * WATER_PERIOD + bx, shown: -1 });
   }
 
   /** Render tick. `dt` is wall-clock seconds; never a sim tick. */
@@ -69,7 +75,7 @@ export class RiverWater {
       const p = phase < 0 ? phase + WATER_PHASES : phase;
       if (p === t.shown) continue;
       t.shown = p;
-      t.sprite.texture = assets.get(`water_phase_${p}`);
+      t.sprite.texture = assets.get(`water_${p}_${t.block}`);
     }
   }
 

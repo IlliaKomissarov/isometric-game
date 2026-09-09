@@ -17,8 +17,8 @@
 
 import { installTouchGuards } from '@/core/touchGuards';
 import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter, type Texture } from 'pixi.js';
-import { assets, WATER_PHASES } from '@/core/AssetManager';
-import { MAP_H, MAP_W, MAX_DEPTH, PALETTE } from '@/core/config';
+import { assets, WATER_PERIOD, WATER_PHASES } from '@/core/AssetManager';
+import { MAP_H, MAP_W, MAX_DEPTH, PALETTE, TILE_W } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
 import { GameLoop } from '@/core/GameLoop';
 import { InputBindings } from '@/core/InputBindings';
@@ -431,17 +431,23 @@ async function boot(): Promise<void> {
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
     });
-    // THE RIVER IS ART (it.107). Ten baked phases of the pack's own caustic
-    // loop, registered both as the ground kind `SceneManager` lays down and
-    // under `water_phase_<n>` for the pass that cycles them.
+    // THE RIVER IS ART (it.107), AND A CONTINUOUS ONE (it.108). Ten baked
+    // phases of the pack's own caustic loop, each a 3x3 spatial block, so a
+    // tile can take the member its world position calls for and the caustics
+    // read as one surface rather than one tile repeated.
     for (let i = 0; i < WATER_PHASES; i++) {
-      const name = `water_${String(i).padStart(2, '0')}`;
-      if (!spriteLib.hasSingle(name)) continue;
-      const tex = spriteLib.single(name);
-      assets.registerTexture(`water_phase_${i}`, tex);
-      if (i < 4) assets.registerTexture(`floor_town_${KIND_WATER}_${i}`, tex);
-      if (i === 0) assets.registerTexture(`floor_town_${KIND_WATER}`, tex);
+      for (let b = 0; b < WATER_PERIOD * WATER_PERIOD; b++) {
+        const name = `water_p${i}_${b}`;
+        if (!spriteLib.hasSingle(name)) continue;
+        assets.registerTexture(`water_${i}_${b}`, spriteLib.single(name));
+      }
     }
+    // What `SceneManager` lays down before the water pass takes over: any member
+    // of phase 0 will do, and the pass replaces it on the first frame.
+    for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`water_p0_${v}`)) assets.registerTexture(`floor_town_${KIND_WATER}_${v}`, spriteLib.single(`water_p0_${v}`));
+    if (spriteLib.hasSingle('water_p0_0')) assets.registerTexture(`floor_town_${KIND_WATER}`, spriteLib.single('water_p0_0'));
+    // THE WATERLINE (it.108): the bank washing into the river, four ways round.
+    for (let i = 0; i < 4; i++) if (spriteLib.hasSingle(`shorefade_${i}`)) assets.registerTexture(`shorefade_${i}`, spriteLib.single(`shorefade_${i}`));
   } catch (err) {
     console.warn('[boot] Sprite atlases unavailable — using procedural art.', err);
   }
@@ -2474,7 +2480,35 @@ async function boot(): Promise<void> {
       // IT.107: the shoreline ripple pass is gone with the procedural water -
       // the pack's own caustics carry the motion, and rings drawn on top of
       // them read as two different waters at once.
-      if (isRiver) ambience.setSmoke(false);
+      //
+      // THE WATERLINE (it.108). Where the river meets the land the two tiles met
+      // at a drawn edge - a hard diagonal between blue and sand. Every water tile
+      // that touches land now takes an overlay of the bank fading out across it,
+      // one per side it is touched on, so the boundary is a wet margin instead of
+      // a line. Ground layer, above the water and below the jetties, and lit with
+      // the tile it sits on.
+      if (isRiver && riverside) {
+        const rk = (riverside.layout.map as TownMap).tileKind;
+        const rw = dungeon.width;
+        const rh = dungeon.height;
+        const isWet = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < rw && y < rh && rk[y * rw + x] === KIND_WATER;
+        const sides = [[-1, 0], [0, -1], [1, 0], [0, 1]] as const;
+        for (const t of riverside.river.water) {
+          for (const [si, [dx, dy]] of sides.entries()) {
+            const nx = t.x + dx;
+            const ny = t.y + dy;
+            if (nx < 0 || ny < 0 || nx >= rw || ny >= rh) continue;
+            if (isWet(nx, ny)) continue; // water meeting water needs no margin
+            if (!assets.has(`shorefade_${si}`)) continue;
+            const spr = new Sprite(assets.get(`shorefade_${si}`));
+            const sc = worldToScreen(t.x, t.y, vec2());
+            spr.position.set(sc.x - TILE_W / 2, sc.y);
+            viewport.groundLayer.addChild(spr);
+            lighting.registerProp(t.x, t.y, spr);
+          }
+        }
+        ambience.setSmoke(false);
+      }
       // THE CITY'S OWN (it.100): the guards and their officer form up on the muster
       // ground. Only while the field is contested - once it is won they have gone home.
       if (isFarm && farm) {
@@ -2671,7 +2705,19 @@ async function boot(): Promise<void> {
       minimap.setWorld(dungeon, lighting, stairs);
       // THE MARKS (it.85): keys, gates, the keeper and the way home — each only once its tile is explored.
       minimap.setMarkers(() => {
-        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe'; always?: boolean }> = [];
+        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe' | 'quest'; always?: boolean }> = [];
+        /**
+         * THE WAY TO THE RIVER (it.108). The fields being taken is what unchains
+         * the river gate, and the gate is on the FAR side of the eastern quarter
+         * - most of a town away from where the hero is set down coming home. A
+         * player was told the road had opened and given nothing to find it by.
+         * A gold star sits on the gate from the moment it opens until the farm
+         * on the other side of it is safe.
+         */
+        if (isHub && quests.farm === 'done' && quests.river !== 'done') {
+          const gate = layout?.gateways.find((gw) => gw.dest === 'river');
+          if (gate) out.push({ x: gate.x, y: gate.y, kind: 'quest', always: true });
+        }
         if (minesPlan) {
           for (const k of minesPlan.keys) if (k.uid >= 0 && loot.getItem(k.uid)) out.push({ x: k.x, y: k.y, kind: 'key' });
           for (const d of minesPlan.doors) out.push({ x: d.x, y: d.y, kind: d.open ? 'door-open' : 'door' });
@@ -5178,6 +5224,17 @@ async function boot(): Promise<void> {
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
           minimap.markDirty();
           updateOrb();
+          /**
+           * THE ROAD OPENS, AND THE PLAYER IS TOLD (it.108).
+           *
+           * Taking the fields is what unchains the RIVER GATE, on the far side of
+           * the eastern quarter - and up to it.107 nothing anywhere said so. The
+           * chain simply came off a gate most of a town away from where the hero
+           * is set down coming home, and a player had to walk into it to find
+           * out. The officer names it, a banner says it in the corner, and a gold
+           * star sits on the gate on the map until the farm beyond it is safe.
+           */
+          showReward('THE RIVER GATE IS UNCHAINED \u00b7 FOLLOW THE STAR ON YOUR MAP');
           void dialogue.open({
             speaker: 'CAPTAIN ORDWAY',
             role: 'on the taken ground',
@@ -5186,8 +5243,9 @@ async function boot(): Promise<void> {
               'That was not a brawl, that was a battle, and you fought it like someone who has read one.',
               'Two hundred and fifty from the city purse. The carts will be running by morning, and there will be bread in the market by the end of the week.',
               'Look at it. They are already coming back out to it. The western road is still barricaded, mind - whatever came up it once can come up it again, but that is a worry for another night.',
+              'One more thing. With the company broken there is no reason to keep the RIVER GATE chained - it is on the east side of the old quarter, and the watch have taken the chain off it this morning. There is a farm on the water out past it, and stragglers from that same company went downriver ahead of us. I would look in on it.',
             ],
-            choices: [{ label: 'IT WAS A GOOD DAY', value: 'ok' }],
+            choices: [{ label: 'I WILL GO TO THE RIVER', value: 'ok' }],
           });
         }, 'the fields are the city’s');
         return;
@@ -5441,8 +5499,7 @@ async function boot(): Promise<void> {
         return;
       }
       fishMark = mark;
-      player.fishing = true;
-      player.fishClock = 0;
+      player.startFishing(); // the throw plays from frame 0 every time (it.108)
       // SEED THE BASELINE (it.107). `tickFishing` decides "are they walking" by
       // comparing this tick's position with `fishLast`, and `fishLast` still held
       // wherever the hero was standing the last time the tick ran - which, after
@@ -6271,9 +6328,25 @@ async function boot(): Promise<void> {
         // or, in town, over the stall / stash / gate / portal (it.39).
         let nearChest = world.chests.findNearestUnopened(player.pos.x, player.pos.y, 2.2);
         let townPrompt = world.town ? nearestTownPrompt() : null;
-        // A TOWN CHEST (it.92): whichever is nearer speaks - the chest or the stall.
-        if (nearChest && townPrompt && Math.hypot(nearChest.x - player.pos.x, nearChest.y - player.pos.y) < Math.hypot(townPrompt.x - player.pos.x, townPrompt.y - player.pos.y)) townPrompt = null;
-        else if (nearChest && townPrompt) nearChest = null;
+        /**
+         * A TOWN CHEST (it.92): whichever is nearer speaks - the chest or the
+         * stall. ON THE SAME RULER (it.108).
+         *
+         * This used to compare the chest's distance against the interactable's
+         * CENTRE, while the key that acts on it (`handleTownInteraction`) picks
+         * by the nearest tile of its FOOTPRINT. Those are different numbers for
+         * anything bigger than one tile, so the chip could name the chest while
+         * E fired the stall, or the other way about - and on the riverside, where
+         * a chest sits a couple of tiles off a fishing mark, that is the whole of
+         * "the prompt does not respond". The interactable now reports the
+         * distance it actually won by, and both sides read the same one.
+         */
+        const chestD = nearChest ? Math.hypot(nearChest.x - player.pos.x, nearChest.y - player.pos.y) : Infinity;
+        // Ground loot is on the same key, so it is in the same race (it.108).
+        const grab = world.loot.findNearest(player.pos.x, player.pos.y, PROMPT_RANGE);
+        const grabD = grab ? Math.hypot(grab.x - player.pos.x, grab.y - player.pos.y) : Infinity;
+        if (townPrompt && Math.min(chestD, grabD) <= townPrompt.d) townPrompt = null; // ties go to loot, as the key does
+        if (nearChest && townPrompt) nearChest = null;
         world.town?.setPromptAt(townPrompt ? townPrompt.x : null, townPrompt?.y);
         if (interactHint && townPrompt) {
           const p = world.camera.worldToCanvas(townPrompt.x, townPrompt.y, pickRingScratch);
@@ -6886,7 +6959,35 @@ async function boot(): Promise<void> {
               best = it;
             }
           }
-          if (best) openInteractable(best);
+          /**
+           * ONE PRESS, ONE THING (it.108).
+           *
+           * `MovementSystem.applyCommands` handles this SAME `PICKUP_NEAREST`
+           * for ground loot and chests, and this handles it for stalls, gates
+           * and the riverside's fishing marks - neither knowing the other
+           * exists. So one E did BOTH: standing over a dropped sword beside the
+           * armorer, the sword went into the pack AND the shop window opened on
+           * top of it. Loot lands where things die, and things die in the street,
+           * so this is not a corner case.
+           *
+           * The floor here defers when loot or a chest is genuinely nearer, on
+           * the same measurement the chip uses (see the ruler note above), so
+           * whichever one the chip is naming is the only one that fires. That is
+           * the rule it.58 wrote - "if the chip is showing, E acts" - and this is
+           * the pair of cases that had slipped it.
+           */
+          const grabNear = world.loot.findNearest(hero.pos.x, hero.pos.y, PROMPT_RANGE);
+          const chestNear = world.chests.findNearestUnopened(hero.pos.x, hero.pos.y, PROMPT_RANGE);
+          const otherD = Math.min(
+            grabNear ? Math.hypot(grabNear.x - hero.pos.x, grabNear.y - hero.pos.y) : Infinity,
+            chestNear ? Math.hypot(chestNear.x - hero.pos.x, chestNear.y - hero.pos.y) : Infinity,
+          );
+          // Loot and chests WIN TIES (strict `<`): standing on a stall tile with
+          // an item dropped on that same tile, both distances are zero, and a
+          // `<=` here fired the stall as well - which is the exact case that
+          // reproduced. Taking what is underfoot first, and opening the window on
+          // the next press, is also the better of the two behaviours.
+          if (best && bestD < otherD) openInteractable(best);
         } else if (cmd.type === 'OPEN_CHEST') {
           const it = t.interactables.find((i) => i.id === cmd.chestId);
           if (!it) continue;
@@ -6931,34 +7032,40 @@ async function boot(): Promise<void> {
       }
       if (goal) world.movements[playerId]?.applyCommands([{ type: 'MOVE_TO', playerId, gx: goal.x, gy: goal.y }]);
     }
-    /** The nearest town prompt within reach: stall / stash / gate / portal. */
-    const nearestTownPrompt = (): { x: number; y: number; html: string; lift: number } | null => {
+    /**
+     * The nearest town prompt within reach: stall / stash / gate / portal.
+     *
+     * IT.108: it reports the DISTANCE it won by, because the caller has to
+     * compare it against a chest - and the two were being compared on different
+     * rulers. See the chip-and-key note at the call site.
+     */
+    const nearestTownPrompt = (): { x: number; y: number; html: string; lift: number; d: number } | null => {
       const t = world.town;
       if (!t) return null;
-      let best: { x: number; y: number; html: string; lift: number } | null = null;
+      let best: { x: number; y: number; html: string; lift: number; d: number } | null = null;
       let bestD = PROMPT_RANGE;
       for (const it of t.interactables) {
         const d = interactableDist(it);
         if (d < bestD) {
           bestD = d;
           const label = it.kind === 'bed' && player.resting ? 'RISE' : it.label.replace('E · ', '');
-          best = { x: it.x, y: it.y, html: `<kbd>E</kbd> ${label}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : it.kind === 'innkeeper' ? 74 : it.kind === 'bed' ? 44 : it.kind === 'inn' ? 120 : 54 };
+          best = { x: it.x, y: it.y, d, html: `<kbd>E</kbd> ${label}`, lift: it.kind === 'merchant' || it.kind === 'alchemist' ? 96 : it.kind === 'board' ? 70 : it.kind === 'arena' ? 100 : it.kind === 'forge' ? 64 : it.kind === 'innkeeper' ? 74 : it.kind === 'bed' ? 44 : it.kind === 'inn' ? 120 : 54 };
         }
       }
       const gd = Math.hypot(player.pos.x - (t.layout.gate.x + 0.5), player.pos.y - (t.layout.gate.y + 0.5));
       if (gd < bestD && gd < 3.2) {
         bestD = gd;
-        best = { x: t.layout.gate.x + 0.5, y: t.layout.gate.y + 0.5, html: 'THE DUNGEON GATE · walk in to descend', lift: 44 };
+        best = { x: t.layout.gate.x + 0.5, y: t.layout.gate.y + 0.5, d: gd, html: 'THE DUNGEON GATE · walk in to descend', lift: 44 };
       }
       const cf = Math.hypot(player.pos.x - (t.layout.campfire.x + 0.5), player.pos.y - (t.layout.campfire.y + 0.5));
       if (cf < bestD && cf < 2.4) {
         bestD = cf;
-        best = { x: t.layout.campfire.x + 0.5, y: t.layout.campfire.y + 0.5, html: `THE CAMP · ${t.campHeroes.names.join(' · ')} rest here`, lift: 70 };
+        best = { x: t.layout.campfire.x + 0.5, y: t.layout.campfire.y + 0.5, d: cf, html: `THE CAMP · ${t.campHeroes.names.join(' · ')} rest here`, lift: 70 };
       }
       if (portalReturn) {
         const pd = Math.hypot(player.pos.x - (t.layout.portal.x + 0.5), player.pos.y - (t.layout.portal.y + 0.5));
         if (pd < bestD && pd < 3) {
-          best = { x: t.layout.portal.x + 0.5, y: t.layout.portal.y + 0.5, html: `PORTAL · back to depth ${ROMAN[portalReturn.floor - 1] ?? portalReturn.floor}`, lift: 60 };
+          best = { x: t.layout.portal.x + 0.5, y: t.layout.portal.y + 0.5, d: pd, html: `PORTAL · back to depth ${ROMAN[portalReturn.floor - 1] ?? portalReturn.floor}`, lift: 60 };
         }
       }
       return best;

@@ -2284,7 +2284,46 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the road home still stands when the field is quiet', g.town.interactables.some((i: { kind: string }) => i.kind === 'farmroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'farmgate'));
       check('the crop stands whole', (g.town.layout.props as Array<{ kind: string; variant?: string }>).filter((q) => q.kind === 'farmcrop' && String(q.variant).includes('burnt')).length === 0);
 
-      // ---- THE RIVERSIDE FARM (it.106) ------------------------------------
+      /**
+     * ONE PRESS, ONE THING (it.108). `MovementSystem` and `handleTownInteraction`
+     * both answer `PICKUP_NEAREST` and neither knew the other existed, so one E
+     * over a dropped item at a stall took the item AND opened the shop. They
+     * measure on the same ruler now, and loot wins ties.
+     */
+    {
+      g = game();
+      const stall = g.town.interactables.find((i: { kind: string }) => i.kind === 'merchant');
+      if (stall) {
+        const tile = stall.tiles[0];
+        const stand = (): void => {
+          g.player.pos.x = tile.x + 0.5;
+          g.player.pos.y = tile.y + 0.5;
+          g.player.prevPos.x = g.player.pos.x;
+          g.player.prevPos.y = g.player.pos.y;
+          g.lighting.updateVisibility(tile.x, tile.y);
+        };
+        g.shopUI.close();
+        stand();
+        g.loot.dropForced(tile.x + 0.5, tile.y + 0.5);
+        g.loop.step(40);
+        driveRender(200);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(60);
+        driveRender(300);
+        check('loot underfoot at a stall: one E takes the loot and does not also open the shop', !g.shopUI.isOpen && !g.loot.findNearest(g.player.pos.x, g.player.pos.y, 3), `shop ${g.shopUI.isOpen}`);
+        g.shopUI.close();
+        stand();
+        g.loop.step(40);
+        driveRender(200);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(60);
+        driveRender(300);
+        check('and with the ground clear the stall still opens', g.shopUI.isOpen);
+        g.shopUI.close();
+      }
+    }
+
+    // ---- THE RIVERSIDE FARM (it.106) ------------------------------------
       // The fields being the city's is what unchains the river gate, so this
       // runs here, on the far side of that, and never needs to fake the state.
       {
@@ -2356,11 +2395,20 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
            */
           {
             const missing: string[] = [];
-            for (let i = 0; i < 10; i++) {
-              const n = `water_${String(i).padStart(2, '0')}`;
-              if (!g.sprites.hasSingle(n)) missing.push(n);
-            }
-            check('the river is ten baked frames of the pack own caustics', missing.length === 0, `missing ${missing.join()}`);
+            for (let ph = 0; ph < 10; ph++) for (let b = 0; b < 9; b++) if (!g.sprites.hasSingle(`water_p${ph}_${b}`)) missing.push(`p${ph}_${b}`);
+            check('the river is ten baked frames of the pack own caustics', missing.length === 0, `missing ${missing.slice(0, 4).join()}`);
+            /**
+             * SEAMLESS (it.108). it.107 baked ONE tile per phase and stamped it
+             * everywhere, so the same caustic knot sat in every diamond and every
+             * shared edge drew a dark hairline (the borrowed grass mask is only
+             * 122-188 opaque at its rim). The bake writes the whole 3x3 spatial
+             * block now and every tile takes the member its world position calls
+             * for, so the caustics are one continuous surface.
+             */
+            check('and the ten flat tiles it replaced are gone', !g.sprites.hasSingle('water_00'));
+            const blocks = new Set(((g.water as unknown as { tiles: Array<{ block: number }> }).tiles ?? []).map((t) => t.block));
+            check('every member of the 3x3 block is in use on the river', blocks.size === 9, `${blocks.size} of 9`);
+            check('and the bank washes into the water on all four sides', [0, 1, 2, 3].every((i) => g.sprites.hasSingle(`shorefade_${i}`)));
           }
           // THE WATER MOVES. The pass is render-only and rides the wall clock, so
           // it is checked by driving frames and watching a tile's texture change.
@@ -2397,6 +2445,27 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
             driveRender(120);
             const reeled = g.player.fishing === false;
             check('E casts the line, and E again reels it in', cast && reeled, `cast ${cast} reeled ${reeled}`);
+            /**
+             * A THROW HAPPENS ONCE (it.108). it.107 drove the frame from `sin()`
+             * over the first third of the ranged sheet, so the animation ran
+             * forwards and BACKWARDS for ever - a body un-throwing, which is what
+             * "the fishing animation is glitched" was. It is a cast that plays
+             * once and a wait that holds the last frame; the rod's angle is the
+             * cheapest proof, because it sweeps monotonically and then stops.
+             */
+            g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+            const rots: number[] = [];
+            for (let i = 0; i < 40; i++) {
+              g.loop.step(1);
+              driveRender(16);
+              rots.push((g.player as unknown as { rod: { rotation: number } }).rod.rotation);
+            }
+            let monotonic = true;
+            for (let i = 1; i < rots.length; i++) if (rots[i] < rots[i - 1] - 1e-6) monotonic = false;
+            check('the cast sweeps forward once and never runs backwards', monotonic && rots[rots.length - 1] > rots[0], `${rots[0].toFixed(2)} -> ${rots[rots.length - 1].toFixed(2)}`);
+            g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+            g.loop.step(20);
+            driveRender(80);
             // And walking off it puts the rod away without anything undoing it.
             g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
             g.loop.step(30);

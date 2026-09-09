@@ -24,6 +24,14 @@ import { PALETTE, TILE_H, TILE_W, WALL_Z } from './config';
  * packs; the caustics were there all along, under `test-models/3rd town part`.
  */
 export const WATER_PHASES = 10;
+/**
+ * THE RIVER'S SPATIAL PERIOD (it.108). One tile covers a third of the source
+ * caustic, so the pattern only truly repeats every THREE tiles - and the bake
+ * writes that whole 3x3 block. A tile takes the member of the block its own
+ * world position calls for, which makes the caustics ONE CONTINUOUS FIELD
+ * across the river instead of the same knot stamped into every diamond.
+ */
+export const WATER_PERIOD = 3;
 
 export class AssetManager {
   private readonly textures = new Map<string, Texture>();

@@ -171,6 +171,9 @@ const CLASS_RIGS: Record<ClassArchetype, HeroRig> = {
 /** Paperdoll layer draw order, back to front. */
 const PAPERDOLL_ORDER: readonly EquipmentSlot[] = ['cloak', 'legs', 'torso', 'head', 'offHand', 'mainHand', 'ring'];
 
+/** How long the throw takes, in seconds, before the line settles (it.108). */
+const FISH_CAST = 0.55;
+
 /** Ticks the damage flash lasts. */
 const FLASH_TICKS = 8;
 /** Render frames the slash arc stays visible after a strike. */
@@ -198,13 +201,22 @@ export class Player extends Entity {
    * sets it stops setting it - not because anything has to undo it.
    */
   fishing = false;
-  /** Render-side seconds spent fishing, for the rod's slow bob; -1 when not. */
+  /**
+   * Render-side seconds since the line was cast. Drives BOTH halves of the
+   * animation: the cast plays out over the first `FISH_CAST`, and the wait loops
+   * for as long as the line is out (it.108).
+   */
   fishClock = 0;
   /** Put the rod away. Called whenever the pose ends, for any reason. */
   stopFishing(): void {
     this.fishing = false;
     this.fishClock = 0;
     this.rod.visible = false;
+  }
+  /** Begin the cast. Restarts the clock so the throw always plays from frame 0. */
+  startFishing(): void {
+    this.fishing = true;
+    this.fishClock = 0;
   }
   private readonly restFrom = { x: 0, y: 0 };
   /** Ticks spent lying (the lying-down animation, and a slow mend). */
@@ -910,26 +922,61 @@ export class Player extends Entity {
       frame = Math.min(fc - 1, Math.floor(e * fc));
       this.wakeClock = 0;
     } else if (this.fishing && this.action === 'idle' && !this.moving) {
-      // THE ROD IS IN HIS HANDS (it.107). Shown here rather than on the state
-      // change, so it can never be left on screen by a frame that skipped the
-      // transition: this branch is the only one that draws a fishing hero.
+      /**
+       * THE CAST, THEN THE WAIT (it.108).
+       *
+       * it.107 drove the frame from `sin()` over the first third of the ranged
+       * sheet - so the animation ran FORWARDS AND BACKWARDS, forever, over a
+       * fragment of a throw. A body cannot un-throw; played in reverse it reads
+       * as a stutter, and that is what "the fishing animation is glitched" was.
+       *
+       * It is two states now, off one clock:
+       *
+       *   CAST  the ranged sheet, once, frame 0 to last, monotonically, over
+       *         `FISH_CAST` seconds. A throw that happens once and finishes.
+       *   WAIT  the sheet's LAST frame - arm forward, rod out, the pose a caster
+       *         ends in - held, with a slow breath on the body and a dip on the
+       *         rod. The loop is the breathing, not the frames, so nothing can
+       *         run backwards.
+       *
+       * The two meet at the same frame with the same rod angle, so the join is
+       * invisible: `castT` reaches 1 exactly as the wait begins.
+       */
       this.rod.visible = true;
-      // Held on the side the hero faces, and dipping with the same slow bob the
-      // body has, so the line and the shoulders move together.
-      const right = this.facing.x >= 0;
-      this.rod.scale.set(right ? 0.92 : -0.92, 0.92);
-      this.rod.position.set(right ? 5 : -5, -6);
-      this.rod.rotation = (right ? 1 : -1) * (0.06 + Math.sin(this.fishClock * 1.6) * 0.05);
-      // THE CAST, HELD. The class's ranged/spell sheet is the one frame set in
-      // every rig where the body stands square with an arm out in front of it,
-      // which is a fisherman. It is held in the FIRST THIRD of that sheet - past
-      // the wind-up, short of the release - and bobbed slowly, so the rod dips
-      // and lifts on the water instead of a swing playing over and over.
+      this.fishClock += 0.016;
       animName = rig.rangedAttack ?? rig.attacks[0];
       const fc = fcOf(animName);
-      this.fishClock += 0.016;
-      const bob = (Math.sin(this.fishClock * 1.6) + 1) / 2; // 0..1, ~4 s a cycle
-      frame = Math.max(0, Math.min(fc - 1, Math.floor(bob * fc * 0.34)));
+      const castT = Math.min(1, this.fishClock / FISH_CAST);
+      const casting = castT < 1;
+      // Ease the throw out so the arm decelerates into the hold instead of
+      // stopping dead on the last frame.
+      const eased = 1 - (1 - castT) * (1 - castT);
+      frame = casting ? Math.min(fc - 1, Math.floor(eased * fc)) : fc - 1;
+      if (!casting) {
+        // The breath: a hair of vertical scale, the same trick the villagers'
+        // idle uses, so a waiting angler is alive without a second sheet.
+        const t = (this.fishClock - FISH_CAST) * 1.5;
+        this.body.scale.y = this.rigScale * (1 + Math.sin(t) * 0.012);
+      } else if (this.body.scale.y !== this.rigScale) {
+        this.body.scale.y = this.rigScale;
+      }
+      /**
+       * THE HAND (it.108). The rod is pinned to where the hand actually is, and
+       * the hand MOVES during a throw: back over the shoulder at the start,
+       * forward and low at the end. it.107 pinned it to one fixed offset, so
+       * through the cast the rod floated away from the body and snapped back.
+       * The offsets below are the arc the hand travels, and the rod rides it.
+       */
+      const right = this.facing.x >= 0;
+      const side = right ? 1 : -1;
+      const swing = casting ? eased : 1;
+      const hx = -3 + swing * 8; // shoulder -> out in front
+      const hy = -10 + swing * 4; // high -> down at the water
+      const dip = casting ? 0 : Math.sin((this.fishClock - FISH_CAST) * 1.6) * 0.05;
+      this.rod.scale.set(side * 0.92, 0.92);
+      this.rod.position.set(side * hx, hy);
+      // Wound back for the throw, forward and steady for the wait.
+      this.rod.rotation = side * (-0.85 + swing * 0.91 + dip);
     } else if (this.wakeClock >= 0 && this.wakeClock < 0.5 && this.action === 'idle' && !this.moving) {
       // THE WAKING (it.92): the fall played back, half a second, before the idle.
       animName = rig.death;

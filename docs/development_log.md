@@ -1,5 +1,100 @@
 # Development Log
 
+## 2026-09-09 (iteration 108) - A river with no grid in it, a throw that happens once
+
+### The water read as a grid of boxes, for three separate reasons
+it.107 baked the pack's caustic loop into isometric tiles and the river still
+drew as a lattice of diamonds. Diagnosed by laying the tiles out over red and
+looking at what came through:
+
+1. **The seam.** The mask was borrowed from `single_town_grass_0.png` on the
+   reasoning that a shipped tile's alpha would match its neighbours. That mask
+   is only **122-188 opaque along its rim** - authored to be laid on grass,
+   where a soft edge blends into more grass. Over the dark ground the scene
+   clears to, two adjacent soft rims do not add up to one opaque tile: they
+   leave a half-transparent line, and every tile boundary drew as a dark
+   diagonal. Drawing the diamond instead and thresholding it did not help -
+   measured 512 uncovered interior pixels at *every* cutoff tried, and
+   overfilling by an epsilon converged on nothing.
+
+   The mask is **derived from the projection** now: a pixel belongs to the tile
+   whose grid square it unprojects into (`screenToWorld`, plus the sprite's own
+   `- TILE_W / 2`). That partitions the plane, so a field of them is gapless and
+   non-overlapping by construction, with no number to tune.
+
+2. **The repeat.** Every tile sampled the same window, so the same caustic knot
+   sat in every diamond. One tile spans a third of the source, so the pattern's
+   true period is **three tiles** - the bake writes the whole 3x3 block and each
+   tile takes the member its world position calls for. The caustics are one
+   continuous field across the river now.
+
+3. **The banding.** The base colour was ramped across each tile from DEEP to
+   SHALLOW. `gy` is a position *within* the tile, so the ramp restarted at every
+   edge and drew its own diagonal. Anything that varies per-tile is a grid by
+   definition; the base is flat, and the water gets its variation from the light.
+
+### The bank washes in (`scripts/bake-water.py`)
+Water met land at a drawn edge. Every water tile that touches land now takes an
+overlay of the bank fading out across it - one per side it is touched on - built
+from the pack's own `transitions_02` ramp so the waterline is soft and slightly
+ragged rather than a linear wipe.
+
+### A throw happens once (`src/entities/Player.ts`)
+it.107 drove the fishing frame from `sin()` over the first third of the ranged
+sheet. That runs the animation **forwards and backwards, for ever**, over a
+fragment of a throw - a body un-throwing, which is exactly what "the fishing
+animation is glitched" looks like.
+
+Two states off one clock now: **CAST** plays the sheet once, frame 0 to last,
+eased, over 0.55 s; **WAIT** holds the last frame - arm forward, the pose a
+caster ends in - with a slow breath on the body and a dip on the rod. The loop
+is the breathing, not the frames, so nothing can run backwards. They meet at the
+same frame and the same rod angle, so the join is invisible.
+
+**The hand moves during a throw**, and it.107 pinned the rod to one fixed offset
+- so through the cast it floated off the body and snapped back. The rod rides
+the arc the hand travels now: back over the shoulder at the start, forward and
+low at the end. Measured: the angle sweeps -0.80 to +0.06 monotonically, then
+holds.
+
+### The road to the river was opened and nobody was told
+Taking the fields is what unchains the river gate - and it is on the far side of
+the eastern quarter, most of a town from where the hero is set down coming home.
+The chain simply came off, silently. Captain Ordway names it now, a banner says
+it in the corner, and a **gold star with a pulsing ring** sits on the gate on the
+map (a new `quest` marker kind, drawn `always`) until the farm beyond it is safe.
+
+### One press, one thing
+`MovementSystem.applyCommands` answers `PICKUP_NEAREST` for loot and chests;
+`handleTownInteraction` answers the SAME command for stalls, gates and the
+fishing marks. Neither knew the other existed, so one E over a dropped item at
+the armorer's stall **took the item and opened the shop on top of it**.
+Reproduced, then fixed.
+
+Worse, the three places measured differently: the chip compared the chest to the
+interactable's *centre* while the key compared to the nearest tile of its
+*footprint*. The interactable reports the distance it actually won by now, both
+sides read the same one, and loot wins ties (strict `<`) - which is also the
+better behaviour: take what is underfoot, open the window on the next press.
+That restores the rule it.58 wrote, "if the chip is showing, E acts".
+
+### The riverside found its voice (`src/town/Villagers.ts`)
+it.106's nine lines were pleasant and said nothing - "quiet water today", "the
+nets are set". Nobody on that bank had been robbed at knifepoint that morning to
+hear them talk. Sixteen lines now, in three registers: the raid itself still
+close ("Three of them. Three, and he would not give them the boat."), the river
+they live off (perch, the deep bend past the reeds, the green planks), and the
+burned span that is the reason the company came down it at all.
+
+### Verification
+`tsc` clean, zero console errors across town / depth I / forest / farmlands /
+riverside, device matrix 74/74. Sixteen checks run against live floors: the
+river uses all nine members of the block with the flat tiles gone and the four
+bank fades baked; the cast sweeps forward once and never reverses; E casts and
+reels; loot underfoot at a stall takes the loot and does NOT open the shop,
+while a clear floor still opens it; the quest star sits on the river gate. The
+full ~400-check suite still stalls in a backgrounded tab (it.105).
+
 ## 2026-09-09 (iteration 107) - The fog lifted, and a river that was in the packs all along
 
 ### The water was there the whole time (`scripts/bake-water.py`)

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 101, 2026-09-09)
+- **Project version:** 0.1.0 (iteration 103, 2026-09-09)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -20,7 +20,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | Enemy separation | O(n) | spatial hash, one-tile cells, no per-tick allocation | OK |
 | Memory across floors | flat | camera wheel listener leak fixed (it.74); textures freed on rebuild; VFX/projectile/text/burst pools; gore capped at 260 decals | OK |
 | Device matrix (33 devices × 2 orientations + 4 browser-bar landscapes) | 74/74 | 74/74 | OK |
-| Scripted playthrough (`src/dev/qa75.ts`, 375 checks at it.101) | 0 failures | 375/375 on seed 3 (mage), incl. the farmlands campaign end to end - the muster with the HUD off the screen, the general's orders, the compass, the open western road, the squad charging and drawing blood, the road home, the payout and the quiet field after; the eleven-device sweep clean with the tally on screen; 10 earlier sessions, seeds 1-10, all classes | OK |
+| Scripted playthrough (`src/dev/qa75.ts`, 397 checks at it.103) | 0 failures | 397/397 on seed 3 (mage), incl. the farmlands campaign end to end - the muster called by coming home from the woods (34 tiles from the yard), six spoken lines each waited on and advanced by hand, the company's word in red with a name on it, the belt of wood at 739 trees three rings deep with none of it still fogged, the flock holding 0.93 between its closest pair and a 2.47 mean in a melee, the squad going in on its own, the field transforming in place, and both jobs of the post at the yard; the eleven-device sweep clean. KNOWN FLAKE (observed twice in five it.102 runs, in code it.102/103 did not touch): the depth-I command block (`click-attack`, `pickup`, `skill 1`, `a draught`) can fail together under load in a hidden tab and passes on a re-run at the same seed | OK |
 | Tick cost, depth III, 35 foes | < 2 ms | 0.21 ms idle, 0.62 ms in combat | Measured |
 | Co-op | 4 seats, no desync | leader-authoritative sync at 10 Hz (foes, heroes, loot), snapshot join 3–5 s, guarded seat reclaim, barrier watchdog; four-tab session verified it.77 | OK |
 | Bundle | vendor split | `pixi`, `peer`, `index` chunks; sourcemaps on | OK |
@@ -56,6 +56,9 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `engine/AudioManager` (it.89) | `MusicState` from main, the SFX calls, the bundle under `public/assets/audio` | one music bed and one ambience bed per zone, capped SFX voices | render-side only; `claimVoice` caps 4 a bank, 24 total |
 | `tutorial/TutorialSystem` (it.90) | `TutorialHooks` (hero, dummies, panels, viewport, world-to-page), the command stream, `entity:damaged` | the spotlight, arrow, card and chapter overlay; panels opened on cue | render-side only; steps are data; `shouldAutoStart` is the onboarding switch |
 | `town/Reclaim` (it.91) | the barricade's sprites, the ambience, a grid-open hook, a camera-focus hook | `GateFx` (a cart aside, carts toppling) and `ReclaimScene` (the letterboxed procession) | render-side only; the grid opens through main's hook on the QUEST tick |
+| `systems/Squad` (it.100, cut loose it.102) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt` | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor |
+| `ui/CineDialogue` (it.102) | `SpeechBeat` from a running scene, main's `portraitFromTexture` | the lower-left portrait box: who is speaking, and what they said | render-side only; the ONE head-up element `body.cine` leaves on screen |
+| `ProcessionScene.awaiting` (it.103) | Space / Enter / E / a tap on the letterbox | the beat queue, and whether the bars may lift | a named beat holds the page; the walk, the camera and the light keep running under it |
 
 ## 3. Audit log and refactoring summary (iteration 74)
 

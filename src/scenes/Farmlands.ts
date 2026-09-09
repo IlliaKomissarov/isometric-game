@@ -10,25 +10,37 @@
  * spiked barricades, trees) and four pieces cut for this floor alone — ash
  * ground, standing corn, the blackened stubble the fire leaves, and live coals.
  *
- * GEOGRAPHY (it.101). The marsh gateway stands on the WEST side of the city, so
- * the road out of town runs west and the hero arrives on the field's EAST edge
- * and fights westward into it. That fixes the compass for everything else:
+ * GEOGRAPHY (it.101, re-cornered it.102). The marsh gateway stands on the WEST
+ * side of the city, so the road out of town runs west and comes down onto the
+ * fields at their NORTH-EAST corner — the far corner from the company, which is
+ * dug in at the south-west. The assault therefore runs corner to corner, on the
+ * long diagonal, instead of straight across the middle:
  *
- *   EAST edge   the road home (a signpost back to the marsh gate) and the
- *               muster ground the squad forms up on.
- *   WEST edge   the ground the company holds, its general at the head of it,
- *               and past them the western road — open, and leading on.
+ *   NORTH-EAST corner  the city road, the signpost home, and the muster ground
+ *                      the squad forms up on.
+ *   WEST edge          the ground the company holds, its general at the head of
+ *                      it, and behind them THE ONE LOCKED GATE on the map — the
+ *                      western road, barricaded, for a country not built yet.
  *
  * THE SHAPE (it.101) is a union of five overlapping lobes, not a rectangle: the
- * field bulges and pinches the way worked land actually does, and every tile on
- * its border carries the hedge of trees that outlines the map.
+ * field bulges and pinches the way worked land actually does.
+ *
+ * THE BELT (it.103). The border is not a line of trees any more, it is FOUR
+ * RINGS of them, thinning outward: two solid rings of hedge and pine at the
+ * field's edge, and heavy timber behind those, so the map ends in a wood instead
+ * of in a row. The rings are found with one BFS out of the open ground, and the
+ * whole floor is revealed on arrival, so the belt is drawn from the first frame
+ * rather than fading in as the hero walks toward it.
  *
  * Two states, and the layout is a pure function of which one it is in:
  *
  *   BURNING  the crop is alight, the company holds the western rows, and the
  *            far lanes are barricaded. This is the battle.
  *   WON      the fires are out, the corn stands whole, the folk are back on the
- *            land, chests sit in the yards, and the western road is open.
+ *            land, and the yards are quiet.
+ *
+ * Chests are scattered over the whole map in BOTH states (it.102): a field
+ * fought across should pay while it is being fought across, not only after.
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
@@ -52,16 +64,31 @@ const LOBES: ReadonlyArray<{ cx: number; cy: number; rx: number; ry: number }> =
   { cx: 52, cy: 32, rx: 11, ry: 11 }, // the home acre, where the road comes in
 ];
 
-/** Where the hero and the squad arrive from the city road, on the EAST edge. */
-const ENTRY = { x: 57, y: 24 };
-/** The signpost on the east verge: the way back to the marsh gate. */
-const HOME = { x: 61, y: 24 };
+/** Where the hero and the squad arrive from the city road: the NE corner (it.102). */
+const ENTRY = { x: 55, y: 8 };
+/** The signpost at the head of the city road: the way back to the marsh gate. */
+const HOME = { x: 60, y: 4 };
+/**
+ * THE CITY ROAD (it.102). It comes down off the corner in a bend rather than a
+ * straight run, so the arrival reads as a road and not as a corridor. Carved
+ * three tiles wide, and every point on it counts as a road mouth for the hedge.
+ */
+const ROAD: ReadonlyArray<{ x: number; y: number }> = [
+  { x: 62, y: 3 },
+  { x: 60, y: 4 },
+  { x: 58, y: 6 },
+  { x: 55, y: 8 },
+  { x: 52, y: 11 },
+];
 /** The lane the enemy holds, and the general's ground at the far west of it. */
 const GENERAL = { x: 9, y: 13 };
-/** THE WESTERN ROAD (it.101): open ground leading on, past the fields. */
-const WEST_WAY = { x: 1, y: 22, label: 'THE WESTERN ROAD' };
-/** The one road out that is still barricaded. */
-const GATES = [{ x: 30, y: 1, label: 'THE NORTH ROAD' }] as const;
+/**
+ * THE ONE LOCKED GATE (it.102). The map has exactly one road that does not go
+ * anywhere yet, it is on the WEST edge, and it is barricaded. Everything else
+ * the hero can walk up to on this floor is a place they may actually go, so no
+ * signpost on the fields ever has to say "not open".
+ */
+const GATES = [{ x: 1, y: 22, label: 'THE WESTERN ROAD' }] as const;
 
 export function buildFarmLayout(seed: number, won = false): { layout: TownLayout; farm: FarmLayout } {
   const W = FARM_W;
@@ -94,8 +121,18 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++)
       for (let yy = y - half; yy <= y + half; yy++) if (inside(x, yy)) grid[idx(x, yy)] = TILE_FLOOR;
   };
-  lane(52, 62, ENTRY.y); // in from the city
-  lane(1, 9, WEST_WAY.y); // on, to the west
+  /** A straight run of open ground between two points, `half` tiles either side. */
+  const path = (a: { x: number; y: number }, b: { x: number; y: number }, half = 1): void => {
+    const steps = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) * 2));
+    for (let i = 0; i <= steps; i++) {
+      const cx = Math.round(a.x + ((b.x - a.x) * i) / steps);
+      const cy = Math.round(a.y + ((b.y - a.y) * i) / steps);
+      for (let y = cy - half; y <= cy + half; y++)
+        for (let x = cx - half; x <= cx + half; x++) if (inside(x, y) && x > 0 && y > 0 && x < W - 1 && y < H - 1) grid[idx(x, y)] = TILE_FLOOR;
+    }
+  };
+  for (let i = 1; i < ROAD.length; i++) path(ROAD[i - 1], ROAD[i]); // down off the corner, in from the city
+  lane(1, 9, GATES[0].y); // west, to the barricade and the road that is not cut yet
 
   // ---- THE PLOUGHING: wavy strips, so no two rows run quite parallel ----
   for (let y = 0; y < H; y++) {
@@ -105,8 +142,12 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
       if ((y + bend) % 7 < 4) tileKind[idx(x, y)] = KIND_DIRT;
     }
   }
-  /** The cart track: a curved lane of beaten dirt from the city road westward. */
-  const trackY = (x: number): number => Math.round(24 + Math.sin((x - 58) / 13) * 7);
+  /**
+   * The cart track: a curved lane of beaten dirt running the long diagonal, from
+   * the city road at the north-east corner down and across to the company's
+   * ground in the west (it.102). It is the line the whole battle is fought along.
+   */
+  const trackY = (x: number): number => Math.round(22 - ((x - 2) / 59) * 13 + Math.sin((x - 30) / 11) * 3);
   for (let x = 2; x <= 61; x++) {
     const ty = trackY(x);
     for (let y = ty - 1; y <= ty + 1; y++) if (isFloor(x, y)) tileKind[idx(x, y)] = KIND_DIRT;
@@ -234,34 +275,91 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
   // Every tile on the field's border carries a tree, so the map is outlined in
   // wood instead of ending at a hard edge. The road mouths are left clear so
   // both ways on stay readable from inside the field.
-  const roadMouth = (x: number, y: number): boolean =>
-    (Math.abs(y - ENTRY.y) <= 2 && x >= 51) || (Math.abs(y - WEST_WAY.y) <= 2 && x <= 10) || (Math.abs(x - GATES[0].x) <= 2 && y <= 4);
-  const TREES = ['pine_a', 'pine_b', 'pine_c', 'tree_a', 'tree_b', 'bigtree_a', 'bigtree_b', 'bigtree_c'] as const;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (isFloor(x, y) || roadMouth(x, y)) continue;
-      let touches = false;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) if (isFloor(x + dx, y + dy)) touches = true;
-      if (!touches || (x * 3 + y * 5) % 4 === 0) continue; // three tiles in four wear a tree
-      const v = TREES[(x * 7 + y * 11) % TREES.length];
-      decal({ kind: v.startsWith('bigtree') ? 'bigtree' : v.startsWith('pine') ? 'pine' : 'tree', x, y, variant: v });
+  const roadMouth = (x: number, y: number): boolean => {
+    if (Math.abs(y - GATES[0].y) <= 2 && x <= 10) return true; // the barricaded western road
+    for (const r of ROAD) if (Math.abs(x - r.x) <= 2 && Math.abs(y - r.y) <= 2) return true; // the city road off the corner
+    return false;
+  };
+  const NEAR_TREES = ['tree_a', 'tree_b', 'pine_a', 'pine_b', 'pine_c'] as const;
+  const DEEP_TREES = ['bigtree_a', 'bigtree_b', 'bigtree_c', 'pine_a', 'pine_c', 'tree_b'] as const;
+  {
+    // HOW FAR EACH CLOSED TILE IS FROM OPEN GROUND. One BFS out of the field
+    // over the tiles that are not field, to `BELT` rings deep. Ring 1 is the
+    // tile line the corn actually ends at; the rings behind it are the wood
+    // standing behind the hedge.
+    const BELT = 4;
+    const depth = new Int8Array(W * H).fill(-1);
+    let frontier: number[] = [];
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++)
+        if (isFloor(x, y)) {
+          depth[idx(x, y)] = 0;
+          frontier.push(idx(x, y));
+        }
+    for (let ring = 1; ring <= BELT && frontier.length; ring++) {
+      const next: number[] = [];
+      for (const i of frontier) {
+        const x = i % W;
+        const y = (i - x) / W;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (!inside(nx, ny)) continue;
+          const j = idx(nx, ny);
+          if (depth[j] !== -1) continue;
+          depth[j] = ring;
+          next.push(j);
+        }
+      }
+      frontier = next;
+    }
+    // How thickly each ring is planted. The first two are solid - that is the
+    // wall of wood - and it thins behind them so the far edge is a wood rather
+    // than a fence. Deterministic in the tile's own coordinates: the border must
+    // not move the shared random stream (it.98).
+    const FILL = [0, 1, 1, 0.72, 0.5] as const;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const d = depth[idx(x, y)];
+        if (d <= 0) continue;
+        if (roadMouth(x, y) && d <= 2) continue; // both ways on stay readable from inside
+        const fill = FILL[d] ?? 0;
+        if (fill < 1 && ((x * 13 + y * 7) % 100) / 100 >= fill) continue;
+        // The near ring is the hedge itself - ordinary trees and pines, so the
+        // field's edge stays readable. Behind it the wood is heavy timber.
+        const set = d <= 1 ? NEAR_TREES : DEEP_TREES;
+        const v = set[(x * 7 + y * 11) % set.length];
+        decal({ kind: v.startsWith('bigtree') ? 'bigtree' : v.startsWith('pine') ? 'pine' : 'tree', x, y, variant: v, ox: (((x * 5 + y * 3) % 7) - 3) * 0.06, oy: (((x * 3 + y * 11) % 7) - 3) * 0.06 });
+      }
     }
   }
 
-  // ---- THE WAYS ON AND THE WAY HOME -------------------------------------
-  // The north road is still barricaded. The western road is open ground: the
-  // company came up it, and it leads on past the fields.
+  // ---- THE WAY ON AND THE WAY HOME --------------------------------------
+  // ONE LOCKED GATE, ON THE WEST EDGE (it.102). The company came up the western
+  // road and barricaded it behind them; it is the only thing on this floor the
+  // hero can walk up to and be told no. Everything else goes somewhere.
   const gates = GATES.map((g) => ({ ...g }));
   for (const g of gates) {
     block({ kind: 'barricade', x: g.x, y: g.y, variant: 'barricade_a' });
-    if (inside(g.x + 1, g.y)) block({ kind: 'barricade', x: g.x + 1, y: g.y, variant: 'barricade_b' });
+    if (inside(g.x, g.y + 1)) block({ kind: 'barricade', x: g.x, y: g.y + 1, variant: 'barricade_b' });
     decal({ kind: 'farmgate', x: g.x, y: g.y, variant: g.label });
   }
-  decal({ kind: 'farmway', x: WEST_WAY.x, y: WEST_WAY.y, variant: WEST_WAY.label });
   decal({ kind: 'farmroad', x: HOME.x, y: HOME.y });
 
-  // ---- WHAT IS LEFT WHEN IT IS WON --------------------------------------
-  const chestSpots = won ? [{ x: 50, y: 22 }, { x: 34, y: 14 }, { x: 14, y: 27 }, { x: 20, y: 37 }] : [];
+  // ---- WHAT IS ON THE LAND ----------------------------------------------
+  // CHESTS IN BOTH STATES (it.102). Scattered the length of the diagonal, so
+  // the march west is worth making slowly, and so the quiet field afterwards
+  // still has something in its yards. A spot that is not open ground is dropped.
+  const chestSpots = [
+    { x: 51, y: 15 },
+    { x: 44, y: 6 },
+    { x: 37, y: 26 },
+    { x: 33, y: 14 },
+    { x: 25, y: 34 },
+    { x: 14, y: 27 },
+    { x: 20, y: 37 },
+    { x: 7, y: 15 },
+  ];
 
   // ---- nothing may be walled into a pocket ------------------------------
   {
@@ -293,9 +391,10 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     // rooms[0] is the muster ground by the road in and is never stocked; the
     // rest are the company's line, thickening westward toward the general.
     rooms: [
-      { x: 52, y: 20, w: 8, h: 9 },
-      { x: 38, y: 24, w: 10, h: 12 },
-      { x: 28, y: 10, w: 12, h: 12 },
+      { x: 49, y: 4, w: 10, h: 9 }, // the muster ground under the city road (it.102)
+      { x: 40, y: 12, w: 11, h: 12 },
+      { x: 28, y: 10, w: 12, h: 14 },
+      { x: 30, y: 28, w: 12, h: 12 },
       { x: 16, y: 22, w: 12, h: 14 },
       { x: 5, y: 8, w: 14, h: 12 },
       { x: 10, y: 32, w: 12, h: 10 },
@@ -318,15 +417,17 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     grid[idx(c.x, c.y)] = TILE_BLOCKED;
     layout.chests.push(c);
   }
-  // The squad forms up between the hero and the field, facing west.
+  // The squad forms up on the muster ground below the road head, facing down the
+  // diagonal (it.102) - south-west, at the company.
   const squad = [
-    { x: ENTRY.x - 2, y: ENTRY.y - 1, officer: true },
-    { x: ENTRY.x - 2, y: ENTRY.y + 1 },
-    { x: ENTRY.x - 3, y: ENTRY.y },
-    { x: ENTRY.x - 1, y: ENTRY.y - 2 },
+    { x: ENTRY.x - 2, y: ENTRY.y + 1, officer: true },
     { x: ENTRY.x - 1, y: ENTRY.y + 2 },
-    { x: ENTRY.x - 4, y: ENTRY.y - 1 },
-    { x: ENTRY.x - 4, y: ENTRY.y + 1 },
+    { x: ENTRY.x - 3, y: ENTRY.y },
+    { x: ENTRY.x - 4, y: ENTRY.y + 2 },
+    { x: ENTRY.x, y: ENTRY.y + 3 },
+    { x: ENTRY.x - 5, y: ENTRY.y },
+    { x: ENTRY.x - 2, y: ENTRY.y + 4 },
+    { x: ENTRY.x - 6, y: ENTRY.y + 2 },
   ].filter((s) => isFloor(s.x, s.y));
   const farm: FarmLayout = {
     entry: { ...ENTRY },
@@ -335,7 +436,6 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     squad,
     fires,
     gates: gates.map((g) => ({ x: g.x, y: g.y, label: g.label })),
-    west: { ...WEST_WAY },
     won,
   };
   layout.farm = farm;

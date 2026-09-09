@@ -97,9 +97,9 @@ export type SfxName =
   | 'ward';
 
 /** Which music bed is wanted (main drives; crossfades happen here). */
-export type MusicState = 'none' | 'menu' | 'town' | 'dungeon' | 'boss' | 'victory' | 'forest' | 'mines' | 'death' | 'gameover';
+export type MusicState = 'none' | 'menu' | 'town' | 'dungeon' | 'boss' | 'victory' | 'forest' | 'mines' | 'death' | 'gameover' | 'battle';
 /** The beds that rotate through a playlist (it.89: the forest and the quarry joined). */
-type PlaylistKey = 'town' | 'dungeon' | 'forest' | 'mines';
+type PlaylistKey = 'town' | 'dungeon' | 'forest' | 'mines' | 'battle';
 
 // Base-aware root (it.31): '/' in dev, '/isometric-game/' on GitHub Pages.
 const AUDIO_BASE = `${import.meta.env.BASE_URL}assets/audio`;
@@ -204,7 +204,22 @@ const DUNGEON_PLAYLIST = [FILES.bgm, `${AUDIO_BASE}/dungeon_tomb.mp3`, FILES.doo
 /** THE DARK FOREST and THE QUARRY MINES (it.89): their own beds. */
 const FOREST_PLAYLIST = [`${AUDIO_BASE}/dungeon_forest.mp3`, wz('The Harmony of the Enchanted Grove'), wz('Exploring the Unknown Paths'), wz('The Witching Hour s Secret')];
 const MINES_PLAYLIST = [`${AUDIO_BASE}/Secret Underground Cave.mp3`, wz('The Sorcerer s Omen'), wz('The Wizard s Magical Lab'), wz('The Arcane Lights')];
-const PLAYLISTS: Record<PlaylistKey, string[]> = { town: TOWN_PLAYLIST, dungeon: DUNGEON_PLAYLIST, forest: FOREST_PLAYLIST, mines: MINES_PLAYLIST };
+/**
+ * THE PITCHED BATTLE (it.102). The burning farmlands are the only fight in the
+ * game that is an ARMY against an army, and it was running on the forest's
+ * wandering bed. It gets its own playlist: the pack's marching, clashing tracks
+ * - the same shelf the wardens' arenas draw from, kept apart from them so a
+ * boss arena still sounds like a boss arena and a field sounds like a field.
+ */
+const BATTLE_PLAYLIST = [
+  wz('Wizards Warfront'),
+  `${BOSS_MUSIC_DIR}/5. Dread March .mp3`, // (Filename really has the space.)
+  wz('The Magefire Clash'),
+  wz('An Enchanted Onslaught'),
+  wz('The Spellbound Skirmish'),
+  wz('A Warlock s Wrath'),
+];
+const PLAYLISTS: Record<PlaylistKey, string[]> = { town: TOWN_PLAYLIST, dungeon: DUNGEON_PLAYLIST, forest: FOREST_PLAYLIST, mines: MINES_PLAYLIST, battle: BATTLE_PLAYLIST };
 /** The death sheet's lament, and the one-life ending (Hope is Lost, downmixed to 22 kHz mono). */
 const DEATH_TRACK = wz('The Tragic Spell');
 const GAMEOVER_TRACK = `${AUDIO_BASE}/hope-is-lost-22k.wav`;
@@ -291,11 +306,12 @@ export class AudioManager {
     mines: null,
     death: null,
     gameover: null,
+    battle: null,
   };
   private musicState: MusicState = 'none';
   private musicFloor = 0;
   /** Playlist cursors (it.45). */
-  private readonly playlistIndex: Record<PlaylistKey, number> = { town: 0, dungeon: 0, forest: 0, mines: 0 };
+  private readonly playlistIndex: Record<PlaylistKey, number> = { town: 0, dungeon: 0, forest: 0, mines: 0, battle: 0 };
   /** Live takes per bank and in total (it.89): the caps that stop a pack of ten from stacking ten hits. */
   private readonly live = new Map<string, number>();
   private liveTotal = 0;
@@ -361,8 +377,9 @@ export class AudioManager {
       this.music.dungeon = this.hookMediaElement(DUNGEON_PLAYLIST[0], false);
       this.music.forest = this.hookMediaElement(FOREST_PLAYLIST[0], false);
       this.music.mines = this.hookMediaElement(MINES_PLAYLIST[0], false);
+      this.music.battle = this.hookMediaElement(BATTLE_PLAYLIST[0], false); // THE PITCHED BATTLE (it.102).
       // Rotation: when a bed ends, step its playlist and keep playing.
-      for (const key of ['town', 'dungeon', 'forest', 'mines'] as const) {
+      for (const key of ['town', 'dungeon', 'forest', 'mines', 'battle'] as const) {
         this.music[key]?.addEventListener('ended', () => this.advancePlaylist(key));
       }
       this.music.death = this.hookMediaElement(DEATH_TRACK, true);
@@ -1077,7 +1094,7 @@ export class AudioManager {
       this.advancePlaylist('dungeon');
       return;
     }
-    if (state === 'dungeon' || state === 'boss' || state === 'forest' || state === 'mines') this.preloadRunBanks();
+    if (state === 'dungeon' || state === 'boss' || state === 'forest' || state === 'mines' || state === 'battle') this.preloadRunBanks();
     if (state === this.musicState && !trackChanged) return;
     this.musicState = state;
     this.musicFloor = floor;
@@ -1111,14 +1128,15 @@ export class AudioManager {
     if (this.musicState === 'town') retarget(this.music.town, TOWN_PLAYLIST[this.playlistIndex.town]);
     if (this.musicState === 'forest') retarget(this.music.forest, FOREST_PLAYLIST[this.playlistIndex.forest]);
     if (this.musicState === 'mines') retarget(this.music.mines, MINES_PLAYLIST[this.playlistIndex.mines]);
+    if (this.musicState === 'battle') retarget(this.music.battle, BATTLE_PLAYLIST[this.playlistIndex.battle]);
     if (this.musicState === 'boss') retarget(this.music.boss, BOSS_TRACKS[this.musicFloor] ?? BOSS_TRACK_DEFAULT);
     const duckMul = this.ducked ? 0.25 : 1;
-    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0, forest: 0, mines: 0, death: 0, gameover: 0 };
+    const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0, forest: 0, mines: 0, death: 0, gameover: 0, battle: 0 };
     if (this.musicState !== 'none') targets[this.musicState] = duckMul;
     // ONE BED UNDER EACH ZONE (it.89): the dungeon recording under the crypt, the cave under the quarry, silence under the forest.
-    const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'mines' ? 0.5 : this.musicState === 'boss' ? 0.16 : this.musicState === 'death' ? 0.2 : 0) * duckMul;
+    const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'mines' ? 0.5 : this.musicState === 'boss' ? 0.16 : this.musicState === 'battle' ? 0.14 : this.musicState === 'death' ? 0.2 : 0) * duckMul;
     if (this.ambEl && ambTarget > 0) {
-      const bed = encodeURI(this.musicState === 'mines' ? AMBIENT_BED : DUNGEON_BED);
+      const bed = encodeURI(this.musicState === 'mines' ? AMBIENT_BED : DUNGEON_BED); // the field's thin bed is the dungeon recording, well under the drums
       if (!this.ambEl.src.endsWith(bed.split('/').pop() ?? '')) {
         this.ambEl.src = bed;
         this.ambEl.loop = true;

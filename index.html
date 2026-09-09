@@ -2897,7 +2897,21 @@
          gradient over the canvas - no shader pass, so a phone pays nothing for it.
          It sits under the hurt flash, which keeps its own rule below. */
       body.afire #vignette { background: radial-gradient(ellipse at 50% 74%, rgba(255, 150, 60, 0.20) 0%, rgba(180, 60, 20, 0.13) 42%, rgba(40, 10, 4, 0.62) 100%); }
+      /* THE FIRELIGHT BREATHES (it.102). A field on fire is not a still orange
+         wash: the tint swells and falls on a slow, uneven cycle, so the light on
+         the screen moves the way the light in the corn does. One compositor
+         animation on one element - no repaint, no shader, nothing per frame in
+         script - and it is switched off entirely for reduced motion. */
+      @keyframes afire-breathe {
+        0% { opacity: 0.86; }
+        37% { opacity: 1; }
+        61% { opacity: 0.79; }
+        100% { opacity: 0.94; }
+      }
+      body.afire #vignette { animation: afire-breathe 5.5s ease-in-out infinite alternate; }
       body.afire.no-flash #vignette, body.afire #vignette.hurt { background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 40%, rgba(190, 40, 12, 0.30) 100%); }
+      body.afire #vignette.hurt { animation: none; opacity: 1; }
+      @media (prefers-reduced-motion: reduce) { body.afire #vignette { animation: none; } }
       #victory-modal { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); z-index: 45; }
       #victory-modal.open { display: flex; }
       #victory-modal .am-box { width: 540px; padding: 22px 26px 18px; background: var(--panel-bg); border: 2px solid var(--frame-iron); box-shadow: inset 0 0 0 1px var(--frame-gold), inset 0 0 28px rgba(0, 0, 0, 0.7), 0 14px 44px rgba(0, 0, 0, 0.85); text-align: center; }
@@ -5133,6 +5147,7 @@
          being asked to remember. Only the canvas, the letterbox and the fade
          are left on screen, so nothing can bleed over or under the black bars. */
       body.cine #hud-bar,
+      body.cine #controls,
       body.cine #hud-tl,
       body.cine #hud-tr,
       body.cine #skill-bar,
@@ -5165,18 +5180,62 @@
       body.cine #levelup-banner,
       body.cine #level-flash,
       body.cine #minimap-frame { opacity: 0 !important; pointer-events: none !important; transition: opacity 0.35s ease; }
+      /* ---- 8b2. THE CORNER SPEECH BOX (it.102) ------------------------------
+         Everything said over a cutscene used to be floating world text: gold,
+         tiny, and anonymous. This is the portrait box that says WHO is talking,
+         pinned in the lower-left corner above the bottom bar. It sits ABOVE the
+         letterbox and is the one head-up element `body.cine` deliberately keeps. */
+      /* ONE NUMBER FOR THE BAR (it.103). The letterbox height and the box that
+         has to sit above it were two literals that had already drifted: on a tall
+         phone in portrait the bars were 12vh and the box was placed at 8vh, so it
+         sat inside the black. Both read this now, so they cannot disagree. */
+      body { --cine-bar: 12vh; }
+      body.short-screen { --cine-bar: 8vh; }
+      #cine-speak {
+        position: fixed; left: 22px; bottom: calc(var(--cine-bar) + 20px); z-index: 47;
+        display: flex; gap: 12px; align-items: flex-start;
+        width: min(520px, 62vw); padding: 12px 16px 13px 12px;
+        background: linear-gradient(180deg, rgba(16, 12, 9, 0.95), rgba(8, 6, 5, 0.97));
+        border: 1px solid #4a3a26; border-left: 3px solid #d8a850;
+        box-shadow: 0 10px 34px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 220, 160, 0.09);
+        opacity: 0; transform: translateY(10px); transition: opacity 0.28s ease, transform 0.28s ease;
+        pointer-events: none;
+      }
+      #cine-speak.show { opacity: 1; transform: none; }
+      #cine-speak.foe { border-left-color: #c05244; }
+      #cine-speak .cs-face { flex: 0 0 auto; width: 58px; height: 58px; border: 1px solid #4a3a26; background: #0b0908; overflow: hidden; }
+      #cine-speak.faceless .cs-face { display: none; }
+      #cine-speak .cs-face canvas { display: block; width: 100%; height: 100%; image-rendering: auto; }
+      #cine-speak .cs-body { min-width: 0; }
+      #cine-speak .cs-who { display: block; font: 700 13px/1.15 'Cinzel', 'Georgia', serif; letter-spacing: 0.16em; color: #ffd070; text-shadow: 0 1px 3px #000; }
+      #cine-speak.foe .cs-who { color: #ff9a86; }
+      #cine-speak .cs-role { display: block; margin-top: 2px; font: italic 11px/1.2 'Crimson Pro', 'Georgia', serif; letter-spacing: 0.06em; color: #a89880; }
+      #cine-speak .cs-role:empty { display: none; }
+      #cine-speak .cs-line { margin: 7px 0 0; font: 15px/1.35 'Crimson Pro', 'Georgia', serif; color: #ece0c8; text-shadow: 0 1px 3px #000; }
+      /* THE PAGE IS TURNED BY HAND (it.103). A named line has no timer on it: it
+         waits, and the prompt says how to move on. It only shows on a waiting
+         line, and it breathes so it is never mistaken for part of the sentence. */
+      #cine-speak .cs-next { display: none; margin-top: 9px; font: 700 10px/1 'Cinzel', 'Georgia', serif; letter-spacing: 0.2em; color: #b9a887; }
+      #cine-speak.waits .cs-next { display: inline-block; animation: cs-next-pulse 1.6s ease-in-out infinite alternate; }
+      #cine-speak .cs-next kbd { display: inline-block; padding: 2px 6px; margin-right: 6px; border: 1px solid #5a4830; background: rgba(0, 0, 0, 0.5); border-radius: 2px; font: 700 9px/1 'Cinzel', 'Georgia', serif; color: #ffd070; }
+      @keyframes cs-next-pulse { from { opacity: 0.45; } to { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { #cine-speak.waits .cs-next { animation: none; opacity: 1; } }
+      body.orient-portrait #cine-speak, body.short-screen #cine-speak { left: 12px; right: 12px; width: auto; bottom: calc(var(--cine-bar) + 12px); padding: 9px 12px 10px 9px; }
+      body.orient-portrait #cine-speak .cs-line, body.short-screen #cine-speak .cs-line { font-size: 13.5px; }
+      body.orient-portrait #cine-speak .cs-face, body.short-screen #cine-speak .cs-face { width: 46px; height: 46px; }
+      body.tier-micro #cine-speak .cs-face { display: none; }
+      body.tier-micro #cine-speak .cs-line { font-size: 12.5px; }
       #cine-layer .cine-bar { position: absolute; left: 0; right: 0; height: 0; background: #050307; transition: height 0.9s cubic-bezier(0.2, 0.7, 0.2, 1); }
       #cine-layer .cine-bar.top { top: 0; }
       #cine-layer .cine-bar.bottom { bottom: 0; }
       /* Deeper bars with a hard edge (it.101): no seam of HUD under them. */
-      #cine-layer.show .cine-bar { height: 12vh; box-shadow: 0 0 0 2px #050307; }
+      #cine-layer.show .cine-bar { height: var(--cine-bar); box-shadow: 0 0 0 2px #050307; }
       #cine-layer .cine-title { position: absolute; left: 0; right: 0; top: 15vh; text-align: center; opacity: 0; transform: translateY(8px); transition: opacity 0.6s ease, transform 0.6s ease; pointer-events: none; }
       #cine-layer.titled .cine-title { opacity: 1; transform: none; }
       #cine-layer .cine-title b { display: block; font: 700 26px/1.1 'Cinzel', 'Georgia', serif; letter-spacing: 0.34em; color: #ffd070; text-shadow: 0 0 22px rgba(255, 208, 112, 0.55), 0 2px 6px #000; }
       #cine-layer .cine-title i { display: block; margin-top: 8px; font: italic 15px/1.2 'Crimson Pro', 'Georgia', serif; letter-spacing: 0.12em; color: #e8dcc0; text-shadow: 0 1px 4px #000; }
       body.orient-portrait #cine-layer .cine-title b, body.short-screen #cine-layer .cine-title b, body.tier-micro #cine-layer .cine-title b { font-size: 17px; letter-spacing: 0.22em; }
       body.orient-portrait #cine-layer .cine-title i, body.short-screen #cine-layer .cine-title i, body.tier-micro #cine-layer .cine-title i { font-size: 12px; }
-      body.short-screen #cine-layer.show .cine-bar { height: 8vh; }
       body.short-screen #cine-layer .cine-title { top: 11vh; }
       #foe-pointers { position: fixed; inset: 0; pointer-events: none; z-index: 7; }
       /* THE CITY'S OWN (it.100): a blue chevron over every friendly head. Same shape

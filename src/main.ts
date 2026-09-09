@@ -77,7 +77,7 @@ import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
 import { buildTownLayout, LOOTER_COUNT, type EastState, type TownLayout } from '@/town/TownMap';
-import { GateFx, ProcessionScene } from '@/town/Reclaim';
+import { GateFx, ProcessionScene, type SpeechBeat } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
 import { buildCellarLayout } from '@/scenes/Cellar';
 import { buildFarmLayout } from '@/scenes/Farmlands';
@@ -92,7 +92,8 @@ import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
 import { RECLAIMED_WORDS, REFUGEE_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
-import { Squad } from '@/systems/Squad';
+import { CineDialogue } from '@/ui/CineDialogue'; // THE CORNER WORD (it.102).
+import { Squad, SQUAD_OFFICER, SQUAD_RANKS } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
 import { SkillTreeUI } from '@/ui/SkillTree';
@@ -226,7 +227,16 @@ const CELLAR_FLOOR = 104;
 /** THE FARMLANDS (it.100): the burning fields along the marsh path. */
 const FARM_FLOOR = 105;
 /** THE COMPANY FIGHTS BACK (it.101): how far a hostile will look for a guard to fight instead of the hero. */
-const ALLY_AGGRO = 9;
+const ALLY_AGGRO = 14;
+/**
+ * WHO A BODY COMES FOR (it.102). A weight on the distance to the nearest guard
+ * when a hostile decides between the guard and the hero: under 1 the guard is
+ * treated as nearer than he is (the body prefers the squad), over 1 the hero.
+ * Dealt off the body's own id so the choice is stable, split roughly two to one
+ * toward the squad, and identical on every peer without any state to sync.
+ */
+const ALLY_BIAS = [0.55, 1.35, 0.7, 0.6, 1.5, 0.75] as const;
+const allyBias = (id: number): number => ALLY_BIAS[Math.abs(id) % ALLY_BIAS.length];
 const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
 const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
 /** THE CELLAR (it.97): what crawled in under the inn - vermin and the risen, no men. */
@@ -1833,7 +1843,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 20, fullRadius: quests.farm === 'done' ? 24 : 9 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 22, fullRadius: quests.farm === 'done' ? 26 : 10 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -1867,7 +1877,10 @@ async function boot(): Promise<void> {
       } else if (isInn) {
         audio.setMusic('town'); // The inn keeps the town's tune (it.92).
       } else if (isFarm) {
-        audio.setMusic(quests.farm === 'done' ? 'town' : 'forest', floorNum); // The fields fight, then they rest (it.100).
+        // THE FIELDS FIGHT, THEN THEY REST (it.100, given their own drums it.102).
+        // A burning field is a pitched battle and now sounds like one; a taken
+        // field falls back to the town's bed.
+        audio.setMusic(quests.farm === 'done' ? 'town' : 'battle', floorNum);
       } else if (isCellar) {
         audio.setMusic('mines', floorNum); // Under the boards the tune goes cold (it.97).
       } else if (isMines) {
@@ -1882,6 +1895,17 @@ async function boot(): Promise<void> {
       const ambience = new Ambience(viewport);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
+      // NO POP-IN ON OPEN COUNTRY (it.103). The fields are a field: a hero standing
+      // on the road can SEE the far hedge, and the belt of wood round the map is
+      // the thing that says where the map ends. Fogged, it faded in ring by ring
+      // as the hero walked at it, which read as the trees loading. The whole floor
+      // is explored from the first frame; the torch's own radius still says what is
+      // LIT, so the dark still matters - it is only the shape of the land that is
+      // known. (The crypt keeps its fog: that is the crypt's whole point.)
+      // (The SIGHT radius is deliberately left short of the map: `revealAll` is
+      // what kills the pop-in, and widening sight as well would have put the
+      // general's health bar on screen from halfway across the field.)
+      if (isFarm) lighting.revealAll();
       const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
@@ -2124,8 +2148,16 @@ async function boot(): Promise<void> {
             const hero = combat.nearestPlayer(self.pos.x, self.pos.y)?.pos ?? player.pos;
             if (!squad) return hero;
             const dh = Math.hypot(hero.x - self.pos.x, hero.y - self.pos.y);
-            const g = squad.nearest(self.pos.x, self.pos.y, Math.min(dh, ALLY_AGGRO));
-            return g ? { x: g.x, y: g.y } : hero;
+            // A COMPANY DOES NOT ALL RUSH ONE MAN (it.102). Two in three bodies
+            // weigh a guard nearer than he is (`allyBias`), so the enemy line
+            // splits across the squad instead of funnelling onto the hero; the
+            // rest still come for the hero. The weight is a pure function of the
+            // body's id, so every peer picks the same quarry on the same tick.
+            const bias = allyBias(self.id);
+            const g = squad.nearest(self.pos.x, self.pos.y, ALLY_AGGRO);
+            if (!g) return hero;
+            const dg = Math.hypot(g.x - self.pos.x, g.y - self.pos.y);
+            return dg * bias < dh ? { x: g.x, y: g.y } : hero;
           },
           meleeStrike: (src, min, max, toHit, reach, effect) =>
             combat.enemyStrike(src, min, max, toHit, reach, effect),
@@ -2319,7 +2351,31 @@ async function boot(): Promise<void> {
       // ground. Only while the field is contested - once it is won they have gone home.
       if (isFarm && farm) {
         ambience.setSmoke(!farm.farm.won); // The crypt's mist reads as smoke over a burning field.
-        if (!farm.farm.won) squad = new Squad(viewport.objectLayer, scene.isWalkable, farm.farm.squad, { rate: 1.05, damage: 12, leash: 13, toughness: 110 });
+        // IT.102: the company is given the ground it is taking (the general's
+        // lane), the floor's seed to deal its ranks from, and the floor's own A*
+        // so every man walks his own road. It is handed no anchor: from here the
+        // squad advances on the objective whether or not the hero follows.
+        if (!farm.farm.won)
+          squad = new Squad(viewport.objectLayer, scene.isWalkable, farm.farm.squad, {
+            rate: 1.05,
+            damage: 12,
+            leash: 15,
+            toughness: 110,
+            objective: { x: farm.farm.general.x + 0.5, y: farm.farm.general.y + 0.5 },
+            seed,
+            pathfinder,
+            // A MAN GOES DOWN, AND A MAN GETS UP (it.103): both are worth seeing
+            // from across the field, so both throw something the eye catches.
+            onFell: (x, y) => {
+              ambience.bloodSpray(x, y, undefined, undefined, 16);
+              vfx.play('vfx_bloodburst', x, y, { scale: 1.15, lift: 14, fps: 30, additive: false });
+              audio.sfx('gore');
+            },
+            onRose: (x, y) => {
+              vfx.play('vfx_ring', x, y, { scale: 0.7, flat: true, fps: 20, tint: 0x8fc4ff, alpha: 0.85 });
+              ambience.burst(x, y, 0x9fd0ff, 12, { lowEnergy: true });
+            },
+          });
       }
       // THE COMPANY FIGHTS BACK (it.101): the fight is lent a way to see the squad,
       // so a hostile with a guard in front of it swings at the guard.
@@ -2327,6 +2383,7 @@ async function boot(): Promise<void> {
         squad
           ? {
               nearest: (x, y, max) => squad?.nearest(x, y, max) ?? null,
+              prefer: (sourceId) => allyBias(sourceId),
               hurt: (id, amount) => {
                 const at = squad?.posOf(id) ?? null;
                 const took = squad?.hurt(id, amount) ?? false;
@@ -2691,6 +2748,7 @@ async function boot(): Promise<void> {
       bossLoot = null;
       destroyWorld(old);
       interactHint?.classList.remove('show', 'dim'); // No floating chips survive a floor.
+      Enemy.platesOff = false; // nor a cutscene's plate blackout (it.103)
       pendingInteract = null;
       // A stale "on the stairs" flag from the old floor must never fire on
       // the new one (double-descend guard, it.39).
@@ -4176,6 +4234,14 @@ async function boot(): Promise<void> {
     };
     /** The last looter falls: the letterboxed reclaiming, then the town rebuilt with the carts gone and the folk home. */
     let reclaim: ProcessionScene | null = null;
+    /**
+     * THE CORNER WORD (it.102). Everything said over a cutscene now lands twice:
+     * as the floating word over the body who said it, and in a portrait box in
+     * the lower-left corner that says WHOSE word it is. It is the one head-up
+     * element `body.cine` deliberately leaves on screen.
+     */
+    const cineSpeak = new CineDialogue();
+    subs.push(() => cineSpeak.destroy());
     /** The tile the scene's fog was last opened from, so it is only recomputed on a change. */
     let cineFogTile = -1;
     const cineFocusHooks = {
@@ -4189,6 +4255,7 @@ async function boot(): Promise<void> {
       release: (): void => {
         cineFocus = null;
         cineFogTile = -1;
+        cineSpeak.clear(); // The bars lift: nobody is talking any more (it.102).
         // The hero has the light back, at the floor's own radii.
         world.lighting.setSceneLight(false);
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
@@ -4216,6 +4283,11 @@ async function boot(): Promise<void> {
         from: east.approach,
         route: eastRoute,
         titles: [['THE EASTERN QUARTER', 'the barricade comes down'], ['THE PEOPLE RETURN', 'twenty looters fallen · the quarter reclaimed']],
+        // IT.102: the same two fixes as the forest - different people, and a
+        // column that walks round the quarter's props instead of through them.
+        walkers: 10,
+        sheets: STREET_FOLK,
+        isWalkable: cineWalk,
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
@@ -4290,7 +4362,12 @@ async function boot(): Promise<void> {
         from: forestFrom,
         route: forestRoute,
         titles: [['THE DARK FOREST', 'the last beast falls · the road is open'], ['THE PEOPLE RETURN', 'the clearings are theirs again']],
-        walkers: 7,
+        walkers: 8,
+        // IT.102: the forest's homecoming was still eight copies of `folk_walk`
+        // in one coat, walking through whatever stood on the route. It is dealt
+        // from the town's own civilian sheets now, and it slides along walls.
+        sheets: STREET_FOLK,
+        isWalkable: cineWalk,
         keepWalkers: true, // They stay in the clearing (it.93).
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
@@ -4497,8 +4574,15 @@ async function boot(): Promise<void> {
     // the officer at the training ground wants them off it.
     //
     // `quests.farm`:  new -> 'active' (the muster is taken) -> 'done' (the field is the city's).
-    /** True once the woods and the eastern quarter are both settled. */
-    const farmOffered = (): boolean => quests.forest === 'done' && quests.east === 'done';
+    /**
+     * THE MUSTER IS THE FOREST'S REWARD (it.103). Up to it.102 the city would not
+     * ask until the eastern quarter was ALSO settled, which put a second, unrelated
+     * errand between the hero clearing the woods and the city's next word - and the
+     * rally, the one scene that explains why the fields matter, could sit unseen
+     * for an hour. The road east is cleared, so the city knows what is on the
+     * marsh path: it asks the moment the hero walks back through the gate.
+     */
+    const farmOffered = (): boolean => quests.forest === 'done';
     /** Coats for the standing crowd, so a rally is not one dyed man repeated (it.101). */
     const FOLK_COATS_RALLY: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
     /** Ticks left before the officer's word, once the rally has played. */
@@ -4510,7 +4594,7 @@ async function boot(): Promise<void> {
      * "I WILL COME" that would have stopped it was eaten every time. Standing on
      * the training ground with the errand unclaimed was an infinite cutscene.
      */
-    let rallyShown = false;
+    // (The flag itself moved into the quest ledger at it.103 - see `quests.rally`.)
     /** Ticks left before the victory scene pays out. */
     let farmWonTicks = -1;
     /** The general's next taunt, and the cooldown on his hand. */
@@ -4523,15 +4607,62 @@ async function boot(): Promise<void> {
         'YOU BROUGHT CHILDREN',
         'NO ONE EATS TONIGHT',
     ];
-    const officerPortrait = (): HTMLCanvasElement | null => keeperPortrait();
+    /**
+     * FACES FOR THE CORNER BOX (it.102). One canvas per (sheet, dye), cropped to
+     * the head by `portraitFromTexture` and kept - a scene may put the same
+     * speaker up four times, and each one is an extract off the GPU.
+     */
+    const faceCache = new Map<string, HTMLCanvasElement | null>();
+    const faceOf = (anim: AnimName, tint: number, dir = 5): HTMLCanvasElement | null => {
+      const key = `${anim}:${tint}:${dir}`;
+      const got = faceCache.get(key);
+      if (got !== undefined) return got;
+      const made = spriteLib.loaded && spriteLib.hasAnim(anim) ? portraitFromTexture(spriteLib.frame(anim, dir, 0), tint) : null;
+      faceCache.set(key, made);
+      return made;
+    };
+    /** CAPTAIN ORDWAY: the watch's own mail, in the officer's paler dye (it.102). */
+    const officerPortrait = (): HTMLCanvasElement | null => faceOf('guard_idle', 0xfff0c8) ?? keeperPortrait();
+    /** THE GENERAL of the free company - his own rig, in the company's red. */
+    const generalPortrait = (): HTMLCanvasElement | null => faceOf('captain_idle', 0xd8887a, 0);
+    /** The ward's own people, for the pleading at the muster. */
+    const folkPortrait = (which: number): HTMLCanvasElement | null => {
+      // The carter's own sheet crops to a hooded head that reads as a black
+      // square in a 58 px box, so the porter stands in for him (it.102): the
+      // corner box is the only place a civilian's FACE is ever seen this large.
+      const sheets: AnimName[] = ['cit_goodwife_walk', 'cit_farmer_walk', 'cit_maid_walk', 'cit_labourer_walk', 'cit_porter_walk', 'cit_monk_walk'];
+      const dyes = [0xf0dcc0, 0xe0d0a8, 0xd8c8e0, 0xd0c0a0, 0xe8dcc8, 0xe8d8b8];
+      return faceOf(sheets[which % sheets.length], dyes[which % dyes.length]);
+    };
     const goFarm = (): void => goPlace(FARM_FLOOR, 'out to the fields');
 
-    /** How a cutscene puts a word on screen: floating text over whoever said it (it.101). */
-    const cineSay = (x: number, y: number, text: string, crit: boolean): void => {
-      // Always the gold face: a shout across a dark field has to be readable, and
-      // the emphasis is carried by the embers under it instead (it.101).
-      world.dmgText.show(x, y - 1.9, text, 'crit');
-      if (crit) world.ambience.burst(x, y, 0xffd070, 14, { lowEnergy: true });
+    /**
+     * How a cutscene puts a word on screen (it.101, doubled it.102): the floating
+     * gold text over whoever said it - which is what POINTS at the speaker - and,
+     * when the beat names one, the corner portrait box that says who that is.
+     */
+    const cineSay = (b: SpeechBeat): void => {
+      const x = b.x + 0.5;
+      const y = b.y + 0.5;
+      if (b.speaker) {
+        // A NAMED BEAT SPEAKS IN THE BOX (it.102). Putting the same sentence in
+        // both places stacked full-width gold caps across the middle of the frame,
+        // straight over the scene's own title. The word goes to the corner, where
+        // it is legible and attributed; what stays over the body is a flare of
+        // light, which is all the floating text was ever really doing - pointing.
+        // A NAMED LINE WAITS FOR THE READER (it.103): no clock on it at all, and
+        // a SPACE / TAP prompt under it. The scene holds until it is advanced.
+        cineSpeak.say({ speaker: b.speaker, role: b.role, text: b.text, portrait: b.portrait, foe: b.foe, hold: b.hold, wait: b.wait ?? true });
+        world.ambience.burst(x, y, b.foe ? 0xff8a5a : 0xffd070, b.crit ? 22 : 12, { lowEnergy: !b.crit });
+        // AND A RING UNDER THEIR FEET (it.103). The corner box says who is
+        // talking; this says WHERE they are, on a field of thirty bodies, without
+        // putting another line of text on the screen.
+        world.vfx.play('vfx_ring', x, y, { scale: b.crit ? 1.05 : 0.8, flat: true, fps: 16, tint: b.foe ? 0xff8a5a : 0xffd898, alpha: 0.8 });
+        return;
+      }
+      // Unattributed: the old gold shout over whoever said it (it.101).
+      world.dmgText.show(x, y - 1.9, b.text, 'crit');
+      if (b.crit) world.ambience.burst(x, y, 0xffd070, 14, { lowEnergy: true });
     };
     /** The scene's own walkable test, so a procession slides along walls (it.101). */
     const cineWalk = (gx: number, gy: number): boolean => world.scene.isWalkable(gx, gy);
@@ -4552,17 +4683,29 @@ async function boot(): Promise<void> {
       lightTheWayIn(from, route);
       // Those already on the yard: two ranks of the watch behind the officer, and
       // the townsfolk pressed in on three sides of them.
+      // THE WHOLE WATCH IS OUT (it.103): Ordway under the colours, two ranks drawn
+      // up behind him and a file to either side - eleven men in the city's plate
+      // instead of four, so the muster looks like something that could take a field.
       const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [
         { anim: 'guard_idle', x: yard.x, y: yard.y - 1, height: 74, tint: 0xfff2d0, dir: 4 }, // ORDWAY
-        { anim: 'guard_idle', x: yard.x - 2, y: yard.y - 2, height: 60, tint: 0xdfe6f2 },
-        { anim: 'guard_idle', x: yard.x + 2, y: yard.y - 2, height: 60, tint: 0xd8c090 },
-        { anim: 'guard_idle', x: yard.x - 3, y: yard.y, height: 60, tint: 0xaebad2 },
-        { anim: 'guard_idle', x: yard.x + 3, y: yard.y, height: 60, tint: 0xc8d8c0 },
       ];
+      const WATCH: ReadonlyArray<readonly [number, number, number]> = [
+        [-2, -2, 0xdfe6f2], [2, -2, 0xd8c090], [-3, 0, 0xaebad2], [3, 0, 0xc8d8c0],
+        [-1, -3, 0xdfe6f2], [1, -3, 0xaebad2], [-4, -1, 0xd8c090], [4, -1, 0xc8d8c0],
+        [-3, -3, 0xc6d2ea], [3, -3, 0xd0c8a0], [0, -4, 0xdfe6f2],
+      ];
+      for (const [dx, dy, tint] of WATCH) {
+        if (!world.scene.isWalkable(yard.x + dx, yard.y + dy)) continue;
+        cast.push({ anim: 'guard_idle', x: yard.x + dx, y: yard.y + dy, height: 58 + ((dx * 3 + dy * 5) % 5), tint });
+      }
       const CROWD = ([0, 1, 2, 3, 4, 5, 6, 7].map((i) => `crowd_m${i}`) as AnimName[]).filter((a) => spriteLib.hasAnim(a));
+      // Twenty-eight of the ward pressed in on three sides (it.103), up from
+      // fifteen: the square should be FULL, because that is the whole argument.
       const seats: ReadonlyArray<readonly [number, number]> = [
-        [-4, 3], [-2, 4], [0, 4], [2, 4], [4, 3], [-5, 1], [5, 1], [-4, -1], [4, -1],
-        [-2, 5], [2, 5], [-6, 2], [6, 2], [-1, 6], [1, 6],
+        [-4, 3], [-2, 4], [0, 4], [2, 4], [4, 3], [-5, 1], [5, 1], [-6, 0], [6, 0],
+        [-2, 5], [2, 5], [-6, 2], [6, 2], [-1, 6], [1, 6], [-4, 5], [4, 5],
+        [-7, 3], [7, 3], [-3, 7], [3, 7], [0, 7], [-5, 6], [5, 6], [-7, 1], [7, 1],
+        [-1, 8], [1, 8],
       ];
       seats.forEach(([dx, dy], i) => {
         if (!CROWD.length) return;
@@ -4580,19 +4723,24 @@ async function boot(): Promise<void> {
         from,
         route,
         titles: [['THE CITY IS HUNGRY', 'the whole ward is on the training ground'], ['A COMPANY HOLDS THE ROWS', 'the officer calls for a sword']],
-        walkers: 12,
+        walkers: 16,
         sheets: STREET_FOLK,
         isWalkable: cineWalk,
         cast,
         say: cineSay,
+        sayDone: () => cineSpeak.clear(), // THE PAGE IS TURNED (it.103).
+        // THE CITY ASKS, AND THE WATCH ANSWERS (it.102). Six speakers, each with a
+        // name and a face in the corner box: the ward's own people first, then a
+        // guard holding them back, then the officer last. The floating word stays
+        // low and south of the yard so a shout never lands on the title, and the
+        // box carries the part a shout across a square cannot.
         speech: [
-          // Kept low and south of the yard so a shout never lands on the title.
-          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'THERE IS NO BREAD IN THE MARKET' },
-          { t: 2.1, x: yard.x + 4, y: yard.y + 4, text: 'MY CHILDREN HAVE NOT EATEN IN THREE DAYS' },
-          { t: 3.3, x: yard.x - 5, y: yard.y + 5, text: 'THEY ARE BURNING THE FIELDS WHILE WE STAND HERE' },
-          { t: 4.5, x: yard.x + 2, y: yard.y + 6, text: 'TAKE THE FARMLANDS BACK!' },
-          { t: 5.6, x: yard.x - 2, y: yard.y + 5, text: 'THE WATCH MUST MARCH - TAKE THEM BACK!' },
-          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'THE WATCH WILL MARCH. I NEED A SWORD I CAN TRUST.', crit: true },
+          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'THERE IS NO BREAD IN THE MARKET', speaker: 'MERRAN OSK', role: 'goodwife of the Old Quarter', portrait: folkPortrait(0) },
+          { t: 2.1, x: yard.x + 4, y: yard.y + 4, text: 'MY CHILDREN HAVE NOT EATEN IN THREE DAYS', speaker: 'HALDIS THE CARTER', role: 'of the market road', portrait: folkPortrait(4) },
+          { t: 3.3, x: yard.x - 5, y: yard.y + 5, text: 'THEY ARE BURNING THE FIELDS WHILE WE STAND HERE', speaker: 'BREN FIELDER', role: 'driven off his own acre', portrait: folkPortrait(1) },
+          { t: 4.5, x: yard.x + 2, y: yard.y + 6, text: 'TAKE THE FARMLANDS BACK!', speaker: 'THE WARD', role: 'the whole training ground, at once', portrait: folkPortrait(2) },
+          { t: 5.6, x: yard.x - 3, y: yard.y - 2, text: 'STAND BACK. STAND BACK - HE WILL SPEAK.', speaker: 'SERJEANT BRAY', role: 'of the city watch', portrait: keeperPortrait() },
+          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'THE WATCH WILL MARCH. I NEED A SWORD I CAN TRUST.', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait(), hold: 4.2 },
         ],
         keepWalkers: true,
         hold: 8,
@@ -4636,11 +4784,14 @@ async function boot(): Promise<void> {
         walkers: 0,
         cast: line,
         say: cineSay,
+        sayDone: () => cineSpeak.clear(), // THE PAGE IS TURNED (it.103).
+        // The company's word is read in RED in the corner box (it.102), so the one
+        // scene on this floor spoken by the enemy is never taken for the city's.
         speech: [
-          { t: 1.0, x: g.x, y: g.y, text: 'BURN IT. BURN EVERY ROW.', crit: true },
-          { t: 2.4, x: g.x + 2, y: g.y + 2, text: 'THE CITY EATS ASHES THIS WINTER' },
-          { t: 3.8, x: g.x, y: g.y, text: 'ANY FARMER STILL BREATHING - PUT HIM AGAINST THE WALL', crit: true },
-          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'AND IF THE WATCH COMES, LET THEM COME' },
+          { t: 1.0, x: g.x, y: g.y, text: 'BURN IT. BURN EVERY ROW.', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true },
+          { t: 2.4, x: g.x + 2, y: g.y + 2, text: 'THE CITY EATS ASHES THIS WINTER', speaker: 'A COMPANY SERJEANT', role: 'on the burning rows', portrait: faceOf('captain_idle', 0xb87068, 0), foe: true },
+          { t: 3.8, x: g.x, y: g.y, text: 'ANY FARMER STILL BREATHING - PUT HIM AGAINST THE WALL', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true },
+          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'AND IF THE WATCH COMES, LET THEM COME', speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, hold: 4 },
         ],
         hold: 6,
         ...cineFocusHooks,
@@ -4662,11 +4813,18 @@ async function boot(): Promise<void> {
     const officerTalk = async (): Promise<void> => {
       const who = { speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait() };
       if (quests.farm === 'done') {
-        await dialogue.open({
+        // THE POST STILL HAS TWO JOBS (it.103). Once the city asked for a sword,
+        // the officer holds the training ground - so the sign's own offer would
+        // have been orphaned by the muster. He hands it back himself.
+        const v = await dialogue.open({
           ...who,
           lines: ['The fields are ours, and the carts are running again. The city eats because you went out there.'],
-          choices: [{ label: 'GOOD', value: 'ok' }],
+          choices: [
+            { label: 'GOOD', value: 'ok' },
+            { label: 'THE YARD', sub: 'walk the training ground again', value: 'train' },
+          ],
         });
+        if (v === 'train') await offerTraining();
         return;
       }
       if (quests.farm === 'active') {
@@ -4700,9 +4858,14 @@ async function boot(): Promise<void> {
     const startFarmVictory = (): void => {
       if (reclaim) return;
       const f = world.town?.layout.farm;
-      const home = f?.home ?? { x: 61, y: 24 };
-      const from = { x: home.x + 1, y: home.y };
-      const route = [{ x: 54, y: 24 }, { x: 44, y: 26 }, { x: 35, y: 24 }, { x: 26, y: 22 }, { x: 18, y: 24 }];
+      const home = f?.home ?? { x: 60, y: 4 };
+      const from = { x: home.x - 1, y: home.y + 1 };
+      // THE ROAD IN IS THE ROAD THEY WERE DRIVEN OFF (it.102). The city road now
+      // comes down onto the fields at the NORTH-EAST corner, so the folk come out
+      // of that corner and walk the long diagonal south-west into the rows, along
+      // the cart track the whole battle was fought down.
+      const route = [{ x: 54, y: 10 }, { x: 47, y: 13 }, { x: 39, y: 16 }, { x: 31, y: 16 }, { x: 23, y: 17 }, { x: 17, y: 20 }].filter((r) => cineWalk(r.x, r.y));
+      const mid = route[1] ?? { x: 47, y: 13 };
       lightTheWayIn(from, route);
       const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [];
       const off = world.squad?.positions().find((m) => m.officer);
@@ -4712,7 +4875,7 @@ async function boot(): Promise<void> {
         ambience: world.ambience,
         fx: gateFx,
         carts: [],
-        at: { x: 44, y: 25 },
+        at: mid,
         from,
         route,
         titles: [['THE FIELD IS TAKEN', 'the company is broken and its general is down'], ['THE PEOPLE COME OUT', 'there will be a harvest after all']],
@@ -4721,11 +4884,12 @@ async function boot(): Promise<void> {
         isWalkable: cineWalk,
         cast,
         say: cineSay,
+        sayDone: () => cineSpeak.clear(), // THE PAGE IS TURNED (it.103).
         speech: [
-          { t: 1.2, x: 44, y: 25, text: 'THAT WAS FOUGHT, NOT BRAWLED', crit: true },
-          { t: 3.0, x: 40, y: 26, text: 'THE ROWS ARE OURS AGAIN' },
-          { t: 5.0, x: 32, y: 24, text: 'WE CAN SOW BEFORE THE FROST' },
-          { t: 7.0, x: 26, y: 22, text: 'THERE WILL BE BREAD BY THE WEEK\'S END' },
+          { t: 1.2, x: mid.x, y: mid.y, text: 'THAT WAS FOUGHT, NOT BRAWLED', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'on the taken ground', portrait: officerPortrait() },
+          { t: 3.0, x: (route[2] ?? mid).x, y: (route[2] ?? mid).y, text: 'THE ROWS ARE OURS AGAIN', speaker: 'BREN FIELDER', role: 'back on his own acre', portrait: folkPortrait(1) },
+          { t: 5.0, x: (route[3] ?? mid).x, y: (route[3] ?? mid).y, text: 'WE CAN SOW BEFORE THE FROST', speaker: 'MERRAN OSK', role: 'of the Old Quarter', portrait: folkPortrait(0) },
+          { t: 7.0, x: (route[4] ?? mid).x, y: (route[4] ?? mid).y, text: 'THERE WILL BE BREAD BY THE WEEK’S END', speaker: 'HALDIS THE CARTER', role: 'with the first cart out', portrait: folkPortrait(4), hold: 4.2 },
         ],
         keepWalkers: true,
         ...cineFocusHooks,
@@ -4740,8 +4904,11 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * Each tick in town: once the woods and the quarter are settled, walking onto
-     * the training ground calls the muster - once, and never during a fade.
+     * Each tick in town: the muster is called BY COMING HOME (it.103), not by
+     * finding the training ground. The hero walks back through the gate with the
+     * woods behind them and the city is already on the yard waiting; the camera
+     * goes to it. It plays once, never during a fade, and never over a word the
+     * gatekeeper is still speaking.
      */
     const tickRally = (): void => {
       if (floor !== 0 || transitioning || !world.town) return;
@@ -4752,11 +4919,14 @@ async function boot(): Promise<void> {
         void officerTalk();
         return;
       }
-      if (rallyShown || !farmOffered() || (quests.farm ?? 'new') !== 'new') return;
-      const yard = world.town.layout.training?.mark;
-      if (!yard) return;
-      if (Math.hypot(player.pos.x - (yard.x + 0.5), player.pos.y - (yard.y + 0.5)) > 5) return;
-      rallyShown = true;
+      if (quests.rally === 'seen' || !farmOffered() || (quests.farm ?? 'new') !== 'new') return;
+      if (reclaim || dialogue.isOpen) return; // let the road home finish being told
+      if (!world.town.layout.training?.mark) return;
+      // IT IS IN THE LEDGER NOW (it.103), not in a run-scoped flag. The muster is
+      // called by coming home, and a save reloaded in town with the errand still
+      // unclaimed used to come home again - and play the whole rally a second time.
+      quests.rally = 'seen';
+      saveNow();
       rallyTicks = 0;
       audio.sfx('questDone');
       startRally();
@@ -4804,17 +4974,35 @@ async function boot(): Promise<void> {
         audio.sfx('questDone');
         world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 30);
         saveNow();
-        void dialogue.open({
-          speaker: 'CAPTAIN ORDWAY',
-          role: 'on the taken ground',
-          portrait: officerPortrait(),
-          lines: [
-            'That was not a brawl, that was a battle, and you fought it like someone who has read one.',
-            'Two hundred and fifty from the city purse. The carts will be running by morning, and there will be bread in the market by the end of the week.',
-            'The marsh path is still barricaded. Whatever came up it once can come up it again - but that is a worry for another night.',
-          ],
-          choices: [{ label: 'IT WAS A GOOD DAY', value: 'ok' }],
-        });
+        // THE FIELD CHANGES UNDER THEIR FEET (it.102). Up to it.101 the fields
+        // stayed burnt, smoking and empty until the hero walked home and came
+        // back out - the reward said the land was the city's while the land was
+        // still on fire. The floor is rebuilt IN PLACE the moment the errand
+        // closes, on the same spot the hero is standing: the fires are out, the
+        // corn stands whole, the villagers are on the land and the chests are in
+        // the yards. Same fade the stairs use, so it reads as one transition.
+        withFade(async () => {
+          await preloadFloor(FARM_FLOOR, 'farm');
+          const at = { x: player.pos.x, y: player.pos.y };
+          if (!swapWorld(() => buildWorld(FARM_FLOOR, 'farm'))) return;
+          placeParty(at.x, at.y, world.scene.isWalkable);
+          updateDepth(); // the fire tint comes off the page with the fires (it.102)
+          player.action = 'idle';
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          minimap.markDirty();
+          updateOrb();
+          void dialogue.open({
+            speaker: 'CAPTAIN ORDWAY',
+            role: 'on the taken ground',
+            portrait: officerPortrait(),
+            lines: [
+              'That was not a brawl, that was a battle, and you fought it like someone who has read one.',
+              'Two hundred and fifty from the city purse. The carts will be running by morning, and there will be bread in the market by the end of the week.',
+              'Look at it. They are already coming back out to it. The western road is still barricaded, mind - whatever came up it once can come up it again, but that is a worry for another night.',
+            ],
+            choices: [{ label: 'IT WAS A GOOD DAY', value: 'ok' }],
+          });
+        }, 'the fields are the city’s');
         return;
       }
       let alive = 0;
@@ -4836,6 +5024,7 @@ async function boot(): Promise<void> {
       saveNow();
       audio.sfx('gateOpen');
       tutorial.say('The squad musters at the marsh gate, south of the market plaza. Go out when you are ready.');
+      audio.sfx('crowd');
     };
 
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
@@ -5182,10 +5371,35 @@ async function boot(): Promise<void> {
         // party stays in step and `dealDamage` remains the only hp mutator.
         if (world.squad) {
           const foes: Array<{ id: number; hp: number; action: string; pos: { x: number; y: number } }> = [];
+          const foePos = new Map<number, { x: number; y: number }>();
           world.enemies.forEachActive((e) => {
-            if (e.hp > 0 && e.action !== 'dead') foes.push(e);
+            if (e.hp > 0 && e.action !== 'dead') {
+              foes.push(e);
+              foePos.set(e.id, e.pos);
+            }
           });
-          world.squad.step(dt, foes, (targetId, amount) => world.combat.dealDamage({ sourceId: player.id, targetId, amount }), player.pos);
+          world.squad.step(
+            dt,
+            foes,
+            (targetId, amount, from) => {
+              // THE GUARDS' BLOWS ARE VISIBLE (it.103). Up to it.102 a guard's
+              // swing left nothing on screen but a damage number - the blood the
+              // blow drew was drawn by `entity:damaged`, so a squad fighting
+              // looked like a squad standing next to bodies that bled. Each blow
+              // now throws the same cold-steel arc and spark the hero's does,
+              // off the guard's own shoulder into the body he is swinging at.
+              const at = foePos.get(targetId);
+              if (at) {
+                const dx = at.x - from.x;
+                const dy = at.y - from.y;
+                const d = Math.hypot(dx, dy) || 1;
+                world.ambience.slashArc(from.x + (dx / d) * 0.55, from.y + (dy / d) * 0.55, dx / d, dy / d, 0xbcd8ff, 0.62);
+                world.ambience.sparks(at.x, at.y, dx / d, dy / d, 4, 0xd8ecff);
+              }
+              world.combat.dealDamage({ sourceId: player.id, targetId, amount });
+            },
+            player.pos,
+          );
         }
         if (world.town) town.restockIfDue(baseSeed, deepestFloor, tick); // The merchants' clock (it.78).
         if (world.town) handleTownInteraction(commands);
@@ -5484,6 +5698,7 @@ async function boot(): Promise<void> {
           // HUD occlusion (it.41): overhead bars and numbers hold screen size at any zoom.
           const z = world.camera.currentZoom;
           Enemy.hudScale = Math.max(0.5, Math.min(1.1, 1 / Math.max(0.01, z)));
+          Squad.hudScale = Enemy.hudScale; // The blue bars hold screen size too (it.102).
           world.dmgText.setZoom(z);
         }
         world.chests.updateRender(timeSec);
@@ -5659,10 +5874,12 @@ async function boot(): Promise<void> {
           world.squad?.draw(alpha, (x, y) => world.lighting.getTintAt(x, y, 0.85));
           gateFx.update(frameDt); // THE BARRICADE (it.91): a cart aside, or every cart down.
           reclaim?.update(frameDt);
+          cineSpeak.update(frameDt); // THE CORNER WORD (it.102): each line fades on its own hold.
           // A CLEAN FRAME (it.101): while the bars are down the page wears `cine`,
           // and every HUD layer is hidden by the stylesheet rather than by each
           // panel remembering to hide itself. Nothing can bleed over the bars.
           document.body.classList.toggle('cine', !!reclaim);
+          Enemy.platesOff = !!reclaim; // and the foes' own overhead plates with them (it.103)
           world.town?.setPlatesHidden(!!reclaim);
           setBubblesHidden(!!reclaim);
           // THE SLEEPER (it.92): a few pale motes rise from the bed while the hero rests.
@@ -6037,12 +6254,9 @@ async function boot(): Promise<void> {
         else inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
         return;
       }
-      if (it.kind === 'farmway') {
-        tutorial.say(it.note ?? 'The western road is open.');
-        return;
-      }
       if (it.kind === 'farmgate') {
-        tutorial.say(it.note ?? 'The way past the fields is still barricaded.');
+        // THE ONE LOCKED GATE (it.102): the only walk-up on this floor that says no.
+        tutorial.say(it.note ?? 'The western road is barricaded - nothing is cut open past the fields yet.');
         return;
       }
       if (it.kind === 'cellarup') {
@@ -6095,7 +6309,7 @@ async function boot(): Promise<void> {
         // at the yard is where the officer stands. Once the rally has been CALLED
         // (it.101) he stands there whether or not the errand was taken - otherwise
         // walking away from the muster left no way back to it at all.
-        if (farmOffered() && (rallyShown || quests.farm !== undefined)) void officerTalk();
+        if (farmOffered() && (quests.rally === 'seen' || quests.farm !== undefined)) void officerTalk();
         else void offerTraining();
       }
       else stashUI.open();
@@ -6579,7 +6793,10 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
   // THE FARMLANDS (it.100): the company, the city's guards, the fires and the folk who come back.
   if (mode === 'farm') {
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    // THE RANKS TURN OUT (it.102): every sheet the squad can be dealt is pulled
+    // in with the floor. Without this the bag could only ever deal the sheets
+    // some OTHER system happened to need, and the watch was guards and knights.
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', 'captain_idle', ...SQUAD_RANKS.map((k) => k.anim), SQUAD_OFFICER.anim, ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of FARM_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

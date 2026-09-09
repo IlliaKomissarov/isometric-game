@@ -28,8 +28,39 @@ import { vec2 } from '@/utils/Vec2';
 
 const WALK = 'folk_walk';
 const FOLK_HEIGHT = 56;
+/** How close two walkers may stand before they shoulder each other apart (it.102). */
+const WALKER_SPACING = 0.62;
 /** Coats and cloaks: a colour per walker, so a crowd is not one dyed man (it.101). */
 const COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
+
+/**
+ * ONE SPOKEN BEAT (it.102). `t` is seconds from the bars closing; `x`,`y` the
+ * tile the word floats over; the rest is who is speaking, for the corner box.
+ */
+export interface SpeechBeat {
+  t: number;
+  x: number;
+  y: number;
+  text: string;
+  /** Emphasis: gold embers under the floating word. */
+  crit?: boolean;
+  /** The name in the corner box; omitted, only the floating word is shown. */
+  speaker?: string;
+  /** Under the name: who they are. */
+  role?: string;
+  /** Their face, cropped to the head (main builds these off the atlas). */
+  portrait?: HTMLCanvasElement | null;
+  /** The company's word, read in red rather than the city's gold. */
+  foe?: boolean;
+  /** Seconds the corner box holds this line, for a line that is not waited on. */
+  hold?: number;
+  /**
+   * THE SCENE WAITS (it.103). A beat with a name on it holds the scene until the
+   * player says go - Space, or a tap. Set false for a line that should drift past
+   * on its own. Unattributed beats never wait: there is nobody to wait for.
+   */
+  wait?: boolean;
+}
 
 interface Tween {
   sprite: Sprite;
@@ -129,9 +160,15 @@ export interface ProcessionHooks {
   /** Figures who stand in the scene rather than walk it - the officer, the general (it.101). */
   cast?: ReadonlyArray<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }>;
   /** What is said over the scene, and when: `t` is seconds from the bars closing (it.101). */
-  speech?: ReadonlyArray<{ t: number; x: number; y: number; text: string; crit?: boolean }>;
-  /** How a line is put on screen (main hands in the floating text). */
-  say?: (x: number, y: number, text: string, crit: boolean) => void;
+  speech?: ReadonlyArray<SpeechBeat>;
+  /**
+   * How a line is put on screen. Main hands in both halves of it (it.102): the
+   * floating word over the body who said it, AND the corner portrait box that
+   * says who that body is.
+   */
+  say?: (beat: SpeechBeat) => void;
+  /** THE READER TURNS THE PAGE (it.103): the line just read is taken down. */
+  sayDone?: () => void;
   /** THE CELLAR (it.97): a shorter hold, for a scene with nobody walking in it. */
   hold?: number;
   /** The folk stay where they arrived when the scene ends (they die with the floor). */
@@ -161,6 +198,8 @@ interface Walker {
   /** The place it keeps in the column - fixed at birth, so the goal never jitters (it.101). */
   offX: number;
   offY: number;
+  /** Its number in the column: what the per-leg stagger is dealt from (it.103). */
+  n: number;
 }
 
 /** The letterboxed homecoming. */
@@ -170,6 +209,15 @@ export class ProcessionScene {
   private readonly cast: Container[] = [];
   /** Which lines have been said already (it.101). */
   private said = 0;
+  /**
+   * THE PAGE IS NOT TURNED (it.103). True from the moment a spoken beat goes up
+   * until the player advances it. While it is true no further beat is shown and
+   * the scene will not end - everything else (the walk, the camera, the light)
+   * keeps running, because a procession that freezes mid-step reads as a hang.
+   */
+  private awaiting = false;
+  /** Torn down with the scene: the key and the tap that turn the page. */
+  private readonly ac = new AbortController();
   private opened = false;
   private toppled = false;
   private cheered = false;
@@ -179,6 +227,26 @@ export class ProcessionScene {
   private readonly sub: HTMLElement;
   private readonly scratch = vec2();
   private glintClock = 0;
+  /**
+   * WHERE THE CAMERA IS LOOKING (it.103). Up to it.102 it was pinned to whichever
+   * walker happened to be furthest along the route, so it jumped sideways every
+   * time two of them swapped places and the whole homecoming juddered. It now
+   * eases toward the CENTROID of everyone on the road, which moves smoothly by
+   * construction, and the group is what stays in frame instead of one person.
+   */
+  private camX = 0;
+  private camY = 0;
+  private camSet = false;
+  /**
+   * THE SPOTLIGHTS (it.102). `Lighting.addSource` bakes into the tile map at
+   * build time, so a homecoming that walks the length of a road was lit only
+   * where main happened to lay a lamp before the scene started - the column
+   * walked out of its own light halfway along. These are two ADDITIVE halos,
+   * render-only: one nailed over the mouth of the road the folk come out of,
+   * one that travels with the head of the column the whole way in.
+   */
+  private readonly leadSpot: Sprite | null;
+  private readonly mouthSpot: Sprite | null;
   /** With carts the folk wait for them to fall; without, they set out at once. */
   private readonly walkAt: number;
   private readonly endAt: number;
@@ -192,8 +260,42 @@ export class ProcessionScene {
     document.body.appendChild(this.overlay);
     this.title = this.overlay.querySelector('.cine-title b')!;
     this.sub = this.overlay.querySelector('.cine-title i')!;
+    // THE PAGE IS TURNED HERE (it.103). The letterbox already covers the screen
+    // and already swallows pointer events, so it is the natural place to listen:
+    // a tap anywhere, or Space / Enter / E on a keyboard. Both live and die with
+    // the scene, so nothing can outlive the bars.
+    this.overlay.addEventListener('pointerdown', () => this.advance(), { signal: this.ac.signal });
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (e.code !== 'Space' && e.code !== 'Enter' && e.code !== 'NumpadEnter' && e.code !== 'KeyE') return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.advance();
+      },
+      { signal: this.ac.signal, capture: true },
+    );
     void this.overlay.offsetWidth; // Commit the closed bars, then open them (no animation frame needed: a hidden tab has none).
     this.overlay.classList.add('show');
+    const spot = (tint: number, scale: number, alpha: number): Sprite | null => {
+      const tex = assets.get('glow');
+      if (!tex) return null;
+      const g = new Sprite(tex);
+      g.anchor.set(0.5);
+      g.blendMode = 'add';
+      g.tint = tint;
+      g.alpha = alpha;
+      g.scale.set(scale);
+      g.zIndex = -1e6; // under every body: a light on the road, not a light in front of it
+      h.layer.addChild(g);
+      return g;
+    };
+    this.leadSpot = spot(0xffd9a0, 5.2, 0);
+    this.mouthSpot = spot(0xffc888, 6.4, 0.32);
+    if (this.mouthSpot) {
+      const s = worldToScreen(h.from.x + 0.5, h.from.y + 0.5, vec2());
+      this.mouthSpot.position.set(s.x, s.y - 14);
+    }
     // THOSE WHO STAND (it.101): the officer at the head of the muster, the
     // general over his line. Placed once; they do not walk anywhere.
     for (const c of h.cast ?? []) {
@@ -252,7 +354,7 @@ export class ProcessionScene {
           root, body, x: h.from.x + 0.5 + offX, y: h.from.y + 0.5 + offY, leg: 0,
           delay: this.walkAt + i * 0.42, dir: 2, clock: (i % 7) / 7, speed: 1.3 + ((i * 3) % 5) * 0.06,
           done: false, anim: sheet.anim, fc: spriteLib.anim(sheet.anim).frameCount,
-          coat: COATS[(i * 3 + 1) % COATS.length], offX, offY,
+          coat: COATS[(i * 3 + 1) % COATS.length], offX, offY, n: i,
         });
       }
     }
@@ -260,6 +362,22 @@ export class ProcessionScene {
 
   get running(): boolean {
     return !this.finished;
+  }
+
+  /** True while a spoken line is on screen waiting to be advanced (it.103). */
+  get waiting(): boolean {
+    return this.awaiting;
+  }
+
+  /**
+   * The player says go. Takes the line down and lets the next one come when its
+   * beat arrives. A no-op when nothing is waiting, so a mashed key is harmless.
+   */
+  advance(): boolean {
+    if (this.finished || !this.awaiting) return false;
+    this.awaiting = false;
+    this.h.sayDone?.();
+    return true;
   }
 
   private setTitle(main: string, sub: string): void {
@@ -305,9 +423,12 @@ export class ProcessionScene {
     // WHAT IS SAID OVER IT (it.101): each line once, when its beat arrives.
     const speech = h.speech;
     if (speech && h.say) {
-      while (this.said < speech.length && t >= speech[this.said].t) {
-        const line = speech[this.said++];
-        h.say(line.x + 0.5, line.y + 0.5, line.text, !!line.crit);
+      // ONE LINE AT A TIME (it.103). A beat only goes up when the last one has
+      // been read; a named beat then holds the page until the player advances it.
+      while (!this.awaiting && this.said < speech.length && t >= speech[this.said].t) {
+        const beat = speech[this.said++];
+        h.say(beat);
+        if (beat.wait ?? !!beat.speaker) this.awaiting = true;
       }
     }
     // The procession walks the route; the camera drifts with its head.
@@ -316,10 +437,13 @@ export class ProcessionScene {
       if (t < w.delay || w.root.destroyed) continue;
       w.root.visible = true;
       const goal = h.route[Math.min(w.leg, h.route.length - 1)];
-      // The walker's place in the column is FIXED (it.101): the goal it steers at
-      // stops moving under it, which is what made the old column wobble and swap.
-      const gx = goal.x + 0.5 + w.offX;
-      const gy = goal.y + 0.5 + w.offY;
+      // The walker's place in the column is FIXED for a given leg (it.101), and
+      // STAGGERED BETWEEN legs (it.103): every walker gets its own small lateral
+      // and forward offset per waypoint, dealt from its number and the leg, so a
+      // column that funnels through one waypoint comes out of it spread again
+      // instead of single file through one tile. Deterministic - no random.
+      const gx = goal.x + 0.5 + w.offX + ((((w.n * 7 + w.leg * 13) % 7) - 3) * 0.28);
+      const gy = goal.y + 0.5 + w.offY + ((((w.n * 11 + w.leg * 5) % 7) - 3) * 0.24);
       const dx = gx - w.x;
       const dy = gy - w.y;
       const dist = Math.hypot(dx, dy);
@@ -354,7 +478,83 @@ export class ProcessionScene {
       w.root.zIndex = depthKey(w.x, w.y) + 2;
       if (!head || w.leg > head.leg || (w.leg === head.leg && w.x + w.y > head.x + head.y)) head = w;
     }
-    if (t >= this.walkAt + 1.8 && head) h.focus(head.x, head.y);
+    // NO TWO OF THEM IN THE SAME PLACE (it.102). Every walker steers at its own
+    // fixed place in the column, but a column that bends round a cart or takes
+    // the next mark can still fold two people onto one tile - and a homecoming
+    // where two bodies share a shadow reads as one body with a rendering fault.
+    // The same shoulder pass the squad uses, in list order, so it is stable.
+    for (let i = 0; i < this.walkers.length; i++) {
+      const a = this.walkers[i];
+      if (!a.root.visible || a.root.destroyed) continue;
+      for (let j = i + 1; j < this.walkers.length; j++) {
+        const b = this.walkers[j];
+        if (!b.root.visible || b.root.destroyed) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy);
+        if (d >= WALKER_SPACING || d === 0) continue;
+        const push = (WALKER_SPACING - d) / 2;
+        const ux = dx / d;
+        const uy = dy / d;
+        const ok = h.isWalkable;
+        if (!ok || ok(Math.floor(a.x - ux * push), Math.floor(a.y - uy * push))) {
+          a.x -= ux * push;
+          a.y -= uy * push;
+        }
+        if (!ok || ok(Math.floor(b.x + ux * push), Math.floor(b.y + uy * push))) {
+          b.x += ux * push;
+          b.y += uy * push;
+        }
+      }
+    }
+    // WHERE THE GROUP IS (it.103): the centroid of everyone actually on the road.
+    // Both the camera and the travelling light hang off this, not off whichever
+    // walker is momentarily in front, so neither of them judders.
+    let cx = 0;
+    let cy = 0;
+    let onRoad = 0;
+    for (const w of this.walkers) {
+      if (!w.root.visible || w.root.destroyed) continue;
+      cx += w.x;
+      cy += w.y;
+      onRoad++;
+    }
+    if (onRoad) {
+      cx /= onRoad;
+      cy /= onRoad;
+      // Biased a little toward the head, so the camera leads the group rather
+      // than trailing the stragglers.
+      if (head) {
+        cx = cx * 0.65 + head.x * 0.35;
+        cy = cy * 0.65 + head.y * 0.35;
+      }
+      if (!this.camSet) {
+        this.camX = cx;
+        this.camY = cy;
+        this.camSet = true;
+      } else {
+        const k = Math.min(1, dt * 2.6); // a slow pan, not a snap
+        this.camX += (cx - this.camX) * k;
+        this.camY += (cy - this.camY) * k;
+      }
+    }
+    // THE TRAVELLING SPOTLIGHT (it.102, anchored to the group it.103): it rides
+    // the whole column, so every one of them is lit the length of the road home
+    // rather than only the person in front.
+    if (this.leadSpot) {
+      if (onRoad) {
+        const s = worldToScreen(this.camX, this.camY, vec2());
+        this.leadSpot.position.set(s.x, s.y - 16);
+        // It opens out with the column: a group strung along the road is lit by a
+        // wider pool than a group still bunched at the gate.
+        let spread = 0;
+        for (const w of this.walkers) if (w.root.visible && !w.root.destroyed) spread = Math.max(spread, Math.hypot(w.x - this.camX, w.y - this.camY));
+        this.leadSpot.scale.set(4.6 + Math.min(4.5, spread * 0.9));
+        this.leadSpot.alpha = Math.min(0.55, this.leadSpot.alpha + dt * 0.8) * (0.9 + Math.sin(this.glintClock * 2.6) * 0.1);
+      } else this.leadSpot.alpha = Math.max(0, this.leadSpot.alpha - dt * 0.8);
+    }
+    if (this.mouthSpot) this.mouthSpot.alpha = 0.3 + Math.sin(this.t * 1.7) * 0.06;
+    if (t >= this.walkAt + 1.8 && this.camSet) h.focus(this.camX, this.camY);
     // Gold light along the road as they pass.
     this.glintClock += dt;
     if (t >= this.walkAt && this.glintClock > 0.35) {
@@ -362,9 +562,13 @@ export class ProcessionScene {
       if (head) h.ambience.burst(head.x + (Math.random() - 0.5) * 2, head.y + (Math.random() - 0.5) * 2, 0xffd070, 6, { lowEnergy: true });
     }
     if (Math.floor(prev) !== Math.floor(t) && t >= this.walkAt && t < this.endAt - 1) h.ambience.burst(at.x + 0.5 + (Math.random() - 0.5) * 3, at.y + 0.5 + (Math.random() - 0.5) * 3, 0xffe8a0, 10);
+    // THE BARS DO NOT LIFT ON AN UNREAD LINE (it.103). The scene's clock can run
+    // out while the player is still reading; it waits for them, and for every
+    // beat that has not been reached yet.
+    const spoken = !speech || (this.said >= speech.length && !this.awaiting);
     // The title fades; then the bars lift and the hero has the camera again.
-    if (t >= this.endAt - 1) this.overlay.classList.remove('titled');
-    if (t >= this.endAt && !this.finished) {
+    if (t >= this.endAt - 1 && spoken) this.overlay.classList.remove('titled');
+    if (t >= this.endAt && spoken && !this.finished) {
       this.finished = true;
       this.overlay.classList.remove('show');
       h.release();
@@ -375,6 +579,9 @@ export class ProcessionScene {
 
   /** Tear the procession down (the world is rebuilt right after). */
   destroy(): void {
+    this.ac.abort();
+    this.leadSpot?.destroy();
+    this.mouthSpot?.destroy();
     if (!this.h.keepWalkers) for (const w of this.walkers) w.root.destroy({ children: true });
     this.walkers.length = 0;
     for (const c of this.cast) c.destroy({ children: true });

@@ -161,15 +161,14 @@ export type TownPropKind =
   | 'farmcrop'
   | 'fieldfire'
   | 'farmgate'
-  // THE FARMLANDS (it.101): the road home to the marsh gate, and the western road on.
-  | 'farmroad'
-  | 'farmway';
+  // THE FARMLANDS (it.101): the signpost home to the marsh gate.
+  | 'farmroad';
 
 /** THE FARMLANDS (it.100): what main needs of the fields. */
 export interface FarmLayout {
-  /** Where the company musters, and where the hero is set down (the EAST edge, it.101). */
+  /** Where the company musters, and where the hero is set down (the NE corner, it.102). */
   entry: { x: number; y: number };
-  /** THE ROAD HOME (it.101): the signpost on the east verge, back to the marsh gate. */
+  /** THE ROAD HOME (it.102): the signpost at the head of the city road, back to the marsh gate. */
   home: { x: number; y: number };
   /** The ground the enemy general holds. */
   general: { x: number; y: number };
@@ -177,10 +176,8 @@ export interface FarmLayout {
   squad: Array<{ x: number; y: number; officer?: boolean }>;
   /** Every fire in the corn, for the embers and the light. */
   fires: Array<{ x: number; y: number }>;
-  /** The barricaded ways on, and what they are called. */
+  /** THE ONE LOCKED GATE (it.102): the barricaded western road, and its name. */
   gates: Array<{ x: number; y: number; label: string }>;
-  /** THE WESTERN ROAD (it.101): open ground on the far side, leading on. */
-  west: { x: number; y: number; label: string };
   /** True once the field is taken: no fire, no company, and the folk are back. */
   won: boolean;
 }

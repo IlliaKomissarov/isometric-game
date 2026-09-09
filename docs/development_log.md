@@ -1,5 +1,286 @@
 # Development Log
 
+## 2026-09-09 (iteration 103) - The company flocks, the page is turned by hand
+
+it.102 cut the squad loose and gave the cutscenes a voice. it.103 fixes how both
+of them MOVE: the guards stop travelling as one glued body, the words stop
+flashing past before they can be read, the fields end in a wood instead of a row,
+and the muster is the thing that happens when you walk home from the woods.
+
+### The company flocks (`src/systems/Squad.ts`)
+it.102 moved every man straight at his goal and unpicked the overlaps
+*afterwards*, with a positional shoulder pass. That is a collision fix, not a
+movement rule: on screen it read as one mass that squeezed through gaps as a
+single body and stacked four deep on whatever it reached.
+
+- **Separation is steering now, not a correction.** Each man sums a repulsion off
+  every neighbour inside `PERSONAL` (1.15 tiles) and blends it into his heading
+  BEFORE he steps - hard when closing on a body (`SEPARATION_NEAR`), gentle out
+  on the march (`SEPARATION_FAR`), so a line does not repel itself into a smear.
+  The shoulder pass stays as a backstop for what steering cannot solve.
+- **It is order-independent.** Positions are snapshotted before anyone moves, so
+  the flock a man feels is the same whether he is first or last in the list. The
+  old pass had the first guard steering around nobody and the last around seven
+  already-moved bodies - which is exactly what produced "one mass with a tail".
+- **On his mark but crowded, he shuffles.** Standing still used to switch
+  separation off entirely, so the last half-tile of a converging charge still
+  ended in a stack.
+- **The ring round a body is dealt by the pack.** A man's place is his index
+  among the men who came for THAT body, spread over a full circle and nudged by
+  the golden angle, and the ring widens with the pack - six men surround a
+  brigand instead of four arriving on the same shoulder.
+- **No two of them walk at the same pace.** A multiplier per man off the floor
+  seed, so a charge arrives ragged.
+- `Squad.spacing()` reports the closest pair and the mean over all pairs, for
+  the harness and for tuning. Measured mid-melee: closest 0.93, mean 2.47 over
+  eight men.
+
+### A belt of wood, drawn from the first frame (`src/scenes/Farmlands.ts`)
+The border was one line of trees on the tiles that happened to touch open ground,
+three in four. It is now **four rings**, found with a single BFS out of the
+field: two solid rings of hedge and pine at the edge and heavy timber thinning
+behind them - 739 trees where there were about 60, and the map ends in a wood.
+
+And it is all on screen the moment the floor stands. The "pop-in" was never asset
+loading (every tree single is resident from boot) - it was FOG: the belt faded in
+ring by ring as the hero walked at it. The fields are open country, so the floor
+is `revealAll`ed on arrival. The torch's own sight radius is deliberately left
+short of the map (22): the hero still only *sees* what is lit, it is the shape of
+the land that is known. Widening sight instead was tried and rejected - it put
+the general's health bar on screen from halfway across the field.
+
+### The page is turned by hand (`src/town/Reclaim.ts`, `src/ui/CineDialogue.ts`)
+Spoken lines had a 3.4 s timer. A line of dialogue in a language you are reading
+for the first time does not fit in 3.4 s, and there was no way to hold it.
+
+- A beat with a name on it now sets `awaiting`, and **no further beat is shown
+  and the scene will not end** until the player advances it. Space, Enter, E, or
+  a tap anywhere on the letterbox - the listeners live and die with the scene.
+- The corner box shows `SPACE CONTINUE` / `TAP TO CONTINUE` under the line, read
+  at say-time so a phone plugged into a keyboard gets the right one.
+- **Everything else keeps running while it waits** - the walk, the camera, the
+  light. A procession that freezes mid-step reads as a hang, not as a pause.
+- The harness had to learn to read: `readScene()` drives a frame and presses
+  Space when a line is waiting, and the checks assert how many pages it turned.
+
+### The muster is the forest's reward
+Up to it.102 the city would not ask until the eastern quarter was ALSO settled,
+and then only if the hero happened to walk onto the training ground. That put an
+unrelated errand between clearing the woods and the city's next word, and the one
+scene that explains why the fields matter could sit unseen for an hour.
+
+**It fires on coming home.** Walk back through the gate with the woods behind you
+and the camera goes to the yard. The muster itself is bigger to match: eleven of
+the watch drawn up under the colours (was four) and twenty-eight of the ward
+pressed in on three sides (was fifteen), with sixteen more still coming up the
+road.
+
+The "has this played" flag **moved into the quest ledger** (`quests.rally`).
+It was a run-scoped variable, which meant a save reloaded in town with the errand
+unclaimed came home again - and played the whole rally a second time.
+
+**The post at the yard now has two jobs**, and the officer hands the second one
+back: once the city has asked for a sword he holds the training ground, so his
+"the fields are ours" word carries a THE YARD choice that opens the training
+sign's own offer. Without it the muster would have orphaned the tutorial.
+
+### The homecomings track the group
+- **The camera follows the group, not the leader.** It was pinned to whichever
+  walker was furthest along, so it jumped sideways every time two of them swapped
+  places. It now eases toward the centroid of everyone on the road (biased a
+  third toward the head, so it leads rather than trails).
+- **The spotlight is anchored to the group and opens out with it** - a column
+  strung along the road is lit by a wider pool than one still bunched at the gate.
+  Everyone is lit the whole way in, not just the person in front.
+- **Staggered waypoints.** Each walker's lateral and forward offset is now dealt
+  per LEG, not once for the route, so a column that funnels through one waypoint
+  comes out of it spread instead of single file through one tile.
+
+### What the fight looks like now
+- **The guards' blows are visible.** A guard's swing left nothing on screen but a
+  damage number, so a squad fighting looked like a squad standing next to bodies
+  that bled. Each blow throws the same cold-steel arc and spark the hero's does,
+  off the guard's own shoulder into the body he is swinging at.
+- **A man going down, and a man getting up**, both throw something the eye
+  catches from across the field: a blood burst and a gore hit; a blue ring and a
+  cold puff.
+- **A ring under whoever is speaking** in a cutscene - gold for the city, red for
+  the company. The box says who is talking; this says where they are, on a field
+  of thirty bodies, without another line of text.
+- **`Enemy.platesOff`**: `body.cine` takes every DOM layer off the screen, but a
+  foe's name, level and life are PIXI text on its own container - so a brigand
+  standing where the camera happened to look wore "THORNED BRIGAND · Lv 1" across
+  the letterbox in every cutscene since it.84. Raised with the bars, dropped when
+  they lift, and reset on every floor build.
+
+### Verified
+`npm run build` clean, 0 TypeScript errors. `__qa75({ seed: 3, cls: 'mage' })`:
+**397/397, no console errors**, including twelve new checks - the muster called by
+coming home from 34 tiles away, six spoken lines each waited on and advanced, the
+company's word waiting in red with a name on it, the belt of wood at 739 trees
+and three rings deep with none of it still fogged, the flock holding 0.93 between
+its closest pair and a 2.47 mean in a melee, and both jobs of the post at the
+yard. Device matrix 74/74.
+
+## 2026-09-09 (iteration 102) - An army of its own, and a field that changes
+
+it.101 made the farmlands legible. it.102 makes them ACT: the squad stops being
+an escort and becomes a company with its own objective, the fields are entered
+from the corner the road actually comes down on, every word spoken over a
+cutscene has a name and a face attached to it, and the land itself changes the
+moment it is taken instead of waiting for the hero to walk home and back.
+
+### The compass, re-cornered (`src/scenes/Farmlands.ts`)
+The city road now lands at the field's NORTH-EAST CORNER and bends down onto the
+land in three legs, rather than running straight in through the middle of the
+east verge. The company is dug in west and south-west, so the whole battle is
+fought on the long diagonal - the widest line the map has - and the cart track
+was re-laid to follow it, from the road head down and across to the general's
+ground. The muster forms up under the corner; the signpost home stands at the
+head of the road, above and outside the muster.
+
+**One locked gate, and it is on the west edge.** The north road is gone. The
+fields have exactly ONE way the hero can walk up to and be told no: the western
+road, the one the company came up and barricaded behind them. It carries the
+gateway arch banked down to half brightness, and both its plate and its prompt
+say BARRICADED - so nothing on this floor is a signpost that says "not open yet"
+about a road that is, in fact, open. The `farmway` prop kind (the it.101 "open"
+western road, which said OPEN on its plate and "nothing walks it yet" in its
+note - two contradictory things about the same arch) is deleted outright.
+
+**Chests in both states.** Eight of them, scattered the length of the diagonal,
+in the burning field as well as the quiet one. A field worth fighting across is
+worth searching while you fight across it.
+
+### The company (`src/systems/Squad.ts`)
+In it.101 the formation was anchored to the HERO. The squad was a ring that
+marched wherever the player walked and only ever fought what the player walked
+into; it read as a bodyguard, not as the city's army. Now:
+
+- **The line is its own.** The squad keeps a front (`lx`,`ly`) and advances it on
+  an OBJECTIVE - the ground the enemy holds - at a march pace, by itself. Under
+  contact it presses at a quarter pace rather than stopping, so the men who are
+  actually swinging are never walked out from under. `step()` takes the hero only
+  as a RALLY point, used after the field is won.
+- **Every man picks his own fight**, inside his own sight, not inside a radius of
+  the player.
+- **Every man walks his own road.** Each has an A* path of his own, recut on his
+  own stagger (`REPATH_TICKS` + id), so a barn between him and his quarry is
+  walked round instead of leaned on.
+- **Every man carries his own life on his head**: a blue segmented bar, the exact
+  mirror of the red one every hostile wears (same 26x4 plate, same quarter
+  notches, same `hudScale` so it holds screen size at any zoom). The officer's is
+  gold and always full - nothing puts him down.
+- **The ranks are different men.** Eight kits across four eight-direction sheets -
+  the watch in steel, bronze and blue, household knights in mail, rangers of the
+  eastern road, a scout of the ward - dealt from a shuffled bag off the FLOOR
+  SEED, so every peer turns out the same men and nothing here touches the shared
+  combat RNG. The floor's preload was widened to pull those sheets in; without
+  that the bag could only ever deal sheets some other system happened to need,
+  which is why the it.101 watch was guards and knights and nothing else.
+
+**And the enemy splits.** `ALLY_AGGRO` went 9 -> 14, and a hostile's choice
+between the hero and the nearest guard is now weighted by `allyBias(id)`: two ids
+in three treat a guard as nearer than he is, the rest still come for the hero.
+The weight is a pure function of the body's own id - no state, identical on every
+peer - and `CombatSystem.enemyStrike` takes the same weight through a new
+`AllyHooks.prefer`, so the blow lands on whoever the body actually ran at.
+
+### Everything said over a cutscene now has a face (`src/ui/CineDialogue.ts`)
+Up to it.101 a scene's words were floating world text: gold, small, gone in a
+second and a half, and anonymous - a crowd scene was six unattributed shouts, and
+on a phone they were not readable at all. `#cine-speak` is a portrait box pinned
+in the LOWER-LEFT corner above the letterbox: the speaker's face cropped to the
+head, their name, who they are, and the line at panel size. It reads in the
+city's gold or, for the company, in red. It is the one head-up element `body.cine`
+deliberately leaves on screen.
+
+A named beat no longer ALSO prints the floating word - stacking the same sentence
+in full-width gold caps across the middle of the frame put it straight over the
+scene's own title. What stays over the body is a flare of light, which is all the
+floating text was doing there anyway: pointing. Unattributed beats keep the old
+gold shout.
+
+- **THE MUSTER** is six named speakers: three of the ward's own people pleading,
+  SERJEANT BRAY holding the crowd back, and CAPTAIN ORDWAY answering last.
+- **THE GENERAL'S ORDERS** name GENERAL VARRICK and read in the company's red.
+- **THE FIELD TAKEN** is Ordway and the folk walking back onto their own acres.
+
+`#controls` (the COMMANDS cheat-sheet) was the one HUD panel `body.cine` had
+never been told about, and it sat over the bottom bar through every cutscene in
+the game. It is in the list now.
+
+### The field changes under their feet
+The it.101 reward said the land was the city's while the land was still on fire:
+the burnt map stood, smoking and empty, until the hero walked home and came back
+out. The floor is now rebuilt IN PLACE the moment the errand closes, on the spot
+the hero is standing, behind the same fade the stairs use - fires out, corn whole,
+villagers on the land, chests in the yards, the fire tint off the page and the
+town's bed back under it.
+
+### Fire, embers and drums
+- **The firelight breathes.** One compositor animation on `#vignette` under
+  `body.afire` - the warm wash swells and falls on a slow uneven cycle instead of
+  sitting still. Nothing per frame in script, and off entirely under
+  `prefers-reduced-motion`.
+- **The motes are embers.** Over a burning field the same 64 mote sprites are
+  dyed live coal (four tints, dealt per mote), climb faster, carry their own
+  light rather than only what the scene lends them, pop as they burn out, and
+  62% of them respawn on the fires themselves instead of 35%.
+- **The fields fight to their own drums.** A new `battle` music bed with six
+  marching and clashing tracks, kept apart from the wardens' arena shelf. A
+  burning field is the only army-against-army fight in the game and it was
+  running on the forest's wandering playlist.
+
+### The homecomings (`src/town/Reclaim.ts`, `src/town/Villagers.ts`)
+- The FOREST and the EASTERN QUARTER processions were still eight copies of one
+  `folk_walk` peasant in one coat, walking through whatever stood on their route.
+  Both now deal from the town's civilian sheets and slide along walls, like the
+  farmlands' has since it.101.
+- **Nobody stands inside anybody.** A shoulder pass over the walkers, and the
+  same pass added to `Villagers` - which had never had one, so two of the folk
+  who took the same corner, or who were set down together on a small reclaimed
+  patch (a forest clearing, a taken field), stood inside one another and read as
+  one body with a rendering fault.
+- **Spotlights that travel.** `Lighting.addSource` bakes into the tile map at
+  build time, so a column walking the length of a road was lit only where main
+  had laid a lamp before the scene started. Two additive halos now ride the
+  scene: one over the mouth of the road they come out of, one that follows the
+  head of the column the whole way in.
+
+### Verified
+`npm run build` clean, 0 TypeScript errors. Driven live in the browser end to
+end: the muster with named portraits, the general's orders in red, the squad
+advancing on the objective and drawing blood with the hero standing still (front
+46.6 -> 43.2 toward the general, three of the company down, two guards bloodied),
+the blue bars over the ranks, the field taken and transformed in place with the
+250 gold paid and Ordway's word on the taken ground. Device matrix 74/74.
+`__qa75({ seed: 3, cls: 'mage' })`: **384/384, no console errors**, with eight
+new checks for this iteration (the corner arrival, the muster ground under it,
+the one shut gateway and its plate, no other signpost on the floor saying a way
+is shut, chests over the burning field, the ranks drawn from more than one
+sheet, each man's own life, the squad going in with the hero standing still, the
+line advancing on the objective, and the field becoming the quiet one without
+the hero going anywhere).
+
+**A flake worth writing down.** Twice in five sessions the depth-I command block
+(`click-attack`, `pickup`, `skill 1`, `a draught`) failed *together* - four
+queued commands that did nothing - and passed on a re-run at the same seed. It
+is in a block it.102 does not touch, and it only appears when the machine is
+loaded (two dev servers and a build running beside a hidden tab). Left recorded
+rather than papered over: four command checks failing as a group points at
+something clearing the input queue, and it is worth a look next iteration.
+
+### Three fixes that came out of driving it
+1. `#controls` was never in the `body.cine` hide list, so the COMMANDS
+   cheat-sheet sat over the bottom letterbox bar in every cutscene in the game.
+2. A named beat was printing its line twice - full-width gold caps over the
+   scene's own title. The word went to the corner and a flare of light stayed
+   over the speaker.
+3. `cit_carter_walk` crops to a hooded head that reads as a black square at
+   58 px; the porter's sheet stands in for the carter in the corner box, which
+   is the only place a civilian's face is ever seen that large.
+
 ## 2026-09-09 (iteration 101) - The farmlands, fought properly
 
 it.100 built the campaign. it.101 is the pass that makes it read like one: the

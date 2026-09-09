@@ -85,6 +85,29 @@ function foes(g: Any): Any[] {
 /** A warp queued during a fade's tail is dropped by design: wait the fade out first. */
 const fadeClear = (): Promise<boolean> => until(() => !document.getElementById('floor-fade')?.classList.contains('show'), 6000, 100);
 
+/**
+ * READ A CUTSCENE THROUGH (it.103). Spoken lines no longer time out: the scene
+ * holds on every named beat until the player presses Space or taps. The harness
+ * therefore has to READ it - drive a frame, and when a line is waiting, press
+ * the key a player would press. Counts the lines it turned, so a check can
+ * assert the scene actually said something.
+ */
+const readScene = (maxFrames = 140): number => {
+  let turned = 0;
+  for (let i = 0; i < maxFrames; i++) {
+    const g = game();
+    if (!g?.reclaim) break;
+    driveRender(700);
+    if (game()?.reclaim?.waiting) {
+      key('Space');
+      turned++;
+      driveRender(150);
+    }
+  }
+  driveRender(300); // one clean frame past the end, so the body class settles
+  return turned;
+};
+
 const key = (code: string): void => {
   window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true }));
 };
@@ -1121,6 +1144,21 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await until(() => game() && game().floor === 0, 8000);
       g = game();
       await fadeClear();
+      // THE MUSTER IS THE FOREST'S REWARD (it.103). Walking back through the gate
+      // with the woods behind you is what calls the city out - so it lands HERE,
+      // on this very trip home, without the hero having gone looking for it. The
+      // harness declines it; the block further down re-arms and takes it properly.
+      {
+        g.loop.step(6);
+        check('coming home from the woods calls the city out', await until(() => !!game()?.reclaim, 9000), `farm ${g.quests.farm} rally ${g.quests.rally}`);
+        readScene();
+        const dlg = (): HTMLElement | null => document.querySelector('#dialogue-panel.open');
+        check('and the officer asks for a sword on the spot', await until(() => !!dlg() && /ORDWAY/.test(dlg()?.textContent ?? ''), 15000), dlg()?.textContent?.slice(0, 40) ?? 'no word');
+        dlg()?.querySelector<HTMLElement>('[data-choice=stay]')?.click();
+        await until(() => !dlg(), 4000);
+        g = game();
+        check('the muster keeps its place in the ledger, so it never replays', g.quests.rally === 'seen', String(g.quests.rally));
+      }
       // The key beacon and the mirrored gates.
       await g.travel(102);
       await until(() => game() && game().floor === 102, 12000);
@@ -1234,14 +1272,28 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       T.next();
       check('the tutorial ends and is remembered', !T.isRunning && !layer?.classList.contains('show') && localStorage.getItem('iso-arpg-tutorial-done') === '1');
       localStorage.removeItem('iso-arpg-tutorial-done');
-      // The sign's word.
-      g.player.pos.x = 16.5;
-      g.player.pos.y = 71.5;
-      g.lighting.updateVisibility(16, 71);
-      g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
-      g.loop.step(3);
-      await wait(80);
-      check('E at the sign offers the training', !!document.querySelector('#dialogue-panel.open') && /TRAINING GROUND/.test(document.querySelector('#dialogue-panel')?.textContent ?? ''));
+      // THE POST AT THE YARD HAS TWO JOBS (it.103): while the city's errand is
+      // live it is the officer's, and otherwise it is the training sign. Both
+      // branches are walked here, by putting the city's question out of the way
+      // and then giving it back.
+      const pressE = async (): Promise<string> => {
+        g.player.pos.x = 16.5;
+        g.player.pos.y = 71.5;
+        g.lighting.updateVisibility(16, 71);
+        g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
+        g.loop.step(3);
+        await wait(80);
+        return document.querySelector('#dialogue-panel.open')?.textContent ?? '';
+      };
+      const forestWas = g.quests.forest;
+      g.quests.forest = 'active'; // the city has not asked for a sword yet
+      check('E at the sign offers the training', /TRAINING GROUND/.test(await pressE()));
+      document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
+      await wait(60);
+      g.quests.forest = forestWas; // ...and once it has, the officer holds the post
+      check('and the officer holds the post once the muster has been called', /ORDWAY/.test(await pressE()));
+      document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
+      await wait(60);
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=stay]')?.click();
       await wait(40);
       // THE TUTORIAL ON EVERY PHONE (it.90): all sixteen cards inside eleven simulated boxes, thumb-sized buttons.
@@ -1853,18 +1905,21 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       dl()?.querySelector<HTMLElement>('[data-close]')?.click(); // nothing of the last errand still open
       await wait(60);
       g.quests.farm = undefined;
-      check('the city is ready to muster', g.floor === 0 && g.quests.forest === 'done' && g.quests.east === 'done', `${g.floor} ${g.quests.forest} ${g.quests.east}`);
+      g.quests.rally = undefined; // the muster is in the ledger now (it.103): re-arm it
+      check('the city is ready to muster once the woods are clear', g.floor === 0 && g.quests.forest === 'done', `${g.floor} ${g.quests.forest}`);
       const yard = g.town.layout.training.mark;
       check('the training ground is where the city gathers', !!yard);
-      // Walking onto the yard calls the rally.
-      warp(yard.x, yard.y);
+      // THE MUSTER IS CALLED BY COMING HOME (it.103). The hero is put nowhere in
+      // particular - deliberately far from the yard - and the city must still
+      // call them: the rally fires on the town tick, not on a tile.
+      warp(Math.round(yard.x) + 26, Math.round(yard.y) - 22);
+      const farFromYard = Math.hypot(g.player.pos.x - yard.x, g.player.pos.y - yard.y);
       g.loop.step(6);
-      check('the muster is called on the training ground', await until(() => !!document.querySelector('#cine-layer'), 8000));
+      check('the muster is called by coming home, not by standing on the yard', await until(() => !!document.querySelector('#cine-layer'), 8000) && farFromYard > 12, `${farFromYard.toFixed(0)} tiles from the yard`);
       check('the HUD is off the screen while the bars are down', document.body.classList.contains('cine') || (driveRender(200), document.body.classList.contains('cine')));
-      // The muster is the longest scene in the game (six spoken beats), and a
-      // driven frame is worth about half a second of it - budget accordingly.
-      for (let i = 0; i < 90 && game()?.reclaim; i++) driveRender(1000);
-      driveRender(300); // one clean frame past the end, so the class settles
+      // THE PAGE IS TURNED BY HAND (it.103): six named beats, six presses.
+      const turned = readScene();
+      check('every spoken line waited for the player, and was advanced', turned >= 5, `${turned} lines turned`);
       check('and the HUD comes back when they lift', !document.body.classList.contains('cine'));
       g = game();
       check('the officer asks for a sword', await until(() => !!dl() && /ORDWAY/.test(dl()?.textContent ?? ''), 15000));
@@ -1886,14 +1941,18 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // RENDER pass, and a `loop.step` burst would leave it running for ever.
       g.loop.step(6);
       check('the fields open on the general giving his orders', await until(() => !!document.querySelector('#cine-layer'), 8000));
-      for (let i = 0; i < 90 && game()?.reclaim; i++) driveRender(1000);
-      driveRender(300);
+      check("the company's word waits to be read, in red", await until(() => !!game()?.reclaim?.waiting, 6000, 60) || (driveRender(1200), !!game()?.reclaim?.waiting), String(document.getElementById('cine-speak')?.className));
+      check('and it names who is speaking', /VARRICK/.test(document.querySelector('#cine-speak .cs-who')?.textContent ?? ''), document.querySelector('#cine-speak .cs-who')?.textContent ?? '');
+      const turnedFarm = readScene();
+      check('the general is read to the end', turnedFarm >= 3, `${turnedFarm} lines turned`);
       check('and the hero has the field to themselves when it ends', !game()?.reclaim && !document.body.classList.contains('cine'));
       g = game();
       check('the fields are burning', !!farm && farm.won === false && farm.fires.length >= 10 && document.body.classList.contains('afire'));
-      // THE COMPASS (it.101): the city lies EAST, so the hero comes in on the east
-      // edge and fights west, and the general is at the far west end of it.
-      check('the hero comes in from the east and the enemy holds the west', farm.entry.x > g.dungeon.width * 0.75 && farm.general.x < g.dungeon.width * 0.25, `${farm.entry.x} vs ${farm.general.x} of ${g.dungeon.width}`);
+      // THE COMPASS (it.102): the road down from the city lands in the NORTH-EAST
+      // corner, the company is dug in west of it, and the fight runs the long
+      // diagonal between the two.
+      check('the hero comes in at the top-right corner and the enemy holds the west', farm.entry.x > g.dungeon.width * 0.75 && farm.entry.y < g.dungeon.height * 0.3 && farm.general.x < g.dungeon.width * 0.25, `entry ${farm.entry.x},${farm.entry.y} general ${farm.general.x},${farm.general.y} of ${g.dungeon.width}x${g.dungeon.height}`);
+      check('and the muster ground is under that corner with it', farm.squad.length >= 5 && farm.squad.every((sp: { x: number; y: number }) => sp.x > g.dungeon.width * 0.7 && sp.y < g.dungeon.height * 0.35), JSON.stringify(farm.squad[0]));
       check('the field is not a rectangle', (() => {
         const rowW: number[] = [];
         for (let y = 0; y < g.dungeon.height; y++) {
@@ -1905,11 +1964,42 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       })());
       check('no warden sigil turns in the corn', !g.arenaThreshold && !(g.town.layout.props as Array<{ kind: string }>).some((q) => q.kind === 'pentagram'), String(!!g.arenaThreshold));
       check('farmsteads and outbuildings stand on the land', (g.town.layout.props as Array<{ kind: string }>).filter((q) => q.kind === 'house').length >= 4 && (g.town.layout.props as Array<{ kind: string }>).some((q) => q.kind === 'barracks'));
-      check('a hedge of trees outlines the map', (g.town.layout.props as Array<{ kind: string }>).filter((q) => ['tree', 'pine', 'bigtree'].includes(q.kind)).length >= 40, String((g.town.layout.props as Array<{ kind: string }>).filter((q) => ['tree', 'pine', 'bigtree'].includes(q.kind)).length));
+      // THE BELT (it.103): not a line of trees any more but four rings of them,
+      // and the whole floor is revealed on arrival so none of it fades in later.
+      {
+        const wood = (g.town.layout.props as Array<{ kind: string; x: number; y: number }>).filter((q) => ['tree', 'pine', 'bigtree'].includes(q.kind));
+        check('a belt of wood closes the map, not a hedge', wood.length >= 350, String(wood.length));
+        // Thickness: from any tree, how far is the nearest open ground? A one-tile
+        // hedge answers 1 everywhere; a belt answers 3 or more somewhere.
+        const openAt = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < g.dungeon.width && y < g.dungeon.height && g.dungeon.grid[y * g.dungeon.width + x] === 1;
+        let deepest = 0;
+        for (const t of wood) {
+          let d = 1;
+          for (; d <= 5; d++) {
+            let touches = false;
+            for (let oy = -d; oy <= d && !touches; oy++) for (let ox = -d; ox <= d; ox++) if ((Math.abs(ox) === d || Math.abs(oy) === d) && openAt(t.x + ox, t.y + oy)) { touches = true; break; }
+            if (touches) break;
+          }
+          if (d > deepest) deepest = d;
+        }
+        check('and it stands several trees deep', deepest >= 3, `${deepest} rings`);
+        check('the whole field is drawn on arrival, so no wood fades in later', wood.every((t) => g.lighting.getState(t.x, t.y) !== 0), 'some border tiles were still hidden');
+      }
       check('the squad went in with the hero', !!g.squad && g.squad.size >= 4);
       check('the general commands the company', !!g.farmGeneral && g.farmGeneral.hp > 0);
       check('the general wears the mini-boss bar', g.boss === g.farmGeneral);
       check('the squad is more than one repeated man', new Set((g.squad.positions() as Array<{ officer: boolean }>).map((m: { officer: boolean }) => m.officer)).size === 2);
+      // THE RANKS ARE DIFFERENT MEN (it.102): dealt off the floor seed, so the
+      // watch turns out in more than one silhouette.
+      {
+        const roster = g.squad.roster() as Array<{ anim: string; officer: boolean; hp: number; hpMax: number }>;
+        check('the ranks are drawn from more than one sheet', new Set(roster.filter((m) => !m.officer).map((m) => m.anim)).size >= 3, roster.map((m) => m.anim).join());
+        // Not `hp === hpMax`: the company goes in by itself the moment the floor
+        // stands (it.102), so by the time the harness reads the roster somebody is
+        // usually already bleeding. What must hold is that each man has a life of
+        // his own and it is inside its own bounds.
+        check('and every one of them carries his own life', roster.length >= 5 && roster.every((m) => m.hpMax > 0 && m.hp >= 0 && m.hp <= m.hpMax), roster.map((m) => `${m.hp}/${m.hpMax}`).join());
+      }
       // Men under arms, and not one monster among them.
       const roster: string[] = [];
       g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
@@ -1917,9 +2007,18 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       });
       check('the company is men, not monsters', roster.length >= 8 && roster.every((k) => ['mercenary', 'general', 'bandit', 'brigand', 'poacher', 'archer'].includes(k)), roster.join());
       check('no hostile wears the city own guard rig', !roster.includes('guard'));
-      check('the north road stays barricaded', farm.gates.length === 1 && g.town.interactables.filter((i: { kind: string }) => i.kind === 'farmgate').length === 1);
-      check('the western road is open and says so', !!farm.west && g.town.interactables.some((i: { kind: string; label: string }) => i.kind === 'farmway' && /OPEN/.test(i.label)) && !/not (yet )?open|not available/i.test(g.town.interactables.find((i: { kind: string }) => i.kind === 'farmway')?.note ?? ''));
-      check('the road home stands on the east verge', !!farm.home && farm.home.x > farm.entry.x && g.town.interactables.some((i: { kind: string }) => i.kind === 'farmroad'));
+      // ONE LOCKED GATE, AND IT IS ON THE WEST EDGE (it.102).
+      {
+        const gateways = g.town.interactables.filter((i: { kind: string }) => i.kind === 'farmgate');
+        check('exactly one gateway on the fields is shut, and it is on the west edge', farm.gates.length === 1 && gateways.length === 1 && gateways[0].x < g.dungeon.width * 0.2, `${farm.gates.length} gates at ${gateways.map((i: { x: number }) => i.x.toFixed(0)).join()}`);
+        check('and it says so on its own plate', /BARRICADED/.test(gateways[0]?.label ?? '') && /barricaded/i.test(gateways[0]?.note ?? ''), `${gateways[0]?.label} / ${gateways[0]?.note}`);
+        // NOTHING ELSE ON THE FLOOR SAYS "NOT OPEN" (it.102): every other walk-up
+        // goes somewhere, so no tooltip on the fields is a dead end with a label.
+        const dead = g.town.interactables.filter((i: { kind: string; label: string; note?: string }) => i.kind !== 'farmgate' && /not (yet )?open|not available|unavailable|temporarily/i.test(`${i.label} ${i.note ?? ''}`));
+        check('and no other signpost on the fields tells the hero a way is shut', dead.length === 0, dead.map((i: { label: string }) => i.label).join(' | '));
+      }
+      check('the road home stands at the head of the city road', !!farm.home && farm.home.x > farm.entry.x && farm.home.y < farm.entry.y && g.town.interactables.some((i: { kind: string }) => i.kind === 'farmroad'), `${farm.home?.x},${farm.home?.y} vs entry ${farm.entry.x},${farm.entry.y}`);
+      check('chests are scattered over the field while it burns', (g.town.layout.chests ?? []).length >= 5 && (g.town.layout.chests ?? []).some((c: { x: number }) => c.x < g.dungeon.width * 0.4) && (g.town.layout.chests ?? []).some((c: { x: number }) => c.x > g.dungeon.width * 0.6), String((g.town.layout.chests ?? []).length));
       // THE COMPANY FIGHTS BACK (it.101): the squad closes and the enemy answers.
       {
         const before = g.squad.positions().map((m: { x: number; y: number }) => `${m.x.toFixed(2)},${m.y.toFixed(2)}`).join('|');
@@ -1927,16 +2026,25 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         g.enemies.forEachActive((e: { hp: number }) => {
           if (e.hp > 0) foeHp += e.hp;
         });
-        // Bring the assault to them: the formation is anchored on the hero now, so
-        // walking the hero over is what sends the squad in. The hero goes in UNDER
-        // THE SPAWN WARD - this measures the guards, not the hero's survival, and a
-        // death here would latch the death sheet and silently spoil every check
-        // after it, the hardcore block included (it.101).
+        // THEY ARE NOT ON A LEASH (it.102). The hero is left where they were set
+        // down and never moves; the company must still advance on the objective
+        // and draw blood by itself. The hero stands UNDER THE SPAWN WARD - this
+        // measures the guards, not the hero's survival, and a death here would
+        // latch the death sheet and silently spoil every check after it, the
+        // hardcore block included (it.101).
         g.player.wardTicks = 999999;
-        warp(farm.general.x + 6, farm.general.y + 4);
-        g.loop.step(1800);
+        const heroAt = { x: g.player.pos.x, y: g.player.pos.y };
+        const front0 = g.squad.front;
+        g.loop.step(1200);
         const after = g.squad.positions().map((m: { x: number; y: number }) => `${m.x.toFixed(2)},${m.y.toFixed(2)}`).join('|');
-        check('the guards charge with the hero instead of holding a spot', before !== after);
+        const heroMoved = Math.hypot(g.player.pos.x - heroAt.x, g.player.pos.y - heroAt.y);
+        check('the guards go in on their own, with the hero standing still', before !== after && heroMoved < 0.5, `hero moved ${heroMoved.toFixed(2)}`);
+        // THEY FLOCK (it.103): no two of them inside one another, even in a melee.
+        const sp = g.squad.spacing();
+        check('the company does not clump into one body', sp.n >= 4 && sp.min > 0.45, `closest pair ${sp.min.toFixed(2)}, mean ${sp.mean.toFixed(2)} over ${sp.n}`);
+        check('and it holds a front rather than a knot', sp.mean > 1.6, `mean ${sp.mean.toFixed(2)}`);
+        const front1 = g.squad.front;
+        check('and the line itself has advanced on the enemy ground', Math.hypot(front1.x - farm.general.x, front1.y - farm.general.y) < Math.hypot(front0.x - farm.general.x, front0.y - farm.general.y) - 1, `${front0.x.toFixed(1)},${front0.y.toFixed(1)} -> ${front1.x.toFixed(1)},${front1.y.toFixed(1)}`);
         let foeHp2 = 0;
         g.enemies.forEachActive((e: { hp: number }) => {
           if (e.hp > 0) foeHp2 += e.hp;
@@ -1962,14 +2070,25 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.player.wardTicks = 0; // the ward comes off with the last of them (it.101)
       g.player.hp = g.player.hpMax;
       check('the last of them down brings the letterbox in', await until(() => !!document.querySelector('#cine-layer'), 10000));
-      // As long a scene as the muster, and a driven frame is worth about half a
-      // second of one - budget the same way (it.101).
-      for (let i = 0; i < 90 && game()?.reclaim; i++) driveRender(1000);
+      const turnedWon = readScene();
+      check('the people are read out onto their own land', turnedWon >= 3, `${turnedWon} lines turned`);
       g = game();
       driveRender(2000);
       check('the field is the city own, and paid for', await until(() => game()?.quests.farm === 'done' && game().player.gold >= gold0 + 250, 12000), `${game().player.gold - gold0} ${game()?.quests.farm}`);
+      // THE FIELD CHANGES UNDER THEM (it.102). The floor is rebuilt in place the
+      // moment the errand closes - the hero never leaves - and the officer's word
+      // opens on the far side of that fade, so it has to be WAITED for. Clicking
+      // where the panel is about to be leaves it open, and an open word eats
+      // every E the rest of the session presses.
+      // The officer's word opens on the far side of the rebuild, so waiting for it
+      // is also how the harness knows the new floor stands.
+      check('the officer speaks on the taken ground', await until(() => !!dl() && /ORDWAY/.test(dl()?.textContent ?? ''), 15000), dl()?.textContent?.slice(0, 60) ?? 'no word');
+      await fadeClear();
+      driveRender(400);
+      g = game();
+      check('the burnt field becomes the quiet one without the hero going anywhere', g.floor === 105 && g.town.layout.farm.won === true && g.town.layout.farm.fires.length === 0 && !document.body.classList.contains('afire') && !g.squad, `${g.floor} ${g.town.layout.farm.won} ${g.town.layout.farm.fires.length}`);
       dl()?.querySelector<HTMLElement>('[data-choice=ok]')?.click();
-      await wait(60);
+      await until(() => !dl(), 4000);
       // And it stays taken.
       g = game();
       await g.travel(0);
@@ -1987,7 +2106,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       });
       check('the fields are quiet, lit and worked again', quiet.won === true && quiet.fires.length === 0 && aliveNow === 0 && !document.body.classList.contains('afire') && !g.squad, `${quiet.won} ${quiet.fires.length} ${aliveNow}`);
       check('chests wait in the yards', (g.town.layout.chests ?? []).length >= 3 && (g.town.layout.chests ?? []).every((c: { x: number; y: number }) => !!g.chests.findNearestUnopened(c.x + 0.5, c.y + 0.5, 0.9)), String((g.town.layout.chests ?? []).length));
-      check('the road home still stands when the field is quiet', g.town.interactables.some((i: { kind: string }) => i.kind === 'farmroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'farmway'));
+      check('the road home still stands when the field is quiet', g.town.interactables.some((i: { kind: string }) => i.kind === 'farmroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'farmgate'));
       check('the crop stands whole', (g.town.layout.props as Array<{ kind: string; variant?: string }>).filter((q) => q.kind === 'farmcrop' && String(q.variant).includes('burnt')).length === 0);
       // THE WAY HOME (it.101): the signpost on the east verge, not a travel call.
       warp(g.town.layout.farm.home.x, g.town.layout.farm.home.y);

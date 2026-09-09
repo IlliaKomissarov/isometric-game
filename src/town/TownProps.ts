@@ -34,7 +34,7 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'farmway';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
@@ -646,9 +646,19 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'farmgate': {
-        // A road that is not built yet, and a plate that says which one.
-        plate(p.x, p.y, `${p.variant ?? 'THE ROAD'} · BARRICADED`, 74);
-        interactables.push({ id: nextId++, kind: 'farmgate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE ROAD'}`, tiles: [{ x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y }], note: 'The north road is still barricaded - the militia have not cut it open yet.' });
+        // THE ONE LOCKED GATE (it.102). The fields' single expansion gateway, on
+        // the west edge: the arch stands and is lit, the carts are still across
+        // it, and BOTH the plate and the prompt say barricaded. It is the only
+        // thing on the floor that answers a walk-up with no.
+        const spr = animated(p.x, p.y, 'gateway', 12, 0.96, 1, 0);
+        if (spr) {
+          spr.blendMode = 'add';
+          spr.alpha = 0.55; // banked down: a way that is shut does not shine like a way that is open
+        }
+        glowAt(p.x, p.y, 0xd8a060, 0.42, 2.2, 40);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 5, 230, 170, 110, 0.7);
+        plate(p.x, p.y, `${p.variant ?? 'THE ROAD'} · BARRICADED`, 96);
+        interactables.push({ id: nextId++, kind: 'farmgate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE ROAD'} · BARRICADED`, tiles: [{ x: p.x + 1, y: p.y }, { x: p.x + 1, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 2, y: p.y }], note: 'Barricaded. The company came up this road and put their carts across it behind them, and nothing is cut open past the fields yet.' });
         break;
       }
       case 'farmroad': {
@@ -659,21 +669,6 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 190, 110, 0.55);
         interactables.push({ id: nextId++, kind: 'farmroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK TO THE CITY', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x - 2, y: p.y }] });
         plate(p.x, p.y, 'THE ROAD TO THE CITY', 92);
-        break;
-      }
-      case 'farmway': {
-        // THE WESTERN ROAD (it.101): an OPEN way on, not a sealed one. The arch
-        // stands lit and unbarred, and the plate says the road is open - what is
-        // not built yet is the country past its far end, and the note says so.
-        const spr = animated(p.x, p.y, 'gateway', 12, 0.96, 1, 0);
-        if (spr) {
-          spr.blendMode = 'add';
-          spr.alpha = 0.9;
-        }
-        glowAt(p.x, p.y, 0xffcf8a, 0.7, 2.6, 46);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 5.4, 255, 200, 130, 0.95);
-        interactables.push({ id: nextId++, kind: 'farmway', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE WESTERN ROAD'} · OPEN`, tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 2, y: p.y }], note: 'The western road is open, and the marsh country lies at the end of it. Nothing walks it yet.' });
-        plate(p.x, p.y, `${p.variant ?? 'THE WESTERN ROAD'} · OPEN`, 104);
         break;
       }
       // ---- THE CELLAR (it.97) ----

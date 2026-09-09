@@ -104,6 +104,13 @@ export interface AllyHooks {
   nearest(x: number, y: number, max: number): { id: number; x: number; y: number } | null;
   /** A blow lands on him; true if it was taken. */
   hurt(id: number, amount: number): boolean;
+  /**
+   * IT.102: how heavily THIS body weighs a guard against the hero when both are
+   * in reach - under 1 it swings at the guard even with the hero a shade nearer.
+   * Mirrors the same weight the body's chase used, so the blow lands on whoever
+   * it actually ran at. Omitted, a guard has to be strictly nearer.
+   */
+  prefer?(sourceId: number): number;
 }
 
 export class CombatSystem {
@@ -490,7 +497,7 @@ export class CombatSystem {
     if (guard) {
       const dg = Math.hypot(guard.x - source.pos.x, guard.y - source.pos.y);
       const dh = p && p.action !== 'dead' ? Math.hypot(p.pos.x - source.pos.x, p.pos.y - source.pos.y) : Infinity;
-      if (dg <= reach && dg < dh) {
+      if (dg <= reach && dg * (this.allies?.prefer?.(source.id) ?? 1) < dh) {
         if (this.rand() < toHit) this.allies?.hurt(guard.id, randInt(this.rand, minDamage, maxDamage));
         return;
       }

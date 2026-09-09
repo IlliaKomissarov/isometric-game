@@ -112,6 +112,10 @@ const MOTE_COUNT = 64;
 const SPAWN_RADIUS = 6.5;
 /** Fraction of motes that respawn clustered on a hotspot (brazier embers). */
 const HOTSPOT_BIAS = 0.35;
+/** Over a burning field most of them come off the fires themselves (it.102). */
+const EMBER_BIAS = 0.62;
+/** Coal, flame and ash: a mote is dealt one and keeps it for its life (it.102). */
+const EMBER_TINTS = [0xff8a3c, 0xffc061, 0xff5f2a, 0xffd898] as const;
 const FOG_PATCH_COUNT = 12;
 
 export class Ambience {
@@ -207,6 +211,10 @@ export class Ambience {
    */
   setSmoke(on: boolean): void {
     for (const p of this.fogPatches) p.sprite.tint = on ? 0x9a7a62 : 0x8f96b4;
+    // THE EMBERS (it.102). The mote field is the same 64 sprites either way; over
+    // a burning field they are dyed live coal instead of dust, so the air above
+    // the rows carries what the rows are doing. Turned off, they go back to dust.
+    for (const m of this.motes) m.sprite.tint = on ? EMBER_TINTS[0] : 0xffffff;
     this.smoke = on;
   }
 
@@ -655,7 +663,11 @@ export class Ambience {
       const t = mote.life / mote.maxLife;
       const envelope = Math.sin(Math.PI * Math.min(1, Math.max(0, t)));
       const light = getLight(mote.wx, mote.wy);
-      mote.sprite.alpha = envelope * light * 0.55;
+      // An ember carries its own light and pops as it burns out; a dust mote only
+      // ever shows what the scene lends it (it.102).
+      mote.sprite.alpha = this.smoke
+        ? envelope * (0.34 + light * 0.5) * (0.82 + 0.18 * Math.sin(time * 9 + mote.swayPhase * 3))
+        : envelope * light * 0.55;
 
       const s = worldToScreen(mote.wx, mote.wy, this.scratch);
       mote.sprite.position.set(s.x, s.y - mote.z);
@@ -680,7 +692,11 @@ export class Ambience {
   private respawn(mote: Mote, px: number, py: number): void {
     // Bias a share of motes toward nearby braziers — embers rise off coals.
     const nearHotspots = this.hotspots.filter((h) => Math.hypot(h.x - px, h.y - py) < SPAWN_RADIUS + 2);
-    if (nearHotspots.length > 0 && Math.random() < HOTSPOT_BIAS) {
+    if (this.smoke) {
+      // An ember, not a dust mote: hotter colour, and it climbs quicker.
+      mote.sprite.tint = EMBER_TINTS[Math.floor(Math.random() * EMBER_TINTS.length)];
+    }
+    if (nearHotspots.length > 0 && Math.random() < (this.smoke ? EMBER_BIAS : HOTSPOT_BIAS)) {
       const h = nearHotspots[Math.floor(Math.random() * nearHotspots.length)];
       const a = Math.random() * Math.PI * 2;
       const r = Math.random() * 0.9;
@@ -693,7 +709,7 @@ export class Ambience {
       mote.wy = py + Math.sin(angle) * radius;
     }
     mote.z = Math.random() * 10;
-    mote.riseSpeed = 3 + Math.random() * 6;
+    mote.riseSpeed = this.smoke ? 5 + Math.random() * 9 : 3 + Math.random() * 6;
     mote.swayPhase = Math.random() * Math.PI * 2;
     mote.life = 0;
     mote.maxLife = 3.5 + Math.random() * 5;

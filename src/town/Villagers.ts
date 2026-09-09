@@ -63,6 +63,8 @@ export const STREET_FOLK: ReadonlyArray<FolkSheet> = [
 ];
 /** Coats, aprons and cloaks: a colour per walker, multiplied into the scene's light. */
 const FOLK_COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
+/** How close two of the folk may stand before they shoulder each other apart (it.102). */
+const FOLK_SPACING = 0.66;
 const GUARD_IDLE = 'poacher_idle';
 /** The gatekeeper wears the guard's mail (it.87). */
 const KEEPER_IDLE = 'guard_idle';
@@ -450,6 +452,36 @@ export class Villagers {
           }
         }
       }
+    }
+    // NO TWO OF THEM IN THE SAME PLACE (it.102). Every villager walks an A* road
+    // of its own and none of them knew about the others, so two who took the same
+    // corner - or who were both set down on a small reclaimed patch, which is what
+    // the forest's clearings and the taken fields are - stood inside one another
+    // and read as a single body with a rendering fault. One shoulder pass, in list
+    // order, over at most a dozen people: the same rule the squad and the
+    // processions use, so a crowd behaves the same way everywhere.
+    for (let i = 0; i < this.folk.length; i++) {
+      const a = this.folk[i];
+      for (let j = i + 1; j < this.folk.length; j++) {
+        const b = this.folk[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy);
+        if (d >= FOLK_SPACING || d === 0) continue;
+        const push = (FOLK_SPACING - d) / 2;
+        const ux = dx / d;
+        const uy = dy / d;
+        if (this.isWalkable(Math.floor(a.x - ux * push), Math.floor(a.y - uy * push))) {
+          a.x -= ux * push;
+          a.y -= uy * push;
+        }
+        if (this.isWalkable(Math.floor(b.x + ux * push), Math.floor(b.y + uy * push))) {
+          b.x += ux * push;
+          b.y += uy * push;
+        }
+      }
+    }
+    for (const v of this.folk) {
       const walking = v.pause <= 0;
       const frame = walking ? Math.floor(v.walkClock * v.fc) : 0;
       v.body.texture = spriteLib.frame(v.anim, v.dir, frame);

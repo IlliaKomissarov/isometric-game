@@ -1820,6 +1820,11 @@ export class Enemy extends Entity {
 
   override syncRender(alpha: number): void {
     super.syncRender(alpha);
+    // The bars are only redrawn on a change, so the cutscene flag needs one.
+    if (Enemy.platesOff !== this.platesHidden) {
+      this.platesHidden = Enemy.platesOff;
+      this.redrawHealthBar();
+    }
     // Overhead HP + level plaque hold a constant on-screen size (it.41).
     if (this.healthBar.visible) {
       this.healthBar.scale.set(Enemy.hudScale);
@@ -1833,7 +1838,7 @@ export class Enemy extends Entity {
       const pulse = 1 + 0.06 * Math.sin(t * 3 + this.bobPhase);
       this.aura.scale.set(pulse, pulse);
       this.titleText.scale.set(Enemy.hudScale);
-      this.titleText.visible = this.container.visible;
+      this.titleText.visible = this.container.visible && !Enemy.platesOff;
     }
 
     if (this.usesSprite()) {
@@ -2080,6 +2085,16 @@ export class Enemy extends Entity {
    *  readable at a glance; the "Lv N" plaque shows alongside. */
   /** 1/zoom (clamped) — set by main each frame so bars never balloon when zoomed in (it.41). */
   static hudScale = 1;
+  /**
+   * THE CLEAN FRAME, IN THE WORLD TOO (it.103). `body.cine` takes every DOM
+   * layer off the screen while a cutscene runs, but a foe's name, level and life
+   * are PIXI text on its own container - so a brigand standing where the camera
+   * happened to look still wore "THORNED BRIGAND · Lv 1" across the letterbox.
+   * Main raises this with the bars and drops it when they lift.
+   */
+  static platesOff = false;
+  /** What this body last drew under that flag, so the plates come back when it clears. */
+  private platesHidden = false;
 
   private redrawHealthBar(): void {
     const w = 26;
@@ -2095,7 +2110,7 @@ export class Enemy extends Entity {
     for (let i = 1; i < 4; i++) {
       this.healthBar.rect(-w / 2 + (w * i) / 4 - 0.5, -1, 1, h + 2).fill({ color: 0x0a0a0c, alpha: 0.95 });
     }
-    const show = this.hp > 0 && (this.hp < this.hpMax || this.plateNear);
+    const show = !Enemy.platesOff && this.hp > 0 && (this.hp < this.hpMax || this.plateNear);
     this.healthBar.visible = show;
     this.levelText.visible = show;
   }

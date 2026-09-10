@@ -147,6 +147,20 @@ const COURSE: ReadonlyArray<{ x: number; y: number }> = [
 const RIVER_HALF = 3.0;
 const SHORE_BAND = 1.5;
 
+/**
+ * HOW FAR THE SAND REACHES ON THIS TILE (it.111).
+ *
+ * The band's own wobble is a pair of sines, which is SMOOTH - and a smooth
+ * boundary between two tile kinds draws, in this projection, as a clean
+ * sawtooth of diamonds: a pale zigzag ruled along the whole length of the map.
+ * A per-tile jitter of about half a tile breaks the line into a speckled margin,
+ * which is what a shore looks like. It is a pure function of the tile, so it
+ * never touches the shared random stream (it.98).
+ */
+function bankJitter(x: number, y: number): number {
+  return (((x * 37 + y * 91) % 5) - 2) * 0.3;
+}
+
 /** Distance from a point to the river's course, in tiles. */
 function toCourse(x: number, y: number): number {
   let best = Infinity;
@@ -207,7 +221,7 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
         tileKind[idx(x, y)] = KIND_WATER;
         farSide[idx(x, y)] = 0;
         water.push({ x, y });
-      } else if (d <= RIVER_HALF + wob + SHORE_BAND && grid[idx(x, y)] === TILE_FLOOR) {
+      } else if (d <= RIVER_HALF + wob + SHORE_BAND + bankJitter(x, y) && grid[idx(x, y)] === TILE_FLOOR) {
         // The bank is the town's own sand (it.107), not a kind of its own.
         tileKind[idx(x, y)] = KIND_SAND;
       }
@@ -333,6 +347,27 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
         grid[idx(x, y)] = TILE_FLOOR;
         farSide[idx(x, y)] = 1;
         tileKind[idx(x, y)] = Math.abs(y - cy) <= 1 ? KIND_DIRT : KIND_GRASS;
+      }
+    }
+  }
+
+  /**
+   * THE HEAD OF THE BRIDGE (it.111). Keeping the border wood off the crossing is
+   * only half the job: the belt is grown from every tile that is NOT land, so
+   * refusing to plant there leaves the tiles as they were - void, which the
+   * scene never draws at all, so a bald black wedge opened beside the gate where
+   * the trees used to stand. The apron is made LAND first, and the wood is then
+   * refused on ground that exists. A bridge head is an open place anyway: it is
+   * where carts wait and where the watch can see who is coming.
+   */
+  if (crossing) {
+    const APRON = 10;
+    for (let y = crossing.y - APRON; y <= crossing.y + APRON; y++) {
+      for (let x = crossing.near - APRON; x <= crossing.near + 1; x++) {
+        if (!inside(x, y) || isWater(x, y) || farSide[idx(x, y)]) continue;
+        if (Math.hypot(x - crossing.near, y - crossing.y) > APRON) continue;
+        grid[idx(x, y)] = TILE_FLOOR;
+        if (tileKind[idx(x, y)] !== KIND_SAND) tileKind[idx(x, y)] = KIND_GRASS;
       }
     }
   }
@@ -726,6 +761,16 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
          * river is visible along its whole length for the first time.
          */
         if (acrossWater(x, y)) continue;
+        /**
+         * AND NOTHING GROWS AT THE CROSSING (it.111). it.110 kept BUILDINGS
+         * clear of the span - a gable four tiles from the arch hides both it and
+         * the men standing under it - and then let the border wood grow wherever
+         * the lobes happened to leave a notch, which on this map is a pair of
+         * full-canopy trees standing directly in front of the gate. The one
+         * thing on this map the eye has to find from a distance now has ten
+         * tiles of clear ground round it.
+         */
+        if (crossing && Math.hypot(x - BRIDGE.x, y - BRIDGE.y) < 10) continue;
         timber(x, y, d);
       }
     }

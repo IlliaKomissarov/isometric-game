@@ -921,6 +921,28 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] 502/502 on the scripted playthrough, with four new checks for the kit, the clear river and the blood
 - [x] Playthrough; clean build
 
+## Iteration 111 - The crossing rebuilt (2026-09-10)
+
+- [x] THE SPAN IS PIERS WITH A ROAD ON THEM: `scripts/bake-bridge.py` composes bay, pier, abutment, post and gate against the renderer's own projection
+- [x] The pier is baked a third wider than the road it carries, or the deck's underside and the next bay hide every pixel of it
+- [x] The gate is the pack's great arch WHOLE - both halves, a tile apart ACROSS the road, so the hero walks under the opening
+- [x] Every bridge asset in the repository reviewed before building: tileset pavement / half_wall / arch / blocks / castle / drawbridge / pontoon, and the dungeon pack's plank bridges and sandstone archways
+- [x] NOTHING BUT THE LANDING SHOWS ACROSS THE WATER: every far-bank tile unmade, verified 0 at five seeds
+- [x] The far water is widened four tiles and takes a black `deepfade_*` at every edge that touches the void; the sand margin is kept only where the water touches real land
+- [x] The near shoreline is dithered half a tile per tile, so the sand band is a speckled margin instead of a ruled sawtooth
+- [x] NO WOOD AT THE CROSSING, and the bridge head is carved as LAND first so refusing to plant does not leave a hole
+- [x] THE RIVER HAS A CURRENT: every phase baked with its field shifted downstream, ten phases wrapping exactly three tiles; period 2.6 → 5.5 s
+- [x] The water is a dark body with a sheen, not a mesh of cyan filaments: glint at a quarter strength through a 3.4 gamma, with a slow swell over thirteen tiles
+- [x] REAL BLOOD, re-cut: alpha off a hard red-excess threshold, colour thrown away and re-shaded from the pool's own thickness
+- [x] Six pools and three fine spatters from the tileset's own ground splats; ~380 marks on the field, between the bodies as well as under them
+- [x] THE FIELD IS DARK AND COLD: its own light ramp (drained grey over near-black), explored light 0.14 → 0.10, torch pool 10 → 9
+- [x] The dead are in the mud: `registerProp` takes a per-channel shade, multiplied into the light, pulled hardest on the blue
+- [x] THE BASEMENT DOOR has a flagged threshold, the only pair of sconces on the run, and the bench across it while it is barred
+- [x] THE MERCHANT is on `trader_walk` - a livery worn nowhere else in the game - a head taller than the townsfolk, with his recovered goods at his feet
+- [x] BRACK THE TALLYMAN no longer negotiates: he prices the hero aloud and warns his men about the wine
+- [x] qa75 updated: the new kit, the arches, the empty far bank, the blood floor and ceiling, the spatters
+- [x] 0 TypeScript errors; layouts verified at five seeds; every changed floor walked and screenshotted
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

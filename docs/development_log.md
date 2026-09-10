@@ -1,5 +1,181 @@
 # Development Log
 
+## 2026-09-10 (iteration 111) - The crossing rebuilt, the field put out, and a man with a face
+
+The it.110b playtest came back again, and again every complaint was right. Six
+things: the bridge, the river's far side, the water, the battlefield, the cellar
+door and the merchant - plus the chief's speech. What follows is what each of
+them actually was.
+
+### THE BRIDGE WAS STILL A LADDER, because a road with nothing under it is
+
+it.110 built the span out of a plank and a fence. it.110b rebuilt it out of the
+Ancient Isometric Tileset's raised paving and its white balustrade - the right
+pack, the right pieces - and it STILL read as a ladder lying flat on the water.
+Three reasons, all the same reason:
+
+  - the roadway sat ON the surface. A bridge is a row of PIERS with a road on
+    top of them, and there were no piers in the silhouette at all;
+  - the parapet was a PALE piece on a DARK deck, laid one per tile with a joint
+    visible at every bay - which is exactly the shape of a ladder's rungs;
+  - the "gate" at each end was ONE HALF of the pack's great arch, which reads as
+    a broken flying buttress rather than as a gate.
+
+`scripts/bake-bridge.py` composes the kit against the exact projection the
+renderer uses, so alignment is a property of the bake and not a set of magic
+offsets. The pack draws one cell on a 256-wide canvas whose ground diamond sits
+at the BOTTOM of it, so pack to game is `x * 0.25`, `y * 0.25 - (h * 0.25 - 32)`
+and every piece lands on the tile it was drawn for with nothing to fit by hand.
+
+  `single_span_bay`   roadway + the stone band that gives it an underside + BOTH
+                      parapets, already lapped: a run of them is one road.
+  `single_span_bay2`  the same, patched and worn, for variety down the run.
+  `single_span_pier`  the 128-cube with a segmental arch cut through the face
+                      that points at the camera. One every third bay.
+  `single_span_abut`  the same cube solid, where the road leaves the bank.
+  `single_span_gate`  the great arch WHOLE - both halves, a tile apart across
+                      the road, so the hero walks under the opening.
+
+THE PIER IS BAKED A THIRD WIDER THAN THE ROAD IT CARRIES. A pier exactly one
+tile wide is INVISIBLE: the deck's own underside and the next bay's leading edge
+cover every pixel of it, which is why the first attempt at this looked like a
+wall with notches cut in it. A real pier is thicker than its road, and it has to
+be drawn thicker here or the arches never see daylight.
+
+Every bridge asset in the repository was looked at before this was built: the
+tileset's `pavement/`, `half_wall/`, `arch/small`, `arch/big`, `blocks/`,
+`castle/`, `doors/drawbridge` and `clutter/pontoon`, and the dungeon pack's
+`bridge_*` and `stoneWallArchway_*`. The dungeon pack's bridges are the plank
+walkways it.110 used; the pontoon and the drawbridge are timber. The only stone
+bridge in the repository is the one composed here.
+
+### THERE IS NO OTHER BANK
+
+it.110b stopped PLANTING across the water, which took the tree belt off the
+river - but the meadow's own lobes still reached over the course, so a shelf of
+lit grass and beach lay along the whole far side with black behind it. That is
+the "opposite bank" the brief says must not be visible anywhere but the
+crossing, and it is also what made the river read as a trench cut in a lawn.
+
+Everything across the course is unmade now - back to `TILE_WALL`, which the
+scene never draws at all - except the landing the road comes down on. The water
+is widened four tiles over there so the river has room to go dark gradually, and
+every water edge that touches the void takes `deepfade_*` (black, fading in
+across the tile) instead of the sand margin. The sand margin is kept for edges
+that actually touch land, and its boundary is dithered half a tile per tile: the
+band's own wobble is a pair of sines, and a SMOOTH boundary between two tile
+kinds draws in this projection as a clean pale sawtooth ruled the length of the
+map.
+
+AND NOTHING GROWS AT THE CROSSING. Buildings have been kept off the span since
+it.110; the border WOOD was not, and on this seed a pair of full-canopy trees
+stood directly in front of the gate. The trap in fixing that: the belt is grown
+from every tile that is not land, so refusing to plant leaves the tile as it was
+- void - and a bald black wedge opened where the trees had been. The bridge head
+is carved as LAND first, ten tiles of it, and the wood is then refused on ground
+that exists.
+
+### THE WATER WAS CRACKED ICE
+
+it.107 through it.110b laid the caustic loop at full strength on a near-black
+body, and every tile came out a mesh of bright cyan filaments. Water is dark,
+and what light is on it is a sheen. The body is deeper and greener with a slow
+swell sampled over about thirteen tiles (in world space - anything that varies
+WITHIN a tile is a grid by definition), the glint is a quarter of what it was
+through a gamma of 3.4 so only the crests show, and every phase is baked with
+its field shifted a tenth of a source period downstream. Ten phases carry the
+pattern exactly three tiles and wrap, so the river has a CURRENT rather than a
+shimmer; the cross-fade period goes 2.6 to 5.5 s to match, which puts the flow
+at about half a tile a second.
+
+### THE BATTLEFIELD WAS A LAWN WITH PINK ON IT
+
+Two separate faults.
+
+BLOOD. it.110b cut the pools out of the right source - the `bloody-wall`
+photographs - through the wrong ramp. A soft alpha on red-minus-the-rest keeps
+every pale plaster pixel along with the blood, so the field lay under a haze of
+PINK with a red bruise in the middle of each patch. `scripts/bake-blood.py`
+takes the alpha off a hard red-excess threshold and then THROWS THE PHOTOGRAPH'S
+COLOUR AWAY, re-shading each pool from its own thickness: nearly black in the
+middle, dried brown at the rim. Six pools, plus three fine spatters cut from the
+tileset's own ground splats, which are drawn in projection already. There is
+about twice as much of it and it is between the bodies as well as under them.
+
+DARK. Every floor's light ramp ended at the same warm candle white, so a
+week-old battlefield was lit exactly like a taproom - which is why it read as a
+warm brown lawn however far `exploredLight` was pulled down. A floor may now
+hand `Lighting` its own top and bottom colour; the field's is a cold drained
+grey over near-black. Explored ground 0.14 to 0.10, torch pool 10 to 9 tiles,
+and the pasture that survived the lines is down from about a third of the map to
+a tenth.
+
+AND THE DEAD WERE BRIGHT BLUE, which was a dead-code bug three iterations old.
+Lighting OWNS a registered prop's tint - it rewrites it from the tile's light
+every frame - so every `body.tint` written for a corpse since it.91 was
+overwritten before the frame was drawn, and the fallen were drawn at exactly the
+brightness of the ground they lay on. `guard_death` is a blue tabard over a red
+and white shield, so that meant a hundred pale blue lozenges on a grey field.
+`registerProp` takes a PER-CHANNEL shade now, multiplied into the light at the
+moment it is written; the city's dead are pulled hardest on the blue, so they
+lose the colour as well as the light.
+
+### THE CELLAR DOOR, AND WHAT WAS STILL MISSING
+
+it.110 drew a trapdoor with the tileset's stair sprite, which is a staircase
+going UP: the way DOWN was signposted with a picture of the way out. It has been
+a real door in the manor's west wall since it.110b - what was missing is
+everything AROUND it, because one leaf in a thirty-two-tile wall run is not an
+announcement. It gets a flagged threshold, the only pair of sconces on the run,
+and - while it is barred - the bench the merchant says they kept across it,
+which is now literally there.
+
+### THE MERCHANT HAD NOBODY'S FACE
+
+it.110 drew him on the town armourer's rig. it.110b moved him to
+`cit_porter_walk` - and all seven `cit_*` sheets are worn by the town's own
+street folk, so he still looked like somebody the player passes in the market
+twice a minute. There is no merchant sprite in any pack in the repository
+(searched; there is one goblin peddler), so `scripts/bake-trader.py` makes one:
+a re-dye of the single citizen sheet carrying a BUNDLE, into a deep wine and
+plum livery worn nowhere else in the game.
+
+The bands were read off the sheet's own histogram rather than guessed. The whole
+palette lives between hue 0.00 and 0.18 - outline, skin, rust cloth, khaki cloth
+- so the rules are a few hundredths wide, and the breeches rule needs a
+saturation floor of 0.85 or the man's face comes out magenta. He is drawn a head
+taller than the townsfolk, lifted slightly OUT of the room's light rather than
+tinted cream, and his recovered goods are set down at his feet: a crate and a
+strongbox say "merchant" before he opens his mouth.
+
+### AND BRACK NO LONGER NEGOTIATES
+
+it.110 shouted, and shouting is not frightening. it.110b stopped shouting but
+was still bargaining: it offered the hero the door, took the offer back, and
+spent its best line explaining why it had changed its mind. A man who has to
+explain why he is dangerous is not one.
+
+He has decided before the hero is through the door now, and every line after
+that is him working out loud what the corpse is worth and who is carrying which
+part of it home - mail, blade, boots for a man named Harl, teeth if the city is
+still buying them. The hero is not a threat to him; the hero is STOCK, and the
+horror is being appraised. The last thing he says is a warning to his own men
+about the wine.
+
+### TRAPS THIS PASS LEFT BEHIND
+
+1. THE LOADER FETCHES EVERY SINGLE IN THE MANIFEST AT BOOT, and ONE 404 fails
+   the whole atlas - the game then falls back to procedural art with a single
+   console warning and no other symptom. A bake that supersedes an old kit must
+   delete the old KEYS as well as the old files.
+2. A SHADE MAY BE GREATER THAN ONE (the merchant is lifted out of the light
+   rather than pushed into it) and an unclamped channel makes a number Pixi
+   refuses to read as a colour, which throws inside the render pass.
+3. `registerProp` OWNS `tint`. Anything that wants to be permanently darker or
+   brighter than its tile has to say so through `shade`; setting `sprite.tint`
+   after registering is dead code, and has been in the corpse dresser since
+   it.91 without anyone noticing.
+
 ## 2026-09-10 (iteration 110b) - A bridge worth crossing, a river you can see
 
 Six things came back from the playtest, and every one of them was right.

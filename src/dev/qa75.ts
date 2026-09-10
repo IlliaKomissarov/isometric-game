@@ -2669,6 +2669,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         bridge: { x: number; y: number };
         span: Array<{ x: number; y: number }>;
         knights: Array<{ x: number; y: number }>;
+        entry: { x: number; y: number };
       } | null;
       check('the meadow is twice the size it was', g.dungeon.width >= 80 && g.dungeon.height >= 56, `${g.dungeon.width}x${g.dungeon.height}`);
       check('a real span crosses the river now', !!river && river.span.length >= 6, `${river?.span.length ?? 0} bays`);
@@ -2693,19 +2694,33 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
        */
       {
         const map = g.town.layout.map as { width: number; height: number; grid: Uint8Array; tileKind: Uint8Array };
-        const b = river ? river.bridge : { x: 0, y: 0 };
-        let dry = 0;
+        const W = map.width;
+        const wet = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < map.height && map.tileKind[y * W + x] === 9;
+        const entry = river ? river.entry : { x: 4, y: 31 };
+        const bx = river ? river.bridge.x : 0;
+        const by = river ? river.bridge.y : 0;
+        /**
+         * WHICH SIDE A TILE IS ON, without borrowing the scene's own polyline:
+         * walk the straight line from it back to the tile the hero arrives on.
+         * If that line has to cross water, the tile is across the river.
+         */
+        let across = 0;
+        let landing = 0;
         for (let y = 0; y < map.height; y++) {
-          for (let x = 0; x < map.width; x++) {
-            const i = y * map.width + x;
+          for (let x = 0; x < W; x++) {
+            const i = y * W + x;
             if (map.grid[i] === 0 || map.tileKind[i] === 9) continue;
-            // Across the water is "further down the course than the bridge row".
-            if (y - x <= b.y - b.x + 6) continue;
-            if (Math.hypot(x - b.x, y - b.y) < 16) continue; // the landing
-            dry++;
+            const dx = entry.x - x;
+            const dy = entry.y - y;
+            const n = Math.ceil(Math.hypot(dx, dy));
+            let crossed = false;
+            for (let s = 1; s < n && !crossed; s++) crossed = wet(Math.round(x + (dx * s) / n), Math.round(y + (dy * s) / n));
+            if (!crossed) continue;
+            if (Math.hypot(x - bx, y - by) < 26) landing++;
+            else across++;
           }
         }
-        check('and nothing but the landing shows across the water', dry <= 24, `${dry} tiles of far bank`);
+        check('and nothing but the crossing landing shows across the water', across === 0, `${across} tiles of far bank, ${landing} of landing`);
       }
       /**
        * NOTHING GROWS ACROSS THE WATER (it.110b). A tile on the far bank is

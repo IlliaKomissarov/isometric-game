@@ -6923,32 +6923,32 @@
   },
   "gore_a": {
    "file": "single_gore_a.png",
-   "w": 163,
-   "h": 82,
+   "w": 168,
+   "h": 84,
    "nearest": false
   },
   "gore_b": {
    "file": "single_gore_b.png",
-   "w": 166,
+   "w": 172,
    "h": 86,
    "nearest": false
   },
   "gore_c": {
    "file": "single_gore_c.png",
-   "w": 167,
-   "h": 81,
+   "w": 150,
+   "h": 75,
    "nearest": false
   },
   "gore_d": {
    "file": "single_gore_d.png",
-   "w": 167,
-   "h": 80,
+   "w": 138,
+   "h": 69,
    "nearest": false
   },
   "gore_e": {
    "file": "single_gore_e.png",
-   "w": 148,
-   "h": 45,
+   "w": 120,
+   "h": 60,
    "nearest": false
   },
   "span_bay": {
@@ -6997,6 +6997,30 @@
    "file": "single_deepfade_3.png",
    "w": 64,
    "h": 32,
+   "nearest": false
+  },
+  "gore_f": {
+   "file": "single_gore_f.png",
+   "w": 104,
+   "h": 52,
+   "nearest": false
+  },
+  "spatter_a": {
+   "file": "single_spatter_a.png",
+   "w": 46,
+   "h": 75,
+   "nearest": false
+  },
+  "spatter_b": {
+   "file": "single_spatter_b.png",
+   "w": 40,
+   "h": 19,
+   "nearest": false
+  },
+  "spatter_c": {
+   "file": "single_spatter_c.png",
+   "w": 52,
+   "h": 30,
    "nearest": false
   }
  }

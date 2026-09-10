@@ -234,6 +234,20 @@ interface World {
 type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm' | 'river' | 'field' | 'manor' | 'vault';
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
+/**
+ * THE COLOUR OF A NIGHT AFTER A BATTLE (it.111).
+ *
+ * Every floor used to end its light ramp at the same warm candle white, so the
+ * battlefield was lit like a taproom - a warm brown field with red-brown mud,
+ * which is why it read as a lawn however far the explored light was pulled down.
+ * The field gets its own ramp: a cold, drained top with the yellow taken out of
+ * it, and a bottom that is nearly black and slightly blue. Two constants, and
+ * every sprite on the floor turns grim at once, because the tint is already
+ * composed per tile every frame.
+ */
+const FIELD_WARM_RGB: readonly [number, number, number] = [150, 156, 168];
+const FIELD_SHADOW_RGB: readonly [number, number, number] = [16, 18, 28];
+
 const MINES_FLOOR = 102;
 /** THE GILDED STAG INSIDE (it.92): the inn's own floor. */
 const INN_FLOOR = 103;
@@ -1984,7 +1998,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : isField ? { sightRadius: 22, fullRadius: 10, exploredLight: 0.14 } : isManor ? { sightRadius: 40, fullRadius: 26 } : isVault ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97). The battlefield is a night field: wide sight, a short torch (it.110).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : isField ? { sightRadius: 22, fullRadius: 9, exploredLight: 0.10, warmRgb: FIELD_WARM_RGB, shadowRgb: FIELD_SHADOW_RGB } : isManor ? { sightRadius: 40, fullRadius: 26 } : isVault ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97). The battlefield is a night field: wide sight, a short torch (it.110).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53; restored it.109).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.

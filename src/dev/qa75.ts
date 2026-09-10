@@ -2673,14 +2673,39 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the meadow is twice the size it was', g.dungeon.width >= 80 && g.dungeon.height >= 56, `${g.dungeon.width}x${g.dungeon.height}`);
       check('a real span crosses the river now', !!river && river.span.length >= 6, `${river?.span.length ?? 0} bays`);
       /**
-       * AND IT IS BUILT OF STONE (it.110b). it.110 laid the pack's plank-deck
-       * tile with a timber fence either side, which is a jetty. The Ancient
-       * Isometric Tileset's own bridge kit - paving, bannister, arched pier,
-       * great arch - is baked into the atlas, and the proof is that it is there.
+       * AND IT IS PIERS WITH A ROAD ON THEM (it.111). it.110 laid the pack's
+       * plank-deck tile with a timber fence either side, which is a jetty;
+       * it.110b swapped in raised paving and a balustrade and it still lay flat
+       * on the water. `scripts/bake-bridge.py` composites the whole kit - a bay
+       * with its roadway, underside and both parapets, an arched pier, an
+       * abutment, and the pack's great arch WHOLE rather than one half of it.
        */
       {
-        const missing = ['span_deck', 'span_rail_n', 'span_rail_s', 'span_pier', 'span_block', 'span_gate'].filter((k) => !g.sprites.hasSingle(k));
+        const missing = ['span_bay', 'span_bay2', 'span_pier', 'span_abut', 'span_post', 'span_gate'].filter((k) => !g.sprites.hasSingle(k));
         check('and it is built out of the tileset own bridge kit', missing.length === 0, `missing ${missing.join()}`);
+        const props = g.town.layout.props as Array<{ kind: string }>;
+        check('and it stands on arches out of the river', props.filter((q) => q.kind === 'bridgepost').length >= 3, `${props.filter((q) => q.kind === 'bridgepost').length} piers`);
+      }
+      /**
+       * AND THERE IS NO OTHER BANK (it.111). Everything across the course is
+       * unmade except the landing the road comes down on, so the only ground the
+       * player can see over the water is the far end of the crossing.
+       */
+      {
+        const map = g.town.layout.map as { width: number; height: number; grid: Uint8Array; tileKind: Uint8Array };
+        const b = river ? river.bridge : { x: 0, y: 0 };
+        let dry = 0;
+        for (let y = 0; y < map.height; y++) {
+          for (let x = 0; x < map.width; x++) {
+            const i = y * map.width + x;
+            if (map.grid[i] === 0 || map.tileKind[i] === 9) continue;
+            // Across the water is "further down the course than the bridge row".
+            if (y - x <= b.y - b.x + 6) continue;
+            if (Math.hypot(x - b.x, y - b.y) < 16) continue; // the landing
+            dry++;
+          }
+        }
+        check('and nothing but the landing shows across the water', dry <= 24, `${dry} tiles of far bank`);
       }
       /**
        * NOTHING GROWS ACROSS THE WATER (it.110b). A tile on the far bank is
@@ -2754,8 +2779,9 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
          */
         {
           const pools = props.filter((q) => q.kind === 'gore').length;
-          check('and the ground it was fought on is stained with it', pools >= 60 && pools <= 320, `${pools} pools`);
-          check('with real blood, cut out of the pack own textures', ['gore_a', 'gore_b', 'gore_c', 'gore_d'].every((k) => g.sprites.hasSingle(k)));
+          check('and the ground it was fought on is stained with it', pools >= 120 && pools <= 700, `${pools} pools`);
+          check('with real blood, cut out of the pack own textures', ['gore_a', 'gore_b', 'gore_c', 'gore_d', 'gore_e', 'gore_f'].every((k) => g.sprites.hasSingle(k)));
+          check('and thrown spatter between the pools', ['spatter_a', 'spatter_b', 'spatter_c'].every((k) => g.sprites.hasSingle(k)));
         }
         /**
          * THE WOOD IS A BORDER, NOT A COPSE (it.110). The belt is grown out of

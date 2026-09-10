@@ -165,7 +165,13 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
        * not a week. The grass survives only in the pockets the lines never
        * crossed, and the broad bands where they stood are churned to mud.
        */
-      if (band > -0.35) tileKind[idx(x, y)] = KIND_DIRT;
+      /**
+       * IT.111: less green still. A week after two armies manoeuvred over it,
+       * pasture survives only in pockets the lines never reached - at -0.35 the
+       * field was a third grass, and grass is the single most cheerful thing on
+       * the palette.
+       */
+      if (band > -0.62) tileKind[idx(x, y)] = KIND_DIRT;
       // And where it burned it is ash - in BANDS, which read as fire scars,
       // never as the scattered single tiles it.110 speckled and which read as
       // pits in the ground.
@@ -342,7 +348,10 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
        * bloody-wall photographs and flattened onto the ground plane - a real
        * pool, not the cellar's little damp smear that it.110 borrowed.
        */
-      if ((x * 5 + y) % 3 === 0) decal({ kind: 'gore', x, y, variant: `gore_${'abcd'[(x * 3 + y) % 4]}`, ox: (rand() - 0.5) * 0.6, oy: (rand() - 0.5) * 0.6 });
+      if ((x * 5 + y) % 3 === 0) decal({ kind: 'gore', x, y, variant: `gore_${'abcdef'[(x * 3 + y) % 6]}`, ox: (rand() - 0.5) * 0.6, oy: (rand() - 0.5) * 0.6 });
+      // ...and thrown spatter beside a good half of them, which is what actually
+      // covers the ground round a body: fine, dark, and much smaller than a pool.
+      if ((x * 3 + y * 7) % 2 === 0) decal({ kind: 'gore', x: x + ((x + y) % 2 ? 1 : -1), y, variant: `spatter_${'abc'[(x + y * 5) % 3]}`, ox: (rand() - 0.5) * 0.8, oy: (rand() - 0.5) * 0.8 });
       if ((x * 7 + y * 3) % 11 === 0) lay('debris', x + 1, y, `debris_${'abcd'[(x + y) % 4]}`);
       if ((x * 11 + y * 5) % 17 === 0) lay('rubble', x, y + 1, `rubble_${'abcdefg'[(x * 3 + y) % 7]}`);
     }
@@ -361,18 +370,18 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   for (let y = 5; y < H - 5; y++) {
     for (let x = 5; x < W - 5; x++) {
       if (!isFloor(x, y)) continue;
-      const line = Math.exp(-Math.pow((x - 26) / 13, 2)) * 0.14;
+      const line = Math.exp(-Math.pow((x - 26) / 14, 2)) * 0.20;
       if (((x * 41 + y * 13) % 100) / 100 >= line) continue;
-      lay('gore', x, y, `gore_${'abcde'[(x * 5 + y * 3) % 5]}`);
+      lay('gore', x, y, (x * 7 + y) % 3 === 0 ? `spatter_${'abc'[(x + y) % 3]}` : `gore_${'abcdef'[(x * 5 + y * 3) % 6]}`);
     }
   }
   // Three slicks where the press was worst, and nothing dragged out of them.
-  for (const [bx, by, br] of [[24, 26, 3], [21, 33, 3], [29, 20, 2]] as const) {
+  for (const [bx, by, br] of [[24, 26, 4], [21, 33, 3], [29, 20, 3], [17, 29, 3], [33, 24, 2]] as const) {
     for (let y = by - br; y <= by + br; y++)
       for (let x = bx - br; x <= bx + br; x++) {
         if (!isFloor(x, y) || Math.hypot(x - bx, y - by) > br) continue;
         if ((x * 3 + y) % 3) continue;
-        lay('gore', x, y, `gore_${'abcd'[(x + y) % 4]}`);
+        lay('gore', x, y, `gore_${'abcdef'[(x + y) % 6]}`);
       }
   }
 

@@ -572,11 +572,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const s = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
         const pool = new Sprite(assets.get('glow'));
         pool.anchor.set(0.5);
-        pool.tint = 0x4a0e12;
-        pool.alpha = 0.55;
+        pool.tint = 0x3a0a0c;
+        pool.alpha = 0.62;
         pool.scale.set(1.15, 0.5);
         pool.position.set(s.x, s.y + 2);
-        lighting.registerProp(p.x, p.y, pool);
+        lighting.registerProp(p.x, p.y, pool, 0.7);
         // ON THE GROUND (it.92): the fallen are paint under every foot - the ground layer, never in front of a walker.
         const body = new Sprite(a.frames[dir][a.frameCount - 1]);
         // Anchor and scale are the SHEET's, not the prop's: the three rigs are
@@ -590,12 +590,25 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // tint multiplies, so it keeps the hue and only takes the brightness: the
         // only way these read as bodies in the mud rather than as a litter of toy
         // soldiers is to take them most of the way down toward the earth itself.
-        body.tint = 0x4a443c;
-        body.alpha = 0.94;
+        /**
+         * IT.111: AND IT IS A SHADE, NOT A TINT.
+         *
+         * Every `body.tint` written here since it.91 was dead code. Lighting
+         * OWNS a registered prop's tint and rewrites it from the tile's light
+         * every frame, so the dead were drawn at exactly the brightness of the
+         * mud they lay on - which for `guard_death`, a blue tabard over a red
+         * and white shield, meant a hundred pale blue lozenges scattered over a
+         * dark field. `shade` is multiplied INTO the light instead, so they stay
+         * a third of the ground's brightness whatever the torch is doing.
+         */
+        body.alpha = 0.95;
         body.position.set(s.x, s.y + 4);
         viewport.groundLayer.addChild(pool);
         viewport.groundLayer.addChild(body);
-        lighting.registerProp(p.x, p.y, body);
+        // PER CHANNEL, and hardest on the blue: `guard_death` is a blue tabard
+        // over a red-and-white shield, which even at a third of the light was
+        // still the most saturated thing on a grey field.
+        lighting.registerProp(p.x, p.y, body, v[0] === 'g' ? [0.50, 0.42, 0.27] : [0.52, 0.46, 0.38]);
         break;
       }
       case 'embers': {
@@ -1125,11 +1138,18 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'gore': {
         /**
-         * BLOOD ON THE GROUND (it.110b). Cut out of the pack's bloody-wall
-         * photographs - alpha from how far a pixel's red runs ahead of its green
-         * and blue - and flattened onto the ground plane, so a battlefield has
-         * pools on it instead of the bright red dots the gore pack's animation
-         * frames turn into when they are laid down flat.
+         * BLOOD ON THE GROUND (it.110b, re-cut it.111).
+         *
+         * `scripts/bake-blood.py` cuts the pools out of the pack's bloody-wall
+         * photographs on a hard red-excess threshold and then throws the source
+         * colour away, re-shading each pool from its own thickness: nearly black
+         * in the middle, dried brown at the rim. it.110b kept the photograph's
+         * own colour through a soft ramp, which brought all the pale plaster
+         * with it, and the field came out under a haze of PINK.
+         *
+         * `spatter_*` is the same treatment on the Ancient Isometric Tileset's
+         * own ground splats, which are drawn in projection already: fine thrown
+         * blood, for the ground between the pools.
          */
         const art = p.variant ?? 'gore_a';
         if (!has(art)) break;
@@ -1137,11 +1157,18 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         spr.anchor.set(0.5, 0.5);
         const sc = worldToScreen(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0), scratch);
         spr.position.set(sc.x, sc.y + 3);
-        // SMALL AND FAINT. At 0.55-1.0 of the baked size and nearly opaque the
-        // pools ran into one another and the field became one sheet of red; a
-        // stain wants clean ground round it and some of the earth showing through.
-        spr.scale.set(0.34 + (((p.x * 7 + p.y * 3) % 5) * 0.07), 0.34 + (((p.x * 3 + p.y * 5) % 5) * 0.05));
-        spr.alpha = 0.62;
+        /**
+         * SMALL, AND NOT UNIFORM. At 0.55-1.0 of the baked size and nearly
+         * opaque the pools ran into one another and the field became one sheet
+         * of red; a stain wants clean ground round it and some of the earth
+         * showing through. The size is dealt from the tile so it never touches
+         * the shared random stream (it.98), and the spatters - which are a
+         * quarter the size of a pool - are drawn nearer their own scale.
+         */
+        const fine = art.startsWith('spatter');
+        const k = fine ? 0.72 : 0.34;
+        spr.scale.set(k + (((p.x * 7 + p.y * 3) % 5) * 0.07), k + (((p.x * 3 + p.y * 5) % 5) * 0.05));
+        spr.alpha = fine ? 0.78 : 0.7;
         viewport.groundLayer.addChild(spr);
         lighting.registerProp(p.x, p.y, spr);
         break;

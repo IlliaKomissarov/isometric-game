@@ -44,20 +44,58 @@ const enum FogState {
   VISIBLE = 2,
 }
 
-/** Base torch ramp channels for a light level [0,1] (shadow → warm torch). */
-function rampChannels(light: number): [number, number, number] {
+type Rgb = readonly [number, number, number];
+
+/**
+ * A PROP MAY BE PERMANENTLY DARKER THAN THE GROUND IT STANDS ON (it.111).
+ *
+ * Lighting owns `tint` - it rewrites every registered prop's tint from the
+ * tile's light every frame - so a dresser that sets a sprite's tint to darken
+ * it is writing into a value that is overwritten before the next frame is
+ * drawn. That is why the battlefield's dead stayed bright blue no matter what
+ * `body.tint` was set to. A prop may now carry a shade factor instead, which is
+ * multiplied INTO the tile's tint at the moment it is written.
+ *
+ * It is PER CHANNEL, because a flat factor keeps the hue: the city's death sheet
+ * is a blue tabard over a red-and-white shield, and darkening it evenly leaves a
+ * hundred small navy lozenges scattered over a grey field. Pulling the blue down
+ * harder than the red takes the colour out as well as the light, which is what a
+ * body face-down in the mud actually looks like.
+ */
+type ShadedSprite = Sprite & { shade?: Rgb };
+
+/**
+ * Base torch ramp channels for a light level [0,1] (shadow -> warm torch).
+ *
+ * THE TOP OF THE RAMP IS A FLOOR PROPERTY (it.111). Every floor used to end at
+ * the same warm candle white, so a battlefield a week old was lit exactly like a
+ * tavern - which is why the field read as a warm brown lawn no matter how far
+ * `exploredLight` was pulled down. A floor may now hand in its own top colour,
+ * and the whole scene changes character with one number per channel: the field's
+ * is a cold, drained moonlight.
+ */
+function rampChannels(light: number, warm: Rgb = LIGHT_WARM_RGB, shadow: Rgb = LIGHT_SHADOW_RGB): [number, number, number] {
   const l = light <= 0 ? 0 : light >= 1 ? 1 : light;
   const g = l * l * (3 - 2 * l); // smoothstep for a soft, filmic ramp
   return [
-    LIGHT_SHADOW_RGB[0] + (LIGHT_WARM_RGB[0] - LIGHT_SHADOW_RGB[0]) * g,
-    LIGHT_SHADOW_RGB[1] + (LIGHT_WARM_RGB[1] - LIGHT_SHADOW_RGB[1]) * g,
-    LIGHT_SHADOW_RGB[2] + (LIGHT_WARM_RGB[2] - LIGHT_SHADOW_RGB[2]) * g,
+    shadow[0] + (warm[0] - shadow[0]) * g,
+    shadow[1] + (warm[1] - shadow[1]) * g,
+    shadow[2] + (warm[2] - shadow[2]) * g,
   ];
 }
 
+/** Multiply a composed tint by a prop's own shade factor, if it carries one. */
+function shadeTint(tint: number, shade: Rgb | undefined): number {
+  if (shade === undefined) return tint;
+  const r = Math.round(((tint >> 16) & 0xff) * shade[0]);
+  const g = Math.round(((tint >> 8) & 0xff) * shade[1]);
+  const b = Math.round((tint & 0xff) * shade[2]);
+  return (r << 16) | (g << 8) | b;
+}
+
 /** Map a light level [0,1] to a multiply-tint color (shadow → warm torch). */
-export function tintForLight(light: number): number {
-  const [r, g, b] = rampChannels(light);
+export function tintForLight(light: number, warm?: Rgb, shadow?: Rgb): number {
+  const [r, g, b] = rampChannels(light, warm, shadow);
   return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
 }
 
@@ -121,19 +159,24 @@ export class Lighting {
   private baseFull = LIGHT_FULL_RADIUS;
   /** What SEEN-but-unlit ground is tinted at on this floor (it.105). */
   private exploredTint = tintForLight(0);
+  /** The top and bottom of this floor's own light ramp (it.111). */
+  private warm: Rgb = LIGHT_WARM_RGB;
+  private shadow: Rgb = LIGHT_SHADOW_RGB;
 
   build(
     width: number,
     height: number,
     isOpaque: (gx: number, gy: number) => boolean,
-    opts?: { sightRadius?: number; fullRadius?: number; exploredLight?: number },
+    opts?: { sightRadius?: number; fullRadius?: number; exploredLight?: number; warmRgb?: Rgb; shadowRgb?: Rgb },
   ): void {
     this.width = width;
     this.height = height;
     this.isOpaque = isOpaque;
     this.sight = opts?.sightRadius ?? FOG_RADIUS;
     this.full = opts?.fullRadius ?? LIGHT_FULL_RADIUS;
-    this.exploredTint = tintForLight(Math.max(0, Math.min(1, opts?.exploredLight ?? 0)));
+    this.warm = opts?.warmRgb ?? LIGHT_WARM_RGB;
+    this.shadow = opts?.shadowRgb ?? LIGHT_SHADOW_RGB;
+    this.exploredTint = tintForLight(Math.max(0, Math.min(1, opts?.exploredLight ?? 0)), this.warm, this.shadow);
     this.baseSight = this.sight;
     this.baseFull = this.full;
     this.states = new Uint8Array(width * height).fill(FogState.HIDDEN);
@@ -175,11 +218,12 @@ export class Lighting {
    * Safe to call at RUNTIME (corpse stains): the sprite adopts the tile's
    * current fog state instead of assuming HIDDEN.
    */
-  registerProp(gx: number, gy: number, sprite: Sprite): void {
+  registerProp(gx: number, gy: number, sprite: Sprite, shade?: number | Rgb): void {
     const idx = gy * this.width + gx;
     const st = this.states[idx];
+    if (shade !== undefined) (sprite as ShadedSprite).shade = typeof shade === 'number' ? [shade, shade, shade] : shade;
     sprite.visible = st !== FogState.HIDDEN;
-    sprite.tint = st === FogState.HIDDEN ? HIDDEN_TINT : this.exploredTint; // Visible tiles retint next frame.
+    sprite.tint = st === FogState.HIDDEN ? HIDDEN_TINT : shadeTint(this.exploredTint, (sprite as ShadedSprite).shade); // Visible tiles retint next frame.
     const list = this.propSprites.get(idx);
     if (list) list.push(sprite);
     else this.propSprites.set(idx, [sprite]);
@@ -369,7 +413,7 @@ export class Lighting {
       const floor = this.floorSprites[idx];
       if (floor) floor.tint = tint;
       const props = this.propSprites.get(idx);
-      if (props) for (const p of props) p.tint = tint;
+      if (props) for (const p of props) p.tint = shadeTint(tint, (p as ShadedSprite).shade);
 
       const wall = this.wallSprites[idx];
       if (wall) {
@@ -404,7 +448,7 @@ export class Lighting {
 
   /** Torch ramp + baked colored sources → final tint for one tile. */
   private composeTint(baseLight: number, idx: number): number {
-    const [br, bg, bb] = rampChannels(baseLight);
+    const [br, bg, bb] = rampChannels(baseLight, this.warm, this.shadow);
     const f = this.sourceFlicker;
     const r = Math.min(255, Math.round(br + this.srcR[idx] * f));
     const g = Math.min(255, Math.round(bg + this.srcG[idx] * f));

@@ -2335,7 +2335,32 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         await until(() => game() && game().floor === 106, 15000);
         g = game();
         await fadeClear();
-        driveRender(400);
+        driveRender(800);
+        /**
+         * THE AMBUSH IS A SCENE, AND A SCENE WAITS (it.110 found this).
+         *
+         * Walking through the river gate plays the three cornering Oscar, and
+         * since it.103 an attributed beat holds until the reader presses SPACE.
+         * A running scene also clears the input queue by design - so every
+         * command the harness sent after arriving here was eaten, and the three
+         * fishing checks below had been failing ever since, reporting `cast
+         * false` as though the mechanic were broken. The harness turns the
+         * pages, the way a player does, and then goes on.
+         */
+        {
+          const page = (): void => {
+            document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
+            document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
+          };
+          const played = !!game()?.reclaim;
+          for (let i = 0; i < 16 && game()?.reclaim; i++) {
+            page();
+            driveRender(700);
+          }
+          check('the three make their demand the moment the hero walks in', played && !game()?.reclaim, `played ${played}, still running ${!!game()?.reclaim}`);
+          g = game();
+          driveRender(300);
+        }
         const r = g.riverside as {
           entry: { x: number; y: number };
           oscar: { x: number; y: number };
@@ -2386,7 +2411,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
             check('every fishing mark stands on land and faces real water', r.fishing.length >= 3 && bad.length === 0, `${r.fishing.length} marks, ${bad.length} bad`);
           }
           // THE WAY BACK, AND THE WAY ON.
-          check('the signpost home and the burned bridge both stand', g.town.interactables.some((i: { kind: string }) => i.kind === 'riverroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'bridgegate'));
+          check('the signpost home and the river bridge both stand', g.town.interactables.some((i: { kind: string }) => i.kind === 'riverroad') && g.town.interactables.some((i: { kind: string }) => i.kind === 'bridgegate'));
           check('chests are scattered over the farm', (g.town.layout.chests ?? []).length >= 3, String((g.town.layout.chests ?? []).length));
           /**
            * THE WATER IS ART, NOT A GENERATOR (it.107). it.106 drew the river
@@ -2462,9 +2487,18 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
               driveRender(16);
               rots.push((g.player as unknown as { rod: { rotation: number } }).rod.rotation);
             }
-            let monotonic = true;
-            for (let i = 1; i < rots.length; i++) if (rots[i] < rots[i - 1] - 1e-6) monotonic = false;
-            check('the cast sweeps forward once and never runs backwards', monotonic && rots[rots.length - 1] > rots[0], `${rots[0].toFixed(2)} -> ${rots[rots.length - 1].toFixed(2)}`);
+            /**
+             * MEASURED AGAINST THE BUG, NOT AGAINST A HAIR (it.110). it.108's
+             * fault was a rod that swept forward and then swept all the way BACK
+             * again, for ever - three quarters of a radian each way. The pose the
+             * cast settles into breathes by a couple of hundredths, and sampling
+             * far enough into that breath at the harness's coarse step caught the
+             * down-slope of it and failed a check about a completely different
+             * thing. The tolerance is a fifteenth of the bug it is looking for.
+             */
+            let worstBack = 0;
+            for (let i = 1; i < rots.length; i++) worstBack = Math.max(worstBack, rots[i - 1] - rots[i]);
+            check('the cast sweeps forward once and never runs backwards', worstBack < 0.05 && rots[rots.length - 1] > rots[0] + 0.3, `${rots[0].toFixed(2)} -> ${rots[rots.length - 1].toFixed(2)}, worst back-step ${worstBack.toFixed(3)}`);
             g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
             g.loop.step(20);
             driveRender(80);
@@ -2501,8 +2535,16 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
             };
             const built = (g.town.layout.props as Array<{ kind: string; variant?: string; x: number; y: number; w?: number; h?: number }>)
               .filter((q) => ['house', 'barracks', 'smithy', 'watchtower'].includes(q.kind));
-            check('the farm is built of many different buildings', built.length >= 6, `${built.length} buildings`);
-            check('and no two of them are the same', new Set(built.map((q) => q.variant ?? q.kind)).size === built.length, built.map((q) => q.variant ?? q.kind).join());
+            check('the farm is built of many different buildings', built.length >= 8, `${built.length} buildings`);
+            /**
+             * IT.110 DOUBLED THE MEADOW, and there are eleven building sprites in
+             * the atlas. Fourteen buildings on twice the land cannot all be
+             * different, and demanding it would only mean putting up fewer of
+             * them. What actually matters is that the farm does not read as one
+             * cottage stamped over and over, so the bar is on the VARIETY.
+             */
+            const shapes = new Set(built.map((q) => q.variant ?? q.kind));
+            check('and the holding is not one cottage stamped out', shapes.size >= 8 && shapes.size >= built.length - 4, `${shapes.size} shapes over ${built.length} buildings`);
             const boxes = built.map((q) => {
               const [pw, ph] = PX[q.variant ?? q.kind] ?? [64, 64];
               const sx = (q.x + (q.w ?? 1) - (q.y + (q.h ?? 1))) * 32;
@@ -2557,7 +2599,24 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           }
         }
       }
-      // THE WAY HOME (it.101): the signpost on the east verge, not a travel call.
+      /**
+       * THE WAY HOME (it.101): the signpost on the east verge, not a travel call.
+       *
+       * IT.110: STAND ON THE FIELDS FIRST. The riverside block above ends in
+       * TOWN - it walks back for the training dummy - so by the time this line
+       * ran, `g.town.layout` was the town's and `.farm` was undefined. It threw,
+       * the throw was caught by the harness's own guard, and everything after it
+       * (the device matrix, the whole hardcore section) had not run in a long
+       * time. Nothing here was wrong except where the hero was standing.
+       */
+      g = game();
+      if (g.floor !== 105) {
+        await g.travel(105);
+        await until(() => game() && game().floor === 105, 15000);
+        g = game();
+        await fadeClear();
+        driveRender(200);
+      }
       warp(g.town.layout.farm.home.x, g.town.layout.farm.home.y);
       g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
       g.loop.step(90); // The hero walks the last step to the signpost (it.101).
@@ -2566,6 +2625,231 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await fadeClear();
       const marsh = g.town.layout.gateways.find((w: { label: string }) => w.label.includes('MARSH'));
       check('and sets them down at the marsh gate, not the town square', !!marsh && Math.hypot(g.player.pos.x - marsh.x, g.player.pos.y - marsh.y) < 4, `${g.player.pos.x.toFixed(1)},${g.player.pos.y.toFixed(1)} vs ${marsh?.x},${marsh?.y}`);
+    }
+
+    /**
+     * ---- ACROSS THE RIVER (it.110) -------------------------------------
+     *
+     * Its own section, with its own guards, for the reason it.100 wrote down: a
+     * block dropped into the middle of somebody else's leaves the hero on a floor
+     * the next line does not expect and the failures read as a broken feature.
+     *
+     * The ledger is set by hand here. Oscar's seal is handed over by a cutscene
+     * that this harness does not play (the riverside block above walks the farm
+     * but never fights the three), and the point of these checks is the ROAD, not
+     * the errand that opens it.
+     */
+    {
+      g = game();
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 15000);
+        g = game();
+        await fadeClear();
+      }
+      g.quests.riverPass = 'held';
+      g.quests.manor = 'heard'; // the noise outside the house is a scene, not a check
+      /** This block's own `warp` (it.100's rule: a relocated block carries its helpers). */
+      const warp = (x: number, y: number): void => {
+        g.player.pos.x = x + 0.5;
+        g.player.pos.y = y + 0.5;
+        g.player.prevPos.x = x + 0.5;
+        g.player.prevPos.y = y + 0.5;
+        g.lighting.updateVisibility(x, y);
+        g.loop.step(2);
+        g.loop.callbacks.render(1);
+      };
+      // ---- THE RIVER BRIDGE --------------------------------------------
+      await g.travel(106);
+      await until(() => game() && game().floor === 106, 15000);
+      g = game();
+      await fadeClear();
+      driveRender(300);
+      const river = g.riverside as {
+        bridge: { x: number; y: number };
+        span: Array<{ x: number; y: number }>;
+        knights: Array<{ x: number; y: number }>;
+      } | null;
+      check('the meadow is twice the size it was', g.dungeon.width >= 80 && g.dungeon.height >= 56, `${g.dungeon.width}x${g.dungeon.height}`);
+      check('a real span crosses the river now', !!river && river.span.length >= 6, `${river?.span.length ?? 0} bays`);
+      check('and the watch is standing on it', !!river && river.knights.length === 2, `${river?.knights.length ?? 0} knights`);
+      if (river) {
+        // NOBODY WALKS ACROSS. The deck is drawn ON water tiles that stay
+        // blocked, so there is no tile sequence that crosses without the watch.
+        const walked = river.span.filter((b) => g.scene.isWalkable(b.x, b.y));
+        check('the span cannot be walked over behind the watch back', walked.length === 0, `${walked.length} walkable bays`);
+        const gate = g.town.interactables.find((i: { kind: string }) => i.kind === 'bridgegate');
+        check('the gate under the arch carries a prompt', !!gate && /BRIDGE/.test(gate.label), gate?.label);
+        // AND IT OPENS. E at the gate, the seal, and the hero is on the far side.
+        if (gate) {
+          warp(gate.x - 1, gate.y);
+          g.queue.enqueue({ type: 'OPEN_CHEST', playerId: 0, chestId: gate.id });
+          g.loop.step(30);
+          driveRender(200);
+          await until(() => (document.querySelector('#dialogue-panel')?.textContent ?? '').includes('leave in writing'), 6000);
+          const seal = [...document.querySelectorAll('#dialogue-panel button')].find((b) => /SEAL/.test(b.textContent ?? ''));
+          check('the watch asks for leave in writing, and the seal is an answer', !!seal, (document.querySelector('#dialogue-panel')?.textContent ?? '').slice(0, 60));
+          (seal as HTMLElement | undefined)?.click();
+          await until(() => /river charter/.test(document.querySelector('#dialogue-panel')?.textContent ?? ''), 6000);
+          const open = [...document.querySelectorAll('#dialogue-panel button')].find((b) => /OPEN/.test(b.textContent ?? ''));
+          (open as HTMLElement | undefined)?.click();
+          check('and the gate opens onto the far bank', await until(() => game() && game().floor === 107, 20000), String(game()?.floor));
+        }
+      }
+      // ---- THE BATTLEFIELD ---------------------------------------------
+      g = game();
+      if (g.floor !== 107) {
+        await g.travel(107);
+        await until(() => game() && game().floor === 107, 15000);
+        g = game();
+      }
+      await fadeClear();
+      driveRender(300);
+      const field = g.field as {
+        entry: { x: number; y: number };
+        home: { x: number; y: number };
+        manorDoor: { x: number; y: number };
+        catapults: Array<{ x: number; y: number; dx: number; dy: number }>;
+        cityGate: { x: number; y: number; label: string };
+        looterPosts: Array<{ x: number; y: number }>;
+      } | null;
+      check('the ground past the bridge is a battlefield', !!field && g.floor === 107, String(g.floor));
+      if (field) {
+        const props = g.town.layout.props as Array<{ kind: string; variant?: string; x: number; y: number }>;
+        const dead = props.filter((q) => q.kind === 'corpse');
+        check('the field is strewn with the fallen', dead.length >= 60, `${dead.length} bodies`);
+        check('and they come off more than one army', new Set(dead.map((q) => (q.variant ?? 'p')[0])).size >= 3, [...new Set(dead.map((q) => (q.variant ?? 'p')[0]))].join());
+        check('siege engines stand on it, and wrecks of others', props.filter((q) => q.kind === 'siege').length >= 5 && field.catapults.length >= 2, `${props.filter((q) => q.kind === 'siege').length} engines, ${field.catapults.length} working`);
+        check('a war camp is pitched south of the road', props.filter((q) => q.kind === 'tent').length >= 4 && props.filter((q) => q.kind === 'firepit').length >= 3);
+        check('scavengers are working the dead over', field.looterPosts.length >= 8, `${field.looterPosts.length} posts`);
+        /**
+         * THE WOOD IS A BORDER, NOT A COPSE (it.110). The belt is grown out of
+         * every tile that is not open ground - and a tile a PROP stands on is
+         * not open ground either, so the first build put a tree inside every
+         * tent and siege engine on the map. A tree with open field six tiles
+         * away on three sides is a tree in the middle of the battlefield.
+         */
+        {
+          const map = g.town.layout.map as { width: number; height: number; grid: Uint8Array };
+          const isOpen = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < map.width && y < map.height && map.grid[y * map.width + x] === 1;
+          const inside = props.filter((q) => ['tree', 'pine', 'bigtree'].includes(q.kind) && [[6, 0], [-6, 0], [0, 6], [0, -6]].filter(([dx, dy]) => isOpen(q.x + dx, q.y + dy)).length >= 3);
+          check('the wood is round the field, never in it', inside.length === 0, `${inside.length} trees inland`);
+        }
+        // THE ONE LOCKED GATE on this side of the water.
+        {
+          const city = g.town.interactables.find((i: { kind: string }) => i.kind === 'citygate');
+          check('the eastern road is barred, and says so by name', !!city && /BARRED/.test(city.label), city?.label);
+          check('and nothing walks through it', !g.scene.isWalkable(field.cityGate.x, field.cityGate.y));
+          check('the signpost back over the bridge stands at the landing', g.town.interactables.some((i: { kind: string }) => i.kind === 'fieldroad'));
+        }
+        /**
+         * THE ENGINES WORK (it.110). Composed out of pack pieces because no pack
+         * in the repository has a catapult in it. A stone takes a FRACTION of
+         * whatever it lands on, so this is measured against a body's own maximum
+         * rather than against a number that would go stale with the field level.
+         */
+        {
+          const engine = g.town.interactables.find((i: { kind: string }) => i.kind === 'catapult');
+          check('a working engine carries a prompt', !!engine, 'none');
+          if (engine) {
+            const foe = g.enemies.spawn('brigand', engine.x + 2.5, engine.y + 5.5, 5) as { id: number; hp: number; hpMax: number; pos: { x: number; y: number } };
+            const px = foe.pos.x;
+            const py = foe.pos.y;
+            const before = foe.hp;
+            warp(Math.round(engine.x) - 1, Math.round(engine.y) + 1);
+            g.loop.step(20);
+            g.queue.enqueue({ type: 'OPEN_CHEST', playerId: 0, chestId: engine.id });
+            // The stone is nearly a second in the air; the foe is pinned so the
+            // check measures the ENGINE and not the foe's footwork.
+            for (let i = 0; i < 60; i++) {
+              g.loop.step(2);
+              foe.pos.x = px;
+              foe.pos.y = py;
+              driveRender(40);
+            }
+            check('E works the engine and the stone lands on somebody', foe.hp < before, `${before} -> ${foe.hp} of ${foe.hpMax}`);
+            g.combat.dealDamage({ sourceId: g.player.id, targetId: foe.id, amount: 999999 });
+            g.loop.step(10);
+          }
+        }
+      }
+      // ---- THE MANOR ---------------------------------------------------
+      g = game();
+      await g.travel(108);
+      await until(() => game() && game().floor === 108, 15000);
+      g = game();
+      await fadeClear();
+      driveRender(200);
+      const manor = g.manor as { chief: { x: number; y: number }; bandits: Array<{ x: number; y: number }>; hatch: { x: number; y: number }; cleared: boolean } | null;
+      check('the house has a hall in it', !!manor && g.floor === 108, String(g.floor));
+      if (manor) {
+        let roster = 0;
+        let chief = 0;
+        g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
+          if (e.hp <= 0) return;
+          roster++;
+          if (e.def.kind === 'chief') chief++;
+        });
+        check('a company is holding a party in it', roster >= 10, `${roster} in the hall`);
+        check('and one of them is the chief', chief === 1 && !!g.boss, `${chief} chiefs`);
+        check('the trapdoor is nailed shut while they are up', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manorhatch')?.label ?? '').includes('NAILED'));
+        // THE WELCOME plays on the first tick, and it wakes the whole room.
+        driveRender(1200);
+        check('the chief has something to say about it', !!game()?.reclaim, 'no scene');
+        for (let i = 0; i < 14 && game()?.reclaim; i++) {
+          document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
+          document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
+          driveRender(700);
+        }
+        g = game();
+        let chasing = 0;
+        g.enemies.forEachActive((e: { hp: number; aiState: string }) => {
+          if (e.hp > 0 && e.aiState === 'chase') chasing++;
+        });
+        check('and when he finishes it, the whole hall comes at once', chasing >= 8, `${chasing} coming`);
+        // THE CLOSET. Put the room down and the man comes out of the panelling.
+        const ids: number[] = [];
+        g.enemies.forEachActive((e: { hp: number; id: number }) => {
+          if (e.hp > 0) ids.push(e.id);
+        });
+        for (const id of ids) g.combat.dealDamage({ sourceId: g.player.id, targetId: id, amount: 999999 });
+        driveRender(1600);
+        check('the merchant is behind the panelling, and comes out of it', !!game()?.reclaim, 'no rescue scene');
+        for (let i = 0; i < 16 && game()?.reclaim; i++) {
+          document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
+          document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
+          driveRender(700);
+        }
+        driveRender(1200);
+        await until(() => game()?.quests?.manor === 'done', 15000);
+        await fadeClear();
+        driveRender(300);
+        g = game();
+        check('rescuing him closes the errand', g.quests.manor === 'done' && g.quests.merchant === 'saved', `${g.quests.manor}/${g.quests.merchant}`);
+        check('and the hall is rebuilt quiet under the hero feet', !!g.manor?.cleared && g.floor === 108, `${g.manor?.cleared} on ${g.floor}`);
+        check('he is standing in front of the closet he was in', g.town.interactables.some((i: { kind: string }) => i.kind === 'merchantman'));
+        check('and the trapdoor is open at last', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manorhatch')?.label ?? '').includes('CELLAR'));
+      }
+      // ---- THE CELLAR UNDER IT -----------------------------------------
+      g = game();
+      await g.travel(109);
+      await until(() => game() && game().floor === 109, 15000);
+      g = game();
+      await fadeClear();
+      driveRender(200);
+      let below = 0;
+      g.enemies.forEachActive((e: { hp: number }) => {
+        if (e.hp > 0) below++;
+      });
+      check('the cellar under the hall is occupied', below >= 10, `${below} down there`);
+      check('and it is worth the walk', (g.town.layout.chests ?? []).length >= 4, `${(g.town.layout.chests ?? []).length} strongboxes`);
+      check('with a stair back up into the hall', g.town.interactables.some((i: { kind: string }) => i.kind === 'vaultup'));
+      // Home, so whatever runs next starts where it expects to.
+      g = game();
+      await g.travel(0);
+      await until(() => game() && game().floor === 0, 15000);
+      g = game();
+      await fadeClear();
     }
 
     // ---- the device matrix in this state ------------------------------------------------

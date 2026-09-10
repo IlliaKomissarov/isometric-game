@@ -184,13 +184,37 @@ export type TownPropKind =
   | 'fishspot'
   /** The signpost back through the river gate to the quarter. */
   | 'riverroad'
-  /** The burned bridge north-east, and the pass that opens it. */
+  /** THE RIVER BRIDGE up-river (it.110), and the pass the watch on it wants. */
   | 'bridgegate'
   /** Oscar, and the two of his family the bandits had cornered. */
   | 'oscar'
   | 'oscarkin'
   /** An angler of the riverside, sat at the bank with a line out. */
-  | 'angler';
+  | 'angler'
+  // ---- ACROSS THE RIVER (it.110) ----
+  /** One plank-and-stone bay of THE RIVER BRIDGE, laid over the water. */
+  | 'bridgedeck'
+  /** A pier post standing out of the river under the span. */
+  | 'bridgepost'
+  /** The signpost on the far bank: back over the water to the farm. */
+  | 'fieldroad'
+  /** A siege engine: `catapult` still throws, `wreck` never will again. */
+  | 'siege'
+  /** A pavilion of the war camp, and the fires it was pitched around. */
+  | 'tent'
+  | 'firepit'
+  | 'tripod'
+  /** The manor on the battlefield: the house, its door, and the way back out. */
+  | 'manor'
+  | 'manordoor'
+  | 'manorout'
+  /** The cellar hatch in the manor's floor, and the stair back up out of it. */
+  | 'manorhatch'
+  | 'vaultup'
+  /** The barricaded road east: the city that is not built yet. */
+  | 'citygate'
+  /** The merchant the bandits were holding, once he is out of the closet. */
+  | 'merchantman';
 
 /** THE FARMLANDS (it.100): what main needs of the fields. */
 export interface FarmLayout {
@@ -236,10 +260,80 @@ export interface RiverLayout {
   anglers: Array<{ x: number; y: number; toX: number; toY: number }>;
   /** Every water tile on the map, for the ripple pass and the ambience. */
   water: Array<{ x: number; y: number }>;
-  /** The burned bridge out of the north-east, and whether the pass opens it. */
+  /**
+   * THE RIVER BRIDGE (it.110). The tile the hero is stopped on: the last of the
+   * near bank, under the gate arch, with the span running away over the water
+   * from it. Up to it.109 this was the BURNED bridge and it went nowhere.
+   */
   bridge: { x: number; y: number };
+  /** Every bay of the span, near bank to far, for the dressing to lay. */
+  span: Array<{ x: number; y: number }>;
+  /** Where the two knights of the watch stand, keeping it. */
+  knights: Array<{ x: number; y: number }>;
   /** True once the three are down: the farm is a haven. */
   safe: boolean;
+}
+
+/**
+ * THE BATTLEFIELD (it.110): what main needs of the ground across the river.
+ *
+ * There is no state to it - nothing here is ever "won". It is a field a battle
+ * was fought over a week ago and left on, and what the hero does here is cross
+ * it, work the engines that are still standing, and go into the house.
+ */
+export interface FieldLayout {
+  /** The bridge road, where the hero is set down coming over the water. */
+  entry: { x: number; y: number };
+  /** The signpost beside it: back across to the farm. */
+  home: { x: number; y: number };
+  /** The manor's door, and the yard before it the cutscene is framed on. */
+  manorDoor: { x: number; y: number };
+  manorYard: { x: number; y: number };
+  /** Every engine that still throws, and the direction it is laid on. */
+  catapults: Array<{ x: number; y: number; dx: number; dy: number }>;
+  /** The barricaded road east, and its name. */
+  cityGate: { x: number; y: number; label: string };
+  /** Where the scavengers are working over the dead. */
+  looterPosts: Array<{ x: number; y: number; kind: 'bandit' | 'brigand' }>;
+}
+
+/**
+ * THE MANOR (it.110): the hall inside the estate on the battlefield, and the
+ * company holding a party in it.
+ *
+ *   HELD     the chief is at the head of the long table with his men round it,
+ *            and there is a merchant shut in the closet behind him.
+ *   CLEARED  the hall is quiet, the merchant is gone downriver, and the hatch
+ *            in the floor is open.
+ */
+export interface ManorLayout {
+  /** The door back out onto the field. */
+  out: { x: number; y: number };
+  /** Where the chief stands, and the men round the tables. */
+  chief: { x: number; y: number };
+  bandits: Array<{ x: number; y: number }>;
+  /** The closet door, and the tile the merchant stands on once he is out. */
+  closet: { x: number; y: number };
+  merchant: { x: number; y: number };
+  /** The cellar hatch in the floor. */
+  hatch: { x: number; y: number };
+  hall: Room;
+  cleared: boolean;
+}
+
+/** THE MANOR'S CELLAR (it.110): what main needs of the dark under the hall. */
+export interface VaultLayout {
+  /** The stair back up into the hall. */
+  up: { x: number; y: number };
+  /**
+   * WHAT IS DOWN THERE, BY POST (it.110). Placed rather than rolled, for the
+   * same reason the battlefield's scavengers are: `spawnFloorEnemies` reads the
+   * level it is handed AS A DEPTH, and a vault pitched at level 5 came out as a
+   * BOSS FLOOR - which means deliberately thin packs, and five monsters in a
+   * cellar that wanted fifteen. These are spread through the three chambers,
+   * away from the stair, so the dark is occupied wherever the hero walks.
+   */
+  posts: Array<{ x: number; y: number }>;
 }
 
 /** THE CELLAR (it.97): what main needs of the floor under the taproom. */
@@ -306,6 +400,8 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   // WALK THROUGH (it.93): everything knee-high or broken is paint underfoot - a heap, a stub of wall, a boulder, a bench, a keg, a chair, a candle stand.
   'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
   'inndeco', 'innrug', 'sconce', 'innwall',
+  // ACROSS THE RIVER (it.110): a camp fire, a cauldron and a bridge bay are all paint underfoot.
+  'firepit', 'tripod', 'bridgedeck',
   // THE CELLAR (it.97): both doorways are drawn into a wall run, so the tile under them stays open.
   'cellardoor', 'cellarup',
   // THE FARMLANDS (it.100): a field you cannot walk into is not a field, and the
@@ -339,6 +435,12 @@ export interface TownProp {
   oy?: number;
   /** Screen pixels a wall-hung piece rides above the floor (it.96: paintings, posters). */
   lift?: number;
+  /**
+   * WHICH WAY A PIECE IS LAID (it.110). A direction in TILES, not a nudge: the
+   * battlefield's siege engines are aimed at the house they were battering, and
+   * the dresser turns this into the screen angle the throwing arm rests at.
+   */
+  aim?: { x: number; y: number };
 }
 
 export interface TownLayout {
@@ -400,6 +502,10 @@ export interface TownLayout {
   farm?: FarmLayout;
   /** THE RIVERSIDE FARM (it.106): the water meadow past the river gate only. */
   river?: RiverLayout;
+  /** ACROSS THE RIVER (it.110): the battlefield, the manor's hall, its cellar. */
+  field?: FieldLayout;
+  manor?: ManorLayout;
+  vault?: VaultLayout;
   /** LOOTABLE CHESTS (it.92): where the district's small chests stand (the `chest` props' tiles). */
   chests?: Array<{ x: number; y: number }>;
 }
@@ -1016,7 +1122,7 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
     // THE RIVER GATE (it.91, opened it.106). Chained shut until the fields are
     // the city's; after that the chain comes off and the water meadow behind it
     // is a road like any other. The note is what a hero is told before then.
-    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut. The bridge beyond it burned.', dest: opts.riverOpen ? 'river' : undefined },
+    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut. There is a farm on the water past it, and a bridge past that.', dest: opts.riverOpen ? 'river' : undefined },
     { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: 'The south fields are empty. The way is not open yet.' },
     { x: 105, y: 13, label: 'THE HILL ROAD', note: 'The hill road climbs out of the quarter. Not open yet.' },
   ];

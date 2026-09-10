@@ -76,12 +76,15 @@ import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
-import { buildTownLayout, KIND_WATER, LOOTER_COUNT, type EastState, type RiverLayout, type TownLayout } from '@/town/TownMap';
+import { buildTownLayout, KIND_WATER, LOOTER_COUNT, type EastState, type FieldLayout, type ManorLayout, type RiverLayout, type TownLayout } from '@/town/TownMap';
 import { GateFx, ProcessionScene, type SpeechBeat } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
 import { buildCellarLayout } from '@/scenes/Cellar';
 import { buildFarmLayout } from '@/scenes/Farmlands';
 import { buildRiversideLayout } from '@/scenes/Riverside';
+// ACROSS THE RIVER (it.110): the battlefield, the manor's hall, and its cellar.
+import { buildFieldLayout } from '@/scenes/Battlefield';
+import { buildManorLayout, buildVaultLayout } from '@/scenes/Manor';
 import { RiverWater } from '@/render/RiverWater';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
 import { buildForestLayout, bareLayout } from '@/scenes/Forest';
@@ -200,6 +203,8 @@ interface World {
     /** Render-frame dressing update (gate fog) + teardown. */
     update: (dt: number) => void;
     destroyDressing: () => void;
+    /** THE SIEGE ENGINES (it.110): wind one back and let it go at a tile. */
+    fireSiege: TownDressing['fireSiege'];
   } | null;
   /** Roster spawn indexes killed on this floor (FloorMemory). */
   killed: Set<number>;
@@ -219,9 +224,14 @@ interface World {
   /** THE RIVERSIDE FARM (it.106): the water's own animation pass, and the layout. */
   water: RiverWater | null;
   riverside: RiverLayout | null;
+  /** ACROSS THE RIVER (it.110): the battlefield's furniture, and the manor hall's. */
+  field: FieldLayout | null;
+  manor: ManorLayout | null;
+  /** THE BANDIT CHIEF (it.110), while he is on his feet. */
+  chief: Enemy | null;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm' | 'river';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm' | 'river' | 'field' | 'manor' | 'vault';
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
 const MINES_FLOOR = 102;
@@ -248,6 +258,29 @@ const RIVER_FLOOR = 106;
  */
 const RIVER_AMBUSH: EnemyKind[] = ['brigand', 'bandit', 'brigand'];
 /**
+ * ACROSS THE RIVER (it.110). Three floors past the riverside, reached in order
+ * and only in order: the bridge lets you onto the BATTLEFIELD, the battlefield's
+ * house lets you into the MANOR, and the manor's floor lets you into its VAULT.
+ */
+const FIELD_FLOOR = 107;
+const MANOR_FLOOR = 108;
+const VAULT_FLOOR = 109;
+/**
+ * The deepest the ground across the river may ever be pitched at. It is the
+ * step past the farmlands' own cap (it.105) for the same reason that one exists:
+ * this is still a road, not a raid, and a hero who arrives here at level thirty
+ * should find it a fair fight rather than a wall.
+ */
+const FIELD_MAX_LEVEL = 12;
+/**
+ * THE SCAVENGERS (it.110). Not a garrison: men who came for the pockets. They
+ * stand on posts the layout picked, the way the eastern quarter's looters do,
+ * so the field is the same field on every peer without a spawner in it.
+ */
+const FIELD_POOL: EnemyKind[] = ['bandit', 'brigand', 'poacher'];
+/** THE MANOR'S CELLAR (it.110): what has moved in under a house whose people ran. */
+const VAULT_POOL: EnemyKind[] = ['spider', 'spider', 'zombie', 'zombie', 'ahoul', 'shambler', 'skeleton', 'graveGuard'];
+/**
  * THE CUTAWAY'S REACH (it.107): how far from the camera, in tiles (Manhattan),
  * a body may be and still ghost the roof in front of it. Wide enough to cover
  * the viewport at the widest zoom, narrow enough that the far side of a floor
@@ -272,7 +305,7 @@ const CELLAR_POOL: EnemyKind[] = ['spider', 'spider', 'spider', 'zombie', 'zombi
 /** THE FARMLANDS (it.100): a company that took the fields - men under arms, nothing else. */
 const FARM_POOL: EnemyKind[] = ['mercenary', 'mercenary', 'mercenary', 'brigand', 'bandit', 'poacher'];
 /** The mode a floor number stands for (the arena is decided by the caller). */
-const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : f === RIVER_FLOOR ? 'river' : 'normal');
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : f === RIVER_FLOOR ? 'river' : f === FIELD_FLOOR ? 'field' : f === MANOR_FLOOR ? 'manor' : f === VAULT_FLOOR ? 'vault' : 'normal');
 
 /** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
 interface MinesState {
@@ -1735,7 +1768,7 @@ async function boot(): Promise<void> {
     const updateOrb = (): void => statusFrame.update();
     const updateDepth = (): void => {
       // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
-      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : floor === FARM_FLOOR ? 'THE FARMLANDS' : floor === RIVER_FLOOR ? 'THE RIVERSIDE FARM' : null;
+      const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : floor === FARM_FLOOR ? 'THE FARMLANDS' : floor === RIVER_FLOOR ? 'THE RIVERSIDE FARM' : floor === FIELD_FLOOR ? 'THE BATTLEFIELD' : floor === MANOR_FLOOR ? 'THE MANOR' : floor === VAULT_FLOOR ? 'THE MANOR CELLAR' : null;
       if (depthLabel) depthLabel.textContent = place ?? (floor === 0 ? 'THE TOWN' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor}`);
       setZoneLabel(place ?? (floor === 0 ? 'THE OLD QUARTER' : floor < 0 ? 'THE COLISEUM' : `DEPTH ${ROMAN[floor - 1] ?? floor} · THE CRYPT`));
       document.body.classList.toggle('in-town', floor === 0); // Deep edge shadow in town (it.57).
@@ -1808,7 +1841,13 @@ async function boot(): Promise<void> {
       const isCellar = mode === 'cellar';
       const isFarm = mode === 'farm';
       const isRiver = mode === 'river'; // THE RIVERSIDE FARM (it.106).
-      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : isFarm ? (baseSeed ^ 0xfa27) >>> 0 : isRiver ? (baseSeed ^ 0x21ce2) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
+      // ACROSS THE RIVER (it.110): the battlefield, the manor's hall, its cellar.
+      const isField = mode === 'field';
+      const isManor = mode === 'manor';
+      const isVault = mode === 'vault';
+      /** True on every floor that is a PLACE rather than a depth of the crypt. */
+      const isPlace = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver || isField || isManor || isVault;
+      const seed = isHub ? (baseSeed ^ 0x70a1) >>> 0 : isColiseum ? (baseSeed ^ 0xc0115e) >>> 0 : isForest ? (baseSeed ^ 0xf0e57) >>> 0 : isMines ? (baseSeed ^ 0x3a1e5) >>> 0 : isInn ? (baseSeed ^ 0x1a5) >>> 0 : isCellar ? (baseSeed ^ 0xce11a5) >>> 0 : isFarm ? (baseSeed ^ 0xfa27) >>> 0 : isRiver ? (baseSeed ^ 0x21ce2) >>> 0 : isField ? (baseSeed ^ 0xba771e) >>> 0 : isManor ? (baseSeed ^ 0x3a0110) >>> 0 : isVault ? (baseSeed ^ 0x7a0175) >>> 0 : ((baseSeed + floorNum * 7919) ^ (isArena ? 0xa11e4a : 0)) >>> 0;
       state.dungeonSeed = seed;
       // The forest and the quarry fight at the hero's own depth (it.85): a step past the deepest floor reached.
       const forestLevel = Math.max(2, Math.min(MAX_DEPTH, deepestFloor + 1));
@@ -1852,7 +1891,18 @@ async function boot(): Promise<void> {
       // farmlands' officer sends you through, so it is pitched at the same
       // measure - and capped the same way, for the same reason.
       const riverLevel = farmLevel;
-      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : isRiver ? riverLevel : floorNum;
+      /**
+       * ACROSS THE RIVER (it.110). The battlefield is the step past the farm, and
+       * the manor's cellar is the step past THAT - the deepest ground on this
+       * side of the map, which is what makes its four strongboxes worth the walk.
+       * All of it climbs off the same measure the fields use (the higher of the
+       * depth reached and half the party's level) and stops at the same kind of
+       * cap, for the reason it.105 wrote down: an errand may rise to meet a hero
+       * who came late, but it may never turn into a deep raid.
+       */
+      const fieldLevel = Math.max(3, Math.min(FIELD_MAX_LEVEL, Math.max(deepestFloor + 2, Math.round(partyLevel * 0.5) + 1)));
+      const vaultLevel = Math.min(FIELD_MAX_LEVEL + 2, fieldLevel + 2);
+      const floorLevel = isForest ? forestLevel : isMines || isMinesArena ? minesLevel : isCellar ? cellarLevel : isFarm ? farmLevel : isRiver ? riverLevel : isField || isManor ? fieldLevel : isVault ? vaultLevel : floorNum;
       const forestSafe = quests.forest === 'done';
       const forest = isForest ? buildForestLayout(seed, forestSafe) : null;
       // THE GILDED STAG (it.96/97): the room opens once the errand is paid; the
@@ -1866,8 +1916,13 @@ async function boot(): Promise<void> {
       // THE RIVERSIDE FARM (it.106): safe once the three are down, and it stays so.
       const riverSafe = quests.river === 'done';
       const riverside = isRiver ? buildRiversideLayout(seed, riverSafe) : null;
-      const layout = isHub ? buildTownLayout({ east: eastStateOf(), farmOpen: quests.farm === 'active' || quests.farm === 'done', riverOpen: quests.farm === 'done' }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : farm ? farm.layout : riverside ? riverside.layout : null;
-      const memory: FloorMemory | undefined = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver ? undefined : floors[memKey(floorNum, isArena)];
+      // ACROSS THE RIVER (it.110): the field has no state; the hall has two.
+      const manorCleared = quests.manor === 'done';
+      const fieldBuilt = isField ? buildFieldLayout(seed) : null;
+      const manorBuilt = isManor ? buildManorLayout(seed, manorCleared) : null;
+      const vaultBuilt = isVault ? buildVaultLayout(seed) : null;
+      const layout = isHub ? buildTownLayout({ east: eastStateOf(), farmOpen: quests.farm === 'active' || quests.farm === 'done', riverOpen: quests.farm === 'done' }) : forest ? forest.layout : inn ? inn.layout : cellar ? cellar.layout : farm ? farm.layout : riverside ? riverside.layout : fieldBuilt ? fieldBuilt.layout : manorBuilt ? manorBuilt.layout : vaultBuilt ? vaultBuilt.layout : null;
+      const memory: FloorMemory | undefined = isPlace ? undefined : floors[memKey(floorNum, isArena)];
       // STRUCTURAL REVERT (it.15, user-directed): every depth uses the same
       // clean layout rules as floors 1–2 — depth identity comes from the
       // palette/tileset bands and prop dressing, not from layout gimmicks.
@@ -1877,8 +1932,8 @@ async function boot(): Promise<void> {
       // Solid hearth props claim their tiles BEFORE anything reads the grid —
       // collision, pathing, rendering and prop placement all agree (it.16).
       let hearths: Array<{ x: number; y: number }>;
-      if (isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver) {
-        hearths = []; // The town, the coliseum, the forest, the inn, its cellar and the fields light themselves.
+      if (isPlace) {
+        hearths = []; // Every place past the gate lights itself; only the crypt takes braziers.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const mx = room.x + Math.floor(room.w / 2);
@@ -1926,7 +1981,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : isField ? { sightRadius: 26, fullRadius: 13, exploredLight: 0.26 } : isManor ? { sightRadius: 40, fullRadius: 26 } : isVault ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97). The battlefield is a night field: wide sight, a short torch (it.110).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53; restored it.109).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -1942,6 +1997,12 @@ async function boot(): Promise<void> {
           ? 'town'
         : isRiver
           ? 'town'
+        : isField
+          ? 'town'
+        : isManor
+          ? 'inn'
+        : isVault
+          ? 'cellar'
         : isMines || isMinesArena
           ? 'stone'
         : floorNum <= 2
@@ -1979,6 +2040,17 @@ async function boot(): Promise<void> {
         // THE RIVERSIDE (it.106): the ambush has drums; a farm that is safe has
         // the town's tune - and under either of them, the river itself.
         audio.setMusic(quests.river === 'done' ? 'town' : 'battle', floorNum);
+      } else if (isField) {
+        // THE BATTLEFIELD (it.110): the drums do not stop out here. Nothing on
+        // this ground is settled, and the one place that sounds like shelter is
+        // the house, which is the last place it is.
+        audio.setMusic('battle', floorNum);
+      } else if (isManor) {
+        // THE HALL (it.110): a party until it is not - the town's tune while the
+        // chief is holding court, the crypt's once the hall is quiet.
+        audio.setMusic(manorCleared ? 'town' : 'battle', floorNum);
+      } else if (isVault) {
+        audio.setMusic('mines', floorNum); // Under the boards the tune goes cold (it.97).
       } else if (isCellar) {
         audio.setMusic('mines', floorNum); // Under the boards the tune goes cold (it.97).
       } else if (isMines) {
@@ -2015,8 +2087,11 @@ async function boot(): Promise<void> {
       // first frame; the torch's own radius still says what is LIT, so the dark
       // still matters - it is only the shape of the land that is known. The crypt
       // keeps its fog: that is the crypt's whole point (it.109).
-      if (isFarm || isRiver) lighting.revealAll();
-      const goldPiles = isHub || isColiseum || isForest || isInn || isCellar || isFarm || isRiver ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
+      // THE BATTLEFIELD IS OPEN COUNTRY TOO (it.110): its shape is known from the
+      // first frame, and only the torch's own reach says what is LIT - which on a
+      // field of corpses at night is most of the point.
+      if (isFarm || isRiver || isField) lighting.revealAll();
+      const goldPiles = isPlace ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
         for (const i of memory.takenGold) {
@@ -2086,7 +2161,7 @@ async function boot(): Promise<void> {
           viewport,
           lighting,
           layout
-            ? { at: isForest || isInn || isCellar || isFarm ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
+            ? { at: isForest || isInn || isCellar || isFarm || isField || isManor || isVault ? { x: 1, y: 1 } : layout.gate, hidden: true } // The dungeon gate: the archway IS the model — no stair sprite in the opening (it.47).
             : isMines
               ? { hidden: true, at: { x: 1, y: 1 } } // The quarry has no stair (a wall tile no one can touch): the way home is the teleporter after the hall (it.85).
             : isArena
@@ -2100,7 +2175,7 @@ async function boot(): Promise<void> {
       const loot = new LootSystem(viewport, seed);
       loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isHub && !isColiseum && !isForest && !isInn && !isCellar && !isFarm && !isRiver) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      if (!isArena && !isPlace) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
       // LOOTABLE CHESTS (it.92): the districts' small chests, on the layout's spots, the opened ones remembered by the save.
       if (layout?.chests) for (const c of layout.chests) if (!townChestOpened(floorNum, c.x, c.y)) chests.spawnAt(c.x, c.y, false, true);
       // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
@@ -2319,8 +2394,11 @@ async function boot(): Promise<void> {
       let generalBody: Enemy | null = null;
       const killed = new Set<number>(memory?.killedSpawns ?? []);
       const arenaAlreadyCleared = isArena && !!memory?.arenaCleared;
-      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done') || (isFarm && farmWon) || isRiver) {
-        // No enemies in town; a cleared arena stays empty with its stair open; a cleared forest is a safe road (it.87).
+      if (isHub || isColiseum || isInn || arenaAlreadyCleared || (isForest && forestSafe) || (isCellar && quests.cellar === 'done') || (isFarm && farmWon) || isRiver || isField || isManor || isVault) {
+        // No enemies in town; a cleared arena stays empty with its stair open; a
+        // cleared forest is a safe road (it.87). THE BATTLEFIELD AND THE MANOR
+        // (it.110) take this branch too and then place their own by hand below:
+        // both are hand-composed rooms, not floors of rolled packs.
       } else if (isArena) {
         const room = dungeon.rooms[0];
         const cx = room.x + Math.floor(room.w * 0.68) + 0.5;
@@ -2374,6 +2452,44 @@ async function boot(): Promise<void> {
           enemies.spawn(RIVER_AMBUSH[i % RIVER_AMBUSH.length], spot.x + 0.5, spot.y + 0.5, floorLevel);
         }
       }
+      /**
+       * THE SCAVENGERS (it.110). The battlefield's own, on the posts the layout
+       * chose - never rolled, so the field is the same field on every peer and
+       * after every reload. Two of them wear an affix: somebody out here has been
+       * doing well out of it.
+       */
+      let chiefBody: Enemy | null = null;
+      if (isField && fieldBuilt) {
+        for (const [i, post] of fieldBuilt.field.looterPosts.entries()) {
+          const e = enemies.spawn(post.kind === 'brigand' ? 'brigand' : FIELD_POOL[i % FIELD_POOL.length], post.x + 0.5, post.y + 0.5, floorLevel);
+          if (i === 4 || i === 11) e.setAffix(AFFIXES[i % AFFIXES.length]);
+        }
+      }
+      /**
+       * WHAT IS UNDER THE HALL (it.110), on the posts the layout chose. Placed
+       * rather than rolled: the spawner reads the level it is handed as a DEPTH,
+       * and a cellar pitched at level 5 came out as a boss floor - which is
+       * deliberately thin - so the dark below the manor had five things in it.
+       */
+      if (isVault && vaultBuilt) {
+        for (const [i, post] of vaultBuilt.vault.posts.entries()) {
+          const e = enemies.spawn(VAULT_POOL[(i * 3 + 1) % VAULT_POOL.length], post.x + 0.5, post.y + 0.5, floorLevel);
+          if (i === 6 || i === 13) e.setAffix(AFFIXES[i % AFFIXES.length]);
+        }
+      }
+      /**
+       * THE COMPANY IN THE HALL (it.110). Twelve of them round the tables and the
+       * chief at the head of the high one. He takes the wardens' own health bar,
+       * the way the field general does, so a mini-boss reads as one.
+       */
+      if (isManor && manorBuilt && !manorCleared) {
+        for (const [i, spot] of manorBuilt.manor.bandits.entries()) {
+          const e = enemies.spawn(i % 3 === 0 ? 'brigand' : i % 3 === 1 ? 'bandit' : 'mercenary', spot.x + 0.5, spot.y + 0.5, floorLevel);
+          if (i === 5) e.setAffix(AFFIXES[1 % AFFIXES.length]);
+        }
+        chiefBody = enemies.spawn('chief', manorBuilt.manor.chief.x + 0.5, manorBuilt.manor.chief.y + 0.5, floorLevel);
+        boss = chiefBody;
+      }
       // ENEMIES REMAINING (it.88): what the floor woke with.
       let foesAtStart = 0;
       enemies.forEachActive((e) => {
@@ -2416,12 +2532,17 @@ async function boot(): Promise<void> {
             // THE RIVERSIDE (it.106): nobody wanders while the three are in the
             // yard - Oscar and his two are placed by the layout, and a farm with
             // people strolling through an ambush reads as a farm with no ambush.
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, [], null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: STREET_FOLK })
+            // THE WATCH ON THE BRIDGE (it.110) are this floor's SENTRIES, and are
+            // stood up whichever state the farm is in: the crossing is the city's.
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, layout.guards, null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: STREET_FOLK })
+          : isField || isManor || isVault
+            // ACROSS THE RIVER (it.110): nobody lives on any of these three.
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isInn
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
             : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
-        const villagers2 = isForest || isInn || isCellar || isFarm || isRiver
+        const villagers2 = isForest || isInn || isCellar || isFarm || isRiver || isField || isManor || isVault
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
           : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
@@ -2458,6 +2579,7 @@ async function boot(): Promise<void> {
           campHeroes,
           update: dressing.update,
           destroyDressing: dressing.destroy,
+          fireSiege: dressing.fireSiege,
         };
       }
 
@@ -2512,6 +2634,13 @@ async function boot(): Promise<void> {
         }
         ambience.setSmoke(false);
       }
+      /**
+       * ACROSS THE RIVER (it.110). The battlefield takes the crypt's drifting
+       * mist, which out here reads as the smoke still coming off a week-old
+       * field; the hall and the cellar want none of it.
+       */
+      if (isField) ambience.setSmoke(true);
+      if (isManor || isVault) ambience.setSmoke(false);
       // THE CITY'S OWN (it.100): the guards and their officer form up on the muster
       // ground. Only while the field is contested - once it is won they have gone home.
       if (isFarm && farm) {
@@ -2794,6 +2923,9 @@ async function boot(): Promise<void> {
         farmGeneral: generalBody,
         water,
         riverside: riverside?.river ?? null,
+        field: fieldBuilt?.field ?? null,
+        manor: manorBuilt?.manor ?? null,
+        chief: chiefBody,
       };
     };
 
@@ -3909,7 +4041,7 @@ async function boot(): Promise<void> {
           // the treasure erupt — a clear, earned pause before the reward.
           // Tick-clocked (it.59): loot is sim state, so the beat counts ticks.
           bossLoot = { x: bx, y: by, ticks: 198, world: w };
-          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : floor === FARM_FLOOR ? 'THE GENERAL FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88); the company's general (it.101).
+          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : floor === FARM_FLOOR ? 'THE GENERAL FALLS' : floor === MANOR_FLOOR ? 'THE CHIEF FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88); the company's general (it.101); the manor's chief (it.110).
           bossNote?.classList.add('show');
           later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
@@ -5375,7 +5507,7 @@ async function boot(): Promise<void> {
           { t: 1.0, x: o.x, y: o.y, text: 'You came through that gate at the right hour. An hour later and there would have been nothing here worth thanking you for.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait() },
           { t: 3.2, x: r.kin[0] ? r.kin[0].x : o.x, y: r.kin[0] ? r.kin[0].y : o.y, text: 'He would not give them the boat. He would not give them anything.', speaker: 'OSCAR’S WIFE', role: 'at the barn wall', portrait: faceOf('cit_goodwife_walk', 0xd8c8e0, 2) },
           { t: 5.2, x: o.x, y: o.y, text: 'Take this. My grandfather carried the river trade under the old charter, and the seal is still good — the watch on the far bank will honour it.', crit: true, speaker: 'OSCAR', role: 'putting the seal in your hand', portrait: oscarPortrait() },
-          { t: 7.4, x: o.x, y: o.y, text: 'The bridge is burned through, so it buys you nothing today. But it will. And there is a bed and a fire here for you whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4 },
+          { t: 7.4, x: o.x, y: o.y, text: 'Show it to the watch on the span up the track and they will let you over. What is on the far side is not my business, and I would not go looking. And there is a bed and a fire here for you whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4 },
         ],
         hold: 5,
         ...cineFocusHooks,
@@ -5544,6 +5676,477 @@ async function boot(): Promise<void> {
         world.ambience.burst(mark.toX + 0.5, mark.toY + 0.5, 0xbfe4f0, 14);
         audio.sfx('gateOpen');
       }
+    };
+
+    // ================= ACROSS THE RIVER (it.110) ==========================
+    /**
+     * THE ROAD ON. Oscar's seal is a pass through the watch on the river bridge,
+     * and past the watch there is a battlefield, a house on it, and a cellar
+     * under the house. Four things carry the ledger:
+     *
+     *   `quests.riverPass`  'held' once Oscar has put the seal in your hand.
+     *   `quests.manor`      'new' -> 'heard' (the noise from inside the house)
+     *                       -> 'held' (walked in and woken) -> 'done'.
+     *   `quests.merchant`   'saved' once the man is out of the closet.
+     *   `quests.east`, ...  unchanged; the eastern road past the field is barred,
+     *                       and stays barred until there is a city behind it.
+     *
+     * Nothing here is offered in a town: walking through a gate IS taking it,
+     * the way the riverside is, because the story that explains each place is
+     * told by the place before it.
+     */
+    let manorIntroShown = false;
+    let manorWonTicks = -1;
+    let fieldNoiseShown = false;
+
+    /** THE WATCH: the city's own mail in the paler dye its officers wear. */
+    const knightPortrait = (): HTMLCanvasElement | null => faceOf('guard_idle', 0xdfe6f2) ?? keeperPortrait();
+    /** THE BANDIT CHIEF: the company's captain rig in his own darker leather. */
+    const chiefPortrait = (): HTMLCanvasElement | null => faceOf('captain_idle', 0x9a7268, 0);
+    /** THE MAN IN THE CLOSET. */
+    const merchantPortrait = (): HTMLCanvasElement | null => faceOf('merchant_walk', 0xe8d4b0, 2);
+
+    /**
+     * A TRAVEL THAT CHOOSES ITS OWN LANDING (it.110). `goPlace` always sets the
+     * party down on the floor's `spawn`, which is right coming IN by the front
+     * door and wrong every other time - a hero who walks back over the bridge
+     * should arrive at the bridge, not at the river gate a map away. `where` is
+     * evaluated AFTER the world is built, so it can read the new floor's layout.
+     */
+    const goPlaceAt = (dest: number, label: string, where: () => { x: number; y: number } | null): void =>
+      withFade(async () => {
+        const mode = modeFor(dest);
+        await preloadFloor(dest, mode);
+        captureFloor();
+        if (!swapWorld(() => buildWorld(dest, mode))) return;
+        floor = dest;
+        updateDepth();
+        floorStartTick = state.tick;
+        floorActiveTicks = 0;
+        player.action = 'idle';
+        const at = where();
+        if (at) placeParty(at.x, at.y, world.scene.isWalkable);
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        updateOrb();
+      }, label);
+
+    /** Over the span, onto the ground the battle was fought on. */
+    const goField = (): void => {
+      manorIntroShown = false;
+      fieldNoiseShown = false;
+      goPlaceAt(FIELD_FLOOR, 'over the river bridge', () => null);
+    };
+    /** Back over it: the hero arrives at the bridge, not at the gate home. */
+    const goRiverBridge = (): void =>
+      goPlaceAt(RIVER_FLOOR, 'back over the bridge', () => {
+        const b = world.riverside?.bridge;
+        return b ? { x: b.x - 1.5, y: b.y + 0.5 } : null;
+      });
+    /** In at the manor's door, and back out onto its step. */
+    const goManor = (): void => {
+      manorIntroShown = false;
+      goPlaceAt(MANOR_FLOOR, 'into the manor', () => null);
+    };
+    const leaveManor = (): void =>
+      goPlaceAt(FIELD_FLOOR, 'out onto the field', () => {
+        const d = world.field?.manorDoor;
+        return d ? { x: d.x + 0.5, y: d.y + 1.5 } : null;
+      });
+    /** Down the hatch, and back up it. */
+    const goVault = (): void => goPlaceAt(VAULT_FLOOR, 'down into the cellar', () => null);
+    const leaveVault = (): void =>
+      goPlaceAt(MANOR_FLOOR, 'up into the hall', () => {
+        const h = world.manor?.hatch;
+        return h ? { x: h.x + 0.5, y: h.y + 1.5 } : null;
+      });
+
+    /**
+     * THE WATCH ON THE BRIDGE (it.110). Two knights of the city hold the near end
+     * of the span, and what they want is the thing Oscar put in the hero's hand
+     * when the three were down. Without it there is a polite refusal and a
+     * reason; with it, the seal is read, the gate is opened, and the hero is told
+     * plainly what is on the other side before they walk into it.
+     */
+    const bridgeTalk = async (): Promise<void> => {
+      const who = { speaker: 'A KNIGHT OF THE WATCH', role: 'at the river bridge', portrait: knightPortrait() };
+      if (quests.riverPass !== 'held') {
+        await dialogue.open({
+          ...who,
+          lines: [
+            'Far enough. The span is the city\u2019s and the far bank is under the city\u2019s law, and neither of them is open to whoever walks up.',
+            'We are not being difficult. There was a battle over that ground a week ago and the losers are still on it. Nobody crosses without leave in writing.',
+            'Find someone on this bank with a charter and a seal. There is a family up the track who have had one since their grandfather ran the river trade.',
+          ],
+          choices: [{ label: 'I WILL FIND ONE', value: 'ok' }],
+        });
+        return;
+      }
+      const v = await dialogue.open({
+        ...who,
+        lines: [
+          'Far enough. Nobody crosses the span without leave in writing.',
+          'Unless you have some. Have you?',
+        ],
+        choices: [
+          { label: 'SHOW OSCAR\u2019S SEALED PASS', value: 'seal' },
+          { label: 'NOT YET', value: 'no' },
+        ],
+      });
+      if (v !== 'seal') return;
+      audio.sfx('gateIron');
+      await dialogue.open({
+        ...who,
+        role: 'reading the seal',
+        lines: [
+          'That is the river charter, and that is the old seal on it. I have not seen one of these since I was a boy.',
+          'It is good. It is good anywhere the city\u2019s writ runs, which as of this month is as far as the bridge and not one step further.',
+          'So: understand what you are walking onto. That is a battlefield, and it is a week old. There are men out there going through the pockets, and there is a house in the middle of it with its windows lit that nobody in this watch can explain.',
+          'The road east past it is barred - the city on the far side has its grate down and is not opening it for anyone. Go and come back. And keep your hand where I can see it on the way through.',
+        ],
+        choices: [{ label: 'OPEN THE GATE', value: 'ok' }],
+      });
+      audio.sfx('gateOpen');
+      goField();
+    };
+
+    /**
+     * WHAT THE HOUSE SOUNDS LIKE (it.110). The first thing the battlefield does
+     * when the hero gets near the manor: the camera leaves them for the shuttered
+     * windows and the field goes quiet enough to hear what is behind them. There
+     * is no cast in this scene and nobody says anything TO the hero - the beats
+     * are the noise itself, unattributed, so none of them waits for a keypress
+     * and the whole thing plays through and hands the field back.
+     */
+    const startManorNoise = (): void => {
+      const f = world.field;
+      if (reclaim || !f) return;
+      const at = { x: f.manorDoor.x, y: f.manorDoor.y - 1 };
+      lightTheWayIn(at, [{ x: f.manorYard.x, y: f.manorYard.y }]);
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at,
+        from: at,
+        route: [at],
+        titles: [
+          ['THE MANOR', 'the one house on this field with its windows lit'],
+          ['SOMEBODY IS INSIDE', 'and they are not being quiet about it'],
+        ],
+        walkers: 0,
+        cast: [],
+        say: cineSay,
+        sayDone: () => cineSpeak.clear(),
+        speech: [
+          { t: 0.9, x: at.x, y: at.y, text: '\u2014 shouting, somewhere behind the shutters. Muffled, and a long way into the house \u2014', hold: 2.4 },
+          { t: 3.0, x: at.x, y: at.y, text: '\u2014 a bench goes over. Somebody laughs. A lot of men laugh with him \u2014', hold: 2.4 },
+          { t: 5.2, x: at.x, y: at.y, text: '\u2014 glass breaks against a wall, and the laughing does not stop \u2014', crit: true, hold: 3 },
+        ],
+        hold: 6,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          settleWalkers();
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE DOOR IS UNBARRED', 'crit');
+        },
+      });
+      audio.sfx('crowd');
+      later(() => audio.sfx('barrelBreak'), 3000);
+      later(() => audio.sfx('crowd'), 5200);
+    };
+
+    /**
+     * THE CHIEF'S WELCOME (it.110). The hall's first tick. He sees the hero from
+     * the head of the high table, gives them the choice of walking back out, and
+     * takes it away again in the same breath - which is the whole character in
+     * two lines. When the bars lift, every man in the room is already coming.
+     */
+    const startManorAmbush = (): void => {
+      const m = world.manor;
+      if (reclaim || !m) return;
+      const c = m.chief;
+      lightTheWayIn({ x: c.x, y: c.y }, m.bandits.slice(0, 6).map((b) => ({ x: b.x, y: b.y })));
+      const cast: Array<{ anim: AnimName; x: number; y: number; height?: number; tint?: number; dir?: number }> = [];
+      for (const b of m.bandits.slice(0, 5)) cast.push({ anim: 'poacher_idle', x: b.x, y: b.y, height: 60, tint: 0xb08878, dir: 4 });
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: c.x, y: c.y },
+        from: { x: c.x, y: c.y },
+        route: [{ x: c.x, y: c.y }],
+        titles: [
+          ['THE GREAT HALL', 'somebody else\u2019s house, and somebody else\u2019s wine'],
+          ['THE BANDIT CHIEF', 'at the head of a table he did not pay for'],
+        ],
+        walkers: 0,
+        cast,
+        say: cineSay,
+        sayDone: () => cineSpeak.clear(),
+        speech: [
+          { t: 1.0, x: c.x, y: c.y, text: 'HOLD IT. HOLD IT \u2014 everyone, be quiet. Look what walked in out of the dark.', crit: true, speaker: 'THE BANDIT CHIEF', role: 'at the high table', portrait: chiefPortrait(), foe: true },
+          { t: 2.8, x: c.x, y: c.y, text: 'You have come into a house with eleven men in it and shut the door behind you. I am in a generous mood tonight, so here is the whole offer: turn round. Walk out. Nobody follows you to the bridge.', speaker: 'THE BANDIT CHIEF', role: 'raising a cup', portrait: chiefPortrait(), foe: true },
+          { t: 5.0, x: c.x, y: c.y, text: 'Actually \u2014 no. Taking your head is far more lucrative.', crit: true, speaker: 'THE BANDIT CHIEF', role: 'putting the cup down', portrait: chiefPortrait(), foe: true },
+          { t: 6.6, x: c.x, y: c.y, text: 'ON YOUR FEET, ALL OF YOU. NOBODY LEAVES THIS ROOM BUT ME.', crit: true, speaker: 'THE BANDIT CHIEF', role: 'in his own hall', portrait: chiefPortrait(), foe: true, hold: 3 },
+        ],
+        hold: 5,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          settleWalkers();
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          // THE WHOLE HALL AT ONCE (the it.106 rule): the scene cut his order
+          // short, so every man in the room is woken here rather than one at a
+          // time as the hero blunders into each one's sight radius.
+          world.enemies.forEachActive((e) => {
+            if (e.hp > 0 && e.action !== 'dead') e.aiState = 'chase';
+          });
+          audio.sfx('bossHorn');
+          world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE HALL COMES UP AT ONCE', 'crit');
+        },
+      });
+    };
+
+    /**
+     * THE MAN IN THE CLOSET (it.110). The hall is quiet, and something behind the
+     * high table has been listening to all of it. He is a merchant off the east
+     * road, he has been in there nine days while they wrote to his brother about
+     * a price, and he pays what he can and promises the rest.
+     */
+    const startManorRescue = (): void => {
+      const m = world.manor;
+      if (reclaim || !m) return;
+      const q = m.merchant;
+      lightTheWayIn({ x: q.x, y: q.y }, [{ x: m.chief.x, y: m.chief.y }]);
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: q.x, y: q.y },
+        from: { x: q.x, y: q.y },
+        route: [{ x: q.x, y: q.y }],
+        titles: [
+          ['THE HALL IS QUIET', 'for the first time in nine days'],
+          ['SOMETHING IN THE WALL', 'has been listening to every word of it'],
+        ],
+        walkers: 0,
+        cast: [{ anim: 'merchant_walk', x: q.x, y: q.y, height: 58, tint: 0xe8d4b0, dir: 2 }],
+        say: cineSay,
+        sayDone: () => cineSpeak.clear(),
+        speech: [
+          { t: 1.0, x: q.x, y: q.y, text: 'Is it \u2014 is it over? I heard him go down. I have been listening to that man for nine days and I know what he sounds like going down.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
+          { t: 3.4, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me because I am worth a letter to my brother, and they were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait() },
+          { t: 5.8, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait() },
+          { t: 8.0, x: q.x, y: q.y, text: 'My shop is in the city over the east road. The day that gate opens, you will not pay me for a healing draught again as long as I am standing behind the counter.', speaker: 'THE MERCHANT', role: 'of the eastern city', portrait: merchantPortrait() },
+          { t: 10.2, x: q.x, y: q.y, text: 'And before you go \u2014 there is a hatch under the rug at the far end of this hall. They would not open it. Whatever they could hear down there, they did not want it up here.', crit: true, speaker: 'THE MERCHANT', role: 'on his way out', portrait: merchantPortrait(), hold: 4 },
+        ],
+        hold: 6,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          settleWalkers();
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          manorWonTicks = 30; // a half second, then the reward and the rebuild
+        },
+      });
+    };
+
+    /**
+     * THE BATTLEFIELD'S OWN TICK. It has no errand and no tally - the only thing
+     * it watches for is the hero coming near enough to the house to hear what is
+     * going on inside it, which happens once, ever, and is written in the ledger
+     * so a reload does not play it again.
+     */
+    const tickFieldQuest = (): void => {
+      if (floor !== FIELD_FLOOR || transitioning || reclaim) return;
+      const f = world.field;
+      if (!f || fieldNoiseShown) return;
+      if ((quests.manor ?? 'new') !== 'new') return;
+      if (Math.hypot(player.pos.x - (f.manorYard.x + 0.5), player.pos.y - (f.manorYard.y + 0.5)) > 5.5) return;
+      fieldNoiseShown = true;
+      quests.manor = 'heard';
+      saveNow();
+      startManorNoise();
+    };
+
+    /**
+     * THE HALL'S OWN TICK: play the welcome once on arrival, then watch the room
+     * and open the closet when the last of them is down.
+     */
+    const tickManorQuest = (): void => {
+      if (floor !== MANOR_FLOOR || transitioning) return;
+      if (quests.manor === 'done') return;
+      if (!manorIntroShown && !reclaim) {
+        manorIntroShown = true;
+        quests.manor = 'held';
+        saveNow();
+        startManorAmbush();
+        return;
+      }
+      if (reclaim) return; // a scene is on: the hall holds its breath
+      if (manorWonTicks === 0) return; // the merchant is talking
+      if (manorWonTicks > 0) {
+        if (--manorWonTicks > 0) return;
+        manorWonTicks = -1;
+        quests.manor = 'done';
+        quests.merchant = 'saved';
+        for (const seat of liveSeats()) {
+          seat.player.gold += 200;
+          // WHAT IS IN HIS COAT (it.110). He promises free draughts in a city
+          // that is not built; what he can actually do tonight is hand over the
+          // three he is carrying, so the rescue pays something you can drink.
+          for (let i = 0; i < 3; i++) seat.player.addItem('health_potion');
+        }
+        eventBus.emit('inventory:changed', {});
+        showReward('REWARD RECEIVED \u00b7 200 GOLD \u00b7 3 HEALING POTIONS');
+        audio.sfx('questDone');
+        world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 30);
+        saveNow();
+        // THE HALL CHANGES UNDER THEIR FEET (the it.102 rule): rebuilt in place
+        // the moment the errand closes, so the room is quiet, the closet stands
+        // open and the hatch is uncovered while the hero is still standing in it.
+        withFade(async () => {
+          await preloadFloor(MANOR_FLOOR, 'manor');
+          const at = { x: player.pos.x, y: player.pos.y };
+          if (!swapWorld(() => buildWorld(MANOR_FLOOR, 'manor'))) return;
+          placeParty(at.x, at.y, world.scene.isWalkable);
+          updateDepth();
+          player.action = 'idle';
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          minimap.markDirty();
+          updateOrb();
+          void dialogue.open({
+            speaker: 'THE MERCHANT',
+            role: 'in the doorway, going',
+            portrait: merchantPortrait(),
+            lines: [
+              'Give me a moment before you go. Nine days in a cupboard and my legs have opinions about standing.',
+              'The hatch is at the far end, under the rug. Take a light. Take two.',
+              'And when the eastern gate opens \u2014 ask anyone on the street for the man with the two carts. That is me. You drink for nothing in my shop.',
+            ],
+            choices: [{ label: 'GO CAREFULLY', value: 'ok' }],
+          });
+        }, 'the hall is quiet');
+        return;
+      }
+      let alive = 0;
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead') alive++;
+      });
+      if (alive > 0) return;
+      manorWonTicks = 0;
+      world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE HALL IS QUIET', 'crit');
+      audio.sfx('questDone');
+      startManorRescue();
+    };
+
+    /** A word with the man once he is standing in the hall (it.110). */
+    const merchantTalk = async (): Promise<void> => {
+      await dialogue.open({
+        speaker: 'THE MERCHANT',
+        role: 'of the eastern city',
+        portrait: merchantPortrait(),
+        lines: [
+          'Nine days in a cupboard listening to men eat. I will never look at a roast the same way.',
+          'The hatch is under the rug at the far end. Whatever is down there, they would not touch it, and they were not a careful sort of people.',
+          'When the east gate opens, come and find me. Free draughts, for as long as I am behind the counter.',
+        ],
+        choices: [{ label: 'FAREWELL', value: 'ok' }],
+      });
+    };
+
+    /**
+     * THE SIEGE ENGINES (it.110) — walk up to one that still stands and press E.
+     *
+     * HOW HARD IT HITS. A siege stone does not roll a weapon's damage: it takes a
+     * fixed FRACTION of whatever it lands on, so it is worth using on a scavenger
+     * whatever level the field is pitched at, and it never becomes the answer to
+     * anything with a health bar at the top of the screen. It comes through
+     * `dealDamage` credited to the hero, like every other wound in this codebase,
+     * so the kill counts and the loot drops the way it always does.
+     *
+     * WHERE IT LANDS. The nearest body the hero can actually SEE, within the
+     * engine's reach and not close enough to be under it; if there is nobody,
+     * the stone goes where the engine is laid - at the house - and cracks off it.
+     */
+    const SIEGE_REACH = 15;
+    /**
+     * A WIDE BLAST, ON PURPOSE (it.110). The stone is nearly a second in the air
+     * and it is aimed at where a body WAS - a scavenger running at the hero walks
+     * two tiles in that time. Measured on the field: a 2.6-tile blast at a moving
+     * target missed every time and the engine read as broken. Three and a bit
+     * still rewards catching them clustered and still lets a sprinter out of it.
+     */
+    const SIEGE_BLAST = 3.2;
+    /** How much of a body a siege stone takes: a fraction, so it scales itself. */
+    const SIEGE_BITE = 0.75;
+    const workEngine = (it: Interactable): void => {
+      const t = world.town;
+      if (!t || floor !== FIELD_FLOOR) return;
+      if (player.hp <= 0 || transitioning || reclaim) return;
+      let markX = NaN;
+      let markY = NaN;
+      let best = SIEGE_REACH;
+      world.enemies.forEachActive((e) => {
+        if (e.hp <= 0 || e.action === 'dead') return;
+        if (!world.lighting.isVisible(Math.floor(e.pos.x), Math.floor(e.pos.y))) return;
+        const d = Math.hypot(e.pos.x - it.x, e.pos.y - it.y);
+        if (d < 3 || d > best) return;
+        best = d;
+        markX = Math.floor(e.pos.x);
+        markY = Math.floor(e.pos.y);
+      });
+      if (Number.isNaN(markX)) {
+        const laid = world.field?.catapults.find((c) => Math.abs(c.x + 0.5 - it.x) < 2 && Math.abs(c.y + 0.5 - it.y) < 2);
+        markX = Math.round(it.x + (laid?.dx ?? 1) * 8);
+        markY = Math.round(it.y + (laid?.dy ?? 0) * 8);
+      }
+      const started = t.fireSiege(it.id, markX, markY, (hx, hy) => {
+        if (floor !== FIELD_FLOOR) return; // the floor went out from under the shot
+        const cx = hx + 0.5;
+        const cy = hy + 0.5;
+        world.vfx.play('vfx_explosion', cx, cy, { scale: 1.7, fps: 26, lift: 10 });
+        world.ambience.burst(cx, cy, 0x9a8a70, 40);
+        world.camera.addKick(6);
+        audio.sfx('barrelBreak');
+        const caught: Enemy[] = [];
+        world.enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.action !== 'dead' && Math.hypot(e.pos.x - cx, e.pos.y - cy) <= SIEGE_BLAST) caught.push(e);
+        });
+        for (const e of caught) {
+          const dx = e.pos.x - cx;
+          const dy = e.pos.y - cy;
+          const d = Math.hypot(dx, dy) || 1;
+          world.combat.dealDamage({
+            sourceId: player.id,
+            targetId: e.id,
+            amount: Math.max(25, Math.round(e.hpMax * SIEGE_BITE)),
+            knockX: dx / d,
+            knockY: dy / d,
+            knockDist: 0.9,
+            forceStagger: true,
+          });
+        }
+        if (caught.length === 0) world.dmgText.show(cx, cy - 1, 'THE STONE LANDS ON NOTHING', 'miss');
+        else audio.sfx('gore');
+      });
+      if (!started) {
+        tutorial.say('The windlass is still coming back round. Give it a moment.');
+        return;
+      }
+      audio.sfx('gateIron');
+      world.dmgText.show(it.x, it.y - 1.8, 'LOOSE!', 'crit');
     };
 
     const goMines = (): void => goPlace(MINES_FLOOR, 'down into the quarry');
@@ -5875,7 +6478,10 @@ async function boot(): Promise<void> {
               // THE ROAD HOME (it.98): out of the woods you step back onto the eastern
               // road, where you left it - not into the middle of the old quarter.
               // THE FIELDS (it.101) come back the same way, onto the marsh gate.
-              goHome(floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : floor === RIVER_FLOOR ? 'river' : undefined);
+              // ACROSS THE RIVER (it.110): a portal home from any of the three
+              // floors past the bridge puts the hero back at the RIVER GATE, which
+              // is the mouth of the road they went out by.
+              goHome(floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : floor === RIVER_FLOOR || floor === FIELD_FLOOR || floor === MANOR_FLOOR || floor === VAULT_FLOOR ? 'river' : undefined);
             } else if (cmd.to === 'floor' && cmd.n !== undefined) {
               chat?.system(`Leader fast-travelling to depth ${ROMAN[cmd.n - 1] ?? cmd.n}. Warping party...`);
               jumpToFloor(cmd.n);
@@ -5904,6 +6510,8 @@ async function boot(): Promise<void> {
           tickFarmQuest(); // THE FARMLANDS (it.100).
           tickRiverQuest(); // THE RIVERSIDE FARM (it.106).
           tickFishing(); // ...and the line in the water (it.106).
+          tickFieldQuest(); // THE BATTLEFIELD (it.110).
+          tickManorQuest(); // ...and the hall in the middle of it (it.110).
         }
         // THE CITY'S OWN (it.100): the squad fights on the sim tick, so a co-op
         // party stays in step and `dealDamage` remains the only hp mutator.
@@ -6070,7 +6678,7 @@ async function boot(): Promise<void> {
             if (audio.currentMusic !== 'death' && audio.currentMusic !== 'gameover') musicBeforeDeath = audio.currentMusic;
             audio.setMusic(hardcore ? 'gameover' : 'death', floor);
             runMenus.showDeath(
-              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : floor === FARM_FLOOR ? 'The farmlands' : floor === RIVER_FLOOR ? 'The riverside farm' : floor === INN_FLOOR ? 'The Gilded Stag' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
+              `${floor < 0 ? 'The Coliseum' : floor === FOREST_FLOOR ? 'The forest' : floor === MINES_FLOOR ? 'The quarry' : floor === CELLAR_FLOOR ? 'The cellar' : floor === FARM_FLOOR ? 'The farmlands' : floor === RIVER_FLOOR ? 'The riverside farm' : floor === FIELD_FLOOR ? 'The battlefield' : floor === MANOR_FLOOR ? 'The manor' : floor === VAULT_FLOOR ? 'The manor cellar' : floor === INN_FLOOR ? 'The Gilded Stag' : `Depth ${ROMAN[floor - 1] ?? floor}`} · level ${hero.level} · ${formatTime(state.tick)} in the dark · ${difficulty.current.name}`,
               hardcore,
             );
           }
@@ -6898,14 +7506,35 @@ async function boot(): Promise<void> {
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
       } else if (it.kind === 'bridgegate') {
-        // THE BURNED BRIDGE (it.106). Oscar's sealed pass is clearance to cross
-        // it - but the far side is not built, so what the pass buys today is the
-        // right to be told so by name instead of being waved off.
-        tutorial.say(
-          quests.riverPass === 'held' // Oscar's seal, handed over when the three are down (it.106)
-            ? "Oscar's seal is in your pack — the watch on the far bank would honour it. The span itself is still burned through."
-            : (it.note ?? 'The span is burned through. Nothing crosses here yet.'),
-        );
+        // THE RIVER BRIDGE (it.110). The span is whole and the watch is on it:
+        // the pass is a real key now, not a note about a burned deck.
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else void bridgeTalk();
+      } else if (it.kind === 'fieldroad') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else goRiverBridge();
+      } else if (it.kind === 'catapult') {
+        workEngine(it); // THE SIEGE ENGINES (it.110): anyone may work one.
+      } else if (it.kind === 'manordoor') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else goManor();
+      } else if (it.kind === 'manorout') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else leaveManor();
+      } else if (it.kind === 'manorhatch') {
+        // Nailed down while the party upstairs is still on; the merchant is the
+        // one who tells you it is there, and by then it is open.
+        if (quests.manor !== 'done') tutorial.say('The trapdoor is nailed down and there is a rug over it. Whoever is holding this hall did not want it opened.');
+        else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else goVault();
+      } else if (it.kind === 'vaultup') {
+        if (coop && localSlot !== leaderSlot) leaderOnlyNote();
+        else leaveVault();
+      } else if (it.kind === 'citygate') {
+        // THE ONE LOCKED GATE past the bridge (it.110): the city is not built.
+        tutorial.say(it.note ?? 'The grate is down over the eastern road. Nothing is opening it yet.');
+      } else if (it.kind === 'merchantman') {
+        void merchantTalk();
       } else if (it.kind === 'townroad') inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' });
       else if (it.kind === 'board') statsUI.open();
       else if (it.kind === 'arena') openArenaModal();
@@ -7306,7 +7935,9 @@ async function boot(): Promise<void> {
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
       const devTravel = async (target: number, arena = false): Promise<void> => {
-        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR || target === RIVER_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+        // ACROSS THE RIVER (it.110): 107-109 are places, not depths, so they must
+        // be listed here or the clamp lands the harness on depth XX instead.
+        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR || target === RIVER_FLOOR || target === FIELD_FLOOR || target === MANOR_FLOOR || target === VAULT_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
         const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
         await preloadFloor(dest, mode);
         captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
@@ -7450,11 +8081,29 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   }
   // THE RIVERSIDE FARM (it.106): the three, the family's own sheets, the folk
   // who come back to the land once it is theirs, and the gateway light on the
-  // burned bridge. The family is drawn from the STREET_FOLK sheets, so they come
+  // river bridge. The family is drawn from the STREET_FOLK sheets, so they come
   // in with the rest rather than as a special case.
   if (mode === 'river') {
-    const out = new Set<string>(['torch', 'campfire', 'gateway', 'banner', 'folk_walk', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'guard_idle', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of RIVER_AMBUSH) for (const a of animsForKind(k)) out.add(a);
+    return [...out];
+  }
+  /**
+   * ACROSS THE RIVER (it.110). The battlefield's dead come off THREE death
+   * sheets (the city's mail, the company's plate, the levy's leathers) and are
+   * drawn straight from the atlas as still frames, so all three have to be
+   * resident before the floor dresses itself or two thirds of the field is
+   * empty ground. The scavengers on it and the men in the hall come in with them.
+   */
+  if (mode === 'field' || mode === 'manor') {
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'guard_death', 'poacher_death', 'captain_death', ...VFX_ANIMS]);
+    for (const k of [...FIELD_POOL, 'mercenary' as EnemyKind, 'chief' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
+    return [...out];
+  }
+  // THE MANOR'S CELLAR (it.110): the wall torches, and what moved in below.
+  if (mode === 'vault') {
+    const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'folk_walk', ...VFX_ANIMS]);
+    for (const k of VAULT_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
   // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.

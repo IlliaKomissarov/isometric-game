@@ -1,5 +1,146 @@
 # Development Log
 
+## 2026-09-10 (iteration 110) - Across the river: the bridge, the battlefield, the manor
+
+The riverside was a cul-de-sac. It had a burned bridge in the corner of it with a
+note on the arch saying nothing crossed there, and Oscar's sealed pass - the
+reward for the whole errand - bought a slightly more polite version of the same
+refusal. This iteration builds what is on the other side of it.
+
+### The meadow is twice the size (`src/scenes/Riverside.ts`)
+
+56x44 and 1,116 walkable tiles became 84x60 and about 2,200, and every one of the
+new tiles is up-river of Oscar's yard, on the bank between the steading and the
+crossing. Four new lobes carry the upper acres, six more buildings stand on them,
+and the cart track runs the length of it. The walk to the bridge is now a walk.
+
+The river runs the whole length of the map and there is a FAR BANK past it - a
+strip of land the connectivity pass seals, because the only way across is through
+the watch. It is planted deliberately with a road cut through it, so the far side
+of the water reads as somewhere the road goes rather than as the edge of the map.
+
+### The crossing is found, not written down
+
+The meadow's rim wanders with the lobes' noise and the river's banks wander with
+theirs, so a hand-picked pair of tiles is as likely to be in the water as on the
+shore. `findCrossing` walks the rows from the top of the map down and takes the
+first that has near bank, then nothing but open water, then far bank - the first
+such row is the one furthest up-river, which is where a bridge on a road out of a
+valley belongs. On the shipped seed that is row 16, an eleven-bay span.
+
+### THE RIVER BRIDGE (`src/town/TownProps.ts`)
+
+The pack has a plank-deck tile that is one diamond wide, and a great stone arch
+that is painted as a ruin. The span is a run of those bays laid on the water -
+each drawn a fifth over size, because at their painted size a hairline of river
+shows between every one of them and the whole crossing reads as a fishing jetty -
+with a timber parapet either side, stone piers standing out of the water every
+third bay, and the arch at each end lifted well toward white so it reads as
+weathered dressed stone rather than as a ruin over a new road.
+
+The water tiles under the deck stay BLOCKED. There is no tile sequence anywhere
+that walks a hero across the river; the crossing is the transition, and the
+transition is behind the watch.
+
+### The watch, and what the seal buys
+
+Two knights of the city stand at the near end (`layout.guards`, so `Villagers`
+stands them up the way it stands up every other sentry). E at the arch opens a
+word: without Oscar's seal they refuse and say what they are refusing and why;
+with it they read the charter, tell the hero exactly what is on the other side,
+and open the gate. `quests.riverPass` has meant something since it.106 and now it
+means the thing it was named for.
+
+### THE BATTLEFIELD (`src/scenes/Battlefield.ts`, floor 107)
+
+The first place in the game that is not an errand. Nothing here is ever won: the
+fighting finished a week before the hero arrived and the field was left. 72x56,
+seven lobes, a road across it from the bridge landing to the eastern gate, and:
+
+- **the dead**, in bands - thickest where the two lines met west of the house and
+  thinning east where it was already a rout - drawn from THREE death sheets, so a
+  field of a hundred and eighteen bodies is two armies and a levy rather than one
+  man printed over and over;
+- **the siege line**, three engines that still throw and four wrecks, laid on the
+  house they were battering;
+- **the war camp**, pavilions, cook fires and a cauldron on a tripod, baked out of
+  the prop sheets for this iteration (`tent_a`..`tent_e`, `firepit_a/b`, `tripod`);
+- **scavengers** on posts the layout chose, working the pockets;
+- **the manor**, walled, lit from inside, in the middle of it;
+- **THE EASTERN ROAD**, an iron grate down over the road at the far edge with the
+  city that is not built yet behind it - the one thing on this floor the hero
+  walks up to and is told no.
+
+### The engines work
+
+No pack in the repository contains a catapult, so they are COMPOSED out of pieces
+that exist and were rendered at the same angle as everything else: the cart for
+the bed and its wheels, the timber trestle for the frame, a plank deck for the
+throwing arm, a cask for the counterweight and a boulder for the shot. `wreck` is
+the same parts thrown down.
+
+Walk up to one that still stands and press E. The arm comes round on an ease-out,
+a stone leaves the sling and arcs to the mark, and where it lands there is a burst
+and a blow through `dealDamage` credited to the hero, like every other wound in
+this codebase. A siege stone takes a FRACTION of whatever it hits (three quarters
+of a body's maximum), so it is worth using whatever level the field is pitched at
+and never becomes the answer to something with a health bar at the top of the
+screen. The crew wind it back over four seconds, visibly, which is the cooldown.
+
+### THE MANOR (`src/scenes/Manor.ts`, floors 108 and 109)
+
+Coming near the house plays the noise of it: the camera leaves the hero for the
+shuttered windows and the field goes quiet enough to hear shouting, a bench going
+over, and a great many men laughing. Nothing in that scene is addressed to the
+hero, so none of its beats waits for a keypress - it plays through and hands the
+field back.
+
+Inside is a great hall built out of the tileset the inn is built from: a hearth in
+the west wall, two long feast tables with the household's runner and a line of
+candle stands down the aisle between them, a high table at the far end, and twelve
+men and their chief holding a party in somebody else's house. The chief sees the
+hero from the head of the table, offers them the door, and takes the offer back in
+the same breath. When the bars lift the whole room is already coming.
+
+Behind the high table there is a closet door, and behind that a merchant who has
+been in it for nine days while they wrote to his brother about a price. Put the
+room down and he comes out, empties his coat (200 gold and the three healing
+draughts he is carrying), promises the hero free draughts for life at his shop in
+the city over the east road, and tells them about the hatch under the rug at the
+far end of the hall. The hall is rebuilt quiet under the hero's feet the moment
+the errand closes, the way the fields and the farm are: he is standing in front of
+the closet, and the trapdoor is open.
+
+Under it is the manor's own vault - three chambers of near-black stone, dark
+enough to need the fog, fifteen things that moved in after the household ran, and
+four strongboxes rolled two bands over the field above.
+
+### Two long-standing faults in the harness, found by walking into them
+
+- **The farmlands' way-home check threw**, and had been throwing for several
+  iterations. The riverside block that runs inside it ends in TOWN (it walks back
+  for the training dummy), so by the time the farm's signpost check ran,
+  `g.town.layout.farm` was undefined. The throw was swallowed by the harness's own
+  guard, which means the device matrix and the entire hardcore section had not run
+  in a long time. Nothing was wrong except where the hero was standing.
+- **The riverside's three fishing checks had been failing** and reporting `cast
+  false`, as though the mechanic were broken. Walking through the river gate plays
+  the ambush, an attributed beat waits for the reader (it.103), and a running scene
+  clears the input queue by design - so every command the harness sent after
+  arriving was eaten. The harness turns the pages now, the way a player does.
+
+With those two fixed and the it.110 block added, the suite runs end to end.
+
+### Files
+
+`scenes/Battlefield.ts` and `scenes/Manor.ts` are new. `scenes/Riverside.ts` is
+rewritten. `town/TownMap.ts` gains the three layouts and eleven prop kinds;
+`town/TownProps.ts` gains their bodies, the composed siege engine and its throw,
+and a body for `candle` - a kind that has been in the union since it.92 with
+nothing drawing it. `entities/Enemy.ts` gains the chief. `main.ts` carries the
+three floors, their travel, their cutscenes and the engines. Eight singles were
+baked into the atlas out of `props_4x4.png` and `props_2x2.png`.
+
 ## 2026-09-09 (iteration 109) - The fog put back, and anglers that hold their size
 
 ### The fog of war is back (`src/engine/Lighting.ts`)

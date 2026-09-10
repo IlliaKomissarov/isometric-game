@@ -34,7 +34,14 @@ export interface Occluder {
 
 export interface Interactable {
   id: number;
-  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'riverroad' | 'bridgegate' | 'oscar' | 'fishspot';
+  kind: 'stash' | 'merchant' | 'alchemist' | 'board' | 'arena' | 'forge' | 'jeweler' | 'scribe' | 'bowyer' | 'notice' | 'gateway' | 'quarry' | 'townroad' | 'training' | 'innkeeper' | 'bed' | 'inn' | 'inndoor' | 'cellardoor' | 'cellarup' | 'cellargirl' | 'farmgate' | 'farmroad' | 'riverroad' | 'bridgegate' | 'oscar' | 'fishspot'
+  // ---- ACROSS THE RIVER (it.110) ----
+  /** The engine's crank: E winds it back and lets it go. */
+  | 'catapult'
+  /** The manor's front door, the way back out of its hall, and the hatch in its floor. */
+  | 'manordoor' | 'manorout' | 'manorhatch' | 'vaultup'
+  /** The barricaded eastern road, the signpost back over the bridge, and the man in the closet. */
+  | 'citygate' | 'fieldroad' | 'merchantman';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
   room?: boolean;
   /** A gateway's note (it.84): what the hero is told at a road not yet built. */
@@ -63,6 +70,14 @@ export interface TownDressing {
   setPlate: (x: number, y: number, label: string | null) => void;
   /** THE CLEAN FRAME (it.101): every name plate off while a cutscene is running. */
   setPlatesHidden: (off: boolean) => void;
+  /**
+   * THE SIEGE ENGINES (it.110): wind one back and let it go at a tile. The arm
+   * swings, a stone leaves the sling and arcs to the mark, and `onImpact` fires
+   * the moment it lands - which is where main puts the burst and the damage, so
+   * every rule about who may change hit points stays where it was. Returns false
+   * if that engine is already in the middle of a throw.
+   */
+  fireSiege: (id: number, tx: number, ty: number, onImpact: (x: number, y: number) => void) => boolean;
   /** Render-frame update: gate fog drift, brazier flicker. */
   update: (dt: number) => void;
   destroy: () => void;
@@ -76,6 +91,27 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   const fog: Array<{ sprite: Sprite; x: number; y: number; phase: number; speed: number }> = [];
   /** THE ANGLERS (it.107): render-only bodies sat at the bank, each with its own idle. */
   const anglers: Array<{ root: Container; body: Sprite; rod: Sprite; phase: number; baseY: number }> = [];
+  /**
+   * THE SIEGE ENGINES (it.110). One per working catapult on the battlefield:
+   * the composed body, the arm that swings, and whatever stone is currently in
+   * the air off it. `t` is seconds into the present throw, or -1 at rest.
+   */
+  interface Engine {
+    id: number;
+    root: Container;
+    arm: Container;
+    shot: Sprite;
+    /** Screen angles the arm sits at cocked and at full release. */
+    rest: number;
+    fire: number;
+    t: number;
+    /** The stone in flight: screen-space arc, and the tile it is going to. */
+    flight: { spr: Sprite; ax: number; ay: number; bx: number; by: number; t: number; tx: number; ty: number; hit: (x: number, y: number) => void } | null;
+  }
+  const engines: Engine[] = [];
+  /** How long the arm takes to come round, and how long the stone is up. */
+  const SWING = 0.42;
+  const FLIGHT = 0.85;
   let stashSprite: Sprite | null = null;
   let cellarGirl: { sprite: Sprite | null; id: number } | null = null;
   const gates = new Map<string, Sprite>();
@@ -510,8 +546,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'corpse': {
         // THE FALLEN: a looter's or a militiaman's death frame, lying where
         // it fell, dark, over a pool - render-only paint, never a body.
+        // IT.110: a third sheet. The battlefield has two armies on it, so the
+        // dead have to come off more than one rig or a field of them reads as
+        // one man printed two hundred times: `g` is the city's mail, `c` the
+        // free company's plate, `p` the levy in its leathers.
         const v = p.variant ?? 'p3';
-        const animName = v[0] === 'g' ? 'guard_death' : 'poacher_death';
+        const animName = v[0] === 'g' ? 'guard_death' : v[0] === 'c' ? 'captain_death' : 'poacher_death';
         if (!spriteLib.loaded || !spriteLib.hasAnim(animName)) break;
         const a = spriteLib.anim(animName);
         const dir = (Number(v.slice(1)) || 0) % a.dirCount;
@@ -525,9 +565,16 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         lighting.registerProp(p.x, p.y, pool);
         // ON THE GROUND (it.92): the fallen are paint under every foot - the ground layer, never in front of a walker.
         const body = new Sprite(a.frames[dir][a.frameCount - 1]);
-        body.anchor.set(0.5, v[0] === 'g' ? 0.72 : 0.9);
-        body.scale.set(v[0] === 'g' ? 0.42 : 0.44);
-        body.tint = 0x8c8078;
+        // Anchor and scale are the SHEET's, not the prop's: the three rigs are
+        // painted at wildly different sizes (the same numbers the enemy defs
+        // carry for the living versions of these men).
+        body.anchor.set(0.5, v[0] === 'g' ? 0.72 : v[0] === 'c' ? 0.94 : 0.9);
+        body.scale.set(v[0] === 'g' ? 0.42 : v[0] === 'c' ? 0.9 : 0.44);
+        // DARKER THAN IT.91 (it.110). Two hundred of these lie on the battlefield,
+        // and at the old tint the city's blue tabards read as a bright litter of
+        // toy soldiers. Dropped toward the ground's own colour, they read as what
+        // they are from across the field and only resolve into men close up.
+        body.tint = 0x6f665e;
         body.position.set(s.x, s.y + 4);
         viewport.groundLayer.addChild(pool);
         viewport.groundLayer.addChild(body);
@@ -728,21 +775,6 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 190, 110, 0.55);
         interactables.push({ id: nextId++, kind: 'riverroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK TO THE QUARTER', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 2, y: p.y }] });
         plate(p.x, p.y, 'THE RIVER GATE', 92);
-        break;
-      }
-      case 'bridgegate': {
-        // THE BURNED BRIDGE. The one way on from the meadow, and the reason
-        // Oscar's pass is worth having: the arch stands, the span does not, and
-        // the prompt says so until the seal is in the hero's hand.
-        const spr = animated(p.x, p.y, 'gateway', 12, 0.96, 1, 0);
-        if (spr) {
-          spr.blendMode = 'add';
-          spr.alpha = 0.55;
-        }
-        glowAt(p.x, p.y, 0xd8a060, 0.42, 2.2, 40);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 5, 230, 170, 110, 0.7);
-        plate(p.x, p.y, `${p.variant ?? 'THE BRIDGE'} · BURNED`, 96);
-        interactables.push({ id: nextId++, kind: 'bridgegate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE BRIDGE'}`, tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }], note: 'The span is burned through and the far side is barred. Nothing crosses here yet.' });
         break;
       }
       case 'angler': {
@@ -1008,6 +1040,311 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         plate(p.x, p.y, 'THE COLISEUM', 118);
         break;
       }
+      // ---- ACROSS THE RIVER (it.110) ----
+      case 'bridgedeck': {
+        /**
+         * ONE BAY OF THE SPAN (it.110), laid on the water it crosses.
+         *
+         * THE DECK IS OVERSIZED ON PURPOSE. The pack's plank tile is 57 px on a
+         * 64 px diamond, so a run of them laid at their painted size leaves a
+         * hairline of river between every bay and the whole crossing reads as a
+         * fishing jetty rather than as a road. Each bay is drawn a fifth over
+         * size so they overlap into one continuous roadway.
+         *
+         * AND IT HAS PARAPETS. A bridge without rails is a raft: a timber run
+         * either side of the deck, the near one sorted IN FRONT of anything
+         * standing on the bay and the far one behind it, which is what makes the
+         * span read as something you walk THROUGH rather than over.
+         *
+         * The water under it stays BLOCKED: the crossing is through the watch,
+         * so there must be no tile sequence anywhere that walks across it.
+         */
+        if (!has('bridge')) break;
+        const deck = new Sprite(spriteLib.single('bridge'));
+        const sc = worldToScreen(p.x, p.y, scratch);
+        deck.position.set(sc.x - TILE_W / 2 - 6, sc.y - 4);
+        deck.scale.set((TILE_W / deck.width) * 1.2, 1.28);
+        deck.tint = 0xd8ccb0; // dressed stone and kept timber: nothing here has burned
+        viewport.groundLayer.addChild(deck);
+        lighting.registerProp(p.x, p.y, deck);
+        if (has('fence')) {
+          for (const side of [-1, 1]) {
+            const rail = new Sprite(spriteLib.single('fence'));
+            rail.anchor.set(0.5, 0.92);
+            const rs = worldToScreen(p.x + 0.5, p.y + 0.5 + side * 0.52, vec2());
+            rail.position.set(rs.x, rs.y + 4);
+            rail.scale.set(1.06, 0.92);
+            rail.tint = 0xbfae90;
+            rail.zIndex = depthKey(p.x + 0.5, p.y + 0.5 + side * 0.52);
+            viewport.objectLayer.addChild(rail);
+            lighting.registerProp(p.x, p.y, rail);
+          }
+        }
+        break;
+      }
+      case 'bridgepost': {
+        // A pier standing out of the river under the deck. It is drawn on the
+        // OBJECT layer and sorted a row back, so the water washes past its foot
+        // and the deck lies over its head.
+        if (!has('column')) break;
+        const spr = new Sprite(spriteLib.single('column'));
+        spr.anchor.set(0.5, 0.34); // the shaft's waterline, not its base
+        const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+        spr.position.set(sc.x, sc.y + 6);
+        spr.scale.set(1.9, 1.35); // a pier carrying a road, not a mooring post
+        spr.tint = 0x9aa0a4;
+        spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 6;
+        viewport.objectLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'bridgegate': {
+        /**
+         * THE RIVER BRIDGE (it.110, and the end of the burned one).
+         *
+         * The great arch over the road at the near end of the span, and its twin
+         * on the far bank. The near one carries the prompt: the knights standing
+         * beside it are `Villagers` sentries, and what they do about a pass is
+         * main's business - all this does is say where they are and give the hero
+         * something to press E at.
+         */
+        const near = (p.variant ?? '').includes('BRIDGE');
+        const spr = standing(p, 'ruin_gate', 0.97, 'object', 0.5);
+        if (spr) {
+          spr.scale.set(near ? 1.05 : 0.82, near ? 1.05 : 0.82);
+          // KEPT, NOT RUINED (it.110). The pack's only great arch is a mossy one,
+          // and at its own colour it reads as a ruin standing over a new road.
+          // Lifted well toward white it reads as weathered dressed stone, which
+          // is what a bridge the city still garrisons looks like.
+          spr.tint = near ? 0xdde4de : 0xc4ccc6;
+          if (near) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        }
+        glowAt(p.x, p.y, 0xffc880, near ? 0.42 : 0.22, near ? 2.0 : 1.4, 44);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, near ? 5.4 : 3.6, 255, 200, 140, near ? 0.72 : 0.45);
+        plate(p.x, p.y, p.variant ?? 'THE BRIDGE', 150);
+        if (near) {
+          interactables.push({
+            id: nextId++,
+            kind: 'bridgegate',
+            x: p.x + 0.5,
+            y: p.y + 0.5,
+            label: `E · ${p.variant ?? 'THE BRIDGE'} · THE WATCH`,
+            tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y - 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x - 2, y: p.y }],
+            note: 'Two of the city watch hold the near end of the span. Nobody crosses without leave.',
+          });
+        }
+        break;
+      }
+      case 'siege': {
+        /**
+         * A SIEGE ENGINE, COMPOSED (it.110).
+         *
+         * No pack in the repository contains a catapult, and a battlefield
+         * without engines on it is a meadow with corpses. So this one is BUILT,
+         * out of four pieces that do exist and were rendered at the same angle as
+         * everything else: the cart for the bed and its wheels, the timber
+         * trestle for the frame, a plank deck for the throwing arm, a cask for
+         * the counterweight and a boulder for the shot. Assembled here rather
+         * than baked, so `wreck` is the same parts thrown down.
+         */
+        const wrecked = p.variant === 'wreck';
+        if (!has('cart') || !has('supports')) break;
+        const root = new Container();
+        const s = worldToScreen(p.x + (p.w ?? 1), p.y + (p.h ?? 1), scratch);
+        root.position.set(s.x, s.y);
+        root.zIndex = depthKey(p.x + (p.w ?? 1) - 0.5, p.y + (p.h ?? 1) - 0.5);
+        const parts: Sprite[] = [];
+        const bed = new Sprite(spriteLib.single('cart'));
+        bed.anchor.set(0.5, 0.92);
+        bed.scale.set(1.15);
+        if (wrecked) bed.rotation = 0.22;
+        root.addChild(bed);
+        parts.push(bed);
+        const frame = new Sprite(spriteLib.single('supports'));
+        frame.anchor.set(0.5, 0.94);
+        frame.scale.set(1.25);
+        frame.position.set(2, -26);
+        if (wrecked) {
+          frame.rotation = -0.5;
+          frame.position.set(-16, -6);
+        }
+        root.addChild(frame);
+        parts.push(frame);
+        // THE ARM. Its own node, pivoting on the trestle's head, carrying the
+        // counterweight behind the pivot and the stone in front of it.
+        const arm = new Container();
+        arm.position.set(2, wrecked ? -14 : -58);
+        const plank = new Sprite(spriteLib.single(has('bridge') ? 'bridge' : 'cart'));
+        plank.anchor.set(0.04, 0.5);
+        plank.scale.set(1.9, 0.75);
+        arm.addChild(plank);
+        parts.push(plank);
+        const weight = new Sprite(spriteLib.single(has('barrel_c') ? 'barrel_c' : 'cart'));
+        weight.anchor.set(0.5, 0.5);
+        weight.scale.set(0.62);
+        weight.position.set(-24, 4);
+        arm.addChild(weight);
+        parts.push(weight);
+        const shot = new Sprite(spriteLib.single(has('rock_c') ? 'rock_c' : 'cart'));
+        shot.anchor.set(0.5, 0.5);
+        shot.scale.set(0.5);
+        shot.position.set(96, -2);
+        arm.addChild(shot);
+        parts.push(shot);
+        root.addChild(arm);
+        // The engines all point at the house they were battering; the layout says
+        // which way that is in tiles, and the arm is laid along it on SCREEN.
+        const aimX = p.aim?.x ?? 1;
+        const aimY = p.aim?.y ?? 0;
+        const ang = Math.atan2((aimX + aimY) * 0.5, aimX - aimY);
+        const rest = ang + 2.35;
+        const fire = ang - 0.45;
+        arm.rotation = wrecked ? ang + 0.15 : rest;
+        for (const q of parts) {
+          q.tint = wrecked ? 0x8c8274 : 0xd6c8a8;
+          lighting.registerProp(p.x, p.y, q);
+        }
+        viewport.objectLayer.addChild(root);
+        occluders.push({ sprite: bed, depth: root.zIndex, tiles: footprint(p) });
+        if (wrecked) {
+          shot.visible = false;
+          break;
+        }
+        const id = nextId++;
+        engines.push({ id, root, arm, shot, rest, fire, t: -1, flight: null });
+        interactables.push({ id, kind: 'catapult', x: p.x + 0.5, y: p.y + 0.5, label: 'E · WORK THE ENGINE', tiles: [{ x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }, { x: p.x + 2, y: p.y }, { x: p.x + 2, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, 'A SIEGE ENGINE', 108);
+        break;
+      }
+      case 'tent': {
+        // A pavilion of the war camp. Big enough to walk behind, so it cuts away.
+        const spr = standing(p, p.variant ?? 'tent_a', 0.94);
+        if (spr) {
+          spr.tint = 0xc8bda8;
+          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        }
+        break;
+      }
+      case 'firepit': {
+        // A cook fire gone cold a week ago: ash, stones and a burnt log.
+        const spr = standing(p, p.variant ?? 'firepit_a', 0.62, 'ground');
+        if (spr) spr.tint = 0xa89a88;
+        break;
+      }
+      case 'candle': {
+        /**
+         * A CANDLE STAND (it.110). The `candle` kind has been in the prop union
+         * since the inn (it.92) and nothing has ever drawn one - the inn dresses
+         * its own light with wall sconces, so nobody noticed. The manor's great
+         * hall needs light down the middle of a room with no wall anywhere near
+         * it, so the kind finally gets a body: the tileset's own iron stand, a
+         * small warm halo, and a lamp in the tile map. It is CLUTTER, so the
+         * fight walks straight through it.
+         */
+        const spr = standing(p, p.variant ?? 'candle_stand', 0.94);
+        if (spr) spr.tint = 0xe8dcc0;
+        glowAt(p.x, p.y, 0xffb060, 0.34, 1.1, 34);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.6, 255, 190, 120, 0.5);
+        hotspots.push({ x: p.x + 0.5, y: p.y + 0.5 });
+        break;
+      }
+      case 'tripod': {
+        const spr = standing(p, 'tripod', 0.9);
+        if (spr) spr.tint = 0xbfae94;
+        break;
+      }
+      case 'manor': {
+        // THE HOUSE. The only thing standing whole on the field, and the reason
+        // anybody is still on it: lit from inside, so it reads as occupied from
+        // the far side of the map.
+        const spr = standing(p, 'guildhall', 0.985, 'object', 0.47);
+        if (spr) {
+          spr.scale.set(1.18);
+          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        }
+        lighting.addSource(p.x + 2, p.y + 3.5, 5.5, 255, 190, 110, 0.6);
+        glowAt(p.x + 2, p.y + 2, 0xffc070, 0.3, 2.4, 90);
+        break;
+      }
+      case 'manordoor': {
+        // The gate in its south face. The cutscene is main's; this is the prompt.
+        glowAt(p.x, p.y, 0xffc880, 0.42, 1.6, 30);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.6, 255, 200, 130, 0.65);
+        interactables.push({ id: nextId++, kind: 'manordoor', x: p.x + 0.5, y: p.y + 0.5, label: 'E · INTO THE MANOR', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x, y: p.y + 2 }] });
+        plate(p.x, p.y, p.variant ?? 'THE MANOR', 120);
+        break;
+      }
+      case 'manorout': {
+        glowAt(p.x, p.y, 0xffc880, 0.34, 1.4, 26);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.4, 255, 200, 130, 0.6);
+        interactables.push({ id: nextId++, kind: 'manorout', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE FIELD', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }] });
+        plate(p.x, p.y, 'THE DOOR', 74);
+        break;
+      }
+      case 'manorhatch': {
+        // A trapdoor in the boards. Shut and under a rug while the party is on;
+        // open, and breathing cold, once it is not.
+        const shut = p.variant === 'shut';
+        const spr = standing({ ...p, kind: 'innrug' }, shut ? 'inn_carpet_a' : 'cellar_stairs', shut ? 0.5 : 0.72, 'ground');
+        if (spr && !shut) spr.tint = 0x8e94a0;
+        glowAt(p.x, p.y, shut ? 0x6a7a92 : 0x7fa8c8, shut ? 0.12 : 0.34, 1.2, 18);
+        if (!shut) lighting.addSource(p.x + 0.5, p.y + 0.5, 3.2, 150, 180, 220, 0.4);
+        interactables.push({ id: nextId++, kind: 'manorhatch', x: p.x + 0.5, y: p.y + 0.5, label: shut ? 'E · A TRAPDOOR · NAILED SHUT' : 'E · DOWN INTO THE CELLAR', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 }] });
+        plate(p.x, p.y, shut ? 'A TRAPDOOR' : 'THE CELLAR', 70);
+        break;
+      }
+      case 'vaultup': {
+        glowAt(p.x, p.y, 0xffc880, 0.34, 1.5, 30);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 5, 255, 205, 140, 0.62);
+        interactables.push({ id: nextId++, kind: 'vaultup', x: p.x + 0.5, y: p.y + 0.5, label: 'E · UP INTO THE HALL', tiles: [{ x: p.x, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }] });
+        plate(p.x, p.y, 'THE STAIR UP', 74);
+        break;
+      }
+      case 'citygate': {
+        // THE EASTERN ROAD. The one thing on the battlefield the hero walks up to
+        // and is told no: an iron grate down over the road, and a name on it, so
+        // the country past it is a place with a name rather than a missing wall.
+        const spr = standing(p, 'iron_cage', 0.92);
+        if (spr) {
+          spr.scale.set(1.5);
+          spr.tint = 0xb0b4b8;
+          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        }
+        glowAt(p.x, p.y, 0x7fa8ff, 0.3, 1.8, 40);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.0, 130, 170, 255, 0.55);
+        interactables.push({ id: nextId++, kind: 'citygate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE EASTERN ROAD'} (BARRED)`, tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y - 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x - 2, y: p.y }], note: 'The grate is down over the road and the winch is on the far side of it. The city beyond is not opening its gate for anyone this week.' });
+        plate(p.x, p.y, `${p.variant ?? 'THE EASTERN ROAD'} · BARRED`, 128);
+        break;
+      }
+      case 'fieldroad': {
+        // The signpost at the bridge landing: back over the water to the farm.
+        standing(p, 'signpost', 0.95);
+        glowAt(p.x, p.y, 0xd8a85c, 0.38, 1.4, 12);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.2, 255, 190, 110, 0.55);
+        interactables.push({ id: nextId++, kind: 'fieldroad', x: p.x + 0.5, y: p.y + 0.5, label: 'E · BACK OVER THE BRIDGE', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }, { x: p.x + 2, y: p.y }] });
+        plate(p.x, p.y, 'THE RIVER BRIDGE', 92);
+        break;
+      }
+      case 'merchantman': {
+        // THE MAN IN THE CLOSET, once he is out of it. A render-only body with a
+        // word on him - he is a person, not an entity, and nothing may swing at him.
+        const anim: AnimName = 'merchant_walk';
+        if (spriteLib.loaded && spriteLib.hasAnim(anim)) {
+          const spr = new Sprite(spriteLib.frame(anim, 2, 0));
+          const foot = spriteLib.footAnchor(anim);
+          spr.anchor.set(foot.x, foot.y);
+          spr.scale.set(58 / (spriteLib.paintedHeight(anim) || 90) / 0.8);
+          const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+          spr.position.set(sc.x, sc.y + 4);
+          spr.tint = 0xe8d4b0;
+          spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
+          viewport.objectLayer.addChild(spr);
+          lighting.registerProp(p.x, p.y, spr);
+        }
+        glowAt(p.x, p.y, 0xffd9a0, 0.24, 0.9, 30);
+        interactables.push({ id: nextId++, kind: 'merchantman', x: p.x + 0.5, y: p.y + 0.5, label: 'E · SPEAK', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }] });
+        break;
+      }
       case 'board': {
         // DUNGEON RECORDS (it.48): a signpost board with the run's tallies.
         standing(p, 'signpost', 0.95);
@@ -1052,6 +1389,44 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       a.rod.rotation = 0.05 + Math.sin(t) * 0.07;
       a.rod.position.y = -6 + Math.sin(t * 1.3) * 0.8;
     }
+    /**
+     * THE ENGINES (it.110). An engine at rest sits cocked. `fireSiege` starts its
+     * clock; the arm comes round over `SWING` seconds on an ease-out (a
+     * counterweight accelerates hard and then runs out of travel), the stone
+     * leaves the sling at the top of that swing, and the arm winds itself slowly
+     * back over the four seconds after - which is the cooldown, made visible.
+     */
+    for (const e of engines) {
+      if (e.t >= 0) {
+        e.t += dt;
+        if (e.t <= SWING) {
+          const k2 = e.t / SWING;
+          const ease = 1 - (1 - k2) * (1 - k2) * (1 - k2);
+          e.arm.rotation = e.rest + (e.fire - e.rest) * ease;
+          e.shot.visible = k2 < 0.55;
+        } else if (e.t <= SWING + 4) {
+          // The crew winds it back. Linear and slow: this is the cooldown.
+          const k2 = (e.t - SWING) / 4;
+          e.arm.rotation = e.fire + (e.rest - e.fire) * k2;
+          e.shot.visible = k2 > 0.85;
+        } else {
+          e.arm.rotation = e.rest;
+          e.shot.visible = true;
+          e.t = -1;
+        }
+      }
+      const fl = e.flight;
+      if (!fl) continue;
+      fl.t += dt;
+      const k3 = Math.min(1, fl.t / FLIGHT);
+      fl.spr.position.set(fl.ax + (fl.bx - fl.ax) * k3, fl.ay + (fl.by - fl.ay) * k3 - Math.sin(k3 * Math.PI) * 130);
+      fl.spr.rotation += dt * 6;
+      fl.spr.zIndex = 1e5; // over everything it passes: it is in the air
+      if (k3 < 1) continue;
+      fl.spr.destroy();
+      e.flight = null;
+      fl.hit(fl.tx, fl.ty);
+    }
     const k = 1 - Math.exp(-10 * dt);
     for (const pl of plates) {
       pl.node.position.y = pl.baseY + Math.sin(clock * 1.3 + pl.phase) * 2.5;
@@ -1066,7 +1441,38 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       f.sprite.alpha = 0.1 + 0.08 * (0.5 + 0.5 * Math.sin(t * 1.9));
     }
   };
+  /**
+   * WIND ONE BACK AND LET IT GO (it.110). The arm's clock starts, and the stone
+   * is launched from the sling's own screen position toward the tile it was
+   * loosed at - both of them in VIEWPORT space, which is the space
+   * `worldToScreen` speaks and every sprite in these layers already lives in.
+   */
+  const fireSiege = (id: number, tx: number, ty: number, onImpact: (x: number, y: number) => void): boolean => {
+    const e = engines.find((q) => q.id === id);
+    if (!e || e.t >= 0 || e.flight) return false;
+    e.t = 0;
+    const tip = worldToScreen(0, 0, vec2()); // scratch is in use by the caller's loop
+    const armX = e.root.position.x + e.arm.position.x;
+    const armY = e.root.position.y + e.arm.position.y;
+    tip.x = armX + Math.cos(e.fire) * 96;
+    tip.y = armY + Math.sin(e.fire) * 96;
+    const mark = worldToScreen(tx + 0.5, ty + 0.5, vec2());
+    const spr = new Sprite(has('rock_c') ? spriteLib.single('rock_c') : assets.get('glow'));
+    spr.anchor.set(0.5);
+    spr.scale.set(0.55);
+    spr.tint = 0xb8ada0;
+    spr.position.set(tip.x, tip.y);
+    viewport.ambienceLayer.addChild(spr);
+    e.flight = { spr, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, t: -SWING * 0.55, tx, ty, hit: onImpact };
+    return true;
+  };
+
   const destroy = (): void => {
+    for (const e of engines) {
+      e.flight?.spr.destroy();
+      e.root.destroy({ children: true });
+    }
+    engines.length = 0;
     for (const a of anglers) a.root.destroy({ children: true });
     anglers.length = 0;
     for (const f of fog) f.sprite.destroy();
@@ -1074,5 +1480,5 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate, setPlatesHidden };
+  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate, setPlatesHidden, fireSiege };
 }

@@ -6860,6 +6860,54 @@
    "w": 64,
    "h": 32,
    "nearest": false
+  },
+  "tent_a": {
+   "file": "single_tent_a.png",
+   "w": 300,
+   "h": 193,
+   "nearest": false
+  },
+  "tent_b": {
+   "file": "single_tent_b.png",
+   "w": 300,
+   "h": 206,
+   "nearest": false
+  },
+  "tent_c": {
+   "file": "single_tent_c.png",
+   "w": 230,
+   "h": 133,
+   "nearest": false
+  },
+  "tent_d": {
+   "file": "single_tent_d.png",
+   "w": 150,
+   "h": 131,
+   "nearest": false
+  },
+  "tent_e": {
+   "file": "single_tent_e.png",
+   "w": 158,
+   "h": 144,
+   "nearest": false
+  },
+  "firepit_a": {
+   "file": "single_firepit_a.png",
+   "w": 96,
+   "h": 63,
+   "nearest": false
+  },
+  "firepit_b": {
+   "file": "single_firepit_b.png",
+   "w": 96,
+   "h": 59,
+   "nearest": false
+  },
+  "tripod": {
+   "file": "single_tripod.png",
+   "w": 82,
+   "h": 81,
+   "nearest": false
   }
  }
 }

@@ -105,7 +105,11 @@ export const RECLAIMED_WORDS = ['We\'re home.', 'So much to rebuild.', 'Thank yo
  * to hear them talk. These are the people the hero found against a barn wall
  * with three of the free company counting their coin, and they are Oscar's own
  * household and neighbours - so they talk about THAT, about the river they live
- * off, and about the burned bridge that is the reason the company came down it.
+ * off, and about the bridge up-river, which since it.110 is a road the city
+ * keeps rather than a fire nobody talks about. The three lines that used to say
+ * the span had burned are gone with the span that had: the bridge STANDS, it has
+ * two knights on it, and what the household says about it is what people who
+ * live beside a garrisoned crossing actually say.
  *
  * Split in three so the bank does not sound like one person: what the household
  * says, what the anglers say, and what any of them might say in passing.
@@ -123,10 +127,11 @@ export const RIVER_WORDS = [
   'Mind the jetty - it is slick where the planks have gone green.',
   'That deep bend past the reeds is where the big ones sit.',
   'We eat what the water gives us. It has been generous lately.',
-  // The bridge, and the road that is not open.
-  'The span burned the same week they came. I do not think that was chance.',
-  'Nothing crosses at the bridge. Not since the fire.',
-  'Oscar has his grandfather\u2019s seal. It will be worth something when the span is rebuilt.',
+  // The bridge up the track, and the ground on the other side of it.
+  'The watch put two men back on the span the week the fields were taken.',
+  'Nobody crosses without leave in writing. I have watched them turn a carter round.',
+  'Oscar has his grandfather\u2019s seal, and that is the only paper on this bank worth anything.',
+  'Do not go over there for the walk. There was a battle on that ground and it is still on it.',
   // And the hero.
   'You are welcome at this fire whenever you want it.',
   'We owe you the roof over us, and he knows it.',

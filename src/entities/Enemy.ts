@@ -65,7 +65,9 @@ export type EnemyKind =
   | 'brigand'
   // THE FARMLANDS (it.100): the company that took the fields, and the man who leads it.
   | 'mercenary'
-  | 'general';
+  | 'general'
+  // ACROSS THE RIVER (it.110): the man holding a party in somebody else's house.
+  | 'chief';
 
 /** THE LOOTERS (it.91): the two human kinds the east quarter's errand counts. */
 export const LOOTER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['bandit', 'brigand']);
@@ -603,6 +605,42 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       anchorY: 0.94,
       scale: 1.3,
       tint: 0xa8524c,
+      stride: 0.5,
+      ownShadow: true,
+    },
+  },
+  /**
+   * THE BANDIT CHIEF (it.110). The wall at the end of the manor, and the same
+   * shape of fight as the field general: a mini-boss, not a warden. He wears the
+   * company's own captain rig in a darker dye and stands a head over his men, so
+   * the moment the hall wakes up there is no question which one he is.
+   *
+   * He is pitched a touch under the general - that fight had a squad of the
+   * city's own in it and this one does not, so the hero is alone with him and
+   * ten others in a room with the door behind them.
+   */
+  chief: {
+    kind: 'chief',
+    armor: 4,
+    name: 'The Bandit Chief',
+    hp: 210,
+    minDamage: 12,
+    maxDamage: 20,
+    toHit: 0.79,
+    speedMult: 0.66,
+    windupTicks: 34,
+    recoverTicks: 30,
+    reach: 1.8,
+    hitRecoveryTicks: 16,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'captain_walk',
+      idle: 'captain_idle',
+      death: 'captain_death',
+      attack: 'captain_attack',
+      anchorY: 0.94,
+      scale: 1.28,
+      tint: 0x7e5a52, // dark leather and old blood, not the company's red
       stride: 0.5,
       ownShadow: true,
     },

@@ -879,6 +879,30 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] The refugee calls the innkeeper "he"
 - [x] Playthrough; clean build
 
+## Iteration 110 - Across the river (2026-09-10)
+
+- [x] The riverside meadow doubled up-river: 84x60, ~2,200 walkable tiles, six more buildings on the new acres
+- [x] The burned bridge is gone from the map, the props and every line of ambient chatter
+- [x] THE RIVER BRIDGE: an eleven-bay span with parapets, piers and a gate arch at each end, found by search
+- [x] Two knights of the city watch keep the near end; the span itself is never walkable
+- [x] E at the arch: refused without a pass, and Oscar's seal read, honoured and opened with it
+- [x] THE BATTLEFIELD (floor 107): a week-old field, 72x56, enclosed by four rings of wood
+- [x] A hundred-odd fallen off three death sheets, laid in bands where the lines met
+- [x] Siege engines composed from pack pieces - three that still throw, four wrecks
+- [x] E works an engine: the arm swings, a stone arcs out, and what it lands on takes three quarters of it
+- [x] A war camp of pavilions, cook fires and cauldrons, baked into the atlas for this iteration
+- [x] Scavengers and brigands on posts, and loot containers the length of the field
+- [x] THE EASTERN ROAD: an iron grate over the road at the far edge, named and barred
+- [x] The manor lit from inside; coming near it plays the noise of what is going on in there
+- [x] THE MANOR (floor 108): a great hall, two feast tables, twelve men and their chief
+- [x] The chief offers the hero the door and takes it back; the whole hall comes at once
+- [x] The merchant in the closet: 200 gold, three draughts, a standing promise, and the hatch
+- [x] THE MANOR CELLAR (floor 109): three chambers, fifteen monsters, four strongboxes
+- [x] Every floor's return road works: the bridge, the manor's door, the hatch and the stair
+- [x] Two long-standing qa75 faults fixed - the farm's way-home threw, the riverside's fishing checks were eaten by a cutscene
+- [x] 74/74 on the device matrix on all four new floors; zero console errors across the whole road
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

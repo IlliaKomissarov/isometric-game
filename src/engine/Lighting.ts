@@ -87,9 +87,12 @@ function rampChannels(light: number, warm: Rgb = LIGHT_WARM_RGB, shadow: Rgb = L
 /** Multiply a composed tint by a prop's own shade factor, if it carries one. */
 function shadeTint(tint: number, shade: Rgb | undefined): number {
   if (shade === undefined) return tint;
-  const r = Math.round(((tint >> 16) & 0xff) * shade[0]);
-  const g = Math.round(((tint >> 8) & 0xff) * shade[1]);
-  const b = Math.round((tint & 0xff) * shade[2]);
+  // CLAMPED, because a shade may be > 1 (the merchant is lifted OUT of the room
+  // rather than pushed into it), and a channel over 255 makes a number Pixi
+  // refuses to read as a colour at all - which throws inside the render pass.
+  const r = Math.min(255, Math.round(((tint >> 16) & 0xff) * shade[0]));
+  const g = Math.min(255, Math.round(((tint >> 8) & 0xff) * shade[1]));
+  const b = Math.min(255, Math.round((tint & 0xff) * shade[2]));
   return (r << 16) | (g << 8) | b;
 }
 

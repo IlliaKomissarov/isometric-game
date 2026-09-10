@@ -5745,7 +5745,7 @@ async function boot(): Promise<void> {
     /** THE BANDIT CHIEF: the company's captain rig in his own darker leather. */
     const chiefPortrait = (): HTMLCanvasElement | null => faceOf('captain_idle', 0x9a7268, 0);
     /** THE MAN IN THE CLOSET. */
-    const merchantPortrait = (): HTMLCanvasElement | null => faceOf('cit_porter_walk', 0xf0dcb4, 2) ?? faceOf('merchant_walk', 0xe8d4b0, 2);
+    const merchantPortrait = (): HTMLCanvasElement | null => faceOf('trader_walk', 0xffffff, 2) ?? faceOf('cit_porter_walk', 0xf0dcb4, 2);
 
     /**
      * A TRAVEL THAT CHOOSES ITS OWN LANDING (it.110). `goPlace` always sets the
@@ -5902,16 +5902,22 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * THE CHIEF'S WELCOME (it.110, rewritten it.110b).
+     * THE CHIEF'S WELCOME (it.110, rewritten it.110b, sharpened it.111).
      *
-     * BRACK THE TALLYMAN prices things. That is the whole character, and it is
-     * why the scene works: he offers the hero the door not out of mercy but
-     * because a fight is an expense, and he takes the offer back the moment he
-     * remembers what a head is worth. Menace out of arithmetic, said quietly, in
-     * somebody else's dining room, with his boots on their table.
+     * BRACK THE TALLYMAN PRICES THINGS. That is the whole character, and it is
+     * why the scene works: the menace is arithmetic, said quietly, in somebody
+     * else's dining room, by a man who does not get up.
      *
-     * it.110's version shouted. Shouting is not frightening; a man who is not
-     * raising his voice because he does not think he needs to is.
+     * it.110 shouted, and shouting is not frightening. it.110b stopped shouting
+     * but was still NEGOTIATING: it offered the hero the door, took the offer
+     * back, and spent its best line explaining why it had changed its mind. A
+     * man who has to explain why he is dangerous is not one.
+     *
+     * it.111 takes the offer away entirely. He decided before the hero was
+     * through the door, and every line after that is him working out loud what
+     * the corpse is worth and who is carrying which part of it home. The hero is
+     * not a threat to him; the hero is STOCK. The last thing he says is a warning
+     * to his own men to be careful of the wine on their way past.
      */
     const startManorAmbush = (): void => {
       const m = world.manor;
@@ -5930,20 +5936,20 @@ async function boot(): Promise<void> {
         route: [{ x: c.x, y: c.y }],
         titles: [
           ['THE GREAT HALL', 'somebody else\u2019s house, and somebody else\u2019s wine'],
-          ['BRACK THE TALLYMAN', 'chief of the marauders, at a table he did not pay for'],
+          ['BRACK THE TALLYMAN', 'chief of the marauders, and he does not get up'],
         ],
         walkers: 0,
         cast,
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: c.x, y: c.y, text: 'Quiet. Quiet \u2014 put it down. Something has come in out of the dark, and it is dripping on my floor.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'not getting up', portrait: chiefPortrait(), foe: true },
-          { t: 2.9, x: c.x, y: c.y, text: 'Let me save us both an evening. There are eleven of us. There is one of you. And the door behind you is still open, which is more courtesy than I have shown anyone this month.', speaker: 'BRACK THE TALLYMAN', role: 'counting the room', portrait: chiefPortrait(), foe: true },
-          { t: 5.0, x: c.x, y: c.y, text: 'So walk. Go on. Nobody follows you past the bridge \u2014 you have my word, and my word has carried heavier things than you.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true },
-          { t: 7.2, x: c.x, y: c.y, text: '\u2026No. No \u2014 forget that. I have just remembered what the city is paying for heads out of that field, and yours has come a very long way to be counted. Taking it off you is far more lucrative.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true },
-          { t: 9.6, x: c.x, y: c.y, text: 'On your feet, gentlemen. Mind the wine on your way past \u2014 it is worth a great deal more than most of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3 },
+          { t: 1.0, x: c.x, y: c.y, text: 'Sit down, all of you. It has only brought a sword.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'not looking up', portrait: chiefPortrait(), foe: true },
+          { t: 3.1, x: c.x, y: c.y, text: 'You have come a long way to stand in my light, and you never once asked the only question that matters in this room. Not whether you can. Whether you are WORTH the trouble of stopping.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true },
+          { t: 5.9, x: c.x, y: c.y, text: 'Let me do the sum, since nobody else here can count. Mail — sound. Blade — good steel, wants an edge. Boots: Harl has been whining about boots since the ford. Teeth, if the city is still buying them. That is the whole of you, and I have added it twice.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'pricing the room', portrait: chiefPortrait(), foe: true },
+          { t: 9.2, x: c.x, y: c.y, text: 'You are waiting for the part where I offer you the door. There is no door. There has not been a door since you crossed my bridge — there has only ever been how far in you got before somebody had to fetch a cloth.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true },
+          { t: 12.2, x: c.x, y: c.y, text: 'On your feet, gentlemen. And mind the wine on your way past — it is older than this house and worth a great deal more than any of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3 },
         ],
-        hold: 5,
+        hold: 6,
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
@@ -5987,7 +5993,7 @@ async function boot(): Promise<void> {
           ['SOMETHING IN THE WALL', 'has been listening to every word of it'],
         ],
         walkers: 0,
-        cast: [{ anim: 'cit_porter_walk', x: q.x, y: q.y, height: 62, tint: 0xf0dcb4, dir: 2 }],
+        cast: [{ anim: 'trader_walk', x: q.x, y: q.y, height: 74, tint: 0xffffff, dir: 2 }],
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
@@ -8144,7 +8150,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
    * empty ground. The scavengers on it and the men in the hall come in with them.
    */
   if (mode === 'field' || mode === 'manor') {
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'guard_death', 'poacher_death', 'captain_death', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of [...FIELD_POOL, 'mercenary' as EnemyKind, 'chief' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

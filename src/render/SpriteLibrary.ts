@@ -206,6 +206,11 @@ export type AnimName =
   | 'cit_maid_walk'
   | 'cit_labourer_walk'
   | 'cit_carter_walk'
+  // THE MERCHANT OUT OF THE CLOSET (it.111): the only livery in the game nobody
+  // else wears - `scripts/bake-trader.py` re-dyes the monk's sheet, which is the
+  // one citizen carrying a bundle, into deep wine and plum. There is no merchant
+  // in any pack in the repository, so this is how the game gets one.
+  | 'trader_walk'
   // THE FARMLANDS (it.100): the free company's man-at-arms, and its general.
   | 'captain_idle'
   | 'captain_walk'

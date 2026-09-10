@@ -2964,6 +2964,25 @@
     "left": 0,
     "right": 153
    }
+  },
+  "trader_walk": {
+   "file": "trader_walk.png",
+   "cellW": 34,
+   "cellH": 60,
+   "frameCount": 4,
+   "dirCount": 8,
+   "nearest": true,
+   "origW": 34,
+   "origH": 60,
+   "trimX": 0,
+   "trimY": 0,
+   "scale": 1,
+   "painted": {
+    "top": 0,
+    "bottom": 59,
+    "left": 0,
+    "right": 33
+   }
   }
  },
  "singles": {

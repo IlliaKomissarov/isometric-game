@@ -1436,27 +1436,33 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
          * THE MAN OUT OF THE CLOSET (it.110b). A render-only body - he is a
          * person, not an entity, and nothing on this floor may swing at him.
          *
-         * A SHEET OF HIS OWN. it.110 drew him on `merchant_walk`, which is the
-         * town armorer's rig, so the one man the hero is supposed to remember
-         * looked like a stall keeper they had already met. The porter's sheet is
-         * a trader off the road with his pack still on him, it is used nowhere
-         * else in this hall, and it crops to a real face for the corner box.
+         * A SHEET OF HIS OWN, AND IT REALLY IS HIS OWN (it.111). it.110 drew him
+         * on `merchant_walk`, the town armourer's rig; it.110b moved him to
+         * `cit_porter_walk` - and all seven `cit_*` sheets are worn by the town's
+         * street folk, so he still looked like somebody the player passes in the
+         * market twice a minute. `trader_walk` is a re-dye of the one citizen
+         * sheet carrying a bundle, into a deep wine and plum livery worn nowhere
+         * else in the game (`scripts/bake-trader.py`).
          *
          * And he is LIT and NAMED, because a room with one person left in it
          * should not make the player hunt for them.
          */
-        const anim: AnimName = spriteLib.loaded && spriteLib.hasAnim('cit_porter_walk') ? 'cit_porter_walk' : 'merchant_walk';
+        const anim: AnimName = spriteLib.loaded && spriteLib.hasAnim('trader_walk') ? 'trader_walk' : 'merchant_walk';
         if (spriteLib.loaded && spriteLib.hasAnim(anim)) {
           const spr = new Sprite(spriteLib.frame(anim, 2, 0));
           const foot = spriteLib.footAnchor(anim);
           spr.anchor.set(foot.x, foot.y);
-          spr.scale.set(66 / (spriteLib.paintedHeight(anim) || 90) / 0.8);
+          // TALLER THAN THE TOWNSFOLK (it.111). He is the one person left alive
+          // in a hall the size of a barn; at the street folk's 66 he was a dot on
+          // a floor. 78 puts him a head above a bandit without making him a boss.
+          spr.scale.set(78 / (spriteLib.paintedHeight(anim) || 90) / 0.8);
           const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
           spr.position.set(sc.x, sc.y + 4);
-          spr.tint = 0xf0dcb4;
           spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
           viewport.objectLayer.addChild(spr);
-          lighting.registerProp(p.x, p.y, spr);
+          // A LITTLE BRIGHTER THAN THE ROOM, not tinted cream: the sheet is dyed
+          // now, and washing a dyed sheet with a tint is how it.110b lost him.
+          lighting.registerProp(p.x, p.y, spr, [1.18, 1.14, 1.06]);
         }
         // Lit enough to find, not so lit he glows: at 0.6 the lamp washed the
         // sheet's own colours out and he read as an orange smudge.

@@ -155,7 +155,16 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
    * a room that no longer has anybody else standing in it.
    */
   const merchant = { x: CLOSET_PIECE_X - 1, y: 8 };
-  if (cleared) decal({ kind: 'merchantman', x: merchant.x, y: merchant.y });
+  if (cleared) {
+    decal({ kind: 'merchantman', x: merchant.x, y: merchant.y });
+    // WHAT THEY TOOK OFF HIS CARTS (it.111), set down beside him: a man with a
+    // crate and a strongbox at his feet reads as a merchant before he says a
+    // word, which no amount of livery does on its own. Clutter, so the tile in
+    // front of him stays walkable and the hero can get to the prompt.
+    decal({ kind: 'inndeco', x: merchant.x - 1, y: merchant.y + 1, variant: 'inn_goods_b', ox: 0.2, oy: 0.1 });
+    decal({ kind: 'inndeco', x: merchant.x + 1, y: merchant.y + 1, variant: 'cellar_goods', ox: 0.2, oy: 0.1 });
+    decal({ kind: 'innrug', x: merchant.x, y: merchant.y + 1, variant: 'inn_carpet_b', ox: 0.3, oy: 0.2 });
+  }
 
   // ---- THE HOUSEHOLD'S GOODS, BEING DRUNK --------------------------------
   put('inn_barrels', 8, 2, 0.1, -0.1);
@@ -196,11 +205,28 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
     decal({ kind: 'inndeco', x, y, variant: x === 16 ? 'inn_painting_b' : 'inn_painting_a', ox: 0.5, oy: 0.35, lift: 44 });
 
   // ---- THE WAY DOWN ------------------------------------------------------
-  // The tile in front of the door leaf in the west wall. Barred while the party
-  // upstairs is on; open, and breathing cold, once it is not.
+  /**
+   * THE BASEMENT DOOR (it.110b, made unmistakable it.111).
+   *
+   * it.110 drew a trapdoor here with the tileset's `cellar_stairs` - which is a
+   * staircase going UP - so the way DOWN into the manor's vault was signposted
+   * with a picture of the way out of one. It has been a real door in a real wall
+   * run since it.110b; what it.111 adds is everything around it, because a leaf
+   * in a thirty-two-tile wall is not by itself an announcement:
+   *
+   *   a flagged threshold in front of it, so the eye is led to that stretch of
+   *   wall rather than to any of the other fifteen panels;
+   *   a sconce either side of the leaf, which is the only pair on the run;
+   *   and while it is BARRED, the bench the merchant says they kept across it,
+   *   drawn on the threshold itself.
+   */
   const basement = { x: 2, y: BASEMENT_PIECE_Y + 1 };
+  for (let y = BASEMENT_PIECE_Y - 1; y <= BASEMENT_PIECE_Y + 2; y++)
+    for (let x = 2; x <= 4; x++) if (inside(x, y)) tileKind[idx(x, y)] = KIND_INN_STONE;
+  for (const y of [BASEMENT_PIECE_Y - 1, BASEMENT_PIECE_Y + 2]) decal({ kind: 'sconce', x: 1, y, ox: 0.5, oy: 0.55 });
   decal({ kind: 'manordown', x: basement.x, y: basement.y, variant: cleared ? 'open' : 'shut' });
-  rug('inn_carpet_a', 4, basement.y, 0.3, 0.1);
+  if (!cleared) decal({ kind: 'bench', x: basement.x, y: basement.y - 1, variant: 'bench_b', ox: 0.25, oy: 0.2 });
+  rug('inn_carpet_a', 5, basement.y, 0.3, 0.1);
 
   // ---- THE COMPANY -------------------------------------------------------
   // Ten of them round the two tables and the fire, and the chief at the head of

@@ -39,7 +39,7 @@ export interface Interactable {
   /** The engine's crank: E winds it back and lets it go. */
   | 'catapult'
   /** The manor's front door, the way back out of its hall, and the hatch in its floor. */
-  | 'manordoor' | 'manorout' | 'manorhatch' | 'vaultup'
+  | 'manordoor' | 'manorout' | 'manordown' | 'vaultup'
   /** The barricaded eastern road, the signpost back over the bridge, and the man in the closet. */
   | 'citygate' | 'fieldroad' | 'merchantman';
   /** THE GILDED STAG (it.91): the corner room's bed, chest and bench - the keeper's until the errand is paid. */
@@ -570,11 +570,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // carry for the living versions of these men).
         body.anchor.set(0.5, v[0] === 'g' ? 0.72 : v[0] === 'c' ? 0.94 : 0.9);
         body.scale.set(v[0] === 'g' ? 0.42 : v[0] === 'c' ? 0.9 : 0.44);
-        // DARKER THAN IT.91 (it.110). Two hundred of these lie on the battlefield,
-        // and at the old tint the city's blue tabards read as a bright litter of
-        // toy soldiers. Dropped toward the ground's own colour, they read as what
-        // they are from across the field and only resolve into men close up.
-        body.tint = 0x6f665e;
+        // DARKER THAN IT.91 (it.110, darker again it.110b). A hundred of these lie
+        // on the battlefield, and the city's rig is a BLUE tabard over a red-and-
+        // white shield - the two most saturated things in the game's palette. A
+        // tint multiplies, so it keeps the hue and only takes the brightness: the
+        // only way these read as bodies in the mud rather than as a litter of toy
+        // soldiers is to take them most of the way down toward the earth itself.
+        body.tint = 0x4a443c;
+        body.alpha = 0.94;
         body.position.set(s.x, s.y + 4);
         viewport.groundLayer.addChild(pool);
         viewport.groundLayer.addChild(body);
@@ -1043,58 +1046,94 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       // ---- ACROSS THE RIVER (it.110) ----
       case 'bridgedeck': {
         /**
-         * ONE BAY OF THE SPAN (it.110), laid on the water it crosses.
+         * ONE BAY OF THE SPAN (rebuilt in stone, it.110b).
          *
-         * THE DECK IS OVERSIZED ON PURPOSE. The pack's plank tile is 57 px on a
-         * 64 px diamond, so a run of them laid at their painted size leaves a
-         * hairline of river between every bay and the whole crossing reads as a
-         * fishing jetty rather than as a road. Each bay is drawn a fifth over
-         * size so they overlap into one continuous roadway.
+         * it.110 laid the pack's little plank-deck tile end to end with a timber
+         * FENCE either side and called it a bridge. It read as a fishing jetty
+         * with railings, because that is what those two pieces are. The Ancient
+         * Isometric Tileset - the same pack the inn and the cellar are built out
+         * of - ships an actual bridge kit, and this is it:
          *
-         * AND IT HAS PARAPETS. A bridge without rails is a raft: a timber run
-         * either side of the deck, the near one sorted IN FRONT of anything
-         * standing on the bay and the far one behind it, which is what makes the
-         * span read as something you walk THROUGH rather than over.
+         *   `span_deck`   the tileset's raised stone paving, which trims to an
+         *                 exact 2:1 diamond, so a run of them is a road with no
+         *                 seam anywhere to hide;
+         *   `span_rail_*` a real bannister with turned balusters, in the two
+         *                 orientations that run along +x - the far one sorted
+         *                 BEHIND everything on the bay, the near one in front,
+         *                 so the roadway is something you look THROUGH.
          *
          * The water under it stays BLOCKED: the crossing is through the watch,
          * so there must be no tile sequence anywhere that walks across it.
          */
-        if (!has('bridge')) break;
-        const deck = new Sprite(spriteLib.single('bridge'));
+        const deckArt = p.variant ?? 'span_deck';
+        if (!has(deckArt)) break;
+        const deck = new Sprite(spriteLib.single(deckArt));
         const sc = worldToScreen(p.x, p.y, scratch);
-        deck.position.set(sc.x - TILE_W / 2 - 6, sc.y - 4);
-        deck.scale.set((TILE_W / deck.width) * 1.2, 1.28);
-        deck.tint = 0xd8ccb0; // dressed stone and kept timber: nothing here has burned
+        deck.position.set(sc.x - deck.width / 2, sc.y - (deck.height - TILE_H) - 1);
+        deck.tint = 0xcfd2cc;
         viewport.groundLayer.addChild(deck);
         lighting.registerProp(p.x, p.y, deck);
-        if (has('fence')) {
-          for (const side of [-1, 1]) {
-            const rail = new Sprite(spriteLib.single('fence'));
-            rail.anchor.set(0.5, 0.92);
-            const rs = worldToScreen(p.x + 0.5, p.y + 0.5 + side * 0.52, vec2());
-            rail.position.set(rs.x, rs.y + 4);
-            rail.scale.set(1.06, 0.92);
-            rail.tint = 0xbfae90;
-            rail.zIndex = depthKey(p.x + 0.5, p.y + 0.5 + side * 0.52);
-            viewport.objectLayer.addChild(rail);
-            lighting.registerProp(p.x, p.y, rail);
-          }
+        /**
+         * THE PARAPETS SIT ON THE TILE'S OWN EDGES (it.110b). Both long edges of
+         * a road running along +x go down-right on screen: the far one is the
+         * edge from the tile's TOP corner to its RIGHT corner, the near one from
+         * its LEFT corner to its BOTTOM corner. A bannister anchored at its lower
+         * LEFT end on that corner therefore lies exactly along the edge, and at
+         * 70 px against a 64 px edge each one laps the next bay's, so a run of
+         * them is a continuous rail rather than a row of separate pieces.
+         */
+        for (const [dy, art] of [[0, 'span_rail_n'], [1, 'span_rail_s']] as const) {
+          if (!has(art)) continue;
+          const rail = new Sprite(spriteLib.single(art));
+          rail.anchor.set(0, 1);
+          const rs = worldToScreen(p.x, p.y + dy, vec2());
+          rail.position.set(rs.x, rs.y + 4);
+          rail.tint = 0xc9c4b8;
+          rail.zIndex = depthKey(p.x + 0.5, p.y + (dy === 0 ? -0.5 : 1.5));
+          viewport.objectLayer.addChild(rail);
+          lighting.registerProp(p.x, p.y, rail);
         }
         break;
       }
       case 'bridgepost': {
-        // A pier standing out of the river under the deck. It is drawn on the
-        // OBJECT layer and sorted a row back, so the water washes past its foot
-        // and the deck lies over its head.
-        if (!has('column')) break;
-        const spr = new Sprite(spriteLib.single('column'));
-        spr.anchor.set(0.5, 0.34); // the shaft's waterline, not its base
+        /**
+         * WHAT HOLDS THE ROADWAY UP (it.110b): the tileset's stone block with an
+         * arch cut through it, standing in the river a row nearer the camera than
+         * the bay it carries, which is the only place an arch can actually be
+         * seen. `block` is the same piece solid - the abutment at each end.
+         */
+        const art = p.variant === 'block' ? 'span_block' : 'span_pier';
+        if (!has(art)) break;
+        const spr = new Sprite(spriteLib.single(art));
+        spr.anchor.set(0.5, 0.9);
         const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
-        spr.position.set(sc.x, sc.y + 6);
-        spr.scale.set(1.9, 1.35); // a pier carrying a road, not a mooring post
-        spr.tint = 0x9aa0a4;
-        spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 6;
+        spr.position.set(sc.x, sc.y + 12);
+        spr.tint = 0x8f958f;
+        spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 2;
         viewport.objectLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'gore': {
+        /**
+         * BLOOD ON THE GROUND (it.110b). Cut out of the pack's bloody-wall
+         * photographs - alpha from how far a pixel's red runs ahead of its green
+         * and blue - and flattened onto the ground plane, so a battlefield has
+         * pools on it instead of the bright red dots the gore pack's animation
+         * frames turn into when they are laid down flat.
+         */
+        const art = p.variant ?? 'gore_a';
+        if (!has(art)) break;
+        const spr = new Sprite(spriteLib.single(art));
+        spr.anchor.set(0.5, 0.5);
+        const sc = worldToScreen(p.x + 0.5 + (p.ox ?? 0), p.y + 0.5 + (p.oy ?? 0), scratch);
+        spr.position.set(sc.x, sc.y + 3);
+        // SMALL AND FAINT. At 0.55-1.0 of the baked size and nearly opaque the
+        // pools ran into one another and the field became one sheet of red; a
+        // stain wants clean ground round it and some of the earth showing through.
+        spr.scale.set(0.34 + (((p.x * 7 + p.y * 3) % 5) * 0.07), 0.34 + (((p.x * 3 + p.y * 5) % 5) * 0.05));
+        spr.alpha = 0.62;
+        viewport.groundLayer.addChild(spr);
         lighting.registerProp(p.x, p.y, spr);
         break;
       }
@@ -1109,16 +1148,22 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
          * something to press E at.
          */
         const near = (p.variant ?? '').includes('BRIDGE');
-        const spr = standing(p, 'ruin_gate', 0.97, 'object', 0.5);
-        if (spr) {
-          spr.scale.set(near ? 1.05 : 0.82, near ? 1.05 : 0.82);
-          // KEPT, NOT RUINED (it.110). The pack's only great arch is a mossy one,
-          // and at its own colour it reads as a ruin standing over a new road.
-          // Lifted well toward white it reads as weathered dressed stone, which
-          // is what a bridge the city still garrisons looks like.
-          spr.tint = near ? 0xdde4de : 0xc4ccc6;
-          if (near) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
-        }
+        /**
+         * IT.110B: the pack's OWN great arch, composited at bake time from the
+         * two halves it ships as (a leg and a springing on one canvas). it.110
+         * used `ruin_gate`, which is a mossy ruin, and no amount of tint made a
+         * ruin read as a gate the city still garrisons.
+         */
+        const spr = standing(p, has('span_gate') ? 'span_gate' : 'ruin_gate', 0.98, 'object', 0.5);
+        if (spr) spr.scale.set(near ? 1.02 : 0.8);
+        /**
+         * AND IT IS NOT AN OCCLUDER (it.110b). it.110 registered the near arch
+         * with the cutaway, which is what a cottage wants - and a hero standing
+         * on the road BEHIND the gate then ghosted it to 0.38, so the one
+         * landmark the whole crossing is built around went nearly invisible
+         * exactly when the player walked up to it. An arch is a hole in a wall:
+         * there is nothing behind it to reveal.
+         */
         glowAt(p.x, p.y, 0xffc880, near ? 0.42 : 0.22, near ? 2.0 : 1.4, 44);
         lighting.addSource(p.x + 0.5, p.y + 0.5, near ? 5.4 : 3.6, 255, 200, 140, near ? 0.72 : 0.45);
         plate(p.x, p.y, p.variant ?? 'THE BRIDGE', 150);
@@ -1281,16 +1326,21 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         plate(p.x, p.y, 'THE DOOR', 74);
         break;
       }
-      case 'manorhatch': {
-        // A trapdoor in the boards. Shut and under a rug while the party is on;
-        // open, and breathing cold, once it is not.
+      case 'manordown': {
+        /**
+         * THE BASEMENT DOOR (it.110b). The leaf itself is a piece of the wall run
+         * the dresser lays; this is the mark on the floor in front of it, its
+         * light, and the prompt - exactly the way the Gilded Stag's cellar door
+         * has worked since it.97. it.110 drew a trapdoor here with the tileset's
+         * `cellar_stairs`, which is a staircase going UP: the way DOWN into the
+         * manor's vault was signposted with a picture of the way out of one.
+         */
         const shut = p.variant === 'shut';
-        const spr = standing({ ...p, kind: 'innrug' }, shut ? 'inn_carpet_a' : 'cellar_stairs', shut ? 0.5 : 0.72, 'ground');
-        if (spr && !shut) spr.tint = 0x8e94a0;
-        glowAt(p.x, p.y, shut ? 0x6a7a92 : 0x7fa8c8, shut ? 0.12 : 0.34, 1.2, 18);
-        if (!shut) lighting.addSource(p.x + 0.5, p.y + 0.5, 3.2, 150, 180, 220, 0.4);
-        interactables.push({ id: nextId++, kind: 'manorhatch', x: p.x + 0.5, y: p.y + 0.5, label: shut ? 'E · A TRAPDOOR · NAILED SHUT' : 'E · DOWN INTO THE CELLAR', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 }] });
-        plate(p.x, p.y, shut ? 'A TRAPDOOR' : 'THE CELLAR', 70);
+        const lit = litTile(p.x, p.y);
+        glowAt(p.x, p.y, shut ? 0x6a7a92 : 0xffb060, shut ? 0.16 : 0.4, 1.3, 30, lit);
+        if (!shut) lighting.addSource(p.x + 0.5, p.y + 0.5, 3.8, 255, 180, 110, 0.5);
+        interactables.push({ id: nextId++, kind: 'manordown', x: p.x + 0.5, y: p.y + 0.5, label: shut ? 'E · THE BASEMENT DOOR · BARRED' : 'E · DOWN INTO THE BASEMENT', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y + 1 }] });
+        plate(p.x, p.y, shut ? 'THE BASEMENT · BARRED' : 'THE BASEMENT', 78);
         break;
       }
       case 'vaultup': {
@@ -1326,23 +1376,38 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'merchantman': {
-        // THE MAN IN THE CLOSET, once he is out of it. A render-only body with a
-        // word on him - he is a person, not an entity, and nothing may swing at him.
-        const anim: AnimName = 'merchant_walk';
+        /**
+         * THE MAN OUT OF THE CLOSET (it.110b). A render-only body - he is a
+         * person, not an entity, and nothing on this floor may swing at him.
+         *
+         * A SHEET OF HIS OWN. it.110 drew him on `merchant_walk`, which is the
+         * town armorer's rig, so the one man the hero is supposed to remember
+         * looked like a stall keeper they had already met. The porter's sheet is
+         * a trader off the road with his pack still on him, it is used nowhere
+         * else in this hall, and it crops to a real face for the corner box.
+         *
+         * And he is LIT and NAMED, because a room with one person left in it
+         * should not make the player hunt for them.
+         */
+        const anim: AnimName = spriteLib.loaded && spriteLib.hasAnim('cit_porter_walk') ? 'cit_porter_walk' : 'merchant_walk';
         if (spriteLib.loaded && spriteLib.hasAnim(anim)) {
           const spr = new Sprite(spriteLib.frame(anim, 2, 0));
           const foot = spriteLib.footAnchor(anim);
           spr.anchor.set(foot.x, foot.y);
-          spr.scale.set(58 / (spriteLib.paintedHeight(anim) || 90) / 0.8);
+          spr.scale.set(66 / (spriteLib.paintedHeight(anim) || 90) / 0.8);
           const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
           spr.position.set(sc.x, sc.y + 4);
-          spr.tint = 0xe8d4b0;
+          spr.tint = 0xf0dcb4;
           spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
           viewport.objectLayer.addChild(spr);
           lighting.registerProp(p.x, p.y, spr);
         }
-        glowAt(p.x, p.y, 0xffd9a0, 0.24, 0.9, 30);
-        interactables.push({ id: nextId++, kind: 'merchantman', x: p.x + 0.5, y: p.y + 0.5, label: 'E · SPEAK', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }] });
+        // Lit enough to find, not so lit he glows: at 0.6 the lamp washed the
+        // sheet's own colours out and he read as an orange smudge.
+        glowAt(p.x, p.y, 0xffd9a0, 0.3, 1.2, 34);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.8, 255, 214, 168, 0.34);
+        interactables.push({ id: nextId++, kind: 'merchantman', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE MERCHANT', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x, y: p.y + 1 }] });
+        plate(p.x, p.y, 'THE MERCHANT', 96);
         break;
       }
       case 'board': {

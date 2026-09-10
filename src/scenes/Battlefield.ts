@@ -159,7 +159,18 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
     for (let x = 0; x < W; x++) {
       if (!isFloor(x, y) || onRoad[idx(x, y)]) continue;
       const band = Math.sin(x * 0.11 + Math.cos(y * 0.09) * 1.6);
-      if (band > 0.15) tileKind[idx(x, y)] = KIND_DIRT;
+      /**
+       * MOSTLY BEATEN EARTH (it.110b). it.110 left more than half the field in
+       * green pasture, which is what a battlefield looks like a summer later,
+       * not a week. The grass survives only in the pockets the lines never
+       * crossed, and the broad bands where they stood are churned to mud.
+       */
+      if (band > -0.35) tileKind[idx(x, y)] = KIND_DIRT;
+      // And where it burned it is ash - in BANDS, which read as fire scars,
+      // never as the scattered single tiles it.110 speckled and which read as
+      // pits in the ground.
+      const burn = Math.sin(x * 0.075 - y * 0.055 + 1.1);
+      if (burn > 0.86) tileKind[idx(x, y)] = KIND_FARM_ASH;
     }
   }
   // Two burnt scars where the camp fires got into the grass. These are the only
@@ -327,17 +338,44 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
       decal({ kind: 'corpse', x, y, variant: `${sheet}${(x * 3 + y) % 8}` });
       fallen++;
       /**
-       * BLOOD DRIES DARK (it.110). The pack's `blood_*` singles are tiny
-       * saturated dots meant to be thrown and tinted by the gore system, and
-       * laid raw on the ground they are bright red spots all over a brown field.
-       * The cellar's own floor STAINS are what a week-old field looks like, and
-       * they are already the right size for a tile.
+       * A BODY BLEEDS WHERE IT FELL (it.110b). `gore_*` is cut out of the pack's
+       * bloody-wall photographs and flattened onto the ground plane - a real
+       * pool, not the cellar's little damp smear that it.110 borrowed.
        */
-      if ((x * 5 + y) % 3 === 0) decal({ kind: 'innrug', x, y, variant: 'cellar_stain_b', ox: (rand() - 0.5) * 0.5, oy: (rand() - 0.5) * 0.5 });
+      if ((x * 5 + y) % 3 === 0) decal({ kind: 'gore', x, y, variant: `gore_${'abcd'[(x * 3 + y) % 4]}`, ox: (rand() - 0.5) * 0.6, oy: (rand() - 0.5) * 0.6 });
       if ((x * 7 + y * 3) % 11 === 0) lay('debris', x + 1, y, `debris_${'abcd'[(x + y) % 4]}`);
       if ((x * 11 + y * 5) % 17 === 0) lay('rubble', x, y + 1, `rubble_${'abcdefg'[(x * 3 + y) % 7]}`);
     }
   }
+  /**
+   * AND SOME OF IT IS NOT UNDER ANYBODY (it.110b), because most of the blood on
+   * a field is not, by the time somebody comes to look at it.
+   *
+   * SPARINGLY. The first pass at this laid seven hundred pools and the field
+   * came out a red CARPET - which reads as a lake, not as a battle, and buries
+   * the ground it is supposed to be staining. A stain has to have clean earth
+   * round it to read as a stain. This is about a tenth as much, kept to the line
+   * the armies actually met on, plus three real slicks where the press was
+   * worst.
+   */
+  for (let y = 5; y < H - 5; y++) {
+    for (let x = 5; x < W - 5; x++) {
+      if (!isFloor(x, y)) continue;
+      const line = Math.exp(-Math.pow((x - 26) / 13, 2)) * 0.14;
+      if (((x * 41 + y * 13) % 100) / 100 >= line) continue;
+      lay('gore', x, y, `gore_${'abcde'[(x * 5 + y * 3) % 5]}`);
+    }
+  }
+  // Three slicks where the press was worst, and nothing dragged out of them.
+  for (const [bx, by, br] of [[24, 26, 3], [21, 33, 3], [29, 20, 2]] as const) {
+    for (let y = by - br; y <= by + br; y++)
+      for (let x = bx - br; x <= bx + br; x++) {
+        if (!isFloor(x, y) || Math.hypot(x - bx, y - by) > br) continue;
+        if ((x * 3 + y) % 3) continue;
+        lay('gore', x, y, `gore_${'abcd'[(x + y) % 4]}`);
+      }
+  }
+
   // Heaps of stripped gear where the scavengers have already been through.
   for (const [x, y] of [[14, 24], [19, 31], [30, 33], [12, 30], [23, 25], [37, 31], [9, 26]] as const)
     lay('heap', x, y, `heap_${'abcde'[(x + y) % 5]}`);

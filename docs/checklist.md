@@ -903,6 +903,24 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] 74/74 on the device matrix on all four new floors; zero console errors across the whole road
 - [x] Playthrough; clean build
 
+## Iteration 110b - The playtest pass (2026-09-10)
+
+- [x] THE BRIDGE REBUILT out of the tileset's own kit: stone roadway, balustrades, arched piers, abutments, a great gate arch composited from the two halves the pack ships
+- [x] The near arch no longer ghosts when the hero stands behind it
+- [x] THE FAR BANK IS DARK: no shore and no timber anywhere across the water except the landing at the crossing
+- [x] The river is visible along its whole length for the first time
+- [x] The crossing is found from the water alone, and the landing is cut where the span comes down
+- [x] SMOOTH WATER: every tile cross-fades between caustic frames on a smoothstep, at a lazier 2.6 s period
+- [x] REAL BLOOD on the battlefield, cut out of the pack's bloody-wall textures and flattened to the ground
+- [x] ...and only about 180 pools of it, because the first pass laid 700 and the field read as a lake
+- [x] The field is beaten earth and banded ash, not pasture; the fallen are tinted down to the earth
+- [x] The battlefield is significantly darker: explored light 0.26 → 0.14, torch pool 13 → 10 tiles
+- [x] THE BASEMENT IS A DOOR in the manor's west wall, not a trapdoor drawn with a staircase going up
+- [x] THE MERCHANT is on his own sheet, on open floor in front of the dais, lit and named
+- [x] BRACK THE TALLYMAN: the marauder chief rewritten cold instead of loud
+- [x] 502/502 on the scripted playthrough, with four new checks for the kit, the clear river and the blood
+- [x] Playthrough; clean build
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

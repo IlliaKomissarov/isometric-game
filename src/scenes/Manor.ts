@@ -44,6 +44,8 @@ const HALL = { x0: 2, y0: 2, x1: 33, y1: 25 };
 const OUT_PIECE_X = 6;
 /** THE CLOSET: a door leaf in the north wall over (28,1) and (29,1); its opening is (29,2). */
 const CLOSET_PIECE_X = 28;
+/** THE BASEMENT DOOR: a leaf in the west wall over (1,18) and (1,19) (it.110b). */
+const BASEMENT_PIECE_Y = 18;
 
 /**
  * @param cleared the chief is down and the merchant is away: the hall is quiet,
@@ -85,7 +87,15 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   // ---- THE WALLS ---------------------------------------------------------
   for (let x = HALL.x0; x <= HALL.x1; x += 2)
     wallN(x, 1, x === OUT_PIECE_X ? 'inn_arch_n' : x === CLOSET_PIECE_X ? (cleared ? 'inn_door_open' : 'inn_door_shut') : 'inn_wall_n');
-  for (let y = HALL.y0; y <= HALL.y1; y += 2) wallW(1, y, y === 10 ? 'inn_hearth_w' : y === 20 ? 'inn_arch_w' : 'inn_wall_w');
+  /**
+   * THE WEST WALL, AND THE DOOR IN IT (it.110b). The hearth at 10, the basement
+   * door at 18, and a blind arch at 22. The basement's leaf is a real door in a
+   * real wall run - the same piece and the same idea as the Gilded Stag's own
+   * cellar door (it.97) - rather than a trapdoor in the floorboards drawn with a
+   * picture of a staircase going up.
+   */
+  for (let y = HALL.y0; y <= HALL.y1; y += 2)
+    wallW(1, y, y === 10 ? 'inn_hearth_w' : y === BASEMENT_PIECE_Y ? (cleared ? 'inn_door_w_open' : 'inn_door_w_shut') : y === 22 ? 'inn_arch_w' : 'inn_wall_w');
 
   // ---- THE WAY OUT -------------------------------------------------------
   const out = { x: OUT_PIECE_X + 1, y: 2 };
@@ -133,11 +143,18 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   // wall run above; this is the mark under it, and the tile the man stands on
   // when he finally comes out of it.
   const closet = { x: CLOSET_PIECE_X + 1, y: 2 };
-  const merchant = { x: CLOSET_PIECE_X + 1, y: 3 };
-  // HE IS STILL HERE (it.110). The scene has him saying he will walk to the
-  // bridge, and nine days in a cupboard is not a thing a man walks off in five
-  // minutes - so he is standing in front of the open closet with his back to it,
-  // and the hero can go and say something to him before they go down the hatch.
+  /**
+   * WHERE HE STANDS (it.110b). it.110 put him on the tile directly under the
+   * closet door - which is BEHIND the high table, behind the bottle shelf and
+   * behind the bookcase, all of which are drawn over him because they are nearer
+   * the camera. He was a man-shaped hole in the furniture.
+   *
+   * He steps out onto the open flagstone in front of the dais instead: three
+   * tiles clear of the table, nothing between him and the camera, and the light
+   * and the name plate the dresser gives him make him the most obvious thing in
+   * a room that no longer has anybody else standing in it.
+   */
+  const merchant = { x: CLOSET_PIECE_X - 1, y: 8 };
   if (cleared) decal({ kind: 'merchantman', x: merchant.x, y: merchant.y });
 
   // ---- THE HOUSEHOLD'S GOODS, BEING DRUNK --------------------------------
@@ -178,12 +195,12 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   for (const [x, y] of [[6, 1], [16, 1], [24, 1]] as const)
     decal({ kind: 'inndeco', x, y, variant: x === 16 ? 'inn_painting_b' : 'inn_painting_a', ox: 0.5, oy: 0.35, lift: 44 });
 
-  // ---- THE HATCH ---------------------------------------------------------
-  // In the floor at the hall's south-west end, under a rug while the party is on
-  // and open once it is not. It is CLUTTER, so it never blocks the tile.
-  const hatch = { x: 8, y: 21 };
-  rug('inn_carpet_b', hatch.x, hatch.y, 0.3, 0.2);
-  decal({ kind: 'manorhatch', x: hatch.x, y: hatch.y, variant: cleared ? 'open' : 'shut' });
+  // ---- THE WAY DOWN ------------------------------------------------------
+  // The tile in front of the door leaf in the west wall. Barred while the party
+  // upstairs is on; open, and breathing cold, once it is not.
+  const basement = { x: 2, y: BASEMENT_PIECE_Y + 1 };
+  decal({ kind: 'manordown', x: basement.x, y: basement.y, variant: cleared ? 'open' : 'shut' });
+  rug('inn_carpet_a', 4, basement.y, 0.3, 0.1);
 
   // ---- THE COMPANY -------------------------------------------------------
   // Ten of them round the two tables and the fire, and the chief at the head of
@@ -238,7 +255,7 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   const layout = bareLayout(map, props, 'THE MANOR');
   layout.wander = hall;
   layout.houses = [];
-  const manor: ManorLayout = { out, chief, bandits, closet, merchant, hatch, hall, cleared };
+  const manor: ManorLayout = { out, chief, bandits, closet, merchant, basement, hall, cleared };
   layout.manor = manor;
   return { layout, manor };
 }

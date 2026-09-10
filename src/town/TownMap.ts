@@ -196,6 +196,8 @@ export type TownPropKind =
   | 'bridgedeck'
   /** A pier post standing out of the river under the span. */
   | 'bridgepost'
+  /** A pool of dried blood on the ground (it.110b). */
+  | 'gore'
   /** The signpost on the far bank: back over the water to the farm. */
   | 'fieldroad'
   /** A siege engine: `catapult` still throws, `wreck` never will again. */
@@ -208,8 +210,8 @@ export type TownPropKind =
   | 'manor'
   | 'manordoor'
   | 'manorout'
-  /** The cellar hatch in the manor's floor, and the stair back up out of it. */
-  | 'manorhatch'
+  /** The basement door in the manor's wall, and the stair back up out of it. */
+  | 'manordown'
   | 'vaultup'
   /** The barricaded road east: the city that is not built yet. */
   | 'citygate'
@@ -315,8 +317,13 @@ export interface ManorLayout {
   /** The closet door, and the tile the merchant stands on once he is out. */
   closet: { x: number; y: number };
   merchant: { x: number; y: number };
-  /** The cellar hatch in the floor. */
-  hatch: { x: number; y: number };
+  /**
+   * THE BASEMENT DOOR (it.110b). The tile in FRONT of the door leaf in the west
+   * wall - it.110 put a trapdoor in the floor and drew it with the tileset's
+   * stair sprite, which is a stair going UP, so the way down to the cellar was
+   * marked with a picture of a way out of one.
+   */
+  basement: { x: number; y: number };
   hall: Room;
   cleared: boolean;
 }
@@ -401,7 +408,7 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
   'inndeco', 'innrug', 'sconce', 'innwall',
   // ACROSS THE RIVER (it.110): a camp fire, a cauldron and a bridge bay are all paint underfoot.
-  'firepit', 'tripod', 'bridgedeck',
+  'firepit', 'tripod', 'bridgedeck', 'gore',
   // THE CELLAR (it.97): both doorways are drawn into a wall run, so the tile under them stays open.
   'cellardoor', 'cellarup',
   // THE FARMLANDS (it.100): a field you cannot walk into is not a field, and the

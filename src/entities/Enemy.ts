@@ -610,10 +610,10 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
     },
   },
   /**
-   * THE BANDIT CHIEF (it.110). The wall at the end of the manor, and the same
-   * shape of fight as the field general: a mini-boss, not a warden. He wears the
-   * company's own captain rig in a darker dye and stands a head over his men, so
-   * the moment the hall wakes up there is no question which one he is.
+   * BRACK THE TALLYMAN (it.110, named it.110b). The wall at the end of the manor,
+   * and the same shape of fight as the field general: a mini-boss, not a warden.
+   * He wears the company's own captain rig in a darker dye and stands a head over
+   * his men, so the moment the hall wakes up there is no question which one he is.
    *
    * He is pitched a touch under the general - that fight had a squad of the
    * city's own in it and this one does not, so the hero is alone with him and
@@ -622,7 +622,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
   chief: {
     kind: 'chief',
     armor: 4,
-    name: 'The Bandit Chief',
+    name: 'Brack the Tallyman',
     hp: 210,
     minDamage: 12,
     maxDamage: 20,

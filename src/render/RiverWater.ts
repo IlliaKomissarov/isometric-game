@@ -26,20 +26,30 @@
  * ever writes `texture`.
  */
 
-import type { Sprite } from 'pixi.js';
+import { Sprite } from 'pixi.js';
 import { assets, WATER_PERIOD, WATER_PHASES } from '@/core/AssetManager';
 
 /** How long one full pass of the wave loop takes, in seconds. */
-const PERIOD = 1.9;
+const PERIOD = 2.6;
 
 interface WaterTile {
   sprite: Sprite;
+  /**
+   * THE CROSS-FADE LAYER (it.110b). The caustic loop is ten frames, so at any
+   * period the eye can follow it the texture SNAPS ten times a pass and the
+   * river ticks instead of flowing. Every tile carries a second sprite in the
+   * same place holding the NEXT frame, and the pass dissolves one into the
+   * other - which turns ten discrete frames into a continuous surface for the
+   * cost of one alpha write per tile per frame.
+   */
+  next: Sprite;
   /** This tile's fixed offset into the loop, in phases. */
   offset: number;
   /** Which member of the 3x3 spatial block this tile is (it.108). */
   block: number;
-  /** The phase currently on the sprite, so an unchanged tile is not rewritten. */
+  /** The phases currently on the two sprites, so an unchanged tile is not rewritten. */
   shown: number;
+  shownNext: number;
 }
 
 export class RiverWater {
@@ -62,7 +72,16 @@ export class RiverWater {
     // continuous with its neighbours rather than a copy of them (it.108).
     const bx = ((gx % WATER_PERIOD) + WATER_PERIOD) % WATER_PERIOD;
     const by = ((gy % WATER_PERIOD) + WATER_PERIOD) % WATER_PERIOD;
-    this.tiles.push({ sprite, offset: along, block: by * WATER_PERIOD + bx, shown: -1 });
+    // The dissolve layer sits in the ground layer directly over its own tile,
+    // added straight after it so nothing can ever be drawn between the two.
+    const next = new Sprite(sprite.texture);
+    next.position.copyFrom(sprite.position);
+    next.anchor.copyFrom(sprite.anchor);
+    next.scale.copyFrom(sprite.scale);
+    next.alpha = 0;
+    const parent = sprite.parent;
+    if (parent) parent.addChildAt(next, parent.getChildIndex(sprite) + 1);
+    this.tiles.push({ sprite, next, offset: along, block: by * WATER_PERIOD + bx, shown: -1, shownNext: -1 });
   }
 
   /** Render tick. `dt` is wall-clock seconds; never a sim tick. */
@@ -71,16 +90,39 @@ export class RiverWater {
     this.clock += dt;
     const base = (this.clock / PERIOD) * WATER_PHASES;
     for (const t of this.tiles) {
-      const phase = Math.floor(base + t.offset) % WATER_PHASES;
-      const p = phase < 0 ? phase + WATER_PHASES : phase;
-      if (p === t.shown) continue;
-      t.shown = p;
-      t.sprite.texture = assets.get(`water_${p}_${t.block}`);
+      const raw = base + t.offset;
+      const floor = Math.floor(raw);
+      /**
+       * A SMOOTHSTEP, NOT A RAMP (it.110b). A linear dissolve holds both frames
+       * at half strength for most of the crossing, which reads as a blur rather
+       * than as moving water. Easing the mix keeps each frame crisp for most of
+       * its life and spends the motion in the middle of the handover.
+       */
+      const k = raw - floor;
+      const mix = k * k * (3 - 2 * k);
+      const a = ((floor % WATER_PHASES) + WATER_PHASES) % WATER_PHASES;
+      const b = (a + 1) % WATER_PHASES;
+      if (a !== t.shown) {
+        t.shown = a;
+        t.sprite.texture = assets.get(`water_${a}_${t.block}`);
+      }
+      if (b !== t.shownNext) {
+        t.shownNext = b;
+        t.next.texture = assets.get(`water_${b}_${t.block}`);
+      }
+      t.next.alpha = mix;
+      // The lighting owns the tint and the culler owns `renderable`, and both of
+      // them only know about the tile the SCENE made - the dissolve layer has to
+      // be told what its own tile was told.
+      if (t.next.tint !== t.sprite.tint) t.next.tint = t.sprite.tint;
+      if (t.next.renderable !== t.sprite.renderable) t.next.renderable = t.sprite.renderable;
+      if (t.next.visible !== t.sprite.visible) t.next.visible = t.sprite.visible;
     }
   }
 
-  /** The water TILES belong to the scene, so there is nothing of ours to free. */
+  /** The tiles belong to the scene; the dissolve layers are ours and are freed. */
   destroy(): void {
+    for (const t of this.tiles) t.next.destroy();
     this.tiles.length = 0;
   }
 }

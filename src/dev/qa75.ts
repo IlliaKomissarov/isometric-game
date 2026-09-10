@@ -2672,6 +2672,30 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       } | null;
       check('the meadow is twice the size it was', g.dungeon.width >= 80 && g.dungeon.height >= 56, `${g.dungeon.width}x${g.dungeon.height}`);
       check('a real span crosses the river now', !!river && river.span.length >= 6, `${river?.span.length ?? 0} bays`);
+      /**
+       * AND IT IS BUILT OF STONE (it.110b). it.110 laid the pack's plank-deck
+       * tile with a timber fence either side, which is a jetty. The Ancient
+       * Isometric Tileset's own bridge kit - paving, bannister, arched pier,
+       * great arch - is baked into the atlas, and the proof is that it is there.
+       */
+      {
+        const missing = ['span_deck', 'span_rail_n', 'span_rail_s', 'span_pier', 'span_block', 'span_gate'].filter((k) => !g.sprites.hasSingle(k));
+        check('and it is built out of the tileset own bridge kit', missing.length === 0, `missing ${missing.join()}`);
+      }
+      /**
+       * NOTHING GROWS ACROSS THE WATER (it.110b). A tile on the far bank is
+       * nearer the camera than the river in front of it, so a tree over there is
+       * drawn ON TOP of the water - which is what hid the river the map is named
+       * for. The far side is void now except the landing the road comes down on.
+       */
+      {
+        const props = g.town.layout.props as Array<{ kind: string; x: number; y: number }>;
+        const map = g.town.layout.map as { width: number; height: number; tileKind: Uint8Array };
+        const wet = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < map.width && y < map.height && map.tileKind[y * map.width + x] === 9;
+        // A trunk with water BEHIND it (up the diagonal) is a trunk on the far bank.
+        const across = props.filter((q) => ['tree', 'pine', 'bigtree'].includes(q.kind) && (wet(q.x - 2, q.y - 2) || wet(q.x - 3, q.y - 3)));
+        check('no wood stands between the player and the river', across.length <= 2, `${across.length} trunks across the water`);
+      }
       check('and the watch is standing on it', !!river && river.knights.length === 2, `${river?.knights.length ?? 0} knights`);
       if (river) {
         // NOBODY WALKS ACROSS. The deck is drawn ON water tiles that stay
@@ -2722,6 +2746,17 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         check('siege engines stand on it, and wrecks of others', props.filter((q) => q.kind === 'siege').length >= 5 && field.catapults.length >= 2, `${props.filter((q) => q.kind === 'siege').length} engines, ${field.catapults.length} working`);
         check('a war camp is pitched south of the road', props.filter((q) => q.kind === 'tent').length >= 4 && props.filter((q) => q.kind === 'firepit').length >= 3);
         check('scavengers are working the dead over', field.looterPosts.length >= 8, `${field.looterPosts.length} posts`);
+        /**
+         * AND THE GROUND IS BLOODY (it.110b), out of the pack's bloody-wall
+         * photographs rather than the gore pack's bright animation frames. In
+         * MODERATION: the first attempt laid seven hundred pools and the field
+         * came out a red carpet, so the check has a ceiling as well as a floor.
+         */
+        {
+          const pools = props.filter((q) => q.kind === 'gore').length;
+          check('and the ground it was fought on is stained with it', pools >= 60 && pools <= 320, `${pools} pools`);
+          check('with real blood, cut out of the pack own textures', ['gore_a', 'gore_b', 'gore_c', 'gore_d'].every((k) => g.sprites.hasSingle(k)));
+        }
         /**
          * THE WOOD IS A BORDER, NOT A COPSE (it.110). The belt is grown out of
          * every tile that is not open ground - and a tile a PROP stands on is
@@ -2780,7 +2815,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g = game();
       await fadeClear();
       driveRender(200);
-      const manor = g.manor as { chief: { x: number; y: number }; bandits: Array<{ x: number; y: number }>; hatch: { x: number; y: number }; cleared: boolean } | null;
+      const manor = g.manor as { chief: { x: number; y: number }; bandits: Array<{ x: number; y: number }>; basement: { x: number; y: number }; cleared: boolean } | null;
       check('the house has a hall in it', !!manor && g.floor === 108, String(g.floor));
       if (manor) {
         let roster = 0;
@@ -2792,7 +2827,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         });
         check('a company is holding a party in it', roster >= 10, `${roster} in the hall`);
         check('and one of them is the chief', chief === 1 && !!g.boss, `${chief} chiefs`);
-        check('the trapdoor is nailed shut while they are up', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manorhatch')?.label ?? '').includes('NAILED'));
+        check('the basement door is barred while they are up', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manordown')?.label ?? '').includes('BARRED'));
         // THE WELCOME plays on the first tick, and it wakes the whole room.
         driveRender(1200);
         check('the chief has something to say about it', !!game()?.reclaim, 'no scene');
@@ -2828,7 +2863,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         check('rescuing him closes the errand', g.quests.manor === 'done' && g.quests.merchant === 'saved', `${g.quests.manor}/${g.quests.merchant}`);
         check('and the hall is rebuilt quiet under the hero feet', !!g.manor?.cleared && g.floor === 108, `${g.manor?.cleared} on ${g.floor}`);
         check('he is standing in front of the closet he was in', g.town.interactables.some((i: { kind: string }) => i.kind === 'merchantman'));
-        check('and the trapdoor is open at last', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manorhatch')?.label ?? '').includes('CELLAR'));
+        check('and the basement door stands open at last', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manordown')?.label ?? '').includes('BASEMENT'));
       }
       // ---- THE CELLAR UNDER IT -----------------------------------------
       g = game();

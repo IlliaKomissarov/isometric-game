@@ -1,5 +1,117 @@
 # Development Log
 
+## 2026-09-10 (iteration 110b) - A bridge worth crossing, a river you can see
+
+Six things came back from the playtest, and every one of them was right.
+
+### THE BRIDGE WAS A JETTY, so it is built out of a bridge kit now
+
+it.110 laid the pack's little plank-deck tile end to end with a timber FENCE
+either side. That is a fishing jetty with railings, because those two pieces are
+a fishing jetty with railings. The mistake was not looking hard enough: the
+Ancient Isometric Tileset - the same pack the Gilded Stag and its cellar are
+built out of - ships an actual bridge kit under `tile_images`, and nobody had
+opened those folders since it.96.
+
+Baked for this pass and used for the span:
+
+  `pavement/raised.png`               the roadway. Trims to an exact 2:1 diamond,
+                                      so a run of bays is a road with no seam.
+  `half_wall/bannister/wall_n|s.png`  a stone bannister with turned balusters, in
+                                      the two orientations that run along +x.
+  `arch/small/128x128 arch.png`       a stone block with an arch cut through it:
+                                      the piers, standing in the river.
+  `blocks/128/block 128.png`          the abutment at each end.
+  `arch/big/wall_n + wall_n2`         the great gate arch. The pack ships it as
+                                      two halves on one canvas - a leg and a
+                                      springing - which composite into one arch
+                                      before they are trimmed.
+
+The parapets sit on the tile's OWN EDGES: both long edges of a road running +x go
+down-right on screen, and a bannister anchored at its lower left end on the tile's
+top corner (far) or left corner (near) lies exactly along one of them. At 70 px
+against a 64 px edge each laps the next, so the rail is continuous.
+
+The near arch is no longer registered with the CUTAWAY. it.110 treated it like a
+cottage, so a hero standing on the road behind the gate ghosted it to 0.38 - the
+one landmark the crossing is built around went nearly invisible exactly when you
+walked up to it. An arch is a hole in a wall; there is nothing behind it.
+
+### THE TREES WERE STANDING IN THE RIVER
+
+The real fault, and it is one rule: **a tile on the far bank is nearer the camera
+down the screen diagonal than the water in front of it**, so a belt of timber over
+there is drawn ON TOP of the river. it.110 gave the river a far shore along its
+whole length and planted a wood on it, and the result was a map named after a
+river you could not see.
+
+There is no far shore anywhere now except the one place the road needs one: a
+small landing at the crossing, cut AFTER the crossing is found so it is always
+exactly where the span comes down. Everywhere else the water runs out into the
+dark. `sideOf()` gives every tile the signed side of the river's own polyline and
+the tree belt asks it before it plants anything.
+
+The crossing itself no longer needs far land to exist: walk out over the water
+from the near shore, and wherever the water ends is where the far abutment goes.
+
+### THE WATER TICKED, so it cross-fades
+
+Ten baked caustic frames swapped discretely is ten visible SNAPS a pass. Every
+water tile now carries a second sprite in the same place holding the next frame,
+and `RiverWater` dissolves one into the other on a smoothstep - crisp for most of
+each frame's life, with the motion spent in the middle of the handover. The period
+went 1.9 s to 2.6 s for a lazier current. One alpha write per tile per frame.
+
+### THE BATTLEFIELD WAS A LAWN WITH CORPSES ON IT
+
+Blood is cut out of the `bloody-wall` textures - alpha from how far a pixel's red
+runs ahead of its green and blue, times an elliptical falloff, flattened onto the
+ground plane - because the gore pack is 100 px animation frames of bright red dots
+and laid down flat that is exactly what they look like.
+
+The first attempt laid SEVEN HUNDRED pools and the field came out a red carpet,
+which reads as a lake and buries the ground it is meant to be staining. A stain
+needs clean earth round it. It is about 180 now, small and at 0.62 alpha, kept to
+the line the armies met on plus three real slicks.
+
+Also: most of the field is beaten earth rather than pasture, the ash is in BANDS
+that read as fire scars instead of scattered single tiles that read as pits, the
+fallen are tinted most of the way down to the earth (the city's rig is a blue
+tabard over a red-and-white shield - the two most saturated things in the palette,
+and a tint keeps the hue), and `exploredLight` went 0.26 to 0.14 with the torch
+pool 13 to 10 tiles. The hero walks a small circle of light through a field they
+can see the shape of and not the detail of.
+
+### THE CELLAR DOOR WAS A STAIRCASE GOING UP
+
+it.110 put a trapdoor in the floorboards and drew it with `cellar_stairs`, which
+is a stair going UP: the way down into the manor's vault was signposted with a
+picture of the way out of one. It is a real door in a real wall run now - the
+same piece and the same idea as the Gilded Stag's own cellar door (it.97) - in the
+west wall at y 18, with the prompt on the tile in front of it. The prop kind is
+`manordown`, the layout field is `basement`, and everything that mentioned a hatch
+(the merchant's two speeches, the barred-door line, the harness) says door.
+
+### THE MERCHANT WAS A MAN-SHAPED HOLE IN THE FURNITURE
+
+He stood on the tile directly under the closet door, which is behind the high
+table, behind the bottle shelf and behind the bookcase - all of which are drawn
+over him because they are nearer the camera. He steps out onto the open flagstone
+in front of the dais instead, three tiles clear of everything, on a sheet of his
+own (`cit_porter_walk`: a trader off the road with his pack still on him, used
+nowhere else in the hall) instead of the town armorer's rig, at 66 px, under a
+lamp, with a name plate.
+
+### AND THE CHIEF IS BRACK THE TALLYMAN
+
+it.110's chief shouted. Shouting is not frightening; a man who is not raising his
+voice because he does not think he needs to is. He prices things - that is the
+whole character, and it is why the scene works: he offers the hero the door
+because a fight is an expense, and takes the offer back the moment he remembers
+what a head is worth. He is not standing up while he does it, and the last thing
+he says before the room comes at you is to mind the wine, because it is worth more
+than his men are.
+
 ## 2026-09-10 (iteration 110) - Across the river: the bridge, the battlefield, the manor
 
 The riverside was a cul-de-sac. It had a burned bridge in the corner of it with a

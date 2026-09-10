@@ -6908,6 +6908,84 @@
    "w": 82,
    "h": 81,
    "nearest": false
+  },
+  "span_deck": {
+   "file": "single_span_deck.png",
+   "w": 66,
+   "h": 33,
+   "nearest": false
+  },
+  "span_deck2": {
+   "file": "single_span_deck2.png",
+   "w": 66,
+   "h": 39,
+   "nearest": false
+  },
+  "span_rail_n": {
+   "file": "single_span_rail_n.png",
+   "w": 70,
+   "h": 60,
+   "nearest": false
+  },
+  "span_rail_s": {
+   "file": "single_span_rail_s.png",
+   "w": 70,
+   "h": 61,
+   "nearest": false
+  },
+  "span_pier": {
+   "file": "single_span_pier.png",
+   "w": 84,
+   "h": 84,
+   "nearest": false
+  },
+  "span_block": {
+   "file": "single_span_block.png",
+   "w": 74,
+   "h": 74,
+   "nearest": false
+  },
+  "span_gate": {
+   "file": "single_span_gate.png",
+   "w": 150,
+   "h": 234,
+   "nearest": false
+  },
+  "span_gate_e": {
+   "file": "single_span_gate_e.png",
+   "w": 150,
+   "h": 232,
+   "nearest": false
+  },
+  "gore_a": {
+   "file": "single_gore_a.png",
+   "w": 163,
+   "h": 82,
+   "nearest": false
+  },
+  "gore_b": {
+   "file": "single_gore_b.png",
+   "w": 166,
+   "h": 86,
+   "nearest": false
+  },
+  "gore_c": {
+   "file": "single_gore_c.png",
+   "w": 167,
+   "h": 81,
+   "nearest": false
+  },
+  "gore_d": {
+   "file": "single_gore_d.png",
+   "w": 167,
+   "h": 80,
+   "nearest": false
+  },
+  "gore_e": {
+   "file": "single_gore_e.png",
+   "w": 148,
+   "h": 45,
+   "nearest": false
   }
  }
 }

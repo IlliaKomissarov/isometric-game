@@ -24,9 +24,16 @@
  *
  * THE SHAPE is a union of eight lobes, so the meadow bulges and pinches instead
  * of being a rectangle - but the river is cut through it afterwards as a BAND,
- * not a lobe, because water runs in a line. Beyond the water sits a strip of FAR
- * BANK, which is scenery: the connectivity pass seals it, because the only way
- * across is through the knights.
+ * not a lobe, because water runs in a line.
+ *
+ * THE FAR BANK IS DARK (it.110b). it.110 gave the river a far shore along its
+ * whole length and planted a wood on it - and because a tile further from the
+ * camera along the diagonal is drawn HIGHER but a tile nearer is drawn OVER, a
+ * belt of timber on the far side stood between the player and the water and hid
+ * the river the map is named for. There is now no far shore anywhere except the
+ * one place the road needs one: a small landing at the crossing, with the gate
+ * arch on it. Everywhere else the water simply runs out into the dark, which is
+ * both what a river at night looks like and the only way to actually SEE it.
  *
  * IT.110 DOUBLED IT. The old meadow was 56x44 and 1,116 walkable tiles, all of
  * it west of the bridge; it is 84x60 and about 2,200 now, and every one of the
@@ -72,14 +79,13 @@ const LOBES: ReadonlyArray<{ cx: number; cy: number; rx: number; ry: number }> =
 ];
 
 /**
- * THE FAR BANK. Land on the other side of the water, under the far end of the
- * span. Nothing walks on it - the connectivity pass seals every tile the hero
- * cannot reach, and the only crossing is the gate - but it has to BE land, or
- * the bridge would end in the river and the road beyond it in nothing.
+ * THE LANDING. The only piece of far shore on the map: a small shelf the bridge
+ * comes down on, placed AFTER the crossing is found rather than written down, so
+ * it is always exactly where the span needs it and nowhere else. Nothing walks
+ * on it - the connectivity pass seals every tile the hero cannot reach.
  */
-const FAR_LOBES: ReadonlyArray<{ cx: number; cy: number; rx: number; ry: number }> = [
-  { cx: 79, cy: 25, rx: 11, ry: 10 },
-];
+const LANDING_RX = 6;
+const LANDING_RY = 5;
 
 /** Where the hero comes through the river gate, and the signpost beside it. */
 const ENTRY = { x: 4, y: 31 };
@@ -174,23 +180,11 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     for (let x = 0; x < W; x++) {
       // A little noise on the rim so the lobes do not read as ellipses.
       const wob = 0.06 * Math.sin(x * 0.7 + y * 0.4) + 0.05 * Math.sin(x * 0.31 - y * 0.53);
-      let hit = false;
       for (const l of LOBES) {
         const dx = (x + 0.5 - l.cx) / l.rx;
         const dy = (y + 0.5 - l.cy) / l.ry;
         if (dx * dx + dy * dy <= 1 + wob) {
           grid[idx(x, y)] = TILE_FLOOR;
-          hit = true;
-          break;
-        }
-      }
-      if (hit) continue;
-      for (const l of FAR_LOBES) {
-        const dx = (x + 0.5 - l.cx) / l.rx;
-        const dy = (y + 0.5 - l.cy) / l.ry;
-        if (dx * dx + dy * dy <= 1 + wob) {
-          grid[idx(x, y)] = TILE_FLOOR;
-          farSide[idx(x, y)] = 1;
           break;
         }
       }
@@ -225,6 +219,34 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   const isWater = (x: number, y: number): boolean => inside(x, y) && tileKind[idx(x, y)] === KIND_WATER;
 
   /**
+   * WHICH BANK A TILE BELONGS TO (it.110b). The signed side of the river's own
+   * polyline: positive on the hero's bank, negative across the water. Everything
+   * that decides whether to DRAW something - the tree belt above all - asks this
+   * first, because anything drawn across the water is drawn in front of it.
+   */
+  const sideOf = (x: number, y: number): number => {
+    let best = Infinity;
+    let sign = 1;
+    for (let i = 0; i + 1 < COURSE.length; i++) {
+      const a = COURSE[i];
+      const b = COURSE[i + 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy || 1;
+      let t = ((x - a.x) * dx + (y - a.y) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+      if (d >= best) continue;
+      best = d;
+      sign = Math.sign(dx * (y - a.y) - dy * (x - a.x)) || 1;
+    }
+    return sign;
+  };
+  /** The sign the hero's own bank has, taken from the tile they arrive on. */
+  const NEAR_SIDE = sideOf(ENTRY.x + 0.5, ENTRY.y + 0.5);
+  const acrossWater = (x: number, y: number): boolean => sideOf(x + 0.5, y + 0.5) !== NEAR_SIDE;
+
+  /**
    * THE CROSSING (it.110). Found, not written down: the meadow's rim wanders
    * with the lobes' noise and the river's banks wander with theirs, so a
    * hand-picked pair of tiles is as likely to sit in the water as on the shore.
@@ -238,21 +260,43 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
       let near = -1;
       for (let x = 0; x < W; x++) if (isNear(x, y)) near = x;
       if (near < 0) continue;
-      let far = -1;
-      for (let x = near + 1; x < W; x++) {
-        if (isWater(x, y)) continue;
-        if (isFloor(x, y) && farSide[idx(x, y)]) far = x;
-        break; // the first non-water tile past the near bank decides it
-      }
-      if (far < 0) continue;
-      const gap = far - near - 1;
+      // IT.110B: the far side no longer has to BE anything. Walk out over the
+      // water from the near shore; wherever the water ends is where the far
+      // abutment goes, and the landing is built there afterwards.
+      let x = near + 1;
+      while (x < W && isWater(x, y)) x++;
+      const gap = x - near - 1;
       if (gap < 6 || gap > 16) continue;
-      return { y, near, far };
+      if (x >= W - 2) continue; // a span with no room to land on
+      return { y, near, far: x };
     }
     return null;
   };
   const crossing = findCrossing();
   const BRIDGE = crossing ? { x: crossing.near, y: crossing.y } : { x: 66, y: 16 };
+
+  /**
+   * THE LANDING is cut now, before anything is placed: a small shelf of ground
+   * on the far abutment, marked `farSide` so no steading, no reed and no cart
+   * track can ever wander onto it, and sealed by the connectivity pass at the
+   * end because nothing on this map can reach it on foot.
+   */
+  if (crossing) {
+    const cx = crossing.far + LANDING_RX - 2;
+    const cy = crossing.y;
+    for (let y = cy - LANDING_RY - 1; y <= cy + LANDING_RY + 1; y++) {
+      for (let x = crossing.far - 1; x <= cx + LANDING_RX; x++) {
+        if (!inside(x, y) || isWater(x, y)) continue;
+        const dx = (x + 0.5 - cx) / LANDING_RX;
+        const dy = (y + 0.5 - cy) / LANDING_RY;
+        const wob = 0.08 * Math.sin(x * 0.6 + y * 0.5);
+        if (dx * dx + dy * dy > 1 + wob) continue;
+        grid[idx(x, y)] = TILE_FLOOR;
+        farSide[idx(x, y)] = 1;
+        tileKind[idx(x, y)] = Math.abs(y - cy) <= 1 ? KIND_DIRT : KIND_GRASS;
+      }
+    }
+  }
 
   // ---- THE CART TRACK ---------------------------------------------------
   // In at the gate, through the yard, on up the bank to the bridge. Dirt, and
@@ -509,20 +553,36 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   const knights: Array<{ x: number; y: number }> = [];
   if (crossing) {
     const { y, near, far } = crossing;
+    /**
+     * THE SPAN, IN THE TILESET'S OWN STONE (it.110b). it.110 laid the pack's
+     * little plank-deck tile end to end with a timber fence either side, and it
+     * read as a fishing jetty with railings - which is what it was. The Ancient
+     * Isometric Tileset ships an actual bridge kit and this is it: `raised`
+     * paving for the roadway, the bannister with balusters for the parapets, the
+     * arched stone block for the piers, and the pack's great arch, composited
+     * from the two halves it ships as, for the gate at each end.
+     *
+     * The bays are laid FIRST and the piers after, because the dresser draws
+     * ground props in the order the layout lists them and a pier has to come up
+     * through the roadway rather than under it.
+     */
     for (let x = near + 1; x < far; x++) {
       span.push({ x, y });
-      decal({ kind: 'bridgedeck', x, y });
+      decal({ kind: 'bridgedeck', x, y, variant: (x - near) % 4 === 2 ? 'span_deck2' : 'span_deck' });
     }
-    // Piers standing out of the water either side of the deck, every third bay.
+    // A pier out of the water under every third bay, on the camera's side of the
+    // roadway where an arch can actually be seen.
     for (const b of span) {
-      if ((b.x - near) % 3 !== 0) continue;
-      for (const dy of [-1, 1]) if (isWater(b.x, b.y + dy)) decal({ kind: 'bridgepost', x: b.x, y: b.y + dy });
+      if ((b.x - near) % 3 !== 1) continue;
+      if (isWater(b.x, b.y + 1)) decal({ kind: 'bridgepost', x: b.x, y: b.y + 1 });
     }
     // The gate arch on the near bank, and the road under it.
     grid[idx(near, y)] = TILE_FLOOR;
     tileKind[idx(near, y)] = KIND_DIRT;
     onTrack[idx(near, y)] = 1;
     decal({ kind: 'bridgegate', x: near, y, variant: 'THE RIVER BRIDGE' });
+    // The abutment the near end of the roadway rests on, in the water below it.
+    if (isWater(near + 1, y + 1)) decal({ kind: 'bridgepost', x: near + 1, y: y + 1, variant: 'block' });
     // The knights: one either side of the road, a step back from the arch so
     // the arch never draws over them, and never on the road tile itself. They
     // are handed to `Villagers` as this floor's SENTRIES (`layout.guards`), which
@@ -554,8 +614,10 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
       const by = y + dy;
       if (isNear(bx, by) && !onTrack[idx(bx, by)]) block({ kind: 'brazier', x: bx, y: by });
     }
-    // The far end: the twin of the arch, and the road running away east off the
-    // map. Nothing here is walkable - it is the picture of where you are going.
+    // The far end: the twin of the arch on the landing, its abutment under it,
+    // and a few trunks behind it to close the view. Nothing here is walkable -
+    // it is the picture of where the road goes.
+    if (isWater(far - 1, y + 1)) decal({ kind: 'bridgepost', x: far - 1, y: y + 1, variant: 'block' });
     if (inside(far, y)) decal({ kind: 'bridgegate', x: far, y, variant: 'THE FAR BANK' });
   }
 
@@ -609,22 +671,35 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
         // those notches INSIDE it too - so the wood was coming up in the farmyard
         // and burying the buildings it grew next to.
         if (nearBuilding(x, y)) continue;
+        /**
+         * AND NO TREE ACROSS THE WATER (it.110b). A tile on the far bank is
+         * nearer the camera down the screen diagonal than the water in front of
+         * it, so a belt of timber over there is drawn ON TOP of the river. This
+         * one rule is what "trees are completely obscuring everything" was: the
+         * far side is left as void, the water runs out into the dark, and the
+         * river is visible along its whole length for the first time.
+         */
+        if (acrossWater(x, y)) continue;
         timber(x, y, d);
       }
     }
     /**
-     * THE WOOD ON THE FAR BANK (it.110). Its tiles are LAND, so the belt above
-     * grows no timber on them - and a bare green shelf across the water read as
-     * an unfinished map. It is planted deliberately instead, everywhere except
-     * the road the bridge lands on, and the connectivity pass seals all of it a
-     * moment later. The hero sees a wooded far shore with a road cut through it.
+     * THE LANDING'S OWN WOOD (it.110b). The one place a far bank exists, and the
+     * only trees ever planted across the water: a screen of trunks around the
+     * BACK of the shelf, so the road off the span goes into a wood instead of
+     * stopping at the edge of the drawn world. The road itself and the two rows
+     * either side of it are left clear, and nothing is planted between the arch
+     * and the water - that is the view the whole crossing is built to give.
      */
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        if (!farSide[idx(x, y)]) continue;
-        if (crossing && Math.abs(y - crossing.y) <= 2 && x <= crossing.far + 6) continue; // the road off the span stays open
-        if ((x * 11 + y * 5) % 4 === 0) continue; // thinned, so it is a wood and not a wall
-        timber(x, y, 2);
+    if (crossing) {
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          if (!farSide[idx(x, y)]) continue;
+          if (Math.abs(y - crossing.y) <= 2) continue; // the road off the span
+          if (x <= crossing.far + 1) continue; // never between the arch and the river
+          if ((x * 11 + y * 5) % 3 === 0) continue; // thinned: a wood, not a wall
+          timber(x, y, 2);
+        }
       }
     }
   }

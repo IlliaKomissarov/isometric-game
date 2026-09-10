@@ -1981,7 +1981,7 @@ async function boot(): Promise<void> {
       // The town is daylight-wide: every stall visible from the campfire.
       // TOWN LIGHT (it.45): dusk — full light only close to the hero, the rest
       // of the square falls to the torches, lanterns and the campfire.
-      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : isField ? { sightRadius: 26, fullRadius: 13, exploredLight: 0.26 } : isManor ? { sightRadius: 40, fullRadius: 26 } : isVault ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97). The battlefield is a night field: wide sight, a short torch (it.110).
+      lighting.build(dungeon.width, dungeon.height, (gx, gy) => scene.isOpaque(gx, gy), isHub ? { sightRadius: 36, fullRadius: 5 } : isColiseum ? { sightRadius: 8, fullRadius: 99 } : isForest ? { sightRadius: 16, fullRadius: 4 } : isInn ? { sightRadius: 40, fullRadius: 30 } : isCellar ? { sightRadius: 8, fullRadius: 3 } : isFarm ? { sightRadius: 24, fullRadius: quests.farm === 'done' ? 26 : 15, exploredLight: 0.3 } : isRiver ? { sightRadius: 40, fullRadius: 30, exploredLight: 0.35 } : isField ? { sightRadius: 22, fullRadius: 10, exploredLight: 0.14 } : isManor ? { sightRadius: 40, fullRadius: 26 } : isVault ? { sightRadius: 8, fullRadius: 3 } : undefined); // The inn is lit end to end (it.92); its cellar is not (it.97). The battlefield is a night field: wide sight, a short torch (it.110).
       if (isColiseum) lighting.omniscient = true; // No fog in the trial (it.53; restored it.109).
       // Theme bands: 1–2 stone crypts · 3–9 buried temple · 10–14 frozen
       // halls · 15–20 ember depths. Each band reads distinct at a glance.
@@ -2090,6 +2090,14 @@ async function boot(): Promise<void> {
       // THE BATTLEFIELD IS OPEN COUNTRY TOO (it.110): its shape is known from the
       // first frame, and only the torch's own reach says what is LIT - which on a
       // field of corpses at night is most of the point.
+      //
+      // IT.110B: AND THE LIGHT IS TAKEN OFF IT. `exploredLight` went 0.26 -> 0.14
+      // and the torch pool 13 -> 10 tiles. What that does is make everything more
+      // than a few strides away a shape rather than a thing: the hero walks in a
+      // small circle of light through a field they can see the SHAPE of and not
+      // the detail of, which is the difference between grim and merely dim. It is
+      // the only knob that reaches every sprite on the floor at once, and it costs
+      // nothing - the tint is already computed per tile every frame.
       if (isFarm || isRiver || isField) lighting.revealAll();
       const goldPiles = isPlace ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
@@ -4041,7 +4049,7 @@ async function boot(): Promise<void> {
           // the treasure erupt — a clear, earned pause before the reward.
           // Tick-clocked (it.59): loot is sim state, so the beat counts ticks.
           bossLoot = { x: bx, y: by, ticks: 198, world: w };
-          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : floor === FARM_FLOOR ? 'THE GENERAL FALLS' : floor === MANOR_FLOOR ? 'THE CHIEF FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88); the company's general (it.101); the manor's chief (it.110).
+          if (bossNote) bossNote.textContent = floor === MINES_FLOOR ? 'THE KEEPER FALLS' : floor === FARM_FLOOR ? 'THE GENERAL FALLS' : floor === MANOR_FLOOR ? 'THE TALLYMAN FALLS' : 'THE WARDEN FALLS'; // The quarry's keeper (it.88); the company's general (it.101); the manor's chief (it.110).
           bossNote?.classList.add('show');
           later(() => bossNote?.classList.remove('show'), 8400); // Doubled (it.50).
         } else {
@@ -5704,7 +5712,7 @@ async function boot(): Promise<void> {
     /** THE BANDIT CHIEF: the company's captain rig in his own darker leather. */
     const chiefPortrait = (): HTMLCanvasElement | null => faceOf('captain_idle', 0x9a7268, 0);
     /** THE MAN IN THE CLOSET. */
-    const merchantPortrait = (): HTMLCanvasElement | null => faceOf('merchant_walk', 0xe8d4b0, 2);
+    const merchantPortrait = (): HTMLCanvasElement | null => faceOf('cit_porter_walk', 0xf0dcb4, 2) ?? faceOf('merchant_walk', 0xe8d4b0, 2);
 
     /**
      * A TRAVEL THAT CHOOSES ITS OWN LANDING (it.110). `goPlace` always sets the
@@ -5757,7 +5765,7 @@ async function boot(): Promise<void> {
     const goVault = (): void => goPlaceAt(VAULT_FLOOR, 'down into the cellar', () => null);
     const leaveVault = (): void =>
       goPlaceAt(MANOR_FLOOR, 'up into the hall', () => {
-        const h = world.manor?.hatch;
+        const h = world.manor?.basement;
         return h ? { x: h.x + 0.5, y: h.y + 1.5 } : null;
       });
 
@@ -5861,10 +5869,16 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * THE CHIEF'S WELCOME (it.110). The hall's first tick. He sees the hero from
-     * the head of the high table, gives them the choice of walking back out, and
-     * takes it away again in the same breath - which is the whole character in
-     * two lines. When the bars lift, every man in the room is already coming.
+     * THE CHIEF'S WELCOME (it.110, rewritten it.110b).
+     *
+     * BRACK THE TALLYMAN prices things. That is the whole character, and it is
+     * why the scene works: he offers the hero the door not out of mercy but
+     * because a fight is an expense, and he takes the offer back the moment he
+     * remembers what a head is worth. Menace out of arithmetic, said quietly, in
+     * somebody else's dining room, with his boots on their table.
+     *
+     * it.110's version shouted. Shouting is not frightening; a man who is not
+     * raising his voice because he does not think he needs to is.
      */
     const startManorAmbush = (): void => {
       const m = world.manor;
@@ -5883,17 +5897,18 @@ async function boot(): Promise<void> {
         route: [{ x: c.x, y: c.y }],
         titles: [
           ['THE GREAT HALL', 'somebody else\u2019s house, and somebody else\u2019s wine'],
-          ['THE BANDIT CHIEF', 'at the head of a table he did not pay for'],
+          ['BRACK THE TALLYMAN', 'chief of the marauders, at a table he did not pay for'],
         ],
         walkers: 0,
         cast,
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: c.x, y: c.y, text: 'HOLD IT. HOLD IT \u2014 everyone, be quiet. Look what walked in out of the dark.', crit: true, speaker: 'THE BANDIT CHIEF', role: 'at the high table', portrait: chiefPortrait(), foe: true },
-          { t: 2.8, x: c.x, y: c.y, text: 'You have come into a house with eleven men in it and shut the door behind you. I am in a generous mood tonight, so here is the whole offer: turn round. Walk out. Nobody follows you to the bridge.', speaker: 'THE BANDIT CHIEF', role: 'raising a cup', portrait: chiefPortrait(), foe: true },
-          { t: 5.0, x: c.x, y: c.y, text: 'Actually \u2014 no. Taking your head is far more lucrative.', crit: true, speaker: 'THE BANDIT CHIEF', role: 'putting the cup down', portrait: chiefPortrait(), foe: true },
-          { t: 6.6, x: c.x, y: c.y, text: 'ON YOUR FEET, ALL OF YOU. NOBODY LEAVES THIS ROOM BUT ME.', crit: true, speaker: 'THE BANDIT CHIEF', role: 'in his own hall', portrait: chiefPortrait(), foe: true, hold: 3 },
+          { t: 1.0, x: c.x, y: c.y, text: 'Quiet. Quiet \u2014 put it down. Something has come in out of the dark, and it is dripping on my floor.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'not getting up', portrait: chiefPortrait(), foe: true },
+          { t: 2.9, x: c.x, y: c.y, text: 'Let me save us both an evening. There are eleven of us. There is one of you. And the door behind you is still open, which is more courtesy than I have shown anyone this month.', speaker: 'BRACK THE TALLYMAN', role: 'counting the room', portrait: chiefPortrait(), foe: true },
+          { t: 5.0, x: c.x, y: c.y, text: 'So walk. Go on. Nobody follows you past the bridge \u2014 you have my word, and my word has carried heavier things than you.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true },
+          { t: 7.2, x: c.x, y: c.y, text: '\u2026No. No \u2014 forget that. I have just remembered what the city is paying for heads out of that field, and yours has come a very long way to be counted. Taking it off you is far more lucrative.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true },
+          { t: 9.6, x: c.x, y: c.y, text: 'On your feet, gentlemen. Mind the wine on your way past \u2014 it is worth a great deal more than most of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3 },
         ],
         hold: 5,
         ...cineFocusHooks,
@@ -5939,15 +5954,15 @@ async function boot(): Promise<void> {
           ['SOMETHING IN THE WALL', 'has been listening to every word of it'],
         ],
         walkers: 0,
-        cast: [{ anim: 'merchant_walk', x: q.x, y: q.y, height: 58, tint: 0xe8d4b0, dir: 2 }],
+        cast: [{ anim: 'cit_porter_walk', x: q.x, y: q.y, height: 62, tint: 0xf0dcb4, dir: 2 }],
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: q.x, y: q.y, text: 'Is it \u2014 is it over? I heard him go down. I have been listening to that man for nine days and I know what he sounds like going down.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
+          { t: 1.0, x: q.x, y: q.y, text: 'Is that \u2014 is that Brack? Did he go down? I have listened to that man price my brother\u2019s house through a cupboard door for nine days. I know what he sounds like going down.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
           { t: 3.4, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me because I am worth a letter to my brother, and they were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait() },
           { t: 5.8, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait() },
           { t: 8.0, x: q.x, y: q.y, text: 'My shop is in the city over the east road. The day that gate opens, you will not pay me for a healing draught again as long as I am standing behind the counter.', speaker: 'THE MERCHANT', role: 'of the eastern city', portrait: merchantPortrait() },
-          { t: 10.2, x: q.x, y: q.y, text: 'And before you go \u2014 there is a hatch under the rug at the far end of this hall. They would not open it. Whatever they could hear down there, they did not want it up here.', crit: true, speaker: 'THE MERCHANT', role: 'on his way out', portrait: merchantPortrait(), hold: 4 },
+          { t: 10.2, x: q.x, y: q.y, text: 'And before you go \u2014 the door in the west wall, the one they kept a bench across. That is the basement. They would not open it. Whatever they could hear down there, they did not want it up here.', crit: true, speaker: 'THE MERCHANT', role: 'on his way out', portrait: merchantPortrait(), hold: 4 },
         ],
         hold: 6,
         ...cineFocusHooks,
@@ -6032,7 +6047,7 @@ async function boot(): Promise<void> {
             portrait: merchantPortrait(),
             lines: [
               'Give me a moment before you go. Nine days in a cupboard and my legs have opinions about standing.',
-              'The hatch is at the far end, under the rug. Take a light. Take two.',
+              'The door in the west wall - the one they had a bench across. That is the way down. Take a light. Take two.',
               'And when the eastern gate opens \u2014 ask anyone on the street for the man with the two carts. That is me. You drink for nothing in my shop.',
             ],
             choices: [{ label: 'GO CAREFULLY', value: 'ok' }],
@@ -6059,7 +6074,7 @@ async function boot(): Promise<void> {
         portrait: merchantPortrait(),
         lines: [
           'Nine days in a cupboard listening to men eat. I will never look at a roast the same way.',
-          'The hatch is under the rug at the far end. Whatever is down there, they would not touch it, and they were not a careful sort of people.',
+          'The door in the west wall is the way down. Whatever is behind it, they would not open it, and they were not a careful sort of people.',
           'When the east gate opens, come and find me. Free draughts, for as long as I am behind the counter.',
         ],
         choices: [{ label: 'FAREWELL', value: 'ok' }],
@@ -7521,10 +7536,10 @@ async function boot(): Promise<void> {
       } else if (it.kind === 'manorout') {
         if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else leaveManor();
-      } else if (it.kind === 'manorhatch') {
-        // Nailed down while the party upstairs is still on; the merchant is the
-        // one who tells you it is there, and by then it is open.
-        if (quests.manor !== 'done') tutorial.say('The trapdoor is nailed down and there is a rug over it. Whoever is holding this hall did not want it opened.');
+      } else if (it.kind === 'manordown') {
+        // Barred while the party upstairs is still on; the merchant is the one
+        // who tells you what is behind it, and by then it is open.
+        if (quests.manor !== 'done') tutorial.say('The door in the west wall is barred from this side and there is a bench across it. Whoever is holding this hall did not want it opened.');
         else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else goVault();
       } else if (it.kind === 'vaultup') {
@@ -8096,7 +8111,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
    * empty ground. The scavengers on it and the men in the hall come in with them.
    */
   if (mode === 'field' || mode === 'manor') {
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'guard_death', 'poacher_death', 'captain_death', ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'guard_death', 'poacher_death', 'captain_death', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of [...FIELD_POOL, 'mercenary' as EnemyKind, 'chief' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

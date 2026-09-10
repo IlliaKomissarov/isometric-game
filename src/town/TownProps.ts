@@ -23,6 +23,20 @@ import { vec2 } from '@/utils/Vec2';
 import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
 import type { TownLayout, TownProp } from './TownMap';
 
+/**
+ * WHERE THE BAKED BRIDGE PIECES SIT (it.111). `scripts/bake-bridge.py` composes
+ * each piece on a canvas larger than one tile - the roadway rides above the
+ * water and the parapets rise above that - and records where the tile's own
+ * 64x32 sprite box lands inside it. These are those origins, and they are the
+ * only numbers this file needs in order to draw a bridge that lines up.
+ */
+const SPAN_BAY_OX = 4;
+const SPAN_BAY_OY = 58;
+const SPAN_PIER_OX = 20;
+const SPAN_PIER_OY = 62;
+const SPAN_GATE_OX = 0;
+const SPAN_GATE_OY = 120;
+
 export interface Occluder {
   sprite: Sprite;
   depth: number;
@@ -1046,72 +1060,67 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       // ---- ACROSS THE RIVER (it.110) ----
       case 'bridgedeck': {
         /**
-         * ONE BAY OF THE SPAN (rebuilt in stone, it.110b).
+         * ONE BAY OF THE SPAN (rebuilt out of piers and a roadway, it.111).
          *
-         * it.110 laid the pack's little plank-deck tile end to end with a timber
-         * FENCE either side and called it a bridge. It read as a fishing jetty
-         * with railings, because that is what those two pieces are. The Ancient
-         * Isometric Tileset - the same pack the inn and the cellar are built out
-         * of - ships an actual bridge kit, and this is it:
+         * it.110 laid the pack's plank-deck tile end to end with a timber fence
+         * either side; it.110b swapped those for the tileset's raised paving and
+         * its white balustrade, and the result STILL read as a ladder lying flat
+         * on the water - because a roadway resting ON the surface with nothing
+         * under it is not a bridge whatever it is paved with.
          *
-         *   `span_deck`   the tileset's raised stone paving, which trims to an
-         *                 exact 2:1 diamond, so a run of them is a road with no
-         *                 seam anywhere to hide;
-         *   `span_rail_*` a real bannister with turned balusters, in the two
-         *                 orientations that run along +x - the far one sorted
-         *                 BEHIND everything on the bay, the near one in front,
-         *                 so the roadway is something you look THROUGH.
+         * `scripts/bake-bridge.py` composites the whole bay - roadway, the stone
+         * band that gives it an underside, and BOTH parapets - against the same
+         * isometric geometry this file draws with, so there is nothing to align
+         * here: the sprite is placed at the tile's own screen position less the
+         * bake's origin, and a run of them is one continuous road.
          *
          * The water under it stays BLOCKED: the crossing is through the watch,
-         * so there must be no tile sequence anywhere that walks across it.
+         * so no tile sequence anywhere may walk a hero over the river.
          */
-        const deckArt = p.variant ?? 'span_deck';
-        if (!has(deckArt)) break;
-        const deck = new Sprite(spriteLib.single(deckArt));
+        const art = p.variant === 'worn' && has('span_bay2') ? 'span_bay2' : 'span_bay';
+        if (!has(art)) break;
+        const bay = new Sprite(spriteLib.single(art));
         const sc = worldToScreen(p.x, p.y, scratch);
-        deck.position.set(sc.x - deck.width / 2, sc.y - (deck.height - TILE_H) - 1);
-        deck.tint = 0xcfd2cc;
-        viewport.groundLayer.addChild(deck);
-        lighting.registerProp(p.x, p.y, deck);
-        /**
-         * THE PARAPETS SIT ON THE TILE'S OWN EDGES (it.110b). Both long edges of
-         * a road running along +x go down-right on screen: the far one is the
-         * edge from the tile's TOP corner to its RIGHT corner, the near one from
-         * its LEFT corner to its BOTTOM corner. A bannister anchored at its lower
-         * LEFT end on that corner therefore lies exactly along the edge, and at
-         * 70 px against a 64 px edge each one laps the next bay's, so a run of
-         * them is a continuous rail rather than a row of separate pieces.
-         */
-        for (const [dy, art] of [[0, 'span_rail_n'], [1, 'span_rail_s']] as const) {
-          if (!has(art)) continue;
-          const rail = new Sprite(spriteLib.single(art));
-          rail.anchor.set(0, 1);
-          const rs = worldToScreen(p.x, p.y + dy, vec2());
-          rail.position.set(rs.x, rs.y + 4);
-          rail.tint = 0xc9c4b8;
-          rail.zIndex = depthKey(p.x + 0.5, p.y + (dy === 0 ? -0.5 : 1.5));
-          viewport.objectLayer.addChild(rail);
-          lighting.registerProp(p.x, p.y, rail);
-        }
+        bay.position.set(sc.x - TILE_W / 2 - SPAN_BAY_OX, sc.y - SPAN_BAY_OY);
+        bay.tint = 0xc6c8c0;
+        viewport.groundLayer.addChild(bay);
+        lighting.registerProp(p.x, p.y, bay);
         break;
       }
       case 'bridgepost': {
         /**
-         * WHAT HOLDS THE ROADWAY UP (it.110b): the tileset's stone block with an
-         * arch cut through it, standing in the river a row nearer the camera than
-         * the bay it carries, which is the only place an arch can actually be
-         * seen. `block` is the same piece solid - the abutment at each end.
+         * WHAT HOLDS THE ROADWAY UP (it.111): the pack's stone cube with a
+         * segmental arch cut through the face that points at the camera, flared
+         * wider than the road it carries. A pier exactly one tile wide is
+         * INVISIBLE - the deck's own underside and the next bay's leading edge
+         * cover every pixel of it, which is what made it.110b's span read as a
+         * wall with notches in it. `block` is the same cube solid: the abutment
+         * where the road leaves the bank.
+         *
+         * Ground layer, and the layout lists every pier BEFORE the bays, so the
+         * roadway is always drawn over what carries it.
          */
-        const art = p.variant === 'block' ? 'span_block' : 'span_pier';
+        const art = p.variant === 'block' ? 'span_abut' : 'span_pier';
         if (!has(art)) break;
         const spr = new Sprite(spriteLib.single(art));
-        spr.anchor.set(0.5, 0.9);
-        const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
-        spr.position.set(sc.x, sc.y + 12);
-        spr.tint = 0x8f958f;
-        spr.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 2;
-        viewport.objectLayer.addChild(spr);
+        const sc = worldToScreen(p.x, p.y, scratch);
+        spr.position.set(sc.x - TILE_W / 2 - SPAN_PIER_OX, sc.y - SPAN_PIER_OY);
+        spr.tint = 0x9aa09c;
+        viewport.groundLayer.addChild(spr);
         lighting.registerProp(p.x, p.y, spr);
+        break;
+      }
+      case 'bridgeshadow': {
+        /**
+         * WHAT THE SPAN THROWS ON THE WATER (it.111). Without it the bridge
+         * floats: thirty-two pixels of air under a roadway read as air only if
+         * the river below is darker for it.
+         */
+        const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
+        const g = new Graphics();
+        g.ellipse(0, 0, TILE_W * 0.62, TILE_H * 0.62).fill({ color: 0x000000, alpha: 0.34 });
+        g.position.set(sc.x, sc.y + 6);
+        viewport.groundLayer.addChild(g);
         break;
       }
       case 'gore': {
@@ -1154,8 +1163,28 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
          * used `ruin_gate`, which is a mossy ruin, and no amount of tint made a
          * ruin read as a gate the city still garrisons.
          */
-        const spr = standing(p, has('span_gate') ? 'span_gate' : 'ruin_gate', 0.98, 'object', 0.5);
-        if (spr) spr.scale.set(near ? 1.02 : 0.8);
+        if (has('span_gate')) {
+          /**
+           * IT.111: the pack's great arch, WHOLE - both of the halves it ships
+           * as, composited a tile apart across the road so the hero walks under
+           * the opening. it.110b baked one half by itself, and both ends of the
+           * span carried what looked like a broken flying buttress.
+           *
+           * It is placed by the bake's own origin rather than by an anchor: the
+           * piece is two tiles wide and taller than it is broad, so an anchor
+           * fraction is a guess and the origin is arithmetic.
+           */
+          const arch = new Sprite(spriteLib.single('span_gate'));
+          const gs = worldToScreen(p.x, p.y, scratch);
+          arch.position.set(gs.x - TILE_W / 2 - SPAN_GATE_OX, gs.y - SPAN_GATE_OY);
+          arch.tint = near ? 0xd8d4c8 : 0x9fa49c;
+          arch.zIndex = depthKey(p.x + 0.5, p.y + 1.5);
+          viewport.objectLayer.addChild(arch);
+          lighting.registerProp(p.x, p.y, arch);
+        } else {
+          const spr = standing(p, 'ruin_gate', 0.98, 'object', 0.5);
+          if (spr) spr.scale.set(near ? 1.02 : 0.8);
+        }
         /**
          * AND IT IS NOT AN OCCLUDER (it.110b). it.110 registered the near arch
          * with the cutaway, which is what a cottage wants - and a hero standing

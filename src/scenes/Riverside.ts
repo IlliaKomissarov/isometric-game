@@ -247,6 +247,45 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   const acrossWater = (x: number, y: number): boolean => sideOf(x + 0.5, y + 0.5) !== NEAR_SIDE;
 
   /**
+   * THERE IS NO OTHER BANK (it.111).
+   *
+   * it.110b stopped PLANTING on the far side, which took the tree belt off the
+   * water - but the meadow's lobes still reached across the course, so a shelf
+   * of lit grass and beach lay along the whole far edge of the river with black
+   * behind it. That is the "opposite bank" the brief says must not be visible
+   * anywhere except at the crossing, and it is also the thing that made the
+   * river read as a trench cut in a lawn.
+   *
+   * Two passes, in this order:
+   *
+   *   1. THE WATER RUNS FURTHER OVER THERE. The far half of the band is widened
+   *      by `FAR_EXTRA`, so there is room for the river to go dark gradually
+   *      rather than ending at a drawn edge.
+   *   2. EVERYTHING ELSE ACROSS THE COURSE IS UNMADE - back to `TILE_WALL`,
+   *      which the scene never draws at all. The landing at the crossing is cut
+   *      AFTER this, so the one piece of far shore in the map is the one the
+   *      road comes down on.
+   */
+  const FAR_EXTRA = 4.0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!acrossWater(x, y)) continue;
+      const d = toCourse(x + 0.5, y + 0.5);
+      const wob = 0.5 * Math.sin(y * 0.42 + 0.8) + 0.3 * Math.sin(x * 0.29 - 1.1);
+      if (d <= RIVER_HALF + wob + FAR_EXTRA) {
+        if (tileKind[idx(x, y)] !== KIND_WATER) {
+          tileKind[idx(x, y)] = KIND_WATER;
+          water.push({ x, y });
+        }
+        grid[idx(x, y)] = TILE_BLOCKED;
+      } else {
+        grid[idx(x, y)] = 0;
+        tileKind[idx(x, y)] = KIND_GRASS;
+      }
+    }
+  }
+
+  /**
    * THE CROSSING (it.110). Found, not written down: the meadow's rim wanders
    * with the lobes' noise and the river's banks wander with theirs, so a
    * hand-picked pair of tiles is as likely to sit in the water as on the shore.
@@ -554,35 +593,43 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   if (crossing) {
     const { y, near, far } = crossing;
     /**
-     * THE SPAN, IN THE TILESET'S OWN STONE (it.110b). it.110 laid the pack's
-     * little plank-deck tile end to end with a timber fence either side, and it
-     * read as a fishing jetty with railings - which is what it was. The Ancient
-     * Isometric Tileset ships an actual bridge kit and this is it: `raised`
-     * paving for the roadway, the bannister with balusters for the parapets, the
-     * arched stone block for the piers, and the pack's great arch, composited
-     * from the two halves it ships as, for the gate at each end.
+     * THE SPAN, AS PIERS WITH A ROAD ON THEM (it.111).
      *
-     * The bays are laid FIRST and the piers after, because the dresser draws
-     * ground props in the order the layout lists them and a pier has to come up
-     * through the roadway rather than under it.
+     * it.110 laid the pack's little plank-deck tile end to end with a timber
+     * fence either side, and it read as a fishing jetty with railings - which is
+     * what it was. it.110b swapped in the tileset's raised paving and its white
+     * balustrade and it still read as a ladder, because a roadway lying flat ON
+     * the water is not a bridge whatever it is paved with.
+     *
+     * `scripts/bake-bridge.py` now composites the whole thing out of the Ancient
+     * Isometric Tileset - the roadway, its underside, both parapets, and the
+     * arched cube that carries it - against the projection this file uses. The
+     * layout's job is only to say WHERE, and in what order:
+     *
+     *   the shadow the span throws on the water,   (first, on the river itself)
+     *   an abutment at each bank and a pier every third bay,
+     *   the roadway.                               (last, over what carries it)
+     *
+     * The dresser draws ground props in the order the layout lists them, so
+     * that order is the depth sort.
      */
-    for (let x = near + 1; x < far; x++) {
-      span.push({ x, y });
-      decal({ kind: 'bridgedeck', x, y, variant: (x - near) % 4 === 2 ? 'span_deck2' : 'span_deck' });
-    }
-    // A pier out of the water under every third bay, on the camera's side of the
-    // roadway where an arch can actually be seen.
+    for (let x = near + 1; x < far; x++) span.push({ x, y });
+    for (const b of span) decal({ kind: 'bridgeshadow', x: b.x, y: b.y + 1 });
+    decal({ kind: 'bridgepost', x: near + 1, y, variant: 'block' });
+    decal({ kind: 'bridgepost', x: far - 1, y, variant: 'block' });
+    // One arch every third bay: piers with open water between them, which is
+    // what a bridge looks like, rather than a wall with notches cut in it.
     for (const b of span) {
-      if ((b.x - near) % 3 !== 1) continue;
-      if (isWater(b.x, b.y + 1)) decal({ kind: 'bridgepost', x: b.x, y: b.y + 1 });
+      if ((b.x - near) % 3 !== 2) continue;
+      if (b.x <= near + 1 || b.x >= far - 1) continue;
+      decal({ kind: 'bridgepost', x: b.x, y });
     }
+    for (const b of span) decal({ kind: 'bridgedeck', x: b.x, y, variant: (b.x - near) % 4 === 2 ? 'worn' : undefined });
     // The gate arch on the near bank, and the road under it.
     grid[idx(near, y)] = TILE_FLOOR;
     tileKind[idx(near, y)] = KIND_DIRT;
     onTrack[idx(near, y)] = 1;
     decal({ kind: 'bridgegate', x: near, y, variant: 'THE RIVER BRIDGE' });
-    // The abutment the near end of the roadway rests on, in the water below it.
-    if (isWater(near + 1, y + 1)) decal({ kind: 'bridgepost', x: near + 1, y: y + 1, variant: 'block' });
     // The knights: one either side of the road, a step back from the arch so
     // the arch never draws over them, and never on the road tile itself. They
     // are handed to `Villagers` as this floor's SENTRIES (`layout.guards`), which
@@ -614,10 +661,9 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
       const by = y + dy;
       if (isNear(bx, by) && !onTrack[idx(bx, by)]) block({ kind: 'brazier', x: bx, y: by });
     }
-    // The far end: the twin of the arch on the landing, its abutment under it,
-    // and a few trunks behind it to close the view. Nothing here is walkable -
-    // it is the picture of where the road goes.
-    if (isWater(far - 1, y + 1)) decal({ kind: 'bridgepost', x: far - 1, y: y + 1, variant: 'block' });
+    // The far end: the twin of the arch on the landing, and a few trunks behind
+    // it to close the view. Nothing here is walkable - it is the picture of
+    // where the road goes.
     if (inside(far, y)) decal({ kind: 'bridgegate', x: far, y, variant: 'THE FAR BANK' });
   }
 

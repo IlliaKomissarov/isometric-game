@@ -31,7 +31,7 @@ import { Viewport } from '@/engine/Viewport';
 import { animsForKind, Enemy, PHASE_DIE_TICKS, PHASE_RISE_TICKS, type EnemyKind } from '@/entities/Enemy';
 import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
-import { TILE_BLOCKED, TILE_FLOOR, generateArenaMap, generateDungeon, planHearths, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
+import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, generateArenaMap, generateDungeon, planHearths, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
 import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
@@ -480,7 +480,10 @@ async function boot(): Promise<void> {
     for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`water_p0_${v}`)) assets.registerTexture(`floor_town_${KIND_WATER}_${v}`, spriteLib.single(`water_p0_${v}`));
     if (spriteLib.hasSingle('water_p0_0')) assets.registerTexture(`floor_town_${KIND_WATER}`, spriteLib.single('water_p0_0'));
     // THE WATERLINE (it.108): the bank washing into the river, four ways round.
-    for (let i = 0; i < 4; i++) if (spriteLib.hasSingle(`shorefade_${i}`)) assets.registerTexture(`shorefade_${i}`, spriteLib.single(`shorefade_${i}`));
+    for (let i = 0; i < 4; i++) {
+      if (spriteLib.hasSingle(`shorefade_${i}`)) assets.registerTexture(`shorefade_${i}`, spriteLib.single(`shorefade_${i}`));
+      if (spriteLib.hasSingle(`deepfade_${i}`)) assets.registerTexture(`deepfade_${i}`, spriteLib.single(`deepfade_${i}`));
+    }
   } catch (err) {
     console.warn('[boot] Sprite atlases unavailable — using procedural art.', err);
   }
@@ -2625,15 +2628,31 @@ async function boot(): Promise<void> {
         const rw = dungeon.width;
         const rh = dungeon.height;
         const isWet = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < rw && y < rh && rk[y * rw + x] === KIND_WATER;
+        /**
+         * LAND OR THE VOID (it.111). it.108 laid the SAND margin wherever a water
+         * tile did not touch water - which includes the far side, where there is
+         * no land at all since it.110b took the far bank away. So the river's
+         * outer edge was rimmed in beach and then cut off dead into black, and
+         * the whole thing read as a hole in the map rather than as water running
+         * on into the dark.
+         *
+         * A neighbour the scene DREW is land and gets the wet sand margin; a
+         * neighbour that is `TILE_WALL` was never drawn at all, and that edge
+         * gets the dark fade instead, so the river dissolves rather than stops.
+         */
+        const rgrid = dungeon.grid;
+        const drawn = (x: number, y: number): boolean =>
+          x >= 0 && y >= 0 && x < rw && y < rh && rgrid[y * rw + x] !== TILE_WALL;
         const sides = [[-1, 0], [0, -1], [1, 0], [0, 1]] as const;
         for (const t of riverside.river.water) {
           for (const [si, [dx, dy]] of sides.entries()) {
             const nx = t.x + dx;
             const ny = t.y + dy;
-            if (nx < 0 || ny < 0 || nx >= rw || ny >= rh) continue;
-            if (isWet(nx, ny)) continue; // water meeting water needs no margin
-            if (!assets.has(`shorefade_${si}`)) continue;
-            const spr = new Sprite(assets.get(`shorefade_${si}`));
+            const off = nx < 0 || ny < 0 || nx >= rw || ny >= rh;
+            if (!off && isWet(nx, ny)) continue; // water meeting water needs no margin
+            const key = off || !drawn(nx, ny) ? `deepfade_${si}` : `shorefade_${si}`;
+            if (!assets.has(key)) continue;
+            const spr = new Sprite(assets.get(key));
             const sc = worldToScreen(t.x, t.y, vec2());
             spr.position.set(sc.x - TILE_W / 2, sc.y);
             viewport.groundLayer.addChild(spr);

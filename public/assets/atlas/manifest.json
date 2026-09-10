@@ -6909,52 +6909,16 @@
    "h": 81,
    "nearest": false
   },
-  "span_deck": {
-   "file": "single_span_deck.png",
-   "w": 66,
-   "h": 33,
-   "nearest": false
-  },
-  "span_deck2": {
-   "file": "single_span_deck2.png",
-   "w": 66,
-   "h": 39,
-   "nearest": false
-  },
-  "span_rail_n": {
-   "file": "single_span_rail_n.png",
-   "w": 70,
-   "h": 60,
-   "nearest": false
-  },
-  "span_rail_s": {
-   "file": "single_span_rail_s.png",
-   "w": 70,
-   "h": 61,
-   "nearest": false
-  },
   "span_pier": {
    "file": "single_span_pier.png",
-   "w": 84,
-   "h": 84,
-   "nearest": false
-  },
-  "span_block": {
-   "file": "single_span_block.png",
-   "w": 74,
-   "h": 74,
+   "w": 104,
+   "h": 108,
    "nearest": false
   },
   "span_gate": {
    "file": "single_span_gate.png",
-   "w": 150,
-   "h": 234,
-   "nearest": false
-  },
-  "span_gate_e": {
-   "file": "single_span_gate_e.png",
-   "w": 150,
-   "h": 232,
+   "w": 124,
+   "h": 129,
    "nearest": false
   },
   "gore_a": {
@@ -6985,6 +6949,54 @@
    "file": "single_gore_e.png",
    "w": 148,
    "h": 45,
+   "nearest": false
+  },
+  "span_bay": {
+   "file": "single_span_bay.png",
+   "w": 72,
+   "h": 96,
+   "nearest": false
+  },
+  "span_bay2": {
+   "file": "single_span_bay2.png",
+   "w": 72,
+   "h": 96,
+   "nearest": false
+  },
+  "span_abut": {
+   "file": "single_span_abut.png",
+   "w": 104,
+   "h": 108,
+   "nearest": false
+  },
+  "span_post": {
+   "file": "single_span_post.png",
+   "w": 64,
+   "h": 36,
+   "nearest": false
+  },
+  "deepfade_0": {
+   "file": "single_deepfade_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "deepfade_1": {
+   "file": "single_deepfade_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "deepfade_2": {
+   "file": "single_deepfade_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "deepfade_3": {
+   "file": "single_deepfade_3.png",
+   "w": 64,
+   "h": 32,
    "nearest": false
   }
  }

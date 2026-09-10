@@ -194,8 +194,10 @@ export type TownPropKind =
   // ---- ACROSS THE RIVER (it.110) ----
   /** One plank-and-stone bay of THE RIVER BRIDGE, laid over the water. */
   | 'bridgedeck'
-  /** A pier post standing out of the river under the span. */
+  /** An arched pier standing out of the river under the span (it.111). */
   | 'bridgepost'
+  /** What the span throws on the water below it (it.111). */
+  | 'bridgeshadow'
   /** A pool of dried blood on the ground (it.110b). */
   | 'gore'
   /** The signpost on the far bank: back over the water to the farm. */
@@ -408,7 +410,7 @@ export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
   'inndeco', 'innrug', 'sconce', 'innwall',
   // ACROSS THE RIVER (it.110): a camp fire, a cauldron and a bridge bay are all paint underfoot.
-  'firepit', 'tripod', 'bridgedeck', 'gore',
+  'firepit', 'tripod', 'bridgedeck', 'bridgepost', 'bridgeshadow', 'gore',
   // THE CELLAR (it.97): both doorways are drawn into a wall run, so the tile under them stays open.
   'cellardoor', 'cellarup',
   // THE FARMLANDS (it.100): a field you cannot walk into is not a field, and the

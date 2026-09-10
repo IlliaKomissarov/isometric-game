@@ -78,8 +78,30 @@ CAUSTIC_SPAN = 1.0 / SPAN
 
 # The river's own colour, under the light. It is tinted again per-tile by the
 # scene's lighting, so this is the unlit body of the water.
-DEEP = (26, 52, 62)
-SHALLOW = (44, 84, 92)
+#
+# IT.111 TOOK THE NEON OUT. it.107-110b put a hard caustic at full strength on a
+# near-black body, and every tile came out as a mesh of bright cyan cracks that
+# read as broken ice. Water is DARK, and what light there is on it is a sheen,
+# not a filament: the body is deeper and greener, the caustic gain is a quarter
+# of what it was and is pushed through a high gamma so only the crests of the
+# pattern show at all, and a second, very low-frequency sample of the same
+# source mottles the body over about a dozen tiles so a wide river is not one
+# flat colour.
+DEEP = (21, 41, 46)
+SHALLOW = (42, 78, 84)
+#: How far the caustic light is allowed to lift the body. Was (128, 172, 182).
+GLINT = (58, 82, 88)
+#: Only the top of the caustic range is light at all.
+GLINT_GAMMA = 3.4
+#: The slow swell under it: how far the body wanders from DEEP toward SHALLOW.
+BODY_SPAN = 1.0 / 13
+#: THE CURRENT (it.111). Successive phases sample the field shifted along the
+#: river, so the pattern TRAVELS instead of shimmering in place. Over the ten
+#: phases the shift must come to a whole number of source periods or the loop
+#: does not close - `SPAN` tiles is one period, so 10 * 0.3 == 3 == SPAN wraps
+#: exactly. The direction is (-1, +1) in tile space, which is very nearly the
+#: course the riverside's own polyline runs down.
+DRIFT = 0.3
 
 
 def sample(src, px, py, w, h):
@@ -117,7 +139,7 @@ def diamond_alpha():
     return m
 
 
-def bake_diamond(src_img, shade, out_path, alpha_mask, off_x=0.0, off_y=0.0, normalize=False):
+def bake_diamond(src_img, shade, out_path, alpha_mask, off_x=0.0, off_y=0.0, normalize=False, body_img=None):
     """
     Project `src_img` onto the ground plane of one isometric tile.
 
@@ -130,6 +152,9 @@ def bake_diamond(src_img, shade, out_path, alpha_mask, off_x=0.0, off_y=0.0, nor
     lo, hi = (min(src), max(src)) if normalize else (0, 255)
     if hi - lo < 1:
         lo, hi = 0, 255
+    body = list((body_img or src_img).convert('L').getdata())
+    bw, bh = (body_img or src_img).size
+    bwin = min(bw, bh) * BODY_SPAN
     W, H = TILE_W * SS, TILE_H * SS
     out = Image.new('RGB', (W, H), (0, 0, 0))
     px = out.load()
@@ -146,30 +171,76 @@ def bake_diamond(src_img, shade, out_path, alpha_mask, off_x=0.0, off_y=0.0, nor
             sx = int((gx + 0.5 + off_x) * win)
             sy = int((gy + 0.5 + off_y) * win)
             lum = (sample(src, sx, sy, sw, sh) - lo) / (hi - lo)
-            px[x, y] = shade(min(1.0, max(0.0, lum)), gx, gy)
+            bx = int((gx + 0.5 + off_x) * bwin)
+            by = int((gy + 0.5 + off_y) * bwin)
+            swell = sample(body, bx, by, bw, bh) / 255.0
+            px[x, y] = shade(min(1.0, max(0.0, lum)), swell, gy)
     small = out.resize((TILE_W, TILE_H), Image.LANCZOS).convert('RGBA')
     small.putalpha(alpha_mask)
     small.save(out_path)
 
 
-def water_shade(lum, gx, gy):
+def water_shade(lum, swell, gy):
     """
-    Deep water, with the caustic filaments as cold light on top of it.
+    Deep water, with a sheen of caustic light on it - not a mesh of cracks.
 
-    THE BASE IS FLAT (it.108). it.107 ramped it across the tile from DEEP to
-    SHALLOW to keep a still river from reading as a solid colour - but `gy` is a
-    position WITHIN the tile, so the ramp restarted at every tile edge and drew
-    a diagonal band across the whole surface. Anything that varies per-tile is
-    a grid by definition; the only thing allowed to vary here is the caustic,
-    which is sampled continuously in world space. The water gets its variation
-    from the light instead, which is per-tile but smooth.
+    THE BASE IS FLAT PER TILE (it.108). Anything that varies with position
+    WITHIN a tile is a grid by definition, so `swell` is sampled in world space
+    at about a thirteenth of the caustic's frequency: it wanders over a dozen
+    tiles and knows nothing about tile boundaries, which is what keeps a wide
+    river from being one flat colour without drawing a lattice on it.
+
+    THE GLINT IS A QUARTER OF WHAT IT WAS (it.111), through a high gamma, so
+    only the crests of the pattern lift off the body at all. At the old gain the
+    filaments were brighter than the water they sat on and the river read as
+    cracked ice - which is what "the water looks terrible" was.
     """
-    k = lum ** 1.5
+    k = lum ** GLINT_GAMMA
+    b = swell ** 1.6
     return (
-        min(255, int(DEEP[0] + k * 128)),
-        min(255, int(DEEP[1] + k * 172)),
-        min(255, int(DEEP[2] + k * 182)),
+        min(255, int(DEEP[0] + (SHALLOW[0] - DEEP[0]) * b + k * GLINT[0])),
+        min(255, int(DEEP[1] + (SHALLOW[1] - DEEP[1]) * b + k * GLINT[1])),
+        min(255, int(DEEP[2] + (SHALLOW[2] - DEEP[2]) * b + k * GLINT[2])),
     )
+
+
+def bake_deepfade(side, out_path, mask):
+    """
+    WHERE THE RIVER RUNS OUT INTO THE DARK (it.111).
+
+    The far bank does not exist - it.110b took it away so the water could be seen
+    at all - and what was left was a hard sawtooth of lit diamonds against black,
+    which reads as a hole in the map rather than as a river at night. This is the
+    same overlay idea as `shorefade`, in the opposite direction: black, fading in
+    across the tile toward the edge the void is on, so the water dissolves.
+
+    `side` is which of the tile's four ground edges the dark is on
+    (0 = -x, 1 = -y, 2 = +x, 3 = +y), exactly as `bake_shorefade` uses it.
+    """
+    W, H = TILE_W * SS, TILE_H * SS
+    out = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    px = out.load()
+    for y in range(H):
+        v = (y + 0.5) / (H / 2) - 1
+        for x in range(W):
+            u = (x + 0.5) / (W / 2) - 1
+            if abs(u) + abs(v) > 1.0001:
+                continue
+            gx = (u + v) * 0.5
+            gy = (v - u) * 0.5
+            d = {0: gx + 0.5, 1: gy + 0.5, 2: 0.5 - gx, 3: 0.5 - gy}[side]
+            d = min(1.0, max(0.0, d))
+            # Opaque at the void edge, gone a tile in. Squared, so the middle of
+            # the tile is still water and only its rim goes under.
+            a = (1.0 - d) ** 1.7
+            if a <= 0.004:
+                continue
+            px[x, y] = (2, 5, 7, int(255 * a))
+    small = out.resize((TILE_W, TILE_H), Image.LANCZOS)
+    alpha = Image.new('L', (TILE_W, TILE_H), 0)
+    alpha.paste(small.split()[3], (0, 0), mask)
+    small.putalpha(alpha)
+    small.save(out_path)
 
 
 def bake_shorefade(sand_img, side, out_path, mask):
@@ -239,7 +310,9 @@ def main():
         for j in range(SPAN):
             for i in range(SPAN):
                 name = f'water_p{pi}_{j * SPAN + i}'
-                bake_diamond(img, water_shade, os.path.join(ATLAS, f'single_{name}.png'), mask, off_x=i, off_y=j)
+                # The current: this phase's whole field is shifted downstream.
+                bake_diamond(img, water_shade, os.path.join(ATLAS, f'single_{name}.png'), mask,
+                             off_x=i - pi * DRIFT, off_y=j + pi * DRIFT)
                 made[name] = {'file': f'single_{name}.png', 'w': TILE_W, 'h': TILE_H, 'nearest': False}
         print(f'  baked phase {pi} ({SPAN}x{SPAN} block) <- {os.path.basename(f)}')
 
@@ -249,6 +322,12 @@ def main():
         bake_shorefade(sand, side, os.path.join(ATLAS, f'single_{name}.png'), mask)
         made[name] = {'file': f'single_{name}.png', 'w': TILE_W, 'h': TILE_H, 'nearest': False}
     print(f'  baked 4 shoreline fades <- transitions_02.png + sand.png')
+
+    for side in range(4):
+        name = f'deepfade_{side}'
+        bake_deepfade(side, os.path.join(ATLAS, f'single_{name}.png'), mask)
+        made[name] = {'file': f'single_{name}.png', 'w': TILE_W, 'h': TILE_H, 'nearest': False}
+    print('  baked 4 dark fades for the edge of the world')
 
     # The it.107 flat tiles are superseded by the 3x3 block; take them out of the
     # atlas rather than leaving ten orphans behind.

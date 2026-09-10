@@ -29,8 +29,17 @@
 import { Sprite } from 'pixi.js';
 import { assets, WATER_PERIOD, WATER_PHASES } from '@/core/AssetManager';
 
-/** How long one full pass of the wave loop takes, in seconds. */
-const PERIOD = 2.6;
+/**
+ * How long one full pass of the wave loop takes, in seconds.
+ *
+ * IT.111 SLOWED IT DOWN, because the loop now MOVES. The bake shifts each
+ * phase's whole caustic field downstream by a tenth of its own period, so ten
+ * phases carry the pattern exactly three tiles and then wrap - the river has a
+ * current instead of a shimmer. At the old 2.6 s that current ran at better
+ * than a tile a second, which is a millrace; five and a half seconds puts it at
+ * about half a tile a second, which is a river.
+ */
+const PERIOD = 5.5;
 
 interface WaterTile {
   sprite: Sprite;

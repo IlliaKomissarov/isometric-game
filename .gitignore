@@ -18,6 +18,11 @@ Thumbs.db
 
 # Raw asset uploads: bake into atlas/ui, never commit (1 GB+).
 public/assets/test-models/
+# it.112: the same rule for the `use now` drop (70 MB of .blend files, 3D source
+# textures and 496 top-down catapult renders). `scripts/bake-catapult.py`,
+# `scripts/bake-grassland.py` and `scripts/bake-ground.py` read it; only their
+# atlas output is committed.
+public/assets/use now/
 
 # it.89: audio sources that have a shipped MP3 / downmix twin, and archives
 public/assets/audio/Hope is Lost.wav

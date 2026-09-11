@@ -76,7 +76,7 @@ import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
-import { buildTownLayout, KIND_WATER, LOOTER_COUNT, type EastState, type FieldLayout, type ManorLayout, type RiverLayout, type TownLayout } from '@/town/TownMap';
+import { buildTownLayout, KIND_FIELD_MUD, KIND_WATER, LOOTER_COUNT, type EastState, type FieldLayout, type ManorLayout, type RiverLayout, type TownLayout, type VaultLayout } from '@/town/TownMap';
 import { GateFx, ProcessionScene, type SpeechBeat } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
 import { buildCellarLayout } from '@/scenes/Cellar';
@@ -227,6 +227,8 @@ interface World {
   /** ACROSS THE RIVER (it.110): the battlefield's furniture, and the manor hall's. */
   field: FieldLayout | null;
   manor: ManorLayout | null;
+  /** The manor's cellar (it.110), so its own tally knows how many posts it has (it.112). */
+  vault: VaultLayout | null;
   /** THE BANDIT CHIEF (it.110), while he is on his feet. */
   chief: Enemy | null;
 }
@@ -292,6 +294,14 @@ const FIELD_MAX_LEVEL = 12;
  * so the field is the same field on every peer without a spawner in it.
  */
 const FIELD_POOL: EnemyKind[] = ['bandit', 'brigand', 'poacher'];
+/**
+ * HOW MANY STRAGGLERS THE FIELD HAS LEFT (it.112). Once the fourteen scavengers
+ * on the layout's posts have been put down for good, the battlefield is not left
+ * empty - four more work their way along the road, once each, and then it is
+ * quiet for the rest of the run. Small enough that clearing it is worth doing
+ * and re-clearing it is not.
+ */
+const FIELD_STRAGGLERS = 4;
 /** THE MANOR'S CELLAR (it.110): what has moved in under a house whose people ran. */
 const VAULT_POOL: EnemyKind[] = ['spider', 'spider', 'zombie', 'zombie', 'ahoul', 'shambler', 'skeleton', 'graveGuard'];
 /**
@@ -477,6 +487,18 @@ async function boot(): Promise<void> {
       if (spriteLib.hasSingle(name)) assets.registerTexture(`floor_town_${i}`, spriteLib.single(name));
       // TERRAIN VARIANTS (it.56): `<kind>_0..3` from the grass / dirt / sand sheets and the projected stone tiles.
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${i}_${v}`, spriteLib.single(`${name}_${v}`));
+    });
+    /**
+     * THE BATTLEFIELD'S GROUND (it.112). Three more kinds, past the water's 9,
+     * baked by `scripts/bake-ground.py`: churned mud, mud with the field's spoil
+     * trodden into it, and mud soaked through with blood. They are registered by
+     * INDEX, like every other ground kind, so `SceneManager` paints them from
+     * the tile map with no knowledge of what they are.
+     */
+    (['field_mud', 'field_churn', 'field_gore'] as const).forEach((name, i) => {
+      const kind = KIND_FIELD_MUD + i;
+      for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${kind}_${v}`, spriteLib.single(`${name}_${v}`));
+      if (spriteLib.hasSingle(`${name}_0`)) assets.registerTexture(`floor_town_${kind}`, spriteLib.single(`${name}_0`));
     });
     // THE RIVER IS ART (it.107), AND A CONTINUOUS ONE (it.108). Ten baked
     // phases of the pack's own caustic loop, each a 3x3 spatial block, so a
@@ -2485,9 +2507,31 @@ async function boot(): Promise<void> {
        */
       let chiefBody: Enemy | null = null;
       if (isField && fieldBuilt) {
-        for (const [i, post] of fieldBuilt.field.looterPosts.entries()) {
+        /**
+         * AND THEY STAY DEAD (it.112). it.110 respawned all fourteen scavengers
+         * every single time the hero stepped off the bridge, which made the
+         * battlefield an infinite farm: walk in, clear it, walk back over the
+         * span, walk in again, and the same fourteen bodies are standing on the
+         * same fourteen posts. The ledger counts how many of them have been put
+         * down for good and the first that many posts are never filled again -
+         * the same rule the eastern quarter's looters have had since it.91.
+         *
+         * Once the posts are exhausted the field is not left EMPTY, which reads
+         * as broken: a handful of stragglers work their way along the road on
+         * each return, and those are counted too, so the tally is monotone and
+         * there is no loop to farm.
+         */
+        const posts = fieldBuilt.field.looterPosts;
+        const killed = Math.max(0, Number(quests.fieldKills ?? 0) | 0);
+        for (const [i, post] of posts.entries()) {
+          if (i < killed) continue;
           const e = enemies.spawn(post.kind === 'brigand' ? 'brigand' : FIELD_POOL[i % FIELD_POOL.length], post.x + 0.5, post.y + 0.5, floorLevel);
           if (i === 4 || i === 11) e.setAffix(AFFIXES[i % AFFIXES.length]);
+        }
+        for (let i = posts.length; i < posts.length + FIELD_STRAGGLERS; i++) {
+          if (i < killed) continue;
+          const post = posts[(i * 5) % posts.length];
+          enemies.spawn(FIELD_POOL[i % FIELD_POOL.length], post.x + 0.5, post.y + 0.5, floorLevel);
         }
       }
       /**
@@ -2497,7 +2541,13 @@ async function boot(): Promise<void> {
        * deliberately thin - so the dark below the manor had five things in it.
        */
       if (isVault && vaultBuilt) {
+        // AND THEY STAY DEAD TOO (it.112): what is cleared out of the cellar
+        // does not move back in the moment the hero climbs the stair. Unlike the
+        // field there are no stragglers - a vault that has been emptied is
+        // empty, and the way out is one room away.
+        const killed = Math.max(0, Number(quests.vaultKills ?? 0) | 0);
         for (const [i, post] of vaultBuilt.vault.posts.entries()) {
+          if (i < killed) continue;
           const e = enemies.spawn(VAULT_POOL[(i * 3 + 1) % VAULT_POOL.length], post.x + 0.5, post.y + 0.5, floorLevel);
           if (i === 6 || i === 13) e.setAffix(AFFIXES[i % AFFIXES.length]);
         }
@@ -2966,6 +3016,7 @@ async function boot(): Promise<void> {
         riverside: riverside?.river ?? null,
         field: fieldBuilt?.field ?? null,
         manor: manorBuilt?.manor ?? null,
+        vault: vaultBuilt?.vault ?? null,
         chief: chiefBody,
       };
     };
@@ -5852,12 +5903,20 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * WHAT THE HOUSE SOUNDS LIKE (it.110). The first thing the battlefield does
-     * when the hero gets near the manor: the camera leaves them for the shuttered
-     * windows and the field goes quiet enough to hear what is behind them. There
-     * is no cast in this scene and nobody says anything TO the hero - the beats
-     * are the noise itself, unattributed, so none of them waits for a keypress
-     * and the whole thing plays through and hands the field back.
+     * WHAT THE HOUSE SOUNDS LIKE (it.110, cut down to one line it.112).
+     *
+     * The first thing the battlefield does when the hero gets near the manor:
+     * the camera leaves them for the shuttered windows and the field goes quiet
+     * enough to hear what is behind them.
+     *
+     * it.110 wrote THREE paragraph-length beats on a timer - a bench going over,
+     * somebody laughing, glass breaking - which rolled past at two-second
+     * intervals whether or not anybody had finished reading them, and the whole
+     * thing took eleven seconds of held camera to say one thing. it.112 says the
+     * one thing: a single short line, given four seconds to arrive rather than
+     * one, and then HELD (`wait: true`) until the player presses on. Nobody is
+     * timed out of a sentence, and nobody sits through a paragraph they read in
+     * two seconds.
      */
     const startManorNoise = (): void => {
       const f = world.field;
@@ -5881,11 +5940,18 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 0.9, x: at.x, y: at.y, text: '\u2014 shouting, somewhere behind the shutters. Muffled, and a long way into the house \u2014', hold: 2.4 },
-          { t: 3.0, x: at.x, y: at.y, text: '\u2014 a bench goes over. Somebody laughs. A lot of men laugh with him \u2014', hold: 2.4 },
-          { t: 5.2, x: at.x, y: at.y, text: '\u2014 glass breaks against a wall, and the laughing does not stop \u2014', crit: true, hold: 3 },
+          {
+            t: 4.0,
+            x: at.x,
+            y: at.y,
+            text: 'You hear muffled shouting, roaring laughter, and clinking mugs echoing from inside.',
+            crit: true,
+            // Unattributed, so it would drift past on its own: it waits instead,
+            // because there is nothing after it and no reason to hurry a reader.
+            wait: true,
+          },
         ],
-        hold: 6,
+        hold: 1.5,
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
@@ -5896,9 +5962,12 @@ async function boot(): Promise<void> {
           world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE DOOR IS UNBARRED', 'crit');
         },
       });
+      // The noise arrives UNDER the line rather than punctuating three of them:
+      // voices, then one bench going over, then the voices again, spread over
+      // the four seconds before the words land.
       audio.sfx('crowd');
-      later(() => audio.sfx('barrelBreak'), 3000);
-      later(() => audio.sfx('crowd'), 5200);
+      later(() => audio.sfx('barrelBreak'), 2000);
+      later(() => audio.sfx('crowd'), 3400);
     };
 
     /**
@@ -5970,40 +6039,65 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * THE MAN IN THE CLOSET (it.110). The hall is quiet, and something behind the
-     * high table has been listening to all of it. He is a merchant off the east
-     * road, he has been in there nine days while they wrote to his brother about
-     * a price, and he pays what he can and promises the rest.
+     * THE MAN IN THE CLOSET (it.110, and he comes OUT of it at it.112).
+     *
+     * The hall is quiet, and something behind the high table has been listening
+     * to all of it. He is a merchant off the east road, taken with two carts and
+     * a boy, and he has spent nine days in a cupboard while the company argued
+     * about what his brother would pay.
+     *
+     * WHAT HE IS FOR. Until it.112 the scene simply MATERIALISED him, standing
+     * at his final tile, and had him narrate - so the one rescue in the game
+     * read as a man who had always been in the room. He now walks it: the door
+     * in the panelling opens, and he comes out of the corner behind the dais and
+     * down onto the flagstone where the hero can see him, on his own legs, over
+     * the first two beats. The walk is a `ProcessionScene` walker on his own
+     * sheet rather than a static `cast` body, which is the difference.
+     *
+     * AND WHAT THEY THREATENED HIM WITH. it.110's lines were about money. The
+     * thing that actually frightens a man locked in a cupboard for nine days is
+     * what he could hear through the floor - and it is the reason the BASEMENT
+     * matters, because the errand under this hall is the next place the hero
+     * goes. He says it plainly now: pay, or go down the stairs with the rest.
      */
     const startManorRescue = (): void => {
       const m = world.manor;
       if (reclaim || !m) return;
       const q = m.merchant;
-      lightTheWayIn({ x: q.x, y: q.y }, [{ x: m.chief.x, y: m.chief.y }]);
+      const c = m.closet;
+      lightTheWayIn({ x: q.x, y: q.y }, [{ x: c.x, y: c.y }, { x: m.basement.x, y: m.basement.y }]);
       reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
         ambience: world.ambience,
         fx: gateFx,
         carts: [],
-        at: { x: q.x, y: q.y },
-        from: { x: q.x, y: q.y },
-        route: [{ x: q.x, y: q.y }],
+        at: { x: c.x, y: c.y },
+        // OUT OF THE PANELLING AND DOWN INTO THE ROOM: three legs, so he comes
+        // round the end of the high table rather than through it.
+        from: { x: c.x, y: c.y },
+        route: [
+          { x: c.x - 1, y: c.y + 2 },
+          { x: q.x + 1, y: q.y - 2 },
+          { x: q.x, y: q.y },
+        ],
         titles: [
           ['THE HALL IS QUIET', 'for the first time in nine days'],
           ['SOMETHING IN THE WALL', 'has been listening to every word of it'],
         ],
-        walkers: 0,
-        cast: [{ anim: 'trader_walk', x: q.x, y: q.y, height: 74, tint: 0xffffff, dir: 2 }],
+        walkers: 1,
+        sheets: [{ anim: 'trader_walk', feet: false, height: 74 }],
+        isWalkable: (gx, gy) => world.scene.isWalkable(gx, gy),
+        cast: [],
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: q.x, y: q.y, text: 'Is that \u2014 is that Brack? Did he go down? I have listened to that man price my brother\u2019s house through a cupboard door for nine days. I know what he sounds like going down.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
-          { t: 3.4, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me because I am worth a letter to my brother, and they were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait() },
-          { t: 5.8, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait() },
-          { t: 8.0, x: q.x, y: q.y, text: 'My shop is in the city over the east road. The day that gate opens, you will not pay me for a healing draught again as long as I am standing behind the counter.', speaker: 'THE MERCHANT', role: 'of the eastern city', portrait: merchantPortrait() },
-          { t: 10.2, x: q.x, y: q.y, text: 'And before you go \u2014 the door in the west wall, the one they kept a bench across. That is the basement. They would not open it. Whatever they could hear down there, they did not want it up here.', crit: true, speaker: 'THE MERCHANT', role: 'on his way out', portrait: merchantPortrait(), hold: 4 },
+          { t: 1.2, x: c.x, y: c.y, text: 'Is that \u2014 is that Brack? Did he go down? I know what that man sounds like going down. I have been waiting nine days to hear it.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
+          { t: 4.0, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me alive because my brother can be written to. They were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait() },
+          { t: 6.6, x: q.x, y: q.y, text: 'And every night one of them came and opened that door and asked me had I reconsidered. Pay, he said, or we walk you down to the basement and let the thing that lives in it have the argument instead.', crit: true, speaker: 'THE MERCHANT', role: 'not looking at the west wall', portrait: merchantPortrait() },
+          { t: 9.4, x: q.x, y: q.y, text: 'They were not bluffing. They took the boy down there on the fourth night. I heard the bar go on afterwards and I did not hear him again.', crit: true, speaker: 'THE MERCHANT', role: 'quietly', portrait: merchantPortrait() },
+          { t: 12.0, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise. My shop is in the city over the east road \u2014 the day that gate opens you drink for nothing in it.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait(), hold: 4 },
         ],
-        hold: 6,
+        hold: 7,
         ...cineFocusHooks,
         sfx: (n) => audio.sfx(n),
         onDone: () => {
@@ -6014,13 +6108,45 @@ async function boot(): Promise<void> {
           manorWonTicks = 30; // a half second, then the reward and the rebuild
         },
       });
+      // The door in the panelling comes open on the first beat, not silently.
+      audio.sfx('gateOpen');
     };
 
     /**
-     * THE BATTLEFIELD'S OWN TICK. It has no errand and no tally - the only thing
-     * it watches for is the hero coming near enough to the house to hear what is
-     * going on inside it, which happens once, ever, and is written in the ledger
-     * so a reload does not play it again.
+     * WHAT THE FIELD AND THE CELLAR REMEMBER (it.112).
+     *
+     * Both floors place their hostiles BY HAND on posts the layout chose, and
+     * until it.112 both refilled every post on every entry - so the battlefield
+     * and the manor's cellar were each an unbounded source of experience and
+     * loot for the price of a walk through a door. The ledger keeps a running
+     * count of how many have been put down for good; the builder skips that many
+     * posts. It is written on every tick the number changes rather than on the
+     * kill, because a kill can also happen to a peer.
+     *
+     * MONOTONE BY CONSTRUCTION: the count only ever goes up, so no amount of
+     * walking in and out can produce a body that has already been counted.
+     */
+    const tickZoneTally = (): void => {
+      if (transitioning || reclaim) return;
+      const key = floor === FIELD_FLOOR ? 'fieldKills' : floor === VAULT_FLOOR ? 'vaultKills' : null;
+      if (!key) return;
+      const total = floor === FIELD_FLOOR ? (world.field?.looterPosts.length ?? 0) + FIELD_STRAGGLERS : world.vault?.posts.length ?? 0;
+      if (!total) return;
+      let alive = 0;
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead') alive++;
+      });
+      const killed = String(Math.max(Number(quests[key] ?? 0) | 0, total - alive));
+      if (quests[key] === killed) return;
+      quests[key] = killed;
+      saveNow();
+    };
+
+    /**
+     * THE BATTLEFIELD'S OWN TICK. It has no errand and no tally of its own - the
+     * only thing it watches for is the hero coming near enough to the house to
+     * hear what is going on inside it, which happens once, ever, and is written
+     * in the ledger so a reload does not play it again.
      */
     const tickFieldQuest = (): void => {
       if (floor !== FIELD_FLOOR || transitioning || reclaim) return;
@@ -6086,8 +6212,8 @@ async function boot(): Promise<void> {
             portrait: merchantPortrait(),
             lines: [
               'Give me a moment before you go. Nine days in a cupboard and my legs have opinions about standing.',
-              'The door in the west wall - the one they had a bench across. That is the way down. Take a light. Take two.',
-              'And when the eastern gate opens \u2014 ask anyone on the street for the man with the two carts. That is me. You drink for nothing in my shop.',
+              'The door in the west wall - the one they had a bench across. That is where they said they would put me if my brother would not pay. Whatever is down there, they were frightened enough of it to keep it as a threat.',
+              'Take a light. Take two. And when the eastern gate opens \u2014 ask anyone on the street for the man with the two carts. That is me. You drink for nothing in my shop.',
             ],
             choices: [{ label: 'GO CAREFULLY', value: 'ok' }],
           });
@@ -6113,7 +6239,7 @@ async function boot(): Promise<void> {
         portrait: merchantPortrait(),
         lines: [
           'Nine days in a cupboard listening to men eat. I will never look at a roast the same way.',
-          'The door in the west wall is the way down. Whatever is behind it, they would not open it, and they were not a careful sort of people.',
+          'They kept the bar on that west door and asked me every night whether I had reconsidered the price. The alternative was the stair behind it. They were not a careful sort of people and even they would not go down.',
           'When the east gate opens, come and find me. Free draughts, for as long as I am behind the counter.',
         ],
         choices: [{ label: 'FAREWELL', value: 'ok' }],
@@ -6170,10 +6296,23 @@ async function boot(): Promise<void> {
         if (floor !== FIELD_FLOOR) return; // the floor went out from under the shot
         const cx = hx + 0.5;
         const cy = hy + 0.5;
-        world.vfx.play('vfx_explosion', cx, cy, { scale: 1.7, fps: 26, lift: 10 });
-        world.ambience.burst(cx, cy, 0x9a8a70, 40);
-        world.camera.addKick(6);
+        /**
+         * AN EXPLOSIVE PAYLOAD (it.112). it.110's stone landed with one puff of
+         * dust, which is what a rock does and not what a siege crew loosed: they
+         * threw pitch, and pitch bursts. The stone leaves the sling alight (the
+         * halo is `TownProps`'s) and comes down as a fireball - the blast, a
+         * ring of burning spill round it, sparks off the ground and a kick hard
+         * enough to feel from the far end of the field.
+         */
+        world.vfx.play('vfx_explosion', cx, cy, { scale: 2.1, fps: 24, lift: 14 });
+        world.vfx.play('vfx_burst', cx, cy, { scale: 1.5, fps: 20, lift: 4 });
+        world.vfx.play('vfx_firewall', cx, cy, { scale: 1.25, fps: 16, lift: 2, alpha: 0.8 });
+        world.ambience.burst(cx, cy, 0xffa848, 34);
+        world.ambience.burst(cx, cy, 0x9a8a70, 30);
+        world.ambience.impactFlash(cx, cy, 0xffc070, 2.2);
+        world.camera.addKick(9);
         audio.sfx('barrelBreak');
+        later(() => audio.sfx('gore'), 60);
         const caught: Enemy[] = [];
         world.enemies.forEachActive((e) => {
           if (e.hp > 0 && e.action !== 'dead' && Math.hypot(e.pos.x - cx, e.pos.y - cy) <= SIEGE_BLAST) caught.push(e);
@@ -6564,6 +6703,7 @@ async function boot(): Promise<void> {
           tickFarmQuest(); // THE FARMLANDS (it.100).
           tickRiverQuest(); // THE RIVERSIDE FARM (it.106).
           tickFishing(); // ...and the line in the water (it.106).
+          tickZoneTally(); // ...and what the field and the cellar remember (it.112).
           tickFieldQuest(); // THE BATTLEFIELD (it.110).
           tickManorQuest(); // ...and the hall in the middle of it (it.110).
         }
@@ -8150,7 +8290,9 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
    * empty ground. The scavengers on it and the men in the hall come in with them.
    */
   if (mode === 'field' || mode === 'manor') {
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    // THE ENGINES (it.112) come in with the floor: `siege_engine` is eight
+    // facings of a stacked catapult and `siege_wreck` the same machine down.
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', 'siege_engine', 'siege_wreck', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
     for (const k of [...FIELD_POOL, 'mercenary' as EnemyKind, 'chief' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }

@@ -28,16 +28,22 @@
  * out of the open ground - the same belt the farmlands use (it.103). There is no
  * way off this field except the bridge behind you and the road that is shut.
  *
- * WHAT IS NOT HERE. There is no catapult sprite in any pack in the repository,
- * so the engines are COMPOSED, in `TownProps`, out of pieces that are: the
- * pack's cart for the bed and wheels, its timber trestle for the frame, a plank
- * for the throwing arm and a cask for the counterweight. `siege` props carry
- * `catapult` (it still throws - walk up and press E) or `wreck` (it never will
- * again). The layout only says where they stand and which way they are laid.
+ * THE ENGINES (it.110 composed them; it.112 gave them the real machine). A
+ * `siege` prop carries `catapult` (it still throws - walk up and press E) or
+ * `wreck` (it never will again), and an `aim` the dresser lays the arm along.
+ * The body is `scripts/bake-catapult.py`'s sprite-stacked isometric catapult,
+ * eight facings of it; the layout only says where they stand and what they are
+ * laid on, which is always the manor.
+ *
+ * THE GROUND (it.112). The field has three ground kinds of its own - churned
+ * mud, mud with the camp's spoil trodden into it, and mud soaked through with
+ * blood - baked by `scripts/bake-ground.py`. Before that it was painted out of
+ * the TOWN's set plus `farm_ash`, which is a near-black diamond, and under this
+ * floor's own light (`exploredLight: 0.10`) those read as holes in the ground.
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
-import { CLUTTER_KINDS, KIND_DIRT, KIND_FARM_ASH, KIND_GRASS, type FieldLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { CLUTTER_KINDS, KIND_DIRT, KIND_FIELD_CHURN, KIND_FIELD_GORE, KIND_FIELD_MUD, KIND_GRASS, type FieldLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -83,7 +89,13 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   const H = FIELD_H;
   const rand = mulberry32((seed ^ 0xba771e) >>> 0);
   const grid = new Uint8Array(W * H).fill(TILE_WALL);
-  const tileKind = new Uint8Array(W * H).fill(KIND_GRASS);
+  /**
+   * THE FIELD IS MUD UNTIL PROVEN OTHERWISE (it.112). it.110 filled with grass
+   * and painted mud over the bands, which left something like half the floor in
+   * green pasture - a battlefield a summer later, not a week. The default is now
+   * the churned earth and the grass is what SURVIVES.
+   */
+  const tileKind = new Uint8Array(W * H).fill(KIND_FIELD_MUD);
   const idx = (x: number, y: number): number => y * W + x;
   const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
   const isFloor = (x: number, y: number): boolean => inside(x, y) && grid[idx(x, y)] === TILE_FLOOR;
@@ -150,41 +162,72 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   }
 
   /**
-   * THE CHURN. A field two armies manoeuvred over is not a lawn: broad bands of
-   * beaten earth run across it where the lines stood, with grass surviving only
-   * between them, and the ground the fires took is ash. All of it is a pure
-   * function of the tile, so none of it moves the shared random stream (it.98).
+   * THE CHURN (it.110, given its own ground it.112).
+   *
+   * A field two armies manoeuvred over is not a lawn: broad bands of beaten
+   * earth run across it where the lines stood, with grass surviving only in the
+   * pockets they never crossed. All of it is a pure function of the tile, so
+   * none of it moves the shared random stream (it.98).
+   *
+   * WHAT IT.112 CHANGED. The field used to be painted out of the TOWN's ground
+   * set - `KIND_DIRT` for the churn, `KIND_FARM_ASH` for the burn - and
+   * `farm_ash` is a near-black diamond. Under this floor's own light
+   * (`exploredLight: 0.10`) that reads as a HOLE IN THE GROUND, and the ash
+   * bands plus the two burn scars put a few hundred of them across the middle
+   * of the map: the black patches. The field now has three ground kinds of its
+   * own (`scripts/bake-ground.py`), and the burn is gone entirely - a week-old
+   * battlefield is mud and blood, not a fire scar.
+   *
+   *   MUD    the default: churned wet earth
+   *   CHURN  where the camp and the columns trod their own spoil into it
+   *   GORE   the band the two lines actually met on, soaked through
    */
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       if (!isFloor(x, y) || onRoad[idx(x, y)]) continue;
+      // Pasture only in the pockets the lines never reached.
       const band = Math.sin(x * 0.11 + Math.cos(y * 0.09) * 1.6);
+      if (band <= -0.88) tileKind[idx(x, y)] = KIND_GRASS;
+      // The spoil: where the lines stood longest and the camp was pitched, in
+      // BANDS, which read as ground worked over rather than as speckle.
+      const trod = Math.sin(x * 0.075 - y * 0.055 + 1.1);
+      if (trod > 0.42 && tileKind[idx(x, y)] === KIND_FIELD_MUD) tileKind[idx(x, y)] = KIND_FIELD_CHURN;
       /**
-       * MOSTLY BEATEN EARTH (it.110b). it.110 left more than half the field in
-       * green pasture, which is what a battlefield looks like a summer later,
-       * not a week. The grass survives only in the pockets the lines never
-       * crossed, and the broad bands where they stood are churned to mud.
+       * AND THE GROUND THE FIGHTING WAS ON IS SOAKED. The same gaussian the
+       * dead are laid along, thresholded: the earth west of the manor is dark
+       * with it, and it thins out east where the rout was already running. It
+       * is under the bodies and the pools rather than instead of them.
        */
       /**
-       * IT.111: less green still. A week after two armies manoeuvred over it,
-       * pasture survives only in pockets the lines never reached - at -0.35 the
-       * field was a third grass, and grass is the single most cheerful thing on
-       * the palette.
+       * SOLID, WITH A WAVY EDGE - AND NO DITHER (it.112).
+       *
+       * The first pass thresholded the band and then DITHERED its margin with a
+       * per-tile hash, which scatters single soaked diamonds through clean mud.
+       * Two ground kinds that differ as much as blood and earth do cannot be
+       * mixed a tile at a time: the eye reads the result as a CHEQUER, which is
+       * the same artifact it.110's ash bands were and the same thing the tile
+       * seams were - a grid.
+       *
+       * The boundary is displaced by a low-frequency wave instead. It is as
+       * irregular as a stain's edge and it is CONTINUOUS, so the soaked ground
+       * is one shape with a ragged outline rather than a scatter of diamonds.
        */
-      if (band > -0.62) tileKind[idx(x, y)] = KIND_DIRT;
-      // And where it burned it is ash - in BANDS, which read as fire scars,
-      // never as the scattered single tiles it.110 speckled and which read as
-      // pits in the ground.
-      const burn = Math.sin(x * 0.075 - y * 0.055 + 1.1);
-      if (burn > 0.86) tileKind[idx(x, y)] = KIND_FARM_ASH;
+      const met = Math.exp(-Math.pow((x - 25) / 12, 2)) * Math.exp(-Math.pow((y - 28) / 15, 2));
+      const edge = Math.sin(x * 0.83 + y * 0.31) * 0.055 + Math.cos(y * 0.61 - x * 0.22) * 0.045;
+      if (met + edge > 0.33) tileKind[idx(x, y)] = KIND_FIELD_GORE;
     }
   }
-  // Two burnt scars where the camp fires got into the grass. These are the only
-  // ash on the map: a black diamond is a strong mark and it has to mean something.
-  for (const [bx, by, br] of [[27, 41, 3], [46, 17, 3]] as const) {
+  // Three slicks where the press was worst: solid soaked ground, not speckle.
+  for (const [bx, by, br] of [[24, 26, 4], [21, 33, 3], [29, 20, 3]] as const) {
     for (let y = by - br; y <= by + br; y++)
       for (let x = bx - br; x <= bx + br; x++)
-        if (isFloor(x, y) && Math.hypot(x - bx, y - by) <= br && !onRoad[idx(x, y)]) tileKind[idx(x, y)] = KIND_FARM_ASH;
+        if (isFloor(x, y) && Math.hypot(x - bx, y - by) <= br && !onRoad[idx(x, y)]) tileKind[idx(x, y)] = KIND_FIELD_GORE;
+  }
+  // The camp's own ground, trodden flat by nine pavilions and six cook fires.
+  for (const [bx, by, br] of [[27, 41, 5], [46, 17, 4], [38, 43, 5]] as const) {
+    for (let y = by - br; y <= by + br; y++)
+      for (let x = bx - br; x <= bx + br; x++)
+        if (isFloor(x, y) && Math.hypot(x - bx, y - by) <= br && !onRoad[idx(x, y)] && tileKind[idx(x, y)] !== KIND_FIELD_GORE) tileKind[idx(x, y)] = KIND_FIELD_CHURN;
   }
 
   // ---- PROPS -------------------------------------------------------------
@@ -385,11 +428,66 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
       }
   }
 
+  /**
+   * ---- WHAT STOOD HERE BEFORE THE ARMIES DID (it.112) -------------------
+   *
+   * `scripts/bake-grassland.py` cuts forty-nine isometric pieces out of the
+   * `use now` drop's `grassland_tiles.png` - the one sheet in it drawn at this
+   * game's own angle - and this is where they go. Everything here is EDGE
+   * DRESSING: it explains what the field was before it was a field, and it
+   * keeps to the rim, the camp and the burial ground so that the middle, where
+   * the fighting was, stays the dead and the mud.
+   *
+   *   THE WRECKS    a hamlet's worth of collapsed timber round the rim, and a
+   *                 ruined watch-tower on the northern spur. Two armies
+   *                 manoeuvred over somebody's holding to get here.
+   *   THE GRAVES    a burial line at the bridge end: crosses, headstones and
+   *                 two mourning statues over the ones they had time for,
+   *                 which is what makes the UNBURIED thousand read as hurry.
+   *   THE STUMPS    at the wood's edge under the siege line - the engines'
+   *                 timber was cut on the spot, and the stumps are still there.
+   *   THE STONES    boundary menhirs along the road, older than any of this.
+   */
+  for (const [x, y, v] of [
+    [10, 18, 'gl_wreck_a'], [12, 36, 'gl_wreck_b'], [31, 47, 'gl_wreck_c'],
+    [56, 18, 'gl_wreck_d'], [58, 36, 'gl_wreck_e'], [43, 12, 'gl_wreck_f'],
+    [20, 45, 'gl_wreck_g'], [50, 47, 'gl_wreck_shed'], [8, 31, 'gl_wreck_a'],
+    [63, 33, 'gl_wreck_b'], [37, 49, 'gl_wreck_d'],
+  ] as const) structure('ruin', x, y, 2, 2, v, 5);
+  structure('ruin', 23, 9, 3, 3, 'gl_wreck_tower', 6);
+  // The burial line: laid in two ranks facing the bridge, so it reads as a row
+  // of graves and never as scattered markers.
+  for (let i = 0; i < 9; i++) {
+    const gx = 9 + Math.floor(i / 3) * 2;
+    const gy = 20 + (i % 3) * 2;
+    put('rock', gx, gy, i % 4 === 0 ? 'gl_grave_a' : i % 4 === 1 ? 'gl_cross_a' : i % 4 === 2 ? 'gl_grave_b' : 'gl_cross_b');
+  }
+  put('rock', 8, 22, 'gl_grave_c');
+  put('rock', 8, 26, 'gl_grave_d');
+  // The stumps, under the engines.
+  for (const [x, y] of [[21, 12], [31, 9], [41, 10], [50, 14], [26, 8]] as const) put('rock', x, y, (x + y) % 2 ? 'gl_stump_a' : 'gl_stump_b');
+  // The boundary stones, on the road, older than the war.
+  for (const [x, y] of [[9, 31], [26, 33], [40, 32], [54, 31], [61, 29]] as const) put('rock', x, y, `gl_menhir_${'abcd'[(x + y) % 4]}`);
+  // And the field's own litter: broken lines, spilled loads, spent fires.
+  for (const [x, y] of [[18, 36], [25, 38], [35, 34], [45, 36], [53, 38], [15, 25], [48, 30]] as const)
+    lay('debris', x, y, `gl_rubble_${'abcd'[(x * 3 + y) % 4]}`);
+  for (const [x, y] of [[22, 43], [30, 39], [41, 45], [17, 41], [47, 43]] as const) put('barricade', x, y, `gl_fence_broke_${'abc'[(x + y) % 3]}`);
+  for (const [x, y] of [[26, 45], [36, 41], [45, 39]] as const) put('barricade', x, y, `gl_fence_${'abc'[(x + y) % 3]}`);
+  for (const [x, y] of [[23, 39], [33, 42], [43, 41], [19, 44]] as const) put('crates', x, y, `gl_crate_${'abc'[(x + y) % 3]}`);
+  for (const [x, y] of [[28, 44], [38, 38], [21, 40]] as const) put('wood_pile', x, y, (x + y) % 2 ? 'gl_woodpile_a' : 'gl_woodpile_b');
+  for (const [x, y] of [[31, 41], [44, 44]] as const) lay('firepit', x, y, 'gl_logfire');
+
   // Heaps of stripped gear where the scavengers have already been through.
   for (const [x, y] of [[14, 24], [19, 31], [30, 33], [12, 30], [23, 25], [37, 31], [9, 26]] as const)
     lay('heap', x, y, `heap_${'abcde'[(x + y) % 5]}`);
   // Dead trees standing in the middle of it, stripped by the fires.
-  for (const [x, y] of [[13, 20], [29, 34], [41, 22], [55, 33], [18, 33], [47, 25], [60, 20]] as const) put('deadtree', x, y, (x + y) % 2 ? 'dead_a' : 'dead_b');
+  // Dead trees standing in the middle of it, stripped by the fires. Half of
+  // them are the grassland kit's own bare trunks (it.112), which are taller and
+  // more broken than the town set's two and read as burnt rather than bare.
+  for (const [x, y] of [[13, 20], [29, 34], [41, 22], [55, 33], [18, 33], [47, 25], [60, 20], [35, 31], [24, 23], [52, 20]] as const)
+    put('deadtree', x, y, (x + y) % 3 === 0 ? (((x + y) % 2) ? 'dead_a' : 'dead_b') : `gl_deadtree_${'abcd'[(x * 3 + y) % 4]}`);
+  // Tufts in the pockets the lines never crossed: the only living thing left.
+  for (const [x, y] of [[15, 15], [55, 41], [62, 35], [11, 40], [46, 48], [58, 15], [7, 21]] as const) lay('debris', x, y, `gl_tuft_${'abcd'[(x + y) % 4]}`);
   // Broken carts on the road, pushed aside where the rout came through.
   for (const [x, y] of [[10, 24], [17, 31], [28, 25], [51, 30]] as const) put('cart', x, y, (x + y) % 2 ? 'cart_b' : undefined);
 

@@ -649,7 +649,13 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
      * that order is the depth sort.
      */
     for (let x = near + 1; x < far; x++) span.push({ x, y });
-    for (const b of span) decal({ kind: 'bridgeshadow', x: b.x, y: b.y + 1 });
+    /**
+     * ...AND ONLY ON THE WATER (it.112). The shadow is laid one tile south of
+     * every bay, and the last bay's south neighbour is the FAR BANK - so a
+     * black ellipse was painted on the dry road at the far end of the crossing,
+     * where nothing is casting it.
+     */
+    for (const b of span) if (tileKind[idx(b.x, b.y + 1)] === KIND_WATER) decal({ kind: 'bridgeshadow', x: b.x, y: b.y + 1 });
     decal({ kind: 'bridgepost', x: near + 1, y, variant: 'block' });
     decal({ kind: 'bridgepost', x: far - 1, y, variant: 'block' });
     // One arch every third bay: piers with open water between them, which is

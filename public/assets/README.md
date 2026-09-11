@@ -12,6 +12,10 @@ Everything the game loads at runtime lives here, and ONLY what it loads:
 | `atlas/single_town_{grass,dirt,sand}.png` | grass/ tileset diamonds (it.55 town + arena floors) | `SceneManager` town kinds |
 | `atlas/single_rock_a..f, watchtower, weapon_rack, candle_stand, iron_cage` | rocks.png, watchtower, library + dungeon pack (it.55) | `TownProps`, `Coliseum.ts` |
 | `atlas/vfx_bloodburst.png` | NEw pack blood set 1 (it.55 champion deaths on the sand) | `Vfx.ts` |
+| `atlas/single_field_{mud,churn,gore}_0..3.png` | THE BATTLEFIELD'S GROUND (it.112): churned mud, trodden spoil and blood-soaked earth, baked by `scripts/bake-ground.py`. Registered as ground KINDS 10-12 | `SceneManager` via the map's `tileKind` |
+| `atlas/siege_engine.png`, `atlas/siege_wreck.png` | THE SIEGE ENGINES (it.112): the `use now` catapult pack sprite-stacked into eight isometric facings, three frames of recoil, and the same machine collapsed (`scripts/bake-catapult.py`) | `TownProps` `siege` |
+| `atlas/single_siege_{arm,sling,stone}.png` | The throwing arm, its sling and its shot - separate pieces because the pack renders the machine cocked and the arm has to swing | `TownProps` `siege`, `fireSiege` |
+| `atlas/single_gl_*.png` | THE GRASSLAND KIT (it.112): 49 isometric props cut out of the drop's `grassland_tiles.png` by connected component (`scripts/bake-grassland.py`) - the eastern road's portal, timber wrecks, a ruined tower, graves, stumps, menhirs, fences, crates, dead trees, tufts | `TownProps` via prop variants; `scenes/Battlefield` places them |
 | `ui/fonts/Darinia.ttf` | Darinia display face (it.45 `--font-display`: headers, titles, tooltips, buttons) | `index.html` @font-face |
 | `ui/hud/*.png` | health_globe (gargoyle orb) + enemy_health_bars_2.0 frames/fills (it.45 HUD) | `index.html` CSS |
 | `audio/gore/*.wav` | Gore vol 1: bone cracks / snaps / rattle, guts (it.43 `goreKill` / `goreHit`) | `AudioManager` gore banks |
@@ -23,7 +27,10 @@ Everything the game loads at runtime lives here, and ONLY what it loads:
 ## Rules
 
 - **Nothing else belongs here.** The raw sprite packs (2.5 GB, 300k+
-  files) were baked into `atlas/` on 2026-09-02 and deleted. Commit
+  files) were baked into `atlas/` on 2026-09-02 and deleted. The same rule
+  took the it.112 `use now` drop (70 MB of `.blend` scenes, 3D source
+  textures and 496 top-down catapult renders): it is gitignored, the three
+  bake scripts read it, and only the atlas output is committed. Commit
   `07c386cd` keeps the raw-pack loaders + the in-browser baker
   (`src/dev/AtlasBaker.ts`, `/__bake` Vite endpoint) for reference: to
   re-bake, check that commit out with the packs restored.

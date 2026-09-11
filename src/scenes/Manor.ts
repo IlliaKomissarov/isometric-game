@@ -40,8 +40,22 @@ export const MANOR_H = 28;
 
 /** The hall's four corners (inclusive). */
 const HALL = { x0: 2, y0: 2, x1: 33, y1: 25 };
-/** The way out to the field: an arch in the north wall over tiles (6,1) and (7,1). */
-const OUT_PIECE_X = 6;
+/**
+ * THE WAY OUT TO THE FIELD (moved to the south threshold, it.112).
+ *
+ * The manor's door on the battlefield is in the house's SOUTH face. Until
+ * it.112 walking through it put the hero down at `(7, 4)` - the far NORTH end
+ * of the hall, three tiles from the chief's chair, with the entire room and
+ * every man in it already BEHIND them and the door they had just come through
+ * somewhere past the high table. That is the coordinate inversion: the outside
+ * and the inside disagreed about which way the house faced.
+ *
+ * The threshold is at the south wall now, the hero spawns two tiles inside it,
+ * and the hall runs away from them to the high table at the far end - which is
+ * both correct and the staging the ambush wanted all along.
+ */
+const OUT_X = 7;
+const OUT_Y = HALL.y1;
 /** THE CLOSET: a door leaf in the north wall over (28,1) and (29,1); its opening is (29,2). */
 const CLOSET_PIECE_X = 28;
 /** THE BASEMENT DOOR: a leaf in the west wall over (1,18) and (1,19) (it.110b). */
@@ -86,7 +100,7 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
 
   // ---- THE WALLS ---------------------------------------------------------
   for (let x = HALL.x0; x <= HALL.x1; x += 2)
-    wallN(x, 1, x === OUT_PIECE_X ? 'inn_arch_n' : x === CLOSET_PIECE_X ? (cleared ? 'inn_door_open' : 'inn_door_shut') : 'inn_wall_n');
+    wallN(x, 1, x === CLOSET_PIECE_X ? (cleared ? 'inn_door_open' : 'inn_door_shut') : x === 12 ? 'inn_arch_n' : 'inn_wall_n');
   /**
    * THE WEST WALL, AND THE DOOR IN IT (it.110b). The hearth at 10, the basement
    * door at 18, and a blind arch at 22. The basement's leaf is a real door in a
@@ -98,9 +112,18 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
     wallW(1, y, y === 10 ? 'inn_hearth_w' : y === BASEMENT_PIECE_Y ? (cleared ? 'inn_door_w_open' : 'inn_door_w_shut') : y === 22 ? 'inn_arch_w' : 'inn_wall_w');
 
   // ---- THE WAY OUT -------------------------------------------------------
-  const out = { x: OUT_PIECE_X + 1, y: 2 };
-  const spawn = { x: OUT_PIECE_X + 1, y: 4 };
+  /**
+   * The south threshold, and the tile the hero stands on when they come through
+   * it: two INSIDE the door, so the arch is behind them and the hall is in
+   * front. Its own apron of flagstone marks it out of thirty-two tiles of board.
+   */
+  const out = { x: OUT_X, y: OUT_Y };
+  const spawn = { x: OUT_X, y: OUT_Y - 2 };
+  for (let y = OUT_Y - 2; y <= OUT_Y; y++) for (let x = OUT_X - 2; x <= OUT_X + 2; x++) if (inside(x, y)) tileKind[idx(x, y)] = KIND_INN_STONE;
   decal({ kind: 'manorout', x: out.x, y: out.y });
+  // Two standing lights either side of it: the only pair in the hall, so the
+  // way out is findable from the far end of a room thirty tiles long.
+  for (const dx of [-2, 2]) decal({ kind: 'candle', x: OUT_X + dx, y: OUT_Y, ox: 0.25, oy: 0.1 });
 
   // ---- THE HEARTH --------------------------------------------------------
   const hearth = { x: 2, y: 10 };
@@ -173,13 +196,13 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   put('inn_crate', 20, 2, 0.2, -0.1);
   put('inn_pots', 22, 2, 0.3, -0.1);
   put('inn_cupboard', 2, 17, 0.35, 0);
-  put('inn_barrels', 3, 23, 0.2, 0.1);
-  put('inn_crates', 7, 24, 0.2, 0.1);
+  put('inn_barrels', 3, 22, 0.2, 0.1);
+  put('inn_crates', 11, 24, 0.2, 0.1);
   put('inn_barrel', 15, 24, 0.3, 0.1);
   put('inn_crate', 24, 24, 0.2, 0.1);
   put('inn_bigtable', 30, 21, 0.2, 0.2);
   put('inn_cupboard', 32, 15, 0.2, 0);
-  for (const [x, y, v] of [[11, 3, 'inn_goods_a'], [18, 3, 'inn_goods_c'], [26, 23, 'inn_goods_b'], [9, 23, 'inn_goods_d']] as const)
+  for (const [x, y, v] of [[11, 3, 'inn_goods_a'], [18, 3, 'inn_goods_c'], [26, 23, 'inn_goods_b'], [12, 22, 'inn_goods_d']] as const)
     decal({ kind: 'inndeco', x, y, variant: v, ox: 0.2, oy: -0.2 });
 
   // ---- THE AISLE ---------------------------------------------------------
@@ -199,7 +222,7 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   for (const x of [4, 10, 14, 18, 22, 26, 32]) decal({ kind: 'sconce', x, y: 1, ox: 0.55, oy: 0.4 });
   for (const y of [4, 8, 14, 18, 22]) decal({ kind: 'sconce', x: 1, y, ox: 0.5, oy: 0.55 });
   // Two standing braziers at the south end, where no wall can carry a torch.
-  for (const [x, y] of [[9, 24], [24, 23]] as const) decal({ kind: 'candle', x, y, ox: 0.3, oy: 0.1 });
+  for (const [x, y] of [[15, 24], [24, 23]] as const) decal({ kind: 'candle', x, y, ox: 0.3, oy: 0.1 });
   for (const [x, y] of [[12, 9], [22, 9], [12, 17], [22, 17]] as const) decal({ kind: 'candle', x, y, ox: 0.2, oy: -0.5 });
   for (const [x, y] of [[6, 1], [16, 1], [24, 1]] as const)
     decal({ kind: 'inndeco', x, y, variant: x === 16 ? 'inn_painting_b' : 'inn_painting_a', ox: 0.5, oy: 0.35, lift: 44 });

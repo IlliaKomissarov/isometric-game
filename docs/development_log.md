@@ -1,5 +1,220 @@
 # Development Log
 
+## 2026-09-11 (iteration 112) - The ground the battle was fought on, and the machines that fought it
+
+Nine complaints came back off the it.111 playtest. Every one of them was about
+the far side of the river, and most turned out to be the same two faults wearing
+different clothes: the FLOOR was drawn wrong, and the ENGINES were not engines.
+What follows is what each actually was.
+
+### 1. THE BLACK PATCHES WERE A TILE THAT IS ALMOST BLACK
+
+The battlefield was painted out of the TOWN's ground set - cobble, grass, dirt -
+plus `farm_ash` wherever it.110 wanted a burn. `farm_ash` measures (29, 24, 18)
+with seventeen levels of range across the whole diamond. That is fine on the
+farmlands, which are lit at `exploredLight: 0.3`; on a field lit at 0.10 it is
+not scorched earth, it is a HOLE. it.110 put bands of them across the middle of
+the map and two solid scars on top, so the field was riddled with black diamonds.
+
+`scripts/bake-ground.py` gives the field three ground kinds of its own, from the
+raw pack's photographic soil, the grassland drop's wet broken rock and trampled
+straw, and the bloody-wall plates the pools were cut from at it.111:
+
+    field_mud     churned wet earth - the default over most of the field
+    field_churn   the same, with the camp's own spoil trodden into it
+    field_gore    the same, soaked through, where the two lines actually met
+
+The burn is gone entirely. A week-old battlefield is mud and blood, not a fire
+scar. The field also DEFAULTS to mud now - it.110 filled with grass and painted
+mud over the bands, which left half the floor in green pasture, and grass is the
+single most cheerful thing on the palette.
+
+THREE THINGS THE BAKE HAD TO LEARN, in the order it learned them:
+
+  - **Every variant of a kind must WEIGH the same.** The game scatters the four
+    variants by `(gx * 5 + gy * 11) % 4`, so a heavily soaked variant beside a
+    barely-marked one is not detail, it is a four-tile MOSAIC. `bake()` takes
+    the quantity that varies, measures it over each variant's own diamond, and
+    solves the gain that lands every one of them on the same mean.
+  - **Grain must have no SHAPE in it.** Sampling the bloody-wall plate small
+    enough to read as grain still carries its blotches, and a blotch repeats
+    with the texture and stamps the same mark in tile after tile. The stain is
+    drawn with two-octave value noise now; noise cannot repeat recognisably
+    because there is nothing in it to recognise.
+  - **Two ground kinds cannot be mixed a tile at a time.** The soaked band was
+    first thresholded and then DITHERED at its margin, which scatters single red
+    diamonds through clean mud - the same chequer the ash bands were. The
+    boundary is displaced by a low-frequency wave instead, so the stain is one
+    shape with a ragged outline.
+
+### 2. THE GRID ON THE FLOOR WAS THE SAMPLER, NOT THE MASK
+
+Every shipped ground diamond - cobble, grass, dirt, sand, the inn's boards, the
+cellar's flags - was ANTIALIASED along its rim: 41% of the tile opaque, 18%
+partial. Two soft rims meeting over the dark the scene clears to do not add up to
+one opaque tile, so every tile boundary in the GAME (not only on the field) drew
+as a faint dark diagonal. `seal_existing()` rewrites all forty of them through
+the projection-derived mask `bake-water.py` proved at it.108: a pixel belongs to
+the tile whose grid square it unprojects into, which partitions the plane exactly.
+
+THAT WAS NOT ENOUGH, AND THE REASON IS WORTH WRITING DOWN. An exact partition is
+exact in the TEXTURE and not on the SCREEN. The tiles are drawn with linear
+filtering at whatever fractional scale the camera is at, so every edge texel is
+blended with the fully transparent pixel outside the diamond - black, alpha zero
+- and the result is a dark half-transparent fringe on all four sides of every
+tile. Getting the mask righter cannot fix it, because the fault is in the
+sampler. The mask is written DILATED BY ONE PIXEL: neighbours overlap instead of
+meeting, so there is an opaque tile under the fringe and nothing for it to show
+against. It costs a one-pixel halo at the outer edge of a map.
+
+A third fault went with them. `town_cobble`'s four variants differ by FIFTY
+levels of brightness (103 / 74 / 52 / 72), so the town square has been paved in a
+chequerboard since it.56. `level_variants()` scales each onto the set's mean and
+keeps its own texture.
+
+### 3. THE SIEGE ENGINES WERE SCAFFOLDING
+
+it.110 had no catapult in any pack, so it composed one out of the town's cart,
+its timber trestle, a bridge plank and a cask. It read as scaffolding, because
+that is what those parts are.
+
+The `use now` drop has a real one - Remus Turcuman's Medieval Catapult, eight
+facings, thirty-one frames. It is also rendered ORTHOGRAPHIC TOP-DOWN, this game
+is 2:1 dimetric at thirty degrees, and there is no Blender in this environment to
+re-render the model with.
+
+`scripts/bake-catapult.py` gets there anyway, and the geometry is exact rather
+than a fudge. The projection decomposes as
+
+    M = diag(32*sqrt2, 16*sqrt2) . R(45 degrees)
+
+which is precisely "rotate the ground plan by 45 degrees, then squash it 2:1".
+The pack already supplies the plan pre-rotated in 45-degree steps, so one of its
+eight facings IS our 45 degrees for any facing we want: squashing frame D
+vertically by a half is a geometrically correct isometric view of the machine
+turned to a particular world direction. The projection is right; only the HEIGHT
+is missing, and the height goes back in by SPRITE STACKING - the squashed plan
+composited forty-four times, each copy a pixel further up the screen and a little
+brighter, so every column of the plan becomes a prism of its own height.
+
+A UNIFORM extrusion was wrong in the one way you notice: the four WHEELS came up
+as tall as the frame and the engine read as a rack of barrels. There is no height
+channel in a diffuse render, but on this model there does not need to be one,
+because the tall parts are TIMBER and the low parts are IRON. `height_map` reads
+warm saturated pixels as wood at full rise and grey ones as wheels, tyres and
+fittings at a third of it - blurred hard and cut in two first, because wood grain
+used raw is high-frequency and the first attempt came out as a bed of nails.
+
+The pack renders the machine COCKED, so its arm points away from the top-down
+camera and is foreshortened to nothing. That is the useful accident: the arm is a
+separate baked piece, pivoted and swung by the dresser, which is the only way a
+stack of flat layers could move at all. it.110's rest angle was also backwards -
+`ang + 2.35` in a space whose y runs DOWN plants the beam in the ground behind the
+machine - so the arm now lies back along the frame when cocked and comes round to
+fifty degrees forward at release.
+
+AND THE PAYLOAD BURNS. it.110's stone landed with one puff of dust, which is what
+a rock does and not what a siege crew loosed: they threw pitch. The shot leaves
+the sling alight, carries its own halo, sheds embers along the whole arc, and
+comes down as a fireball with a ring of burning spill round it.
+
+### 4. THE EASTERN ROAD WAS A CAGE
+
+it.110 stood the dungeon pack's `iron_cage` on the road's end tile at one and a
+half scale. That piece is a cage - a square stone box with a barred window in one
+face - and it sat square-on across the lane with its base half a tile off the
+road it was closing. `scripts/bake-grassland.py` cuts forty-nine isometric pieces
+out of the drop's `grassland_tiles.png` (the one sheet in it drawn at this game's
+own angle), and one of them is a stone gateway with a lit way through it. The
+road runs under it, the prompt stands on the lane one tile in front, and the
+light is violet to agree with the portal instead of fighting it with the town
+gateways' blue. It is still shut, and the note still says why.
+
+The other forty-eight are the field's edge dressing: eight panels of collapsed
+timber and a ruined watch-tower (a hamlet stood here before two armies came to
+get it), a burial line of crosses and headstones at the bridge end (which is what
+makes the UNBURIED thousand read as hurry), cut stumps under the siege line where
+the engines' timber came from, boundary menhirs on the road, broken fence lines,
+spilled loads and four bare dead trees.
+
+### 5. THE MANOR DISAGREED WITH ITSELF ABOUT WHICH WAY IT FACED
+
+The manor's door on the field is in the house's SOUTH face. Walking through it
+put the hero down at (7, 4) - the far NORTH end of the hall, three tiles from the
+chief's chair, with the entire room and every man in it already BEHIND them and
+the door they had just come through somewhere past the high table.
+
+The threshold is at the south wall now and the hero spawns two tiles inside it,
+so the hall runs away from them to the man at the end of it. The tileset only
+paints a room's two BACK walls, so there is no wall run to put a door leaf in:
+the threshold is marked the way an open doorway in a cut-away wall is marked -
+the pack's free-standing stone arch astride the tile, its own flagged apron, two
+standing lights, and the cold of the field beyond it against the hall's fire.
+
+### 6. THE NOISE OUTSIDE WAS THREE PARAGRAPHS ON A TIMER
+
+it.110 wrote three paragraph-length beats that rolled past at two-second
+intervals whether or not anybody had finished reading them, and the whole thing
+held the camera for eleven seconds to say one thing. It says the one thing now: a
+single short line, four seconds to arrive rather than one, and then HELD until
+the player presses on.
+
+### 7. THE MERCHANT MATERIALISED
+
+He was drawn standing at his final tile and narrated from it, so the one rescue
+in the game read as a man who had always been in the room. He walks it now - the
+door in the panelling opens and he comes out of the corner behind the dais and
+down onto the flagstone over the first two beats, on his own legs, as a
+`ProcessionScene` walker rather than a static cast body.
+
+His lines were also about MONEY. The thing that actually frightens a man locked
+in a cupboard for nine days is what he could hear through the floor, and it is
+the reason the BASEMENT matters, because the errand under this hall is where the
+hero goes next. He says it plainly now: pay, or go down the stair with the rest.
+They took the boy down on the fourth night.
+
+His coat also got the gold trim `bake-trader.py` always promised and never
+applied: the it.111 rule stopped at value 0.74, so every highlight on the coat
+was left in the townsfolk's straw while the body of it went wine, and he came out
+patched rather than liveried.
+
+### 8. THE BRIDGE THREW A SHADOW THE LIGHTING DID NOT OWN
+
+it.111's span shadow was a raw `Graphics` ellipse added straight to the ground
+layer and registered with nothing - so the one thing on the riverside the
+lighting did not own was the bridge's own shadow. It drew at full strength on
+unexplored water, a row of black ellipses hanging in the dark ahead of the hero
+marking out a span they had not been told about, and it never dimmed with the
+tile it sat on. It is the shared soft-shadow texture now, registered like any
+other prop. One of them was also being laid on the FAR BANK's dry road, one tile
+south of the last bay, where nothing is casting it.
+
+### 9. THE FIELD AND THE CELLAR WERE INFINITE
+
+Both floors place their hostiles by hand on posts the layout chose, and both
+refilled every post on every entry. Walk out over the bridge, walk back in, and
+the same fourteen men are standing on the same fourteen tiles - an unbounded
+source of experience and loot for the price of a walk through a door. The ledger
+counts how many have been put down for good (`quests.fieldKills`,
+`quests.vaultKills`) and the builder skips that many posts, which is the rule the
+eastern quarter's looters have had since it.91. The field is not left EMPTY,
+which reads as broken: four stragglers work their way along the road on the
+returns, and those are counted too, so the tally is monotone and there is no loop.
+
+### WHAT THE `use now` DROP TURNED OUT TO BE
+
+Audited in full. `grassland_tiles.png` is the only thing in it that can be used
+as drawn - 105 isometric props at this game's own angle, 49 of which are baked.
+`catapulte/` is 496 top-down renders plus their shadow pass, stacked as above.
+`grassland/` is 3D SOURCE: twelve `.blend` scenes (the trees, the boat, the
+bridge, the fences) which cannot be rendered without Blender, and a folder of
+flat material textures - two of which, the wet broken rock and the trampled
+straw, are exactly what churned earth needs and are in `bake-ground.py`.
+`catapult/` is the model's own UV plank sheet, which the throwing arm is cut out
+of. The drop itself is gitignored now under the it.36 rule: bake it, commit the
+atlas, never ship the raw pack.
+
+
 ## 2026-09-10 (iteration 111) - The crossing rebuilt, the field put out, and a man with a face
 
 The it.110b playtest came back again, and again every complaint was right. Six

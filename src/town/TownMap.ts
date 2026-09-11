@@ -65,6 +65,26 @@ export const KIND_FARM_ASH = 8;
  * is a river bank already.
  */
 export const KIND_WATER = 9;
+/**
+ * THE BATTLEFIELD'S OWN GROUND (it.112), baked by `scripts/bake-ground.py`.
+ *
+ * it.110 dressed the field out of the TOWN's set - cobble, grass, dirt - plus
+ * `KIND_FARM_ASH` for the burnt bands, and `farm_ash` is a near-black diamond
+ * (29,24,18, seventeen levels of range across the whole tile). On a floor lit
+ * at `exploredLight: 0.10` that is not scorched earth, it is a HOLE, and the
+ * field was riddled with black patches wherever the ash bands fell.
+ *
+ * These three are what a week-old battlefield is actually made of, and they are
+ * ground KINDS rather than decals, so the field is painted by the tile map and
+ * costs no sprites at all:
+ *
+ *   MUD     churned wet earth - the default over most of the field
+ *   CHURN   the same, broken up with straw, stalks and trodden spoil
+ *   GORE    the same, soaked through, where the press was worst
+ */
+export const KIND_FIELD_MUD = 10;
+export const KIND_FIELD_CHURN = 11;
+export const KIND_FIELD_GORE = 12;
 
 export type TownPropKind =
   | 'house'

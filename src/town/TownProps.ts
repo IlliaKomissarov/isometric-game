@@ -16,7 +16,7 @@ import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
-import { spriteLib, type AnimName } from '@/render/SpriteLibrary';
+import { dirIndexFromFacing, spriteLib, type AnimName } from '@/render/SpriteLibrary';
 import { TILE_H, TILE_W } from '@/core/config';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
@@ -36,6 +36,23 @@ const SPAN_PIER_OX = 20;
 const SPAN_PIER_OY = 62;
 const SPAN_GATE_OX = 0;
 const SPAN_GATE_OY = 120;
+
+/**
+ * WHERE THE BAKED ENGINE SITS (it.112). `scripts/bake-catapult.py` prints these
+ * when it runs, and they are the only numbers this file needs in order to stand
+ * a catapult on its own tile:
+ *
+ *   ANCHOR_Y  how far down its cell the machine's GROUND CENTRE is, as a
+ *             fraction - the cell carries the stacked elevation above that
+ *             point, so anchoring anywhere else floats or buries it;
+ *   SCALE     cell (138 px) -> the 2x2 footprint it stands on (128 px);
+ *   PIVOT_Y   how far above the ground centre the frame head is, in screen
+ *             pixels after SCALE, which is where the arm turns.
+ */
+const SIEGE_ANCHOR_Y = 0.618;
+const SIEGE_WRECK_ANCHOR_Y = 0.539;
+const SIEGE_SCALE = 1.05;
+const SIEGE_PIVOT_Y = 26;
 
 export interface Occluder {
   sprite: Sprite;
@@ -113,14 +130,41 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   interface Engine {
     id: number;
     root: Container;
+    /** The baked body, so the throw can run its three recoil frames (it.112). */
+    body: Sprite;
+    dir: number;
+    /** Where the machine stands, in world tiles (the ember trail's origin). */
+    wx: number;
+    wy: number;
     arm: Container;
     shot: Sprite;
     /** Screen angles the arm sits at cocked and at full release. */
     rest: number;
     fire: number;
     t: number;
-    /** The stone in flight: screen-space arc, and the tile it is going to. */
-    flight: { spr: Sprite; ax: number; ay: number; bx: number; by: number; t: number; tx: number; ty: number; hit: (x: number, y: number) => void } | null;
+    /**
+     * The stone in flight: screen-space arc, and the tile it is going to.
+     * `fireGlow` is the burning payload's halo (it.112) - the shot leaves the
+     * sling alight, which is both what a siege crew actually loosed at a roof
+     * and the only way a grey rock reads against a night field.
+     */
+    flight: {
+      spr: Sprite;
+      fireGlow: Sprite;
+      ax: number;
+      ay: number;
+      bx: number;
+      by: number;
+      /** The same arc in WORLD tiles, so the ember trail can be laid on the ground under it. */
+      wax: number;
+      way: number;
+      t: number;
+      tx: number;
+      ty: number;
+      /** Seconds since the last ember was dropped. */
+      ember: number;
+      hit: (x: number, y: number) => void;
+    } | null;
   }
   const engines: Engine[] = [];
   /** How long the arm takes to come round, and how long the stone is up. */
@@ -1125,15 +1169,32 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'bridgeshadow': {
         /**
-         * WHAT THE SPAN THROWS ON THE WATER (it.111). Without it the bridge
-         * floats: thirty-two pixels of air under a roadway read as air only if
-         * the river below is darker for it.
+         * WHAT THE SPAN THROWS ON THE WATER (it.111, given to the fog it.112).
+         *
+         * Without it the bridge floats: thirty-two pixels of air under a roadway
+         * read as air only if the river below is darker for it.
+         *
+         * IT.111 DREW IT AND THEN FORGOT IT. It was a raw `Graphics` ellipse
+         * added straight to the ground layer and registered with NOTHING, so
+         * the one thing on the riverside that the lighting did not own was the
+         * bridge's own shadow: it drew at full strength on unexplored water -
+         * a row of black ellipses hanging in the dark ahead of the hero, marking
+         * out a span they had not been told about yet - and it never dimmed with
+         * the tile it sat on, so at night the shadow was the BRIGHTEST-contrast
+         * thing on the river.
+         *
+         * It is the shared soft-shadow texture now, registered like any other
+         * prop: hidden with its tile, tinted with its tile, and feathered rather
+         * than a hard-rimmed disc.
          */
+        const spr = new Sprite(assets.get('shadow'));
+        spr.anchor.set(0.5);
+        spr.scale.set(TILE_W / 22, TILE_H / 11);
         const sc = worldToScreen(p.x + 0.5, p.y + 0.5, scratch);
-        const g = new Graphics();
-        g.ellipse(0, 0, TILE_W * 0.62, TILE_H * 0.62).fill({ color: 0x000000, alpha: 0.34 });
-        g.position.set(sc.x, sc.y + 6);
-        viewport.groundLayer.addChild(g);
+        spr.position.set(sc.x, sc.y + 6);
+        spr.alpha = 0.9;
+        viewport.groundLayer.addChild(spr);
+        lighting.registerProp(p.x, p.y, spr);
         break;
       }
       case 'gore': {
@@ -1238,81 +1299,102 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'siege': {
         /**
-         * A SIEGE ENGINE, COMPOSED (it.110).
+         * A SIEGE ENGINE (it.110 composed it out of a cart and a trestle; it.112
+         * gave it the real machine).
          *
-         * No pack in the repository contains a catapult, and a battlefield
-         * without engines on it is a meadow with corpses. So this one is BUILT,
-         * out of four pieces that do exist and were rendered at the same angle as
-         * everything else: the cart for the bed and its wheels, the timber
-         * trestle for the frame, a plank deck for the throwing arm, a cask for
-         * the counterweight and a boulder for the shot. Assembled here rather
-         * than baked, so `wreck` is the same parts thrown down.
+         * it.110 had no catapult in any pack, so it BUILT one - the town's cart
+         * for the bed, its timber trestle for the frame, a bridge plank for the
+         * arm, a cask for the counterweight. It read as scaffolding, because
+         * that is what those parts are.
+         *
+         * `scripts/bake-catapult.py` turns Remus Turcuman's top-down catapult
+         * renders into a proper isometric body by SPRITE STACKING (the script's
+         * header has the geometry), eight facings of it, with three frames of
+         * recoil and a matching wreck. What is NOT in the bake is the throwing
+         * arm - the model is rendered cocked, so its arm points away from the
+         * top-down camera and is foreshortened to nothing - which is the useful
+         * accident here: the arm is a separate baked piece, pivoted and swung by
+         * `update` below, and a stack of flat layers could not have moved it.
+         *
+         * If the atlas is not resident the whole engine is skipped rather than
+         * half-drawn: a floor that failed its preload gets no engines, not an
+         * arm hanging in the air.
          */
         const wrecked = p.variant === 'wreck';
-        if (!has('cart') || !has('supports')) break;
-        const root = new Container();
-        const s = worldToScreen(p.x + (p.w ?? 1), p.y + (p.h ?? 1), scratch);
-        root.position.set(s.x, s.y);
-        root.zIndex = depthKey(p.x + (p.w ?? 1) - 0.5, p.y + (p.h ?? 1) - 0.5);
-        const parts: Sprite[] = [];
-        const bed = new Sprite(spriteLib.single('cart'));
-        bed.anchor.set(0.5, 0.92);
-        bed.scale.set(1.15);
-        if (wrecked) bed.rotation = 0.22;
-        root.addChild(bed);
-        parts.push(bed);
-        const frame = new Sprite(spriteLib.single('supports'));
-        frame.anchor.set(0.5, 0.94);
-        frame.scale.set(1.25);
-        frame.position.set(2, -26);
-        if (wrecked) {
-          frame.rotation = -0.5;
-          frame.position.set(-16, -6);
-        }
-        root.addChild(frame);
-        parts.push(frame);
-        // THE ARM. Its own node, pivoting on the trestle's head, carrying the
-        // counterweight behind the pivot and the stone in front of it.
-        const arm = new Container();
-        arm.position.set(2, wrecked ? -14 : -58);
-        const plank = new Sprite(spriteLib.single(has('bridge') ? 'bridge' : 'cart'));
-        plank.anchor.set(0.04, 0.5);
-        plank.scale.set(1.9, 0.75);
-        arm.addChild(plank);
-        parts.push(plank);
-        const weight = new Sprite(spriteLib.single(has('barrel_c') ? 'barrel_c' : 'cart'));
-        weight.anchor.set(0.5, 0.5);
-        weight.scale.set(0.62);
-        weight.position.set(-24, 4);
-        arm.addChild(weight);
-        parts.push(weight);
-        const shot = new Sprite(spriteLib.single(has('rock_c') ? 'rock_c' : 'cart'));
-        shot.anchor.set(0.5, 0.5);
-        shot.scale.set(0.5);
-        shot.position.set(96, -2);
-        arm.addChild(shot);
-        parts.push(shot);
-        root.addChild(arm);
-        // The engines all point at the house they were battering; the layout says
-        // which way that is in tiles, and the arm is laid along it on SCREEN.
+        const sheet = wrecked ? 'siege_wreck' : 'siege_engine';
+        if (!spriteLib.loaded || !spriteLib.hasAnim(sheet)) break;
+        const w = p.w ?? 1;
+        const h = p.h ?? 1;
+        // The engines all point at the house they were battering; the layout
+        // says which way that is in TILES, so the facing and the arm's screen
+        // angle are both read off the same vector.
         const aimX = p.aim?.x ?? 1;
         const aimY = p.aim?.y ?? 0;
+        const dir = dirIndexFromFacing(aimX, aimY);
+        const root = new Container();
+        const s = worldToScreen(p.x + w / 2, p.y + h / 2, scratch);
+        root.position.set(s.x, s.y);
+        root.zIndex = depthKey(p.x + w - 0.5, p.y + h - 0.5);
+        const parts: Sprite[] = [];
+        const body = new Sprite(spriteLib.frame(sheet, dir, 0));
+        // The bake's own ground centre (its header prints these): the machine's
+        // footprint centre sits here inside the cell, for every facing.
+        body.anchor.set(0.5, wrecked ? SIEGE_WRECK_ANCHOR_Y : SIEGE_ANCHOR_Y);
+        body.scale.set(SIEGE_SCALE);
+        root.addChild(body);
+        parts.push(body);
+        let arm: Container | null = null;
+        let shot: Sprite | null = null;
+        /**
+         * WHERE THE ARM SITS (it.112). `ang` is the SCREEN angle of the aim, in
+         * a space whose y runs DOWN - so subtracting from it raises the arm and
+         * adding lowers it, which it.110's `+2.35` got backwards and planted the
+         * beam in the ground behind the machine.
+         *
+         * Cocked, the winch has pulled it back along the frame and it lies just
+         * below the horizontal. At release it has come round to fifty degrees
+         * forward and up, which is where an onager's arm meets its crossbar.
+         */
         const ang = Math.atan2((aimX + aimY) * 0.5, aimX - aimY);
-        const rest = ang + 2.35;
-        const fire = ang - 0.45;
-        arm.rotation = wrecked ? ang + 0.15 : rest;
+        const rest = ang + Math.PI - 0.25;
+        const fire = ang - 0.9;
+        if (!wrecked && has('siege_arm')) {
+          // THE ARM, pivoted at its own left edge on the machine's frame head.
+          arm = new Container();
+          // The pivot is the frame head: up on the machine, and set back along
+          // the aim, so the beam turns about the middle of it and not its nose.
+          arm.position.set(-Math.cos(ang) * 10, -Math.sin(ang) * 10 - SIEGE_PIVOT_Y);
+          const beam = new Sprite(spriteLib.single('siege_arm'));
+          beam.anchor.set(0.02, 0.5);
+          beam.scale.set(0.46, 0.55);
+          arm.addChild(beam);
+          parts.push(beam);
+          if (has('siege_sling')) {
+            const cup = new Sprite(spriteLib.single('siege_sling'));
+            cup.anchor.set(0.5);
+            cup.scale.set(0.62);
+            cup.position.set(58, 0);
+            arm.addChild(cup);
+            parts.push(cup);
+          }
+          shot = new Sprite(spriteLib.single(has('siege_stone') ? 'siege_stone' : 'siege_arm'));
+          shot.anchor.set(0.5);
+          shot.scale.set(0.62);
+          shot.position.set(58, -3);
+          arm.addChild(shot);
+          parts.push(shot);
+          arm.rotation = rest;
+          root.addChild(arm);
+        }
         for (const q of parts) {
-          q.tint = wrecked ? 0x8c8274 : 0xd6c8a8;
+          q.tint = wrecked ? 0xa89c8c : 0xfff2dc;
           lighting.registerProp(p.x, p.y, q);
         }
         viewport.objectLayer.addChild(root);
-        occluders.push({ sprite: bed, depth: root.zIndex, tiles: footprint(p) });
-        if (wrecked) {
-          shot.visible = false;
-          break;
-        }
+        occluders.push({ sprite: body, depth: root.zIndex, tiles: footprint(p) });
+        if (wrecked || !arm || !shot) break;
         const id = nextId++;
-        engines.push({ id, root, arm, shot, rest, fire, t: -1, flight: null });
+        engines.push({ id, root, body, dir, wx: p.x + w / 2, wy: p.y + h / 2, arm, shot, rest, fire, t: -1, flight: null });
         interactables.push({ id, kind: 'catapult', x: p.x + 0.5, y: p.y + 0.5, label: 'E · WORK THE ENGINE', tiles: [{ x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }, { x: p.x + 2, y: p.y }, { x: p.x + 2, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
         plate(p.x, p.y, 'A SIEGE ENGINE', 108);
         break;
@@ -1376,10 +1458,36 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'manorout': {
-        glowAt(p.x, p.y, 0xffc880, 0.34, 1.4, 26);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.4, 255, 200, 130, 0.6);
-        interactables.push({ id: nextId++, kind: 'manorout', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE FIELD', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }] });
-        plate(p.x, p.y, 'THE DOOR', 74);
+        /**
+         * THE WAY BACK OUT (it.110; moved to the south wall it.112).
+         *
+         * The manor's door on the field is in the house's SOUTH face, and until
+         * it.112 walking through it put the hero at the far NORTH end of the
+         * hall - standing beside the chief's own chair, with the way out behind
+         * the high table and the whole room already behind them. Coming in by
+         * the front door now lands them at the south threshold, looking up the
+         * length of the hall at the man at the end of it.
+         *
+         * The tileset only paints a room's two BACK walls (the north run and
+         * the west one), because the other two would stand between the camera
+         * and the floor - so the south wall is not drawn and a wall-run door
+         * leaf cannot be put in it. The threshold is marked the way an open
+         * doorway in a cut-away wall is marked instead: the pack's free-standing
+         * stone ARCH astride the tile, its own flagged apron, and the cold of
+         * the field beyond it against the hall's fire-light.
+         */
+        const arch = standing(p, 'archway', 0.96);
+        if (arch) {
+          arch.scale.set(1.45);
+          arch.tint = 0xe8dcc4;
+          // A doorway is a hole in a wall: nothing behind it to cut away, and
+          // the hero who walks up to it must not ghost it (the it.110b rule).
+          arch.zIndex = depthKey(p.x + 0.5, p.y + 0.5) - 2;
+        }
+        glowAt(p.x, p.y, 0x9fb4d8, 0.3, 1.5, 30);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.4, 190, 205, 235, 0.5);
+        interactables.push({ id: nextId++, kind: 'manorout', x: p.x + 0.5, y: p.y + 0.5, label: 'E · OUT TO THE FIELD', tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x - 1, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, 'THE DOOR', 84);
         break;
       }
       case 'manordown': {
@@ -1407,19 +1515,56 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'citygate': {
-        // THE EASTERN ROAD. The one thing on the battlefield the hero walks up to
-        // and is told no: an iron grate down over the road, and a name on it, so
-        // the country past it is a place with a name rather than a missing wall.
-        const spr = standing(p, 'iron_cage', 0.92);
-        if (spr) {
-          spr.scale.set(1.5);
-          spr.tint = 0xb0b4b8;
-          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        /**
+         * THE EASTERN ROAD (it.110; made a gateway it.112).
+         *
+         * it.110 stood the dungeon pack's `iron_cage` on the road's end tile at
+         * one and a half scale. That piece is a CAGE - a square stone box with a
+         * barred window in one face - and it sat square-on across the lane, its
+         * base half a tile off the road it was supposed to be closing. It read
+         * as a lump of masonry somebody had left there, not as the way out.
+         *
+         * It is the same thing the town's own unopened roads are now: the ruin
+         * ARCHWAY astride the road, on the road's own centre line, with the cold
+         * standing light of a gateway in its opening and the road running under
+         * it. That is the vocabulary the game already uses for "a place that is
+         * not built yet" (it.84), so a player who has seen the town's gateways
+         * knows what this is on sight.
+         *
+         * It is still shut, and the note still says why; what has changed is
+         * that it now LOOKS like the road on, rather than like a wall.
+         */
+        const label = p.variant ?? 'THE EASTERN ROAD';
+        /**
+         * THE PORTAL ITSELF is `gl_portal` - a stone gateway with a lit way
+         * through it, cut out of the `use now` drop's grassland sheet, which is
+         * rendered at this game's own isometric angle. It is depth-sorted as a
+         * wall on the line x = p.x, so the hero walking up to it passes in
+         * FRONT of it rather than behind, and it is never an occluder: an arch
+         * is a hole in a wall and there is nothing behind it to reveal (the
+         * it.110b rule the river bridge's gate learned).
+         */
+        const arch = standing(p, has('gl_portal') ? 'gl_portal' : 'ruin_gate', 0.98, 'object', 0.5);
+        if (arch) {
+          arch.scale.set(has('gl_portal') ? 1.55 : 1.08);
+          arch.tint = 0xc8cbd4;
+          arch.zIndex = depthKey(p.x, p.y + 0.5) + 2;
         }
-        glowAt(p.x, p.y, 0x7fa8ff, 0.3, 1.8, 40);
-        lighting.addSource(p.x + 0.5, p.y + 0.5, 4.0, 130, 170, 255, 0.55);
-        interactables.push({ id: nextId++, kind: 'citygate', x: p.x + 0.5, y: p.y + 0.5, label: `E · ${p.variant ?? 'THE EASTERN ROAD'} (BARRED)`, tiles: [{ x: p.x, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y - 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x - 2, y: p.y }], note: 'The grate is down over the road and the winch is on the far side of it. The city beyond is not opening its gate for anyone this week.' });
-        plate(p.x, p.y, `${p.variant ?? 'THE EASTERN ROAD'} · BARRED`, 128);
+        const lit = { x: p.x - 1, y: p.y };
+        // The standing light in the opening, one tile west - ON the road, which
+        // is where the hero is when they read the prompt. Violet, to agree with
+        // the portal's own surface rather than fighting it with the town
+        // gateways' blue.
+        const veil = animated(lit.x, lit.y, 'gateway', 12, 0.96, 1.0, 10);
+        if (veil) {
+          veil.blendMode = 'add';
+          veil.alpha = 0.5;
+          veil.tint = 0xc09cff;
+        }
+        glowAt(lit.x, lit.y, 0x9c6cff, 0.5, 2.0, 40);
+        lighting.addSource(lit.x + 0.5, lit.y + 0.5, 5.2, 168, 124, 255, 0.8);
+        interactables.push({ id: nextId++, kind: 'citygate', x: lit.x + 0.5, y: lit.y + 0.5, label: `E · ${label} (BARRED)`, tiles: [{ x: p.x, y: p.y }, { x: lit.x, y: lit.y }, { x: lit.x, y: lit.y - 1 }, { x: lit.x, y: lit.y + 1 }, { x: p.x - 2, y: p.y }, { x: p.x - 2, y: p.y - 1 }, { x: p.x - 2, y: p.y + 1 }], note: 'The road runs on under the arch and the city at the end of it has its gate down. Nothing is coming through this week, and nothing is going out.' });
+        plate(p.x, p.y, `${label} · BARRED`, 128);
         break;
       }
       case 'fieldroad': {
@@ -1531,14 +1676,20 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
           const ease = 1 - (1 - k2) * (1 - k2) * (1 - k2);
           e.arm.rotation = e.rest + (e.fire - e.rest) * ease;
           e.shot.visible = k2 < 0.55;
+          // THE MACHINE MOVES TOO (it.112): three baked frames of the whole
+          // body rocking on its wheels, so the throw is the engine's and not
+          // just a plank swinging over a static picture of one.
+          e.body.texture = spriteLib.frame('siege_engine', e.dir, k2 < 0.5 ? 1 : 2);
         } else if (e.t <= SWING + 4) {
           // The crew winds it back. Linear and slow: this is the cooldown.
           const k2 = (e.t - SWING) / 4;
           e.arm.rotation = e.fire + (e.rest - e.fire) * k2;
           e.shot.visible = k2 > 0.85;
+          e.body.texture = spriteLib.frame('siege_engine', e.dir, k2 < 0.25 ? 2 : 0);
         } else {
           e.arm.rotation = e.rest;
           e.shot.visible = true;
+          e.body.texture = spriteLib.frame('siege_engine', e.dir, 0);
           e.t = -1;
         }
       }
@@ -1546,11 +1697,31 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       if (!fl) continue;
       fl.t += dt;
       const k3 = Math.min(1, fl.t / FLIGHT);
-      fl.spr.position.set(fl.ax + (fl.bx - fl.ax) * k3, fl.ay + (fl.by - fl.ay) * k3 - Math.sin(k3 * Math.PI) * 130);
+      const fx = fl.ax + (fl.bx - fl.ax) * k3;
+      const fy = fl.ay + (fl.by - fl.ay) * k3 - Math.sin(k3 * Math.PI) * 130;
+      fl.spr.position.set(fx, fy);
       fl.spr.rotation += dt * 6;
       fl.spr.zIndex = 1e5; // over everything it passes: it is in the air
+      // The payload burns: the halo rides with it and guts as it falls, so the
+      // stone is a light crossing the field and not a grey dot on a dark one.
+      fl.fireGlow.position.set(fx, fy);
+      fl.fireGlow.zIndex = 1e5 - 1;
+      fl.fireGlow.scale.set(2.6 + Math.sin(clock * 22) * 0.3, 2.6 + Math.cos(clock * 19) * 0.3);
+      fl.fireGlow.alpha = fl.t < 0 ? 0 : 0.92;
+      // ...and it sheds embers the whole way. They are laid on the GROUND under
+      // the arc rather than on the stone, which is where a burning payload's
+      // sparks actually end up and what makes the shot readable from the far
+      // side of the field.
+      if (fl.t > 0) {
+        fl.ember += dt;
+        if (fl.ember > 0.05) {
+          fl.ember = 0;
+          ambience.burst(fl.wax + (fl.tx + 0.5 - fl.wax) * k3, fl.way + (fl.ty + 0.5 - fl.way) * k3, 0xffa848, 2, { lowEnergy: true });
+        }
+      }
       if (k3 < 1) continue;
       fl.spr.destroy();
+      fl.fireGlow.destroy();
       e.flight = null;
       fl.hit(fl.tx, fl.ty);
     }
@@ -1581,22 +1752,32 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     const tip = worldToScreen(0, 0, vec2()); // scratch is in use by the caller's loop
     const armX = e.root.position.x + e.arm.position.x;
     const armY = e.root.position.y + e.arm.position.y;
-    tip.x = armX + Math.cos(e.fire) * 96;
-    tip.y = armY + Math.sin(e.fire) * 96;
+    tip.x = armX + Math.cos(e.fire) * 58;
+    tip.y = armY + Math.sin(e.fire) * 58;
     const mark = worldToScreen(tx + 0.5, ty + 0.5, vec2());
-    const spr = new Sprite(has('rock_c') ? spriteLib.single('rock_c') : assets.get('glow'));
+    const spr = new Sprite(has('siege_stone') ? spriteLib.single('siege_stone') : assets.get('glow'));
     spr.anchor.set(0.5);
-    spr.scale.set(0.55);
-    spr.tint = 0xb8ada0;
+    spr.scale.set(0.9);
+    spr.tint = 0xffc890; // pitched and lit: the stone leaves the sling burning
     spr.position.set(tip.x, tip.y);
-    viewport.ambienceLayer.addChild(spr);
-    e.flight = { spr, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, t: -SWING * 0.55, tx, ty, hit: onImpact };
+    // THE FIRE ON IT (it.112). An additive halo under the stone, added first so
+    // it draws behind - a burning payload is the only thing on this field that
+    // moves and gives light, and it is how the throw reads from across the map.
+    const fireGlow = new Sprite(assets.get('glow'));
+    fireGlow.anchor.set(0.5);
+    fireGlow.blendMode = 'add';
+    fireGlow.tint = 0xff9038;
+    fireGlow.alpha = 0;
+    fireGlow.position.set(tip.x, tip.y);
+    viewport.ambienceLayer.addChild(fireGlow, spr);
+    e.flight = { spr, fireGlow, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, wax: e.wx, way: e.wy, t: -SWING * 0.55, tx, ty, ember: 0, hit: onImpact };
     return true;
   };
 
   const destroy = (): void => {
     for (const e of engines) {
       e.flight?.spr.destroy();
+      e.flight?.fireGlow.destroy();
       e.root.destroy({ children: true });
     }
     engines.length = 0;

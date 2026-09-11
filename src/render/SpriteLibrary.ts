@@ -216,6 +216,11 @@ export type AnimName =
   | 'captain_walk'
   | 'captain_attack'
   | 'captain_death'
+  // THE SIEGE ENGINES (it.112). `scripts/bake-catapult.py` turns the pack's
+  // top-down catapult renders into an isometric body by sprite stacking: eight
+  // facings, three frames of recoil, and the same machine collapsed.
+  | 'siege_engine'
+  | 'siege_wreck'
   | 'well';
 
 export interface PaintedBounds {

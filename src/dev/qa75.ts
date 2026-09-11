@@ -2848,6 +2848,104 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
             g.loop.step(10);
           }
         }
+        /**
+         * ---- THE GROUND, THE MACHINES AND THE ROAD ON (it.112) -----------
+         */
+        {
+          const map = g.town.layout.map as { width: number; height: number; grid: Uint8Array; tileKind: Uint8Array };
+          const kinds = new Map<number, number>();
+          for (let i = 0; i < map.tileKind.length; i++) {
+            if (map.grid[i] !== 1 && map.grid[i] !== 3) continue;
+            kinds.set(map.tileKind[i], (kinds.get(map.tileKind[i]) ?? 0) + 1);
+          }
+          const floorTiles = [...kinds.values()].reduce((a, b) => a + b, 0);
+          const mud = (kinds.get(10) ?? 0) + (kinds.get(11) ?? 0) + (kinds.get(12) ?? 0);
+          /**
+           * NO BLACK PATCHES. `farm_ash` is a near-black diamond (29,24,18) and
+           * under this floor's light it reads as a hole, not as burnt ground.
+           * it.110 painted a few hundred of them across the middle of the map.
+           */
+          check('the battlefield is not paved with black holes', (kinds.get(8) ?? 0) === 0, `${kinds.get(8) ?? 0} ash tiles`);
+          check('it is churned mud, spoil and soaked earth', mud > floorTiles * 0.7, `${mud} of ${floorTiles} floor tiles`);
+          check('and almost none of it is still pasture', (kinds.get(1) ?? 0) < floorTiles * 0.12, `${kinds.get(1) ?? 0} grass tiles`);
+          check('the three field grounds are baked and resident', ['field_mud_0', 'field_churn_0', 'field_gore_0'].every((k) => g.sprites.hasSingle(k)));
+        }
+        /**
+         * THE TILES ARE ONE SURFACE. Every ground diamond is written through the
+         * projection's own mask plus a pixel of bleed, so alpha is 0 or 255 and
+         * neighbours OVERLAP rather than meet. A tile with a soft rim leaves a
+         * half-transparent line at every shared edge over the dark the scene
+         * clears to, and that line is the grid the floor used to be drawn on.
+         */
+        {
+          const base = (import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL;
+          let worst = '';
+          for (const name of ['field_mud_0', 'town_dirt_0', 'town_grass_0', 'town_cobble_0', 'inn_boards_0', 'cellar_flag_0']) {
+            try {
+              const blob = await fetch(`${base}assets/atlas/single_${name}.png`, { cache: 'reload' }).then((r) => r.blob());
+              const bmp = await createImageBitmap(blob);
+              const cv = new OffscreenCanvas(bmp.width, bmp.height);
+              const ctx = cv.getContext('2d');
+              if (!ctx) continue;
+              ctx.drawImage(bmp, 0, 0);
+              const px = ctx.getImageData(0, 0, bmp.width, bmp.height).data;
+              let partial = 0;
+              for (let i = 3; i < px.length; i += 4) if (px[i] > 0 && px[i] < 255) partial++;
+              if (partial > 0) worst = `${name}: ${partial} soft px`;
+            } catch {
+              /* a fetch that fails is not a seam */
+            }
+          }
+          check('no ground tile has a soft rim to leak a seam through', worst === '', worst);
+        }
+        {
+          const props = g.town.layout.props as Array<{ kind: string; variant?: string; x: number; y: number }>;
+          check('the engines are the baked machine, eight facings of it', g.sprites.hasAnim('siege_engine') && g.sprites.hasAnim('siege_wreck'));
+          check('and its arm, sling and shot are their own pieces', ['siege_arm', 'siege_sling', 'siege_stone'].every((k) => g.sprites.hasSingle(k)));
+          const city = g.town.interactables.find((i: { kind: string }) => i.kind === 'citygate');
+          check('the eastern road is a gateway and not a cage', g.sprites.hasSingle('gl_portal') && !!city);
+          // The prompt stands ON the road, one tile in front of the arch, so the
+          // hero reads it from the lane rather than from the grass beside it.
+          check('and its prompt is on the road itself', !!city && g.scene.isWalkable(Math.floor(city.x), Math.floor(city.y)), city ? `${city.x},${city.y}` : 'none');
+          const wrecks = props.filter((q) => q.kind === 'ruin' && (q.variant ?? '').startsWith('gl_wreck'));
+          const graves = props.filter((q) => q.kind === 'rock' && /^gl_(grave|cross)/.test(q.variant ?? ''));
+          check('a hamlet was standing here before the armies were', wrecks.length >= 8, `${wrecks.length} wrecks`);
+          check('and the ones they had time to bury are buried', graves.length >= 8, `${graves.length} markers`);
+          check('the boundary stones and the cut stumps are on it', props.filter((q) => /^gl_(menhir|stump)/.test(q.variant ?? '')).length >= 8);
+        }
+        /**
+         * AND THE FIELD REMEMBERS (it.112). Every hostile on it stands on a post
+         * the layout chose, and it.110 refilled every post on every entry - walk
+         * out over the bridge, walk back in, and the same fourteen men are back
+         * on the same fourteen tiles. The ledger counts what has been put down
+         * for good; the builder skips that many posts.
+         */
+        {
+          const before: number[] = [];
+          g.enemies.forEachActive((e: { hp: number; id: number; action: string }) => {
+            if (e.hp > 0 && e.action !== 'dead') before.push(e.id);
+          });
+          const cull = before.slice(0, Math.min(6, before.length));
+          for (const id of cull) g.combat.dealDamage({ sourceId: g.player.id, targetId: id, amount: 999999 });
+          for (let i = 0; i < 6; i++) {
+            g.loop.step(20);
+            driveRender(120);
+          }
+          const tally = Number(g.quests.fieldKills ?? 0);
+          check('the field counts what has been put down on it', tally >= cull.length, `${tally} counted, ${cull.length} killed`);
+          await g.travel(0);
+          await until(() => game() && game().floor === 0, 15000);
+          await game().travel(107);
+          await until(() => game() && game().floor === 107, 15000);
+          g = game();
+          await fadeClear();
+          driveRender(200);
+          let back = 0;
+          g.enemies.forEachActive((e: { hp: number; action: string }) => {
+            if (e.hp > 0 && e.action !== 'dead') back++;
+          });
+          check('and they do not stand back up when the hero walks in again', back < before.length, `${back} on the field, was ${before.length}`);
+        }
       }
       // ---- THE MANOR ---------------------------------------------------
       g = game();
@@ -2856,9 +2954,24 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g = game();
       await fadeClear();
       driveRender(200);
-      const manor = g.manor as { chief: { x: number; y: number }; bandits: Array<{ x: number; y: number }>; basement: { x: number; y: number }; cleared: boolean } | null;
+      const manor = g.manor as { chief: { x: number; y: number }; bandits: Array<{ x: number; y: number }>; basement: { x: number; y: number }; out: { x: number; y: number }; merchant: { x: number; y: number }; cleared: boolean } | null;
       check('the house has a hall in it', !!manor && g.floor === 108, String(g.floor));
       if (manor) {
+        /**
+         * THE INSIDE AGREES WITH THE OUTSIDE (it.112). The manor's door on the
+         * field is in the house's SOUTH face. Until it.112 walking through it
+         * put the hero at the far NORTH end of the hall, three tiles from the
+         * chief's own chair, with the whole room and every man in it already
+         * behind them - which is the coordinate inversion this checks for.
+         */
+        {
+          const map = g.town.layout.map as { height: number; spawn: { x: number; y: number } };
+          const spawn = map.spawn;
+          check('coming in the front door lands the hero at the south threshold', spawn.y > map.height * 0.7, `spawn y ${spawn.y} of ${map.height}`);
+          check('and the way out is behind them, not past the high table', manor.out.y > spawn.y && Math.abs(manor.out.x - spawn.x) <= 1, `out ${manor.out.x},${manor.out.y} vs spawn ${spawn.x},${spawn.y}`);
+          check('the hall runs away from them to the man at the end of it', manor.chief.y < spawn.y - 12, `chief y ${manor.chief.y}`);
+          check('and the door they came through carries its own prompt', g.town.interactables.some((i: { kind: string }) => i.kind === 'manorout'));
+        }
         let roster = 0;
         let chief = 0;
         g.enemies.forEachActive((e: { hp: number; def: { kind: string } }) => {
@@ -2905,6 +3018,17 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         check('and the hall is rebuilt quiet under the hero feet', !!g.manor?.cleared && g.floor === 108, `${g.manor?.cleared} on ${g.floor}`);
         check('he is standing in front of the closet he was in', g.town.interactables.some((i: { kind: string }) => i.kind === 'merchantman'));
         check('and the basement door stands open at last', (g.town.interactables.find((i: { kind: string }) => i.kind === 'manordown')?.label ?? '').includes('BASEMENT'));
+        /**
+         * AND HE IS CLEAR OF THE FURNITURE (it.112). He walks out of the
+         * panelling on his own legs now rather than materialising, and he stops
+         * on open flagstone in front of the dais - so the tile he ends on must
+         * be walkable, or he is a man-shaped hole behind the high table again.
+         */
+        {
+          const m = g.manor as { merchant: { x: number; y: number } } | null;
+          check('the man has room to stand where he stops', !!m && g.scene.isWalkable(m.merchant.x, m.merchant.y), m ? `${m.merchant.x},${m.merchant.y}` : 'none');
+          check('and he is on a livery nobody else in the game wears', g.sprites.hasAnim('trader_walk'));
+        }
       }
       // ---- THE CELLAR UNDER IT -----------------------------------------
       g = game();

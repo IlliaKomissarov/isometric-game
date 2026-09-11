@@ -943,6 +943,37 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] qa75 updated: the new kit, the arches, the empty far bank, the blood floor and ceiling, the spatters
 - [x] 0 TypeScript errors; layouts verified at five seeds; every changed floor walked and screenshotted
 
+## Iteration 112 - The ground, the engines and the road on (2026-09-11)
+
+- [x] THE FIELD HAS ITS OWN GROUND: `scripts/bake-ground.py` bakes churned mud, trodden spoil and blood-soaked earth from the packs' photographic soil, wet broken rock, straw and the bloody-wall plates
+- [x] NO BLACK PATCHES: `farm_ash` (29,24,18 on a floor lit at 0.10) is off the battlefield entirely - the burn bands and both scars are gone
+- [x] The field DEFAULTS to mud; pasture survives only in the pockets the lines never crossed (was half the floor)
+- [x] Every variant of a ground kind weighs the same - `bake()` pre-measures each diamond and solves its gain, or four scattered variants read as a mosaic
+- [x] The blood is drawn with value NOISE, not with the plate's own blotches: a blotch is a shape, and a shape repeats
+- [x] The soaked band's edge is a low-frequency WAVE, never a per-tile dither - two ground kinds cannot be mixed a diamond at a time
+- [x] THE SEAM IS GONE, GAME-WIDE: all forty shipped ground diamonds re-masked through the projection (cobble, grass, dirt, sand, inn boards and stone, cellar flags and dirt, ash, coals)
+- [x] ...and DILATED one pixel, because the fringe was the linear SAMPLER and not the mask: neighbours overlap instead of meeting
+- [x] `town_cobble`'s four variants levelled onto one brightness - the town square had been a chequerboard since it.56
+- [x] THE SIEGE ENGINES ARE A REAL MACHINE: `scripts/bake-catapult.py` sprite-stacks the pack's top-down catapult into eight isometric facings, three frames of recoil and a matching wreck
+- [x] Height-aware stacking: timber at full rise, iron (wheels, tyres, fittings) at a third, or the engine reads as a rack of barrels
+- [x] The throwing arm is its own baked piece, cut from the model's own plank sheet, pivoted on the frame head - and its rest angle no longer points into the ground
+- [x] AN EXPLOSIVE PAYLOAD: the shot leaves the sling alight, carries a halo, sheds embers the length of the arc and lands as a fireball with burning spill
+- [x] THE EASTERN ROAD IS A GATEWAY, not `iron_cage` stood square across the lane: the grassland kit's lit stone portal, on the road, with a violet light and its prompt on the lane
+- [x] `scripts/bake-grassland.py` audits the whole sheet by connected component and bakes 49 pieces: wrecks, a ruined tower, graves, crosses, stumps, menhirs, rubble, fences, planks, crates, wood piles, dead trees, tufts
+- [x] The field is dressed with them - a hamlet's wreckage round the rim, a burial line at the bridge end, cut stumps under the siege line, boundary stones on the road
+- [x] THE MANOR AGREES WITH ITSELF: coming in the south door lands the hero at the SOUTH threshold, the arch behind them, the hall running away to the chief (was the far north end, three tiles from his chair)
+- [x] The threshold is a free-standing arch with its own flagged apron and the only pair of standing lights in the hall
+- [x] The manor's exterior noise is ONE short line, four seconds to arrive, held until the player presses on (was three paragraphs on a two-second timer)
+- [x] THE MERCHANT WALKS OUT of the panelling as a procession walker instead of materialising at his final tile
+- [x] ...and says what they actually threatened him with: pay, or go down to the basement with the boy they took on the fourth night
+- [x] His coat has the gold trim `bake-trader.py` documented and never applied (the it.111 rule stopped at value 0.74 and left every highlight in townsfolk straw)
+- [x] THE BRIDGE'S SHADOW IS THE LIGHTING'S: registered like any prop, so it fogs and dims with its tile instead of hanging black over unexplored water
+- [x] ...and is never laid on the far bank's dry road, where nothing is casting it
+- [x] ZONE POPULATION PERSISTS: `quests.fieldKills` / `quests.vaultKills` count what is put down for good and the builder skips that many posts - no more walking out and back in for the same fourteen men
+- [x] Four stragglers work the field on the returns, counted the same way, so the tally is monotone and the loop is closed
+- [x] `use now` audited in full and gitignored under the it.36 rule; the licence's attribution is in the credits
+- [x] 0 TypeScript errors; qa75 extended with the ground, the seam, the engines, the portal, the wreckage, the manor's direction and the persistence
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

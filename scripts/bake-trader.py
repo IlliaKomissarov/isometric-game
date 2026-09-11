@@ -55,8 +55,16 @@ TARGET = 'trader_walk'
 #: and everything else is left exactly as drawn. SKIN in particular sits at hue
 #: 0.05-0.11 with saturation well under 0.8, which is why the breeches rule needs
 #: that saturation floor: without it the man's face came out magenta.
+#:
+#: IT.112 ADDED THE THIRD BAND THE DOCSTRING ALWAYS PROMISED. The coat rule
+#: above stops at value 0.74 - so every HIGHLIGHT on the coat, the top of every
+#: fold and the whole of the pale band at his collar, was left in the townsfolk's
+#: straw while the body of the garment went wine. He came out patched rather than
+#: liveried. Those pixels are OLD GOLD now, which is what a merchant trims a coat
+#: with and what nobody else in the game is wearing.
 BANDS = [
     ((0.125, 0.185), (0.35, 1.01), (0.0, 0.74), (0.985, 1.15, 0.82)),
+    ((0.125, 0.185), (0.35, 1.01), (0.74, 1.01), (0.108, 1.05, 0.96)),
     ((0.085, 0.125), (0.85, 1.01), (0.0, 1.01), (0.915, 0.85, 0.72)),
 ]
 

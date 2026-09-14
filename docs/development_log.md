@@ -1,5 +1,41 @@
 # Development Log
 
+## 2026-09-14 (iteration 113) - The earlier floor tiles back, except on the battlefield
+
+The owner liked the floor tiles better before it.112 and asked for them back
+everywhere except the battlefield.
+
+### What went back
+
+it.112's "seam, game-wide" pass rewrote forty ground diamonds through the
+projection mask (hard alpha, one pixel dilated) and levelled `town_cobble`'s
+four variants. All forty are restored byte-for-byte from it.111d (`5e92cbb1`):
+`town_cobble`, `town_grass`, `town_dirt`, `town_sand` (each with its base
+single), `inn_boards`, `inn_stone`, `cellar_flag`, `cellar_dirt` and
+`farm_ash`. Nothing else in the history had touched them since it.56-it.100, so
+there was only one "earlier version" to go back to. The town square's
+two-tone cobble is back with them; that was part of the earlier look.
+
+### What the battlefield keeps
+
+The field paints its mud, churn and gore from its own kinds already, but its
+ROAD was `KIND_DIRT` and its surviving pasture `KIND_GRASS` - the town's set. So
+the re-masked it.112 dirt and grass were copied first (byte-for-byte) to
+`field_road_0..3` / `field_grass_0..3`, registered as `KIND_FIELD_ROAD` (13) and
+`KIND_FIELD_GRASS` (14), and `Battlefield.ts` paints those. The field now draws
+nothing from the town's set; the manor and its cellar are their own floors and
+take the restored inn / cellar tiles.
+
+`scripts/bake-ground.py` seals and levels only the field's copies now, so a
+re-run cannot undo this.
+
+### Verification
+
+- `tsc --noEmit` clean; every restored and copied PNG hash-checked against its source commit.
+- Tile kinds counted live: town / inn / cellar / farm / riverside / manor / vault / forest use only kinds 0-9; the battlefield only 10-14 (seeds 1-10).
+- Every one of those floors walked in Chrome and screenshotted; 0 page errors.
+- qa75: the battlefield's seam check now covers the five field kinds only; a new check asserts the field uses no town kinds; the it.112 pasture ceiling (12%) failed its own layout at 15.8% on every seed and is 20% now.
+
 ## 2026-09-11 (iteration 112) - The ground the battle was fought on, and the machines that fought it
 
 Nine complaints came back off the it.111 playtest. Every one of them was about

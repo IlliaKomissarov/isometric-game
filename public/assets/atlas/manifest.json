@@ -7152,6 +7152,54 @@
    "h": 32,
    "nearest": false
   },
+  "field_road_0": {
+   "file": "single_field_road_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_road_1": {
+   "file": "single_field_road_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_road_2": {
+   "file": "single_field_road_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_road_3": {
+   "file": "single_field_road_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_grass_0": {
+   "file": "single_field_grass_0.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_grass_1": {
+   "file": "single_field_grass_1.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_grass_2": {
+   "file": "single_field_grass_2.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
+  "field_grass_3": {
+   "file": "single_field_grass_3.png",
+   "w": 64,
+   "h": 32,
+   "nearest": false
+  },
   "siege_arm": {
    "file": "single_siege_arm.png",
    "w": 132,

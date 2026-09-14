@@ -43,7 +43,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
-import { CLUTTER_KINDS, KIND_DIRT, KIND_FIELD_CHURN, KIND_FIELD_GORE, KIND_FIELD_MUD, KIND_GRASS, type FieldLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { CLUTTER_KINDS, KIND_FIELD_CHURN, KIND_FIELD_GORE, KIND_FIELD_GRASS, KIND_FIELD_MUD, KIND_FIELD_ROAD, type FieldLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -126,7 +126,7 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
         for (let x = cx - half; x <= cx + half; x++) {
           if (!inside(x, y) || x < 1 || y < 1 || x >= W - 1 || y >= H - 1) continue;
           grid[idx(x, y)] = TILE_FLOOR;
-          tileKind[idx(x, y)] = KIND_DIRT;
+          tileKind[idx(x, y)] = KIND_FIELD_ROAD;
           onRoad[idx(x, y)] = 1;
         }
     }
@@ -187,7 +187,7 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
       if (!isFloor(x, y) || onRoad[idx(x, y)]) continue;
       // Pasture only in the pockets the lines never reached.
       const band = Math.sin(x * 0.11 + Math.cos(y * 0.09) * 1.6);
-      if (band <= -0.88) tileKind[idx(x, y)] = KIND_GRASS;
+      if (band <= -0.88) tileKind[idx(x, y)] = KIND_FIELD_GRASS;
       // The spoil: where the lines stood longest and the camp was pitched, in
       // BANDS, which read as ground worked over rather than as speckle.
       const trod = Math.sin(x * 0.075 - y * 0.055 + 1.1);
@@ -283,7 +283,7 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   const manorDoor = { x: MANOR.x + 2, y: MANOR.y + MANOR.h };
   const manorYard = { x: MANOR.x + 2, y: MANOR.y + MANOR.h + 2 };
   grid[idx(manorDoor.x, manorDoor.y)] = TILE_FLOOR;
-  tileKind[idx(manorDoor.x, manorDoor.y)] = KIND_DIRT;
+  tileKind[idx(manorDoor.x, manorDoor.y)] = KIND_FIELD_ROAD;
   onRoad[idx(manorDoor.x, manorDoor.y)] = 1;
   decal({ kind: 'manordoor', x: manorDoor.x, y: manorDoor.y, variant: 'THE MANOR' });
   // The estate wall: a ring of low ruin-wall stubs with the gate left open.
@@ -500,7 +500,7 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
     for (let y = gy - 2; y <= gy + 2; y++) if (inside(gx, y)) grid[idx(gx, y)] = TILE_BLOCKED;
     if (inside(gx - 1, gy)) {
       grid[idx(gx - 1, gy)] = TILE_FLOOR;
-      tileKind[idx(gx - 1, gy)] = KIND_DIRT;
+      tileKind[idx(gx - 1, gy)] = KIND_FIELD_ROAD;
       onRoad[idx(gx - 1, gy)] = 1;
     }
     decal({ kind: 'citygate', x: gx, y: gy, variant: cityGate.label });

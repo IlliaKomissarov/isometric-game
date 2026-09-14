@@ -494,8 +494,11 @@ async function boot(): Promise<void> {
      * trodden into it, and mud soaked through with blood. They are registered by
      * INDEX, like every other ground kind, so `SceneManager` paints them from
      * the tile map with no knowledge of what they are.
+     *
+     * AND ITS OWN ROAD AND GRASS (it.113): the re-masked dirt and grass stay on
+     * the field only; every other floor has its earlier tiles back.
      */
-    (['field_mud', 'field_churn', 'field_gore'] as const).forEach((name, i) => {
+    (['field_mud', 'field_churn', 'field_gore', 'field_road', 'field_grass'] as const).forEach((name, i) => {
       const kind = KIND_FIELD_MUD + i;
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${kind}_${v}`, spriteLib.single(`${name}_${v}`));
       if (spriteLib.hasSingle(`${name}_0`)) assets.registerTexture(`floor_town_${kind}`, spriteLib.single(`${name}_0`));

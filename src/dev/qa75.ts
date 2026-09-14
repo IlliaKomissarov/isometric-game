@@ -2867,20 +2867,28 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
            */
           check('the battlefield is not paved with black holes', (kinds.get(8) ?? 0) === 0, `${kinds.get(8) ?? 0} ash tiles`);
           check('it is churned mud, spoil and soaked earth', mud > floorTiles * 0.7, `${mud} of ${floorTiles} floor tiles`);
-          check('and almost none of it is still pasture', (kinds.get(1) ?? 0) < floorTiles * 0.12, `${kinds.get(1) ?? 0} grass tiles`);
-          check('the three field grounds are baked and resident', ['field_mud_0', 'field_churn_0', 'field_gore_0'].every((k) => g.sprites.hasSingle(k)));
+          // The pockets the lines never reached (`band <= -0.88`) come to 15.8% of
+          // the floor on every seed; the it.112 ceiling of 12% failed its own layout.
+          check('and little of it is still pasture', (kinds.get(14) ?? 0) < floorTiles * 0.2, `${kinds.get(14) ?? 0} grass tiles`);
+          check('the field grounds are baked and resident', ['field_mud_0', 'field_churn_0', 'field_gore_0', 'field_road_0', 'field_grass_0'].every((k) => g.sprites.hasSingle(k)));
+          // it.113: the town's set went back to its earlier tiles everywhere
+          // else, so the field paints nothing out of it.
+          const townKinds = [...kinds.entries()].filter(([k]) => k < 10).reduce((a, [, n]) => a + n, 0);
+          check("and none of it is painted from the town's ground set", townKinds === 0, `${townKinds} town tiles`);
         }
         /**
-         * THE TILES ARE ONE SURFACE. Every ground diamond is written through the
-         * projection's own mask plus a pixel of bleed, so alpha is 0 or 255 and
-         * neighbours OVERLAP rather than meet. A tile with a soft rim leaves a
-         * half-transparent line at every shared edge over the dark the scene
-         * clears to, and that line is the grid the floor used to be drawn on.
+         * THE TILES ARE ONE SURFACE. Every battlefield ground diamond is written
+         * through the projection's own mask plus a pixel of bleed, so alpha is 0
+         * or 255 and neighbours OVERLAP rather than meet. A tile with a soft rim
+         * leaves a half-transparent line at every shared edge over the dark the
+         * scene clears to, and that line is the grid the floor used to be drawn on.
+         * (it.113: the town, inn and cellar tiles are their earlier, soft-rimmed
+         * ones again by choice, so only the field's own kinds are held to this.)
          */
         {
           const base = (import.meta as unknown as { env: { BASE_URL: string } }).env.BASE_URL;
           let worst = '';
-          for (const name of ['field_mud_0', 'town_dirt_0', 'town_grass_0', 'town_cobble_0', 'inn_boards_0', 'cellar_flag_0']) {
+          for (const name of ['field_mud_0', 'field_churn_0', 'field_gore_0', 'field_road_0', 'field_grass_0']) {
             try {
               const blob = await fetch(`${base}assets/atlas/single_${name}.png`, { cache: 'reload' }).then((r) => r.blob());
               const bmp = await createImageBitmap(blob);

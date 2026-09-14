@@ -974,6 +974,15 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] `use now` audited in full and gitignored under the it.36 rule; the licence's attribution is in the credits
 - [x] 0 TypeScript errors; qa75 extended with the ground, the seam, the engines, the portal, the wreckage, the manor's direction and the persistence
 
+## Iteration 113 - The earlier floor tiles back, except on the battlefield (2026-09-14)
+
+- [x] The forty ground diamonds it.112 re-masked and levelled (`town_cobble/grass/dirt/sand`, `inn_boards/stone`, `cellar_flag/dirt`, `farm_ash`) restored byte-for-byte from it.111d, by the owner's choice
+- [x] The battlefield keeps the it.112 look: its road and pasture are `KIND_FIELD_ROAD` / `KIND_FIELD_GRASS`, painted from `field_road_0..3` / `field_grass_0..3` (the re-masked dirt and grass, copied byte-for-byte)
+- [x] The field paints nothing from the town set any more (qa75 checks it); the seam check covers only the field's own five kinds
+- [x] `bake-ground.py` no longer re-seals or levels the town's tiles - only `field_road` / `field_grass`
+- [x] qa75's pasture ceiling (12%) failed the it.112 layout itself (15.8% on every seed); raised to 20%
+- [x] 0 TypeScript errors; town, inn, cellar, farmlands, riverside, battlefield, manor, manor cellar and forest walked and screenshotted; 0 page errors
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 112, 2026-09-11)
+- **Project version:** 0.1.0 (iteration 113, 2026-09-14)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -58,7 +58,7 @@ Update it with every iteration that changes a system's shape, a measured number,
 | `town/Reclaim` (it.91) | the barricade's sprites, the ambience, a grid-open hook, a camera-focus hook | `GateFx` (a cart aside, carts toppling) and `ReclaimScene` (the letterboxed procession) | render-side only; the grid opens through main's hook on the QUEST tick |
 | `systems/Squad` (it.100, cut loose it.102, scaled it.105) | the floor's A*, the floor seed, an OBJECTIVE, `Collision.canStandAt`, three sheets a rank (idle/run/blow) | the guards' own advance, their blows through `dealDamage`, the blue bars | the line is its own: `step` takes the hero only as a rally point, never as an anchor. Life and blow are handed in scaled to the floor's level, as every foe on it is |
 | `scenes/Battlefield` (it.110) | the town's prop set, the baked war-camp singles, `CLUTTER_KINDS` | the ground past the bridge: the dead in bands, the siege line, the camp, the manor, the barred eastern road | no state at all - the field is never "won"; the wood is grown from every tile that is not MAP (floor AND prop), or a tree comes up inside every tent |
-| `scripts/bake-ground.py` (it.112) | the raw pack's photographic soil, the grassland drop's wet rock and straw, the bloody-wall plates | three battlefield ground kinds (`field_mud`/`field_churn`/`field_gore`), AND every shipped ground diamond re-masked | the projection owns the mask, not a drawn diamond; every variant of a kind is pre-measured and gain-matched so the four never read as a mosaic; the written mask is DILATED one pixel because the seam was the linear SAMPLER, not the mask |
+| `scripts/bake-ground.py` (it.112) | the raw pack's photographic soil, the grassland drop's wet rock and straw, the bloody-wall plates | three battlefield ground kinds (`field_mud`/`field_churn`/`field_gore`), and (it.113) the field's own re-masked road and grass (`field_road`/`field_grass`); the town, inn, cellar and farm tiles keep their earlier, unsealed art | the projection owns the mask, not a drawn diamond; every variant of a kind is pre-measured and gain-matched so the four never read as a mosaic; the written mask is DILATED one pixel because the seam was the linear SAMPLER, not the mask |
 | `scripts/bake-catapult.py` (it.112) | the `use now` drop's top-down catapult renders | `siege_engine` (8 dirs x 3 recoil frames), `siege_wreck`, and the arm/sling/stone singles | sprite stacking: our projection IS "rotate the plan 45 degrees, squash 2:1", and the pack ships the plan pre-rotated - so only the height is missing. Height is read off COLOUR (timber tall, iron low), never uniform |
 | `scripts/bake-grassland.py` (it.112) | the drop's `grassland_tiles.png`, the one sheet in it at this game's angle | 49 isometric props: the eastern portal, timber wrecks, a ruined tower, graves, stumps, menhirs, fences, crates, dead trees | pieces are found by CONNECTED COMPONENT and indexed in reading order, never by hand-measured rectangles; `--plate` writes the numbered plate the indices were read off |
 | `quests.fieldKills` / `quests.vaultKills` (it.112) | `tickZoneTally`, the layouts' post lists | how many posts the builder skips on the next entry | monotone by construction: the count only rises, so no amount of walking in and out produces a body that has already been counted. The field keeps four counted stragglers so a cleared map is not an empty one |
@@ -258,6 +258,13 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 113 additions (the earlier floor tiles)
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The owner preferred the floor tiles from before it.112 | Owner request (visual) | the forty ground diamonds it.112 re-masked and levelled are restored byte-for-byte from it.111d. The battlefield keeps the it.112 look: its road and pasture are `KIND_FIELD_ROAD` (13) / `KIND_FIELD_GRASS` (14) on copies of the re-masked dirt and grass, so it paints nothing from the town's set |
+| qa75's battlefield pasture ceiling failed its own layout | Low (QA) | 15.8% of the floor on every seed against a 12% ceiling; raised to 20% |
 
 ### Iteration 111 additions (the second playtest pass)
 

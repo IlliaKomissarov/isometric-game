@@ -422,15 +422,16 @@ def build_field_kinds():
 
 #: Kinds whose four shipped variants disagree in BRIGHTNESS rather than in
 #: texture. The game scatters the four across the map by `(gx * 5 + gy * 11) % 4`,
-#: so a fifty-level spread between them is not variety - it is a chequerboard,
-#: and the town square has been paved in one since it.56.
-LEVEL = ['town_cobble']
+#: so a fifty-level spread between them is not variety - it is a chequerboard.
+#: it.112 levelled `town_cobble`; it.113 put the town's earlier tiles back by the
+#: owner's choice, so nothing outside the battlefield is levelled any more.
+LEVEL = []
 
-SEAL = [
-    'town_cobble', 'town_grass', 'town_dirt', 'town_sand',
-    'inn_boards', 'inn_stone', 'cellar_flag', 'cellar_dirt',
-    'farm_ash', 'farm_coals',
-]
+#: it.112 sealed every ground diamond in the game. it.113 restored the earlier
+#: town / inn / cellar / farm tiles everywhere, and the battlefield keeps the
+#: sealed dirt and grass as `field_road` / `field_grass` (copied from the it.112
+#: `town_dirt` / `town_grass`). Only those are re-sealed here - never the town's.
+SEAL = ['field_road', 'field_grass']
 
 
 def seal_one(path):

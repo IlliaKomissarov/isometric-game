@@ -85,6 +85,16 @@ export const KIND_WATER = 9;
 export const KIND_FIELD_MUD = 10;
 export const KIND_FIELD_CHURN = 11;
 export const KIND_FIELD_GORE = 12;
+/**
+ * THE BATTLEFIELD'S ROAD AND ITS LAST PASTURE (it.113).
+ *
+ * it.112 re-masked every ground diamond in the game through the projection. The
+ * town, the inns, the cellars and the farmlands have their earlier tiles back;
+ * the field alone keeps the re-masked dirt and grass, as kinds of its own, so
+ * its road and its surviving pockets still match the mud they run through.
+ */
+export const KIND_FIELD_ROAD = 13;
+export const KIND_FIELD_GRASS = 14;
 
 export type TownPropKind =
   | 'house'

@@ -465,9 +465,18 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   put('rock', 8, 22, 'gl_grave_c');
   put('rock', 8, 26, 'gl_grave_d');
   // The stumps, under the engines.
-  for (const [x, y] of [[21, 12], [31, 9], [41, 10], [50, 14], [26, 8]] as const) put('rock', x, y, (x + y) % 2 ? 'gl_stump_a' : 'gl_stump_b');
-  // The boundary stones, on the road, older than the war.
-  for (const [x, y] of [[9, 31], [26, 33], [40, 32], [54, 31], [61, 29]] as const) put('rock', x, y, `gl_menhir_${'abcd'[(x + y) % 4]}`);
+  // Each is placed on the nearest free tile to its mark (it.113): two of the
+  // stump marks lay inside the wood's border belt and one stone under a wreck
+  // the spiral search had moved onto it, so three pieces were silently dropped.
+  const putNear = (kind: TownProp['kind'], x: number, y: number, variant: string): boolean => {
+    for (let r = 0; r <= 3; r++)
+      for (let oy = -r; oy <= r; oy++)
+        for (let ox = -r; ox <= r; ox++) if (Math.max(Math.abs(ox), Math.abs(oy)) === r && put(kind, x + ox, y + oy, variant)) return true;
+    return false;
+  };
+  for (const [x, y] of [[21, 12], [31, 9], [41, 10], [50, 14], [26, 8]] as const) putNear('rock', x, y, (x + y) % 2 ? 'gl_stump_a' : 'gl_stump_b');
+  // The boundary stones, beside the road, older than the war.
+  for (const [x, y] of [[9, 31], [26, 33], [40, 32], [54, 31], [61, 29]] as const) putNear('rock', x, y, `gl_menhir_${'abcd'[(x + y) % 4]}`);
   // And the field's own litter: broken lines, spilled loads, spent fires.
   for (const [x, y] of [[18, 36], [25, 38], [35, 34], [45, 36], [53, 38], [15, 25], [48, 30]] as const)
     lay('debris', x, y, `gl_rubble_${'abcd'[(x * 3 + y) % 4]}`);

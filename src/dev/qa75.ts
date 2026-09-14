@@ -2993,7 +2993,10 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         // THE WELCOME plays on the first tick, and it wakes the whole room.
         driveRender(1200);
         check('the chief has something to say about it', !!game()?.reclaim, 'no scene');
-        for (let i = 0; i < 14 && game()?.reclaim; i++) {
+        // it.113: every named line WAITS for the reader and the last of his comes at
+        // 12.2 s, so fourteen presses 0.7 s apart ended while he was still talking.
+        // Press on until the scene itself is over (bounded).
+        for (let i = 0; i < 60 && game()?.reclaim; i++) {
           document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
           document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
           driveRender(700);
@@ -3012,7 +3015,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         for (const id of ids) g.combat.dealDamage({ sourceId: g.player.id, targetId: id, amount: 999999 });
         driveRender(1600);
         check('the merchant is behind the panelling, and comes out of it', !!game()?.reclaim, 'no rescue scene');
-        for (let i = 0; i < 16 && game()?.reclaim; i++) {
+        for (let i = 0; i < 60 && game()?.reclaim; i++) {
           document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
           document.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
           driveRender(700);
@@ -3063,7 +3066,13 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     // ---- the device matrix in this state ------------------------------------------------
     await import('./qa66');
     const m = W.__qa66(true);
-    check('device matrix', m.failed === 0, `${m.failed} failed: ${JSON.stringify(m.fails.slice(0, 2))}`);
+    {
+      // it.113: say what the corner looked like, so a failure here can be read without a re-run.
+      const cs = document.getElementById('char-stats');
+      const tl = document.getElementById('hud-tl');
+      const state = `parent ${cs?.parentElement?.id || cs?.parentElement?.tagName} tl-scale ${tl ? getComputedStyle(tl).transform : 'none'} body ${document.body.className}`;
+      check('device matrix', m.failed === 0, `${m.failed} failed: ${JSON.stringify(m.fails.slice(0, 2))} | ${state}`);
+    }
 
     // ---- HARDCORE (it.89), last of all: one life, the slot wiped, THE END --------------------
     {

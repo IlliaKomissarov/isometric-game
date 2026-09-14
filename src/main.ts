@@ -7741,7 +7741,14 @@ async function boot(): Promise<void> {
         // at the yard is where the officer stands. Once the rally has been CALLED
         // (it.101) he stands there whether or not the errand was taken - otherwise
         // walking away from the muster left no way back to it at all.
-        if (farmOffered() && (quests.rally === 'seen' || quests.farm !== undefined)) void officerTalk();
+        // THE YARD IS A YARD AGAIN (it.113b). Once the fields are the city's the
+        // officer has nothing left to ask, and his word (in the same guard's face
+        // as Sir Ham's) stood between the player and the training ground for
+        // good - and it opened over the tutorial's own "press E at the sign"
+        // card. After the errand the post is the sign; during the tutorial E at
+        // it is the tutorial's, and opens no conversation at all.
+        if (tutor.isRunning) return;
+        if (farmOffered() && quests.farm !== 'done' && (quests.rally === 'seen' || quests.farm !== undefined)) void officerTalk();
         else void offerTraining();
       }
       else stashUI.open();

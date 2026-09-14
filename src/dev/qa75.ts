@@ -1340,6 +1340,25 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('and the officer holds the post once the muster has been called', /ORDWAY/.test(await pressE()));
       document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
       await wait(60);
+      /**
+       * AND GIVES IT BACK WHEN THE FIELDS ARE WON (it.113b). The officer's word
+       * - in the guard's face Sir Ham also wears - held the post for good after
+       * the errand, so the training ground could never be used again, and it
+       * opened over the tutorial's own "press E at the sign" card.
+       */
+      {
+        const farmWas = g.quests.farm;
+        g.quests.farm = 'done';
+        const word = await pressE();
+        check('once the fields are won the post is the training sign again', /TRAINING GROUND/.test(word) && !/ORDWAY/.test(word), word.slice(0, 40));
+        document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
+        await wait(60);
+        T.start();
+        const during = await pressE();
+        check('and E at the sign mid-tutorial opens no conversation over the cards', during === '', during.slice(0, 40));
+        T.end(false);
+        g.quests.farm = farmWas;
+      }
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=stay]')?.click();
       await wait(40);
       // THE TUTORIAL ON EVERY PHONE (it.90): all sixteen cards inside eleven simulated boxes, thumb-sized buttons.

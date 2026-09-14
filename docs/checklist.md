@@ -982,6 +982,8 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] `bake-ground.py` no longer re-seals or levels the town's tiles - only `field_road` / `field_grass`
 - [x] qa75's pasture ceiling (12%) failed the it.112 layout itself (15.8% on every seed); raised to 20%
 - [x] 0 TypeScript errors; town, inn, cellar, farmlands, riverside, battlefield, manor, manor cellar and forest walked and screenshotted; 0 page errors
+- [x] it.113b: THE TRAINING GROUND after the fields - the officer's word (in Sir Ham's guard face) held the post for good and opened over the tutorial's cards; after the errand the post is the sign again, and E at it during the tutorial opens nothing (reproduced and verified in Chrome; qa75 checks both)
+- [x] it.113b: all ten boundary stones and stumps stand on the battlefield; the manor harness waits for the chief's last line
 
 ## Milestone 5 — Co-op Foundation
 

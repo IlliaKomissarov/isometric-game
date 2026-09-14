@@ -1,5 +1,23 @@
 # Development Log
 
+## 2026-09-14 (iteration 113b) - The training ground after the fields
+
+Reported: after the fields errand the training ground cannot be used - pressing E
+at it starts a conversation with Sir Ham instead.
+
+Reproduced in Chrome. It is not Sir Ham's code path: once the muster has been
+called, the post at the yard belongs to CAPTAIN ORDWAY (`officerTalk`), and his
+portrait is cut from the same `guard_idle` sheet as Sir Ham's (it falls back to
+`keeperPortrait` outright), so on screen it is Sir Ham talking. After the errand
+his only word was a thank-you with a "THE YARD" choice buried under it, and the
+same word opened every time E was pressed at the post - including during the
+tutorial itself, where step 1's card and his dialogue came up on top of each other.
+
+Fix (`main.ts`, the `training` interactable): while the tutorial runs, E at the
+post is the tutorial's and opens nothing; once `quests.farm === 'done'` the post
+is the training sign again. Before and during the errand the officer keeps it,
+because the muster is the only way into the fields. qa75 now walks both new cases.
+
 ## 2026-09-14 (iteration 113) - The earlier floor tiles back, except on the battlefield
 
 The owner liked the floor tiles better before it.112 and asked for them back

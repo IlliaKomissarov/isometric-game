@@ -15,7 +15,7 @@
 import { RARITY_ORDER, type ItemDef } from '@/items/catalog';
 import { itemValue } from '@/items/catalog';
 
-export type FilterKey = 'all' | 'weapon' | 'armor' | 'jewelry' | 'draught' | 'scroll' | 'effect';
+export type FilterKey = 'all' | 'weapon' | 'armor' | 'jewelry' | 'draught' | 'food' | 'scroll' | 'effect';
 export type SortKey = 'default' | 'level' | 'rarity' | 'name' | 'type' | 'value';
 
 export interface FilterState {
@@ -30,6 +30,7 @@ const FILTERS: Array<[FilterKey, string, string]> = [
   ['armor', 'ARMOR', 'Head, body, legs, shields, cloaks'],
   ['jewelry', 'JEWELS', 'Rings and amulets'],
   ['draught', 'DRAUGHTS', 'Potions and brews'],
+  ['food', 'FOOD', 'Bread, stews, roasts: eaten for a slow heal and a full belly'],
   ['scroll', 'SCROLLS', 'Recipes and portal scrolls'],
   ['effect', 'SPECIAL', 'Pieces with an effect: procs, traits, enchantments, uniques'],
 ];
@@ -43,7 +44,7 @@ const SORTS: Array<[SortKey, string]> = [
   ['value', 'VALUE'],
 ];
 
-const SLOT_RANK: Record<string, number> = { mainHand: 0, offHand: 1, head: 2, torso: 3, legs: 4, cloak: 5, ring: 6, consumable: 7, material: 8 };
+const SLOT_RANK: Record<string, number> = { mainHand: 0, offHand: 1, head: 2, torso: 3, legs: 4, cloak: 5, ring: 6, consumable: 7, food: 8, material: 9 };
 
 export function matchesFilter(def: ItemDef, f: FilterKey): boolean {
   switch (f) {
@@ -57,6 +58,8 @@ export function matchesFilter(def: ItemDef, f: FilterKey): boolean {
       return def.slot === 'ring';
     case 'draught':
       return def.slot === 'consumable' && !def.use?.recipe && !def.use?.portal;
+    case 'food':
+      return def.slot === 'food';
     case 'scroll':
       return def.slot === 'consumable' && (!!def.use?.recipe || !!def.use?.portal);
     case 'effect':
@@ -71,7 +74,7 @@ export function compareItems(a: ItemDef, b: ItemDef, s: SortKey): number {
     case 'rarity':
       return RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) || (b.ilvl ?? 0) - (a.ilvl ?? 0);
     case 'type':
-      return (SLOT_RANK[a.slot] ?? 9) - (SLOT_RANK[b.slot] ?? 9) || (a.weaponKind ?? '').localeCompare(b.weaponKind ?? '') || (b.ilvl ?? 0) - (a.ilvl ?? 0);
+      return (SLOT_RANK[a.slot] ?? 10) - (SLOT_RANK[b.slot] ?? 10) || (a.weaponKind ?? '').localeCompare(b.weaponKind ?? '') || (b.ilvl ?? 0) - (a.ilvl ?? 0);
     case 'name':
       return a.name.localeCompare(b.name);
     case 'value':

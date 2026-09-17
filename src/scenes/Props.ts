@@ -20,7 +20,7 @@ import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
 import type { Viewport } from '@/engine/Viewport';
-import { spriteLib } from '@/render/SpriteLibrary';
+import { spriteLib, type AnimName } from '@/render/SpriteLibrary';
 import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { mulberry32 } from '@/utils/rng';
@@ -77,28 +77,52 @@ export function placeProps(
 
     // Gold piles: COLLECTIBLE treasure on the floor (it.22 — walk over to
     // scoop it up; the returned list drives main's proximity pickup).
+    // READABLE GOLD (it.114): the old 28 px pack frame was a smudge in the
+    // dark. A pile is now the baked `coin_pile_a/b` (32 px pixel art) at
+    // 1.4× - a 45 px heap - or the `coin_large` rested frame when that atlas
+    // is resident, under a warmer, wider glow and a small pool of light of
+    // its own, with the treasure twinkle kept.
     if (spriteLib.loaded && rand() < 0.3 && room.w >= 4 && room.h >= 4) {
       const gx = room.x + 1 + Math.floor(rand() * (room.w - 2));
       const gy = room.y + 1 + Math.floor(rand() * (room.h - 2));
       if (!isFloor(map, gx, gy)) continue;
-      const gold = new Sprite(spriteLib.frame('gold_drop', 0, 0));
-      gold.anchor.set(0.5, 0.52); // Pack registration: ground at frame center.
+      const pileName = rand() < 0.5 ? 'coin_pile_a' : 'coin_pile_b';
       const gs = worldToScreen(gx + 0.5, gy + 0.5, scratch);
-      gold.position.set(gs.x, gs.y);
+      let gold: Sprite;
+      if (spriteLib.hasAnim('coin_large')) {
+        const frames = spriteLib.anim('coin_large' as AnimName).frames[0];
+        gold = new Sprite(frames[frames.length - 1]);
+        gold.anchor.set(0.5, 0.96);
+        gold.scale.set(1.7);
+        gold.position.set(gs.x, gs.y + 6);
+        ambience.addLoopingAnim(gold, [frames[frames.length - 1]], 1, gx, gy, true);
+      } else if (spriteLib.hasSingle(pileName)) {
+        gold = new Sprite(spriteLib.single(pileName));
+        gold.anchor.set(0.5, 0.78);
+        gold.scale.set(1.4);
+        gold.position.set(gs.x, gs.y + 4);
+        ambience.addLoopingAnim(gold, [spriteLib.single(pileName)], 1, gx, gy, true);
+      } else {
+        gold = new Sprite(spriteLib.frame('gold_drop', 0, 0));
+        gold.anchor.set(0.5, 0.52); // Pack registration: ground at frame center.
+        gold.position.set(gs.x, gs.y);
+        gold.scale.set(2.2);
+        ambience.addLoopingAnim(gold, spriteLib.anim('gold_drop').frames[0], 5, gx, gy, true);
+      }
       gold.zIndex = depthKey(gx + 0.5, gy + 0.5);
-      gold.scale.set(1.8);
       viewport.objectLayer.addChild(gold);
-      ambience.addLoopingAnim(gold, spriteLib.anim('gold_drop').frames[0], 5, gx, gy, true);
       // It.26/37 VISIBILITY: a strong pulsing golden glow beneath the pile
       // (treasure mode above keeps the coins saturated + twinkling).
       const glow = new Sprite(assets.get('glow'));
       glow.anchor.set(0.5);
       glow.blendMode = 'add';
-      glow.tint = 0xffc850;
+      glow.tint = 0xffb84a;
       glow.position.set(gs.x, gs.y - 4);
       viewport.ambienceLayer.addChild(glow);
-      ambience.addGlow(glow, gx, gy, 1.0, 1.35);
-      goldPiles.push({ x: gx + 0.5, y: gy + 0.5, amount: 8 + Math.floor(rand() * 18), sprite: gold, glow, taken: false });
+      ambience.addGlow(glow, gx, gy, 1.1, 1.7);
+      // A heap of gold gives off its own warmth: a small pool on the floor around it.
+      lighting.addSource(gx + 0.5, gy + 0.5, 1.8, 255, 196, 90, 0.32);
+      goldPiles.push({ x: gx + 0.5, y: gy + 0.5, amount: 10 + Math.floor(rand() * 22), sprite: gold, glow, taken: false });
     }
   }
 

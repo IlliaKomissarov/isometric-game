@@ -8,6 +8,22 @@
  * The item card (it.76): hovering a pack item lays its numbers beside the
  * piece worn in that slot (see `ui/itemTip`); hovering a worn piece shows
  * its own. A long press does the same on touch.
+ *
+ * THE REWORK (it.114):
+ *  - HUNGER at the head of the window: the same gauge as the HUD's, with
+ *    the state word (WELL FED / HUNGRY / STARVING) and a flash on a bite.
+ *  - FOOD in the pack and on the belt: a dish cell wears a fork mark, a
+ *    click eats it, the belt chooser lists dishes beside draughts.
+ *  - INSPECT (`#inspect-panel`): a rune-framed stage that turns the item's
+ *    baked turntable (`spin_*`, stepped by background-position at 20 fps,
+ *    three times its size) under a slow light sweep, with the full card and
+ *    the item's own words beneath, and the cell's action as a button. Opened
+ *    by right-click on a cell, by the ✦ INSPECT button on the card (the card
+ *    now stays put and takes the pointer, so it can be reached), and by the
+ *    long-press card on touch. Falls back to the static icon when the item
+ *    has no turntable.
+ *  - Every cell lifts on hover and glows in its rarity; equipping and eating
+ *    pulse the cell.
  */
 
 import { eventBus } from '@/core/EventBus';
@@ -15,14 +31,14 @@ import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
-import { itemValue, type ItemDef } from '@/items/catalog';
+import { RARITY_COLOR, itemValue, type ItemDef } from '@/items/catalog';
 import { decodeItemId, itemDef } from '@/items/instance';
-import { QUAFF_COOLDOWN, quaffCategory } from '@/systems/Inventory';
+import { HUNGER_MAX, HUNGER_WORD, InventorySystem, QUAFF_COOLDOWN, beltable, hungerStateOf, quaffCategory } from '@/systems/Inventory';
 import { MATERIAL_ORDER } from '@/items/registry';
 import type { EquipmentSlot } from '@/network/Serialization';
 
-import { fitItemIcons, itemIconHtml } from './itemIcons';
-import { attachItemCard, itemCardHtml, placeCard, wornFor } from './itemTip';
+import { fitItemIcons, itemIconHtml, itemSpin } from './itemIcons';
+import { attachItemCard, itemCardHtml, placeCard, slotLabel, wornFor } from './itemTip';
 import { effectClass, filterBarHtml, loadFilter, orderIndexes, wireFilterBar, type FilterState } from './itemFilter';
 import { uiAssetUrl } from '@/render/SpriteLibrary';
 import { keepScroll } from './keepScroll';
@@ -48,17 +64,37 @@ const fxGem = (def: ItemDef): string => {
 };
 
 /** THE LEVEL ON THE CELL (it.80): gear wears its item level in the corner, and its reinforcement. */
-const lvlBadge = (def: ItemDef): string => (def.ilvl && def.slot !== 'consumable' && def.slot !== 'material' ? `<span class="inv-lvl">${def.ilvl}${def.upgrade ? `<b>+${def.upgrade}</b>` : ''}</span>` : '');
+const lvlBadge = (def: ItemDef): string => (def.ilvl && def.slot !== 'consumable' && def.slot !== 'material' && def.slot !== 'food' ? `<span class="inv-lvl">${def.ilvl}${def.upgrade ? `<b>+${def.upgrade}</b>` : ''}</span>` : '');
+
+/** THE FORK MARK (it.114): every dish wears one, so food reads at a glance among the flasks. */
+const forkMark = (def: ItemDef): string => (def.slot === 'food' ? '<i class="inv-fork" title="Food: click to eat">&#936;</i>' : '');
+
+/** Eaten or drunk: both go through USE_ITEM. */
+const usable = (def: ItemDef): boolean => def.slot === 'consumable' || def.slot === 'food';
+
+const hex = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
+const cap = (s: string): string => s[0].toUpperCase() + s.slice(1);
 
 /** The pack field (it.50): six across, eight down. */
 const PACK_COLS = 6;
 const PACK_SLOTS = 48;
+
+/** What the inspect view may do with the item: the cell's own action. */
+interface InspectContext {
+  use?: number;
+  equip?: number;
+  unequip?: EquipmentSlot;
+}
 
 export class InventoryUI {
   private readonly panel: HTMLElement;
   private readonly tooltip: HTMLElement;
   /** Always-visible extracted stats readout (lives beside the health orb). */
   private readonly statsBar: HTMLElement;
+  /** THE INSPECT VIEW (it.114). */
+  private readonly inspect: HTMLElement;
+  private inspectTimer: number | null = null;
+  private inspectOpen = false;
   private visible = false;
   /** Which half a portrait screen is showing (it.66). */
   private tab: 'gear' | 'pack' = 'gear';
@@ -70,9 +106,15 @@ export class InventoryUI {
   /** THE PACK'S FILTER AND ORDER (it.81), remembered between runs. */
   private readonly filter: FilterState = loadFilter('inventory');
   private cdTimer: number | null = null;
+  /** The card's delayed fold (it.114): the pointer may cross onto the card to reach INSPECT. */
+  private hideTimer: number | null = null;
+  /** The item the card is showing, and the cell action it came from. */
+  private tipFor: string | null = null;
+  private tipCtx: InspectContext = {};
   private readonly offChanged: () => void;
   private readonly offMaterials: () => void;
   private readonly offBelt: () => void;
+  private readonly offUsed: () => void;
 
   constructor(
     private readonly player: Player,
@@ -91,10 +133,17 @@ export class InventoryUI {
     this.tooltip = document.createElement('div');
     this.tooltip.id = 'inv-tooltip';
     document.body.appendChild(this.tooltip);
+    // The card takes the pointer (it.114): entering it cancels the fold, leaving it folds.
+    this.tooltip.addEventListener('mouseenter', () => this.cancelHide());
+    this.tooltip.addEventListener('mouseleave', () => this.hideTooltip());
 
     this.statsBar = document.createElement('div');
     this.statsBar.id = 'char-stats';
     document.body.appendChild(this.statsBar);
+
+    this.inspect = document.createElement('div');
+    this.inspect.id = 'inspect-panel';
+    document.body.appendChild(this.inspect);
 
     window.addEventListener(
       'keydown',
@@ -102,9 +151,13 @@ export class InventoryUI {
         if (e.code === 'KeyI' && !e.repeat) {
           e.preventDefault();
           this.toggle();
+        } else if (e.code === 'Escape' && this.inspectOpen) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          this.closeInspect();
         }
       },
-      { signal: this.abort.signal },
+      { signal: this.abort.signal, capture: true },
     );
 
     this.offChanged = eventBus.on('inventory:changed', () => this.render());
@@ -113,13 +166,27 @@ export class InventoryUI {
       this.beltPick = null;
       this.render();
     });
+    // A BITE OR A DRAUGHT WENT DOWN (it.114): the sound, the pulse on the cell, the belly's flash.
+    // (`audio.sfx('eat')` is the cue this wants; the manager has no such cue yet, so the flask's stands in.)
+    this.offUsed = eventBus.on('item:used', ({ itemId }) => {
+      const def = itemDef(itemId);
+      if (!def) return;
+      if (def.slot === 'food') {
+        audio.sfx('potion');
+        this.flashHunger();
+      }
+      this.pulse(def.id);
+    });
     this.render();
   }
 
   toggle(): void {
     this.visible = !this.visible;
     this.panel.classList.toggle('open', this.visible);
-    if (!this.visible) this.hideTooltip();
+    if (!this.visible) {
+      this.hideTooltip(true);
+      this.closeInspect();
+    }
     audio.sfx(this.visible ? 'invOpen' : 'invClose');
     if (this.cdTimer !== null) {
       clearInterval(this.cdTimer);
@@ -148,16 +215,32 @@ export class InventoryUI {
     this.offChanged();
     this.offMaterials();
     this.offBelt();
+    this.offUsed();
     if (this.cdTimer !== null) clearInterval(this.cdTimer);
     if (this.previewTimer !== null) clearInterval(this.previewTimer);
+    if (this.inspectTimer !== null) clearInterval(this.inspectTimer);
+    if (this.hideTimer !== null) clearTimeout(this.hideTimer);
     this.panel.remove();
     this.tooltip.remove();
     this.statsBar.remove();
+    this.inspect.remove();
   }
 
   /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
     keepScroll(this.panel, () => this.paint());
+  }
+
+  /** THE BELLY LINE (it.114): the gauge and its word, at the head of the window. */
+  private hungerHtml(): string {
+    const inv = InventorySystem.of(this.player);
+    const hunger = inv ? inv.hunger : HUNGER_MAX;
+    const state = hungerStateOf(hunger);
+    const pct = Math.min(100, Math.max(0, (hunger / HUNGER_MAX) * 100)).toFixed(1);
+    return `<div class="inv-hunger ${state}${inv?.feeding ? ' feeding' : ''}" data-hunger title="Hunger empties on dungeon floors; eat to fill it. Starving stops regeneration and costs a tenth of every blow.">
+      <span class="inv-hunger-glyph">&#936;</span><span class="inv-hunger-label">HUNGER</span>
+      <i class="inv-hunger-bar"><b style="width:${pct}%"></b></i>
+      <em class="inv-hunger-word">${HUNGER_WORD[state]} · ${Math.round(hunger)}</em></div>`;
   }
 
   private paint(): void {
@@ -170,8 +253,8 @@ export class InventoryUI {
         : `<div class="inv-cell inv-cell-empty inv-cell-framed" data-slot="${slot}" style="background-image:url(${uiAssetUrl(`slots/${slot}.png`)})"></div>`;
       return `<div class="inv-slot-wrap" style="grid-area:${area}"><span class="inv-slot-label">${label}</span>${cell}</div>`;
     }).join('');
-    // THE BELT (it.42, assignable it.80): Q and R hold whichever draught the
-    // hero chose; the chooser lists every draught in the pack.
+    // THE BELT (it.42, assignable it.80): Q and R hold whichever draught - or dish (it.114) - the
+    // hero chose; the chooser lists every draught and dish in the pack.
     const packBase = (id: string): string | null => decodeItemId(id)?.base ?? null;
     const belt = [0, 1]
       .map((i) => {
@@ -181,9 +264,9 @@ export class InventoryUI {
         const firstIndex = base ? this.player.backpack.findIndex((x) => packBase(x) === base) : -1;
         const cat = def?.use ? quaffCategory(def.use) : null;
         const cell = def
-          ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use${count ? '' : ' inv-none'}" ${count ? `data-use="${firstIndex}"` : ''} data-item="${def.id}">${iconHtml(def)}<span class="inv-qty">${count}</span><i class="inv-cd" data-cd="${cat ?? ''}"></i></button>`
+          ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use${def.slot === 'food' ? ' inv-food' : ''}${count ? '' : ' inv-none'}" ${count ? `data-use="${firstIndex}"` : ''} data-item="${def.id}">${iconHtml(def)}${forkMark(def)}<span class="inv-qty">${count}</span><i class="inv-cd" data-cd="${cat ?? ''}"></i></button>`
           : `<div class="inv-cell inv-cell-empty"><span class="inv-slot-ghost">${i === 0 ? '♥' : '◈'}</span></div>`;
-        return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${cell}<button class="inv-belt-pick${this.beltPick === i ? ' on' : ''}" data-beltpick="${i}" title="Choose the draught for ${i === 0 ? 'Q' : 'R'}">▾</button></div>`;
+        return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${cell}<button class="inv-belt-pick${this.beltPick === i ? ' on' : ''}" data-beltpick="${i}" title="Choose the draught or dish for ${i === 0 ? 'Q' : 'R'}">▾</button></div>`;
       })
       .join('');
     let beltMenu = '';
@@ -192,13 +275,13 @@ export class InventoryUI {
       for (const id of this.player.backpack) {
         const def = itemDef(id);
         const base = packBase(id);
-        if (!def || !base || def.slot !== 'consumable' || def.use?.portal || def.use?.recipe) continue;
+        if (!def || !base || !beltable(def)) continue;
         if (!seen.has(base)) seen.set(base, def);
       }
       const rows = [...seen.entries()]
-        .map(([base, def]) => `<button class="inv-belt-opt rarity-${def.rarity}" data-beltset="${base}">${iconHtml(def)}<span>${def.name}</span><b>×${this.player.backpack.filter((x) => packBase(x) === base).length}</b></button>`)
+        .map(([base, def]) => `<button class="inv-belt-opt rarity-${def.rarity}${def.slot === 'food' ? ' inv-food' : ''}" data-beltset="${base}">${iconHtml(def)}<span>${def.name}${def.slot === 'food' ? ' <small>dish</small>' : ''}</span><b>×${this.player.backpack.filter((x) => packBase(x) === base).length}</b></button>`)
         .join('');
-      beltMenu = `<div class="inv-belt-menu"><span class="inv-belt-menu-title">DRAUGHT FOR ${this.beltPick === 0 ? 'Q' : 'R'}</span>${rows || '<span class="tp-empty">No draughts in the pack</span>'}<button class="inv-belt-opt inv-belt-clear" data-beltset="">Leave the key empty</button></div>`;
+      beltMenu = `<div class="inv-belt-menu"><span class="inv-belt-menu-title">${this.beltPick === 0 ? 'Q' : 'R'} · A DRAUGHT OR A DISH</span>${rows || '<span class="tp-empty">No draughts or dishes in the pack</span>'}<button class="inv-belt-opt inv-belt-clear" data-beltset="">Leave the key empty</button></div>`;
     }
 
     // Backpack: duplicates STACK into one cell with a quantity badge;
@@ -220,8 +303,8 @@ export class InventoryUI {
     const filled = shown
       .map(
         ({ def, count, firstIndex }) =>
-          `<button class="inv-cell inv-item rarity-${def.rarity}${def.slot === 'consumable' ? ' inv-use' : ''} ${effectClass(def)}" ${def.slot === 'consumable' ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
-             ${iconHtml(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}${lvlBadge(def)}${fxGem(def)}
+          `<button class="inv-cell inv-item rarity-${def.rarity}${usable(def) ? ' inv-use' : ''}${def.slot === 'food' ? ' inv-food' : ''} ${effectClass(def)}" ${usable(def) ? `data-use="${firstIndex}"` : `data-equip="${firstIndex}"`} data-item="${def.id}">
+             ${iconHtml(def)}${forkMark(def)}${count > 1 ? `<span class="inv-qty">${count}</span>` : ''}${lvlBadge(def)}${fxGem(def)}
            </button>`,
       )
       .join('');
@@ -239,20 +322,22 @@ export class InventoryUI {
     }).join('');
     this.panel.innerHTML = `
       <h3 class="drag-handle">INVENTORY<span class="inv-head-tools"><button class="ds-btn inv-journal" type="button" data-journal title="The Journal: items, effects, recipes (H)">JOURNAL</button><button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></span></h3>
+      ${this.hungerHtml()}
       <div class="inv-tabs" role="tablist">
         <button class="ds-btn" type="button" role="tab" data-tab="gear" aria-selected="${this.tab === 'gear'}">GEAR</button>
         <button class="ds-btn" type="button" role="tab" data-tab="pack" aria-selected="${this.tab === 'pack'}">PACK</button>
       </div>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
-      <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts · ▾ to assign</span></div>${beltMenu}
+      <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts &amp; dishes · ▾ to assign</span></div>${beltMenu}
       <div class="inv-pouch">${pouch}</div>
       <div class="inv-divider"></div>
       <div class="inv-pack-col"><h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}${hidden ? ` · ${hidden} hidden` : ''}</span>
         <button class="ds-btn inv-tidy" type="button" data-tidy title="Sort the pack itself: type, rarity, level, name">TIDY</button>
         <span class="inv-gold">◆ Gold: ${this.player.gold}</span></h4>
       ${filterBarHtml(this.filter)}
-      <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div></div>
+      <div class="inv-scroll"><div class="inv-pack-grid">${backpackCells}</div></div>
+      <div class="inv-hint">right-click a cell (long-press on a phone) to <b>inspect</b> it</div></div>
     `;
 
     this.panel.dataset.tab = this.tab;
@@ -311,23 +396,20 @@ export class InventoryUI {
 
     // Wire clicks + tooltips on the freshly rendered cells.
     this.panel.querySelectorAll<HTMLButtonElement>('button.inv-item').forEach((btn) => {
+      const ctx = this.contextOf(btn);
       btn.addEventListener('click', () => {
-        const equipIndex = btn.dataset.equip;
-        const useIndex = btn.dataset.use;
-        const unequipSlot = btn.dataset.unequip as EquipmentSlot | undefined;
-        if (useIndex !== undefined) {
-          this.queue.enqueue({ type: 'USE_ITEM', playerId: this.playerId, backpackIndex: Number(useIndex) });
-        } else if (equipIndex !== undefined) {
-          this.queue.enqueue({ type: 'EQUIP', playerId: this.playerId, backpackIndex: Number(equipIndex) });
-          audio.sfx('equip'); // Steel drawn from the sheath (it.26).
-        } else if (unequipSlot) {
-          this.queue.enqueue({ type: 'UNEQUIP', playerId: this.playerId, slot: unequipSlot });
-          audio.sfx('uiClick');
-        }
-        this.hideTooltip();
+        this.act(ctx, btn);
+        this.hideTooltip(true);
       });
       const def = btn.dataset.item ? itemDef(btn.dataset.item) : undefined;
       if (!def) return;
+      // INSPECT (it.114): the right button opens the turntable view.
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.hideTooltip(true);
+        this.openInspect(def, ctx);
+      });
       const worn = btn.dataset.unequip !== undefined;
       let hovered = false;
       attachItemCard(
@@ -335,7 +417,7 @@ export class InventoryUI {
         (x, y) => {
           if (!hovered) audio.sfx('uiHover');
           hovered = true;
-          this.showTooltip(def, x, y, worn);
+          this.showTooltip(def, x, y, worn, ctx);
         },
         () => {
           hovered = false;
@@ -348,6 +430,10 @@ export class InventoryUI {
     this.panel.querySelector<HTMLButtonElement>('[data-journal]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       eventBus.emit('journal:open', { chapter: 'items' });
+    });
+    this.panel.querySelector<HTMLElement>('[data-hunger]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      eventBus.emit('journal:open', { chapter: 'food' });
     });
     this.panel.querySelector<HTMLButtonElement>('[data-tidy]')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -374,11 +460,54 @@ export class InventoryUI {
     this.tickBelt();
     // A touch anywhere outside a cell folds a long-pressed card (it.76).
     this.panel.addEventListener('pointerdown', (e) => {
-      if (e.pointerType === 'touch' && !(e.target as HTMLElement).closest('button.inv-item')) this.hideTooltip();
+      if (e.pointerType === 'touch' && !(e.target as HTMLElement).closest('button.inv-item')) this.hideTooltip(true);
     }, { passive: true });
   }
 
-  /** The belt's cooldown veils (it.80): the remaining share of each category's cooldown. */
+  /** What a cell does when clicked, read off its data attributes. */
+  private contextOf(btn: HTMLElement): InspectContext {
+    const ctx: InspectContext = {};
+    if (btn.dataset.use !== undefined) ctx.use = Number(btn.dataset.use);
+    else if (btn.dataset.equip !== undefined) ctx.equip = Number(btn.dataset.equip);
+    else if (btn.dataset.unequip) ctx.unequip = btn.dataset.unequip as EquipmentSlot;
+    return ctx;
+  }
+
+  /** Enqueue the cell's action (equip, take off, use); the pulse follows the sim's answer. */
+  private act(ctx: InspectContext, cell?: HTMLElement | null): void {
+    if (ctx.use !== undefined) {
+      this.queue.enqueue({ type: 'USE_ITEM', playerId: this.playerId, backpackIndex: ctx.use });
+    } else if (ctx.equip !== undefined) {
+      this.queue.enqueue({ type: 'EQUIP', playerId: this.playerId, backpackIndex: ctx.equip });
+      audio.sfx('equip'); // Steel drawn from the sheath (it.26).
+      if (cell?.dataset.item) this.pulse(cell.dataset.item);
+    } else if (ctx.unequip) {
+      this.queue.enqueue({ type: 'UNEQUIP', playerId: this.playerId, slot: ctx.unequip });
+      audio.sfx('uiClick');
+    }
+  }
+
+  /** THE PULSE (it.114): every cell showing the item flares once. Survives a repaint because it runs after the sim's own re-render. */
+  private pulse(itemId: string): void {
+    for (const cell of this.panel.querySelectorAll<HTMLElement>(`.inv-cell[data-item="${CSS.escape(itemId)}"]`)) {
+      cell.classList.remove('inv-pulse');
+      void cell.offsetWidth; // Restart the animation.
+      cell.classList.add('inv-pulse');
+      cell.addEventListener('animationend', () => cell.classList.remove('inv-pulse'), { once: true });
+    }
+  }
+
+  /** The belly took a bite: the header gauge flashes gold. */
+  private flashHunger(): void {
+    const h = this.panel.querySelector<HTMLElement>('.inv-hunger');
+    if (!h) return;
+    h.classList.remove('bite');
+    void h.offsetWidth;
+    h.classList.add('bite');
+    h.addEventListener('animationend', () => h.classList.remove('bite'), { once: true });
+  }
+
+  /** The belt's cooldown veils (it.80): the remaining share of each category's cooldown; and the belly line, live (it.114). */
   private tickBelt(): void {
     for (const veil of this.panel.querySelectorAll<HTMLElement>('.inv-cd[data-cd]')) {
       const cat = veil.dataset.cd as keyof typeof QUAFF_COOLDOWN | '';
@@ -386,20 +515,150 @@ export class InventoryUI {
       const h = cat && left > 0 ? `${Math.round((left / QUAFF_COOLDOWN[cat]) * 100)}%` : '0%';
       if (veil.style.height !== h) veil.style.height = h;
     }
+    const inv = InventorySystem.of(this.player);
+    const line = this.panel.querySelector<HTMLElement>('.inv-hunger');
+    if (inv && line) {
+      const state = hungerStateOf(inv.hunger);
+      const bar = line.querySelector<HTMLElement>('.inv-hunger-bar b');
+      const word = line.querySelector<HTMLElement>('.inv-hunger-word');
+      const pct = `${Math.min(100, Math.max(0, (inv.hunger / HUNGER_MAX) * 100)).toFixed(1)}%`;
+      if (bar && bar.style.width !== pct) bar.style.width = pct;
+      const text = `${HUNGER_WORD[state]} · ${Math.round(inv.hunger)}`;
+      if (word && word.textContent !== text) word.textContent = text;
+      for (const s of ['fed', 'hungry', 'starving']) line.classList.toggle(s, s === state);
+      line.classList.toggle('feeding', inv.feeding);
+    }
   }
 
   /** The card: a worn piece on its own, a pack item beside what is worn in its slot. */
-  private showTooltip(def: ItemDef, x: number, y: number, self: boolean): void {
+  private showTooltip(def: ItemDef, x: number, y: number, self: boolean, ctx: InspectContext = {}): void {
+    this.cancelHide();
+    // The card STAYS PUT once shown for a cell (it.114), so the pointer can cross onto its INSPECT button.
+    if (this.tipFor === def.id && this.tooltip.classList.contains('show')) return;
+    this.tipFor = def.id;
+    this.tipCtx = ctx;
     const verb = document.body.classList.contains('input-touch') ? 'tap' : 'click';
-    const gold = `worth ${itemValue(def)} gold · ${verb} to ${def.slot === 'consumable' ? 'use' : self ? 'take off' : 'equip'}`;
+    const action = def.slot === 'food' ? 'eat' : def.slot === 'consumable' ? 'use' : self ? 'take off' : 'equip';
+    const gold = `worth ${itemValue(def)} gold · ${verb} to ${action}`;
     this.tooltip.innerHTML = self
-      ? itemCardHtml(def, { goldLine: gold, self: true })
-      : itemCardHtml(def, { goldLine: gold, worn: def.slot === 'consumable' ? undefined : wornFor(this.player, def) });
+      ? itemCardHtml(def, { goldLine: gold, self: true, inspect: true })
+      : itemCardHtml(def, { goldLine: gold, worn: usable(def) ? undefined : wornFor(this.player, def), inspect: true });
+    this.tooltip.querySelector<HTMLButtonElement>('[data-inspect]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      audio.sfx('uiClick');
+      this.hideTooltip(true);
+      this.openInspect(def, this.tipCtx);
+    });
     this.tooltip.classList.add('show');
     placeCard(this.tooltip, x, y);
   }
 
-  private hideTooltip(): void {
-    this.tooltip.classList.remove('show');
+  private cancelHide(): void {
+    if (this.hideTimer !== null) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
+  }
+
+  /** Fold the card - after a beat by default, so a pointer heading for the card keeps it. */
+  private hideTooltip(now = false): void {
+    this.cancelHide();
+    const fold = (): void => {
+      this.hideTimer = null;
+      this.tooltip.classList.remove('show');
+      this.tipFor = null;
+    };
+    if (now) fold();
+    else this.hideTimer = window.setTimeout(fold, 160);
+  }
+
+  // ---- THE INSPECT VIEW (it.114) -------------------------------------------------
+
+  /** The layout's viewport (`--app-w/--app-h`, it.66), the document as the fallback. */
+  private static appSize(): { w: number; h: number } {
+    const css = getComputedStyle(document.documentElement);
+    return {
+      w: parseFloat(css.getPropertyValue('--app-w')) || document.documentElement.clientWidth,
+      h: parseFloat(css.getPropertyValue('--app-h')) || document.documentElement.clientHeight,
+    };
+  }
+
+  /** Open the stage on an item: the turntable at three times its size (less on a narrow screen), the card, the action. */
+  openInspect(def: ItemDef, ctx: InspectContext = {}): void {
+    this.stopInspectAnim();
+    const spin = itemSpin(def);
+    const { w, h } = InventoryUI.appSize();
+    const touch = document.body.classList.contains('input-touch');
+    // The stage: as wide as the window allows, up to 300 px; the turntable fills it at up to 3×.
+    const stageW = Math.max(160, Math.min(300, w - 56));
+    const stageH = Math.max(120, Math.min(200, Math.round(h * 0.28)));
+    let stage: string;
+    if (spin) {
+      const scale = Math.min(3, (stageW - 24) / spin.cellW, (stageH - 20) / spin.cellH);
+      stage = `<div class="insp-turn" data-turn style="width:${spin.cellW}px;height:${spin.cellH}px;background-image:url(${spin.url});background-position:0 0;transform:scale(${scale.toFixed(3)})"></div>`;
+    } else {
+      stage = `<div class="insp-static-wrap">${itemIconHtml(def, 'insp-static')}</div>`;
+    }
+    const verb = ctx.use !== undefined ? (def.slot === 'food' ? 'EAT IT' : def.use?.recipe ? 'READ IT' : 'DRINK IT') : ctx.equip !== undefined ? 'EQUIP IT' : ctx.unequip ? 'TAKE IT OFF' : '';
+    const self = ctx.unequip !== undefined;
+    const goldLine = `worth ${itemValue(def)} gold`;
+    const card = self ? itemCardHtml(def, { goldLine, self: true }) : itemCardHtml(def, { goldLine, worn: usable(def) ? undefined : wornFor(this.player, def) });
+    const tier = def.use?.food ? ` · ${cap(def.use.food.tier)}` : '';
+    this.inspect.innerHTML = `
+      <div class="insp-frame rarity-${def.rarity} ${effectClass(def)}">
+        <i class="insp-rune tl">✦</i><i class="insp-rune tr">✦</i><i class="insp-rune bl">✦</i><i class="insp-rune br">✦</i>
+        <div class="insp-head drag-handle"><span class="insp-title">INSPECT</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
+        <div class="insp-stage" style="width:${stageW}px;height:${stageH}px;--rar-hex:${hex(RARITY_COLOR[def.rarity])}"><div class="insp-sweep"></div><div class="insp-floor"></div>${stage}<span class="insp-hint">${spin ? `turntable · ${spin.frames} frames` : 'no turntable · the icon'}</span></div>
+        <div class="insp-name" style="color:${hex(RARITY_COLOR[def.rarity])}">${def.name}</div>
+        <div class="insp-meta">${cap(def.rarity)} · ${slotLabel(def.slot)}${def.ilvl ? ` · iLvl ${def.ilvl}` : ''}${tier}${self ? ' · <b>worn</b>' : ''}</div>
+        <div class="insp-card">${card}</div>
+        ${def.desc && (def.slot === 'mainHand' || def.ilvl) && !card.includes(def.desc) ? `<div class="insp-flavour">${def.desc}</div>` : ''}
+        <div class="insp-actions">${verb ? `<button class="ds-btn insp-act" type="button" data-act>${verb}</button>` : ''}<button class="ds-btn" type="button" data-close>CLOSE</button></div>
+        <div class="insp-foot">${touch ? 'tap outside to close' : 'ESC or click outside to close'}</div>
+      </div>`;
+    this.inspect.classList.add('open');
+    this.inspectOpen = true;
+    audio.sfx('uiConfirm');
+    for (const b of this.inspect.querySelectorAll<HTMLElement>('[data-close]')) {
+      b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeInspect();
+      });
+    }
+    this.inspect.querySelector<HTMLButtonElement>('[data-act]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.act(ctx);
+      this.closeInspect();
+    });
+    // A click on the dark outside the frame closes it.
+    this.inspect.onclick = (e) => {
+      if (e.target === this.inspect) this.closeInspect();
+    };
+    // Step the strip at 20 fps by background-position, the way the bestiary walks a creature.
+    const turn = this.inspect.querySelector<HTMLElement>('[data-turn]');
+    if (turn && spin && spin.frames > 1) {
+      let f = 0;
+      this.inspectTimer = window.setInterval(() => {
+        f = (f + 1) % spin.frames;
+        turn.style.backgroundPosition = `${-f * spin.cellW}px 0px`;
+      }, 50);
+    }
+  }
+
+  closeInspect(): void {
+    if (!this.inspectOpen) return;
+    this.inspectOpen = false;
+    this.stopInspectAnim();
+    this.inspect.classList.remove('open');
+    audio.sfx('uiBack');
+  }
+
+  private stopInspectAnim(): void {
+    if (this.inspectTimer !== null) {
+      clearInterval(this.inspectTimer);
+      this.inspectTimer = null;
+    }
   }
 }

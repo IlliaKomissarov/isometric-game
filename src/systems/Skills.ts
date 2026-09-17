@@ -67,6 +67,12 @@ export interface SkillDeps {
   /** Animated effect strips (it.41). */
   vfx: (anim: VfxAnim, x: number, y: number, opts?: VfxOpts) => VfxHandle;
   /**
+   * A strip that shadows a moving body every render frame (it.115: buff
+   * auras). Optional — without it the aura loops and is re-anchored once
+   * per tick from `update()`.
+   */
+  vfxFollow?: (anim: VfxAnim, getPos: () => { x: number; y: number }, opts?: VfxOpts) => VfxHandle;
+  /**
    * TARGETED CASTING (it.33): unit vector from the player toward the mouse
    * cursor's world point (falls back to facing) — every directional skill
    * fires where the player is AIMING, never into empty space behind them.
@@ -93,7 +99,43 @@ interface Synergy {
 }
 const NO_SYNERGY: Synergy = { scale: 1, status: null };
 
+/** A running strip owned by a skill: stopped when `until()` turns true (`h` null = a bare timer). */
+interface OwnedFx {
+  h: VfxHandle | null;
+  until: () => boolean;
+  /** Re-anchor to the hero each tick (only when `deps.vfxFollow` is absent). */
+  follow: boolean;
+  /** Runs once when the strip is stopped (the reappearance after Vanish). */
+  onEnd?: () => void;
+}
+
+/** The fireball's trail, dead-reckoned along the shot (it.115). */
+interface Trail {
+  h: VfxHandle;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  ticksLeft: number;
+}
+
+/** `ProjectileSystem`'s fireball speed in tiles/s (SPEED.fireball) — the trail keeps pace. */
+const FIREBALL_SPEED = 10;
+const TICK = 1 / 60;
+const STEEL = 0xd8e2f0;
+
 export class SkillSystem {
+  /** Strips this system started and must stop (auras, pillars, trails). */
+  private fx: OwnedFx[] = [];
+  private trails: Trail[] = [];
+  /** Multishot window: arrow impacts inside it get the directional strip. */
+  private volleyTicks = 0;
+  private volleyAim = { x: 1, y: 0 };
+  /** Buff auras by buff key (a recast replaces the older aura). */
+  private readonly keyed = new Map<string, VfxHandle>();
+  /** Vanish casts, counted: only the latest cast's reveal fires. */
+  private stealthCast = 0;
+  private readonly offImpact: () => void;
   /** Remaining cooldown ticks per slot (UI reads this). */
   readonly cooldowns = [0, 0, 0, 0];
   private zones: Zone[] = [];
@@ -115,13 +157,60 @@ export class SkillSystem {
       const p = this.deps.player;
       if (sourceId !== p.id || result === 'miss' || p.poisonBladeTicks <= 0) return;
       this.deps.status().dot(targetId, 'poison', 160, 25, 3, p.id);
+      // The envenomed edge reads on the victim (it.115).
+      const victim = this.deps.enemiesNear(p.pos.x, p.pos.y, 3).find((e) => e.id === targetId);
+      if (victim) this.deps.vfx('fx_poison_claw', victim.pos.x, victim.pos.y, { scale: 0.55, lift: 18, overlay: true, alpha: 0.9 });
+    });
+    // Multishot (it.115): every arrow of the volley that finds flesh flashes its strip.
+    this.offImpact = eventBus.on('projectile:impact', ({ x, y, kind, hitFlesh }) => {
+      if (this.volleyTicks <= 0 || kind !== 'arrow' || !hitFlesh) return;
+      this.deps.vfx('fx_impact_dir_a', x, y, { scale: 0.8, lift: 18, rotation: SkillSystem.screenAngle(this.volleyAim), overlay: true, tint: 0xe8f0d0 });
     });
   }
 
   /** Run teardown (it.36): drop the bus subscription and any zones. */
   destroy(): void {
     this.offSwing();
+    this.offImpact();
     this.clearZones();
+  }
+
+  /**
+   * Start a strip the system owns (it.115): a looping aura on the hero that
+   * ends with its buff, a pillar that ends with its wall. Uses the render
+   * layer's follow hook when present, else re-anchors from `update()`.
+   */
+  private own(anim: VfxAnim, opts: VfxOpts, until: () => boolean, follow = true, onEnd?: () => void): VfxHandle {
+    const p = this.deps.player;
+    const d = this.deps;
+    const h = follow && d.vfxFollow ? d.vfxFollow(anim, () => p.pos, { loop: true, ...opts }) : d.vfx(anim, p.pos.x, p.pos.y, { loop: true, ...opts });
+    this.fx.push({ h, until, follow: follow && !d.vfxFollow, onEnd });
+    return h;
+  }
+
+  /** A buff aura keyed by the buff's own clock, replacing an older one of the same key. */
+  private buffAura(key: string, anim: VfxAnim, opts: VfxOpts, ticks: () => number): void {
+    this.endFx(key);
+    const h: VfxHandle = this.own(anim, opts, () => ticks() <= 0 || this.keyed.get(key) !== h);
+    this.keyed.set(key, h);
+  }
+  private endFx(key: string): void {
+    const h = this.keyed.get(key);
+    if (h) {
+      h.stop();
+      this.keyed.delete(key);
+    }
+  }
+
+  /** A bare timer on the tick: `onEnd` fires when `until()` turns true (the reappearance after Vanish). */
+  private watch(until: () => boolean, onEnd: () => void): void {
+    this.fx.push({ h: null, until, follow: false, onEnd });
+  }
+
+  /** A strip that lives a fixed number of ticks (a whirlwind's funnel). */
+  private timedFx(anim: VfxAnim, opts: VfxOpts, ticks: number, follow = true): void {
+    let left = ticks;
+    this.own(anim, opts, () => --left <= 0, follow);
   }
 
   /** The hotbar: a learned skill per slot, or null (HUD + casting). */
@@ -139,6 +228,12 @@ export class SkillSystem {
     for (const zone of this.zones) zone.dispose();
     this.zones = [];
     this.flurry = null;
+    for (const f of this.fx) f.h?.stop();
+    this.fx = [];
+    this.keyed.clear();
+    for (const t of this.trails) t.h.stop();
+    this.trails = [];
+    this.volleyTicks = 0;
   }
 
   /** Aim the player at the cursor and return the unit aim vector (it.33). */
@@ -253,6 +348,7 @@ export class SkillSystem {
     this.deps.sfx('levelUp');
     this.deps.text(p.pos.x, p.pos.y - 1.2, `${def.name.toUpperCase()} LEARNED`, 'crit');
     this.deps.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.9, flat: true, fps: 20, tint: this.isSynergy(def) ? 0xffd070 : 0x9fb4e8 });
+    this.deps.vfx('fx_sparkle_b', p.pos.x, p.pos.y, { scale: 1.2, lift: 24, overlay: true, tint: this.isSynergy(def) ? 0xffe090 : 0xc0d8ff });
     eventBus.emit('skills:changed', {});
   }
 
@@ -267,6 +363,7 @@ export class SkillSystem {
     this.deps.sfx('skillBuff');
     this.deps.text(p.pos.x, p.pos.y - 1.2, def.name.toUpperCase(), 'crit');
     this.deps.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 0.9, lift: 22, fps: 16, overlay: true });
+    this.deps.vfx('fx_sparkle_c', p.pos.x, p.pos.y, { scale: 1.0, lift: 30, overlay: true, tint: 0xd0e8ff });
     eventBus.emit('skills:changed', {});
     eventBus.emit('inventory:changed', {}); // Stat readouts.
   }
@@ -317,6 +414,38 @@ export class SkillSystem {
   update(): void {
     for (let i = 0; i < 4; i++) if (this.cooldowns[i] > 0) this.cooldowns[i]--;
 
+    // OWNED STRIPS (it.115): auras ride the hero; each ends with its clock.
+    if (this.fx.length) {
+      const p = this.deps.player;
+      const live: OwnedFx[] = [];
+      for (const f of this.fx) {
+        if (f.until() || p.action === 'dead') {
+          f.h?.stop();
+          f.onEnd?.();
+          continue;
+        }
+        if (f.follow) f.h?.moveTo(p.pos.x, p.pos.y);
+        live.push(f);
+      }
+      this.fx = live;
+    }
+    // The fireball's trail keeps pace with the shot it shadows.
+    if (this.trails.length) {
+      const live: Trail[] = [];
+      for (const t of this.trails) {
+        if (--t.ticksLeft <= 0) {
+          t.h.stop();
+          continue;
+        }
+        t.x += t.dx * FIREBALL_SPEED * TICK;
+        t.y += t.dy * FIREBALL_SPEED * TICK;
+        t.h.moveTo(t.x, t.y);
+        live.push(t);
+      }
+      this.trails = live;
+    }
+    if (this.volleyTicks > 0) this.volleyTicks--;
+
     // Ground zones.
     const survivors: Zone[] = [];
     for (const zone of this.zones) {
@@ -328,6 +457,8 @@ export class SkillSystem {
             this.deps.burst(cell.x, cell.y, zone.ticksLeft % 28 === 0 ? 0xffb060 : 0xd85a3a, 2);
             for (const foe of this.deps.enemiesNear(cell.x, cell.y, 0.9)) {
               this.damage(foe, 3, 6, 0, 0);
+              // The impact beat (it.115): a lick of flame on the body every pulse.
+              this.deps.vfx('fx_fire_burst', foe.pos.x, foe.pos.y, { scale: 0.9, lift: 20, alpha: 0.85 });
             }
           }
         }
@@ -347,12 +478,16 @@ export class SkillSystem {
           zone.dispose();
           this.deps.sfx('skillTrap');
           this.deps.shake(0.45);
-          this.deps.vfx('vfx_explosion', zone.x, zone.y, { scale: 1.6, lift: 26, fps: 24 });
+          // EXPLOSIVE TRAP (it.115): the blast, a ring of sparks, smoke rolling off after.
+          this.deps.vfx('fx_explosion_b', zone.x, zone.y, { scale: 1.5, lift: 22, overlay: true });
+          this.deps.vfx('fx_spark_burst', zone.x, zone.y, { scale: 1.0, lift: 12, tint: 0xffd070 });
           this.deps.vfx('vfx_ring', zone.x, zone.y, { scale: 1.2, flat: true, fps: 22, tint: 0xffc070 });
+          this.deps.vfx('fx_smoke_burst', zone.x, zone.y, { scale: 1.5, lift: 14, alpha: 0.8 });
           this.deps.burst(zone.x, zone.y, 0xffd98a, 16);
           this.deps.glint(zone.x, zone.y);
           for (const foe of this.deps.enemiesNear(zone.x, zone.y, 1.9)) {
             this.damage(foe, 18, 28, foe.pos.x - zone.x, foe.pos.y - zone.y, 0.8);
+            this.deps.vfx('fx_impact_dir_b', foe.pos.x, foe.pos.y, { scale: 0.7, lift: 18, rotation: SkillSystem.screenAngle({ x: foe.pos.x - zone.x, y: foe.pos.y - zone.y }), overlay: true, tint: 0xffe0b0 });
           }
         } else if (zone.ticksLeft > 0) {
           survivors.push(zone);
@@ -374,6 +509,8 @@ export class SkillSystem {
           }
           for (const foe of this.deps.enemiesNear(zone.x, zone.y, 2.0)) {
             this.damage(foe, 6, 10, 0, 0);
+            // Each arrow that finds a body (it.115): a downward shaft-hit on the shoulder.
+            this.deps.vfx('fx_impact_dir_c', foe.pos.x, foe.pos.y, { scale: 0.75, lift: 24, rotation: Math.PI / 2, overlay: true, tint: 0xe8e8f0 });
           }
         }
         if (zone.wavesLeft > 0) survivors.push(zone);
@@ -397,7 +534,11 @@ export class SkillSystem {
           this.syn = NO_SYNERGY;
           this.deps.sfx('swing');
           p.showSlash('hit');
-          this.deps.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.55, lift: 22, fps: 30, rotation: this.rand() * Math.PI * 2, tint: 0xffffff, overlay: true });
+          // BLADE FLURRY (it.115): a steel arc per cut, the last one wider and harder.
+          const last = this.flurry.hitsLeft === 1;
+          this.deps.vfx('fx_wide_arc', foe.pos.x, foe.pos.y, { scale: last ? 1.3 : 1.0, lift: 22, rotation: this.rand() * Math.PI * 2, tint: STEEL, overlay: true, fps: 24 });
+          if (last) this.deps.vfx('fx_impact_dir_d', foe.pos.x, foe.pos.y, { scale: 0.9, lift: 20, rotation: SkillSystem.screenAngle({ x: foe.pos.x - p.pos.x, y: foe.pos.y - p.pos.y }), overlay: true, tint: STEEL });
+          else this.deps.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.45, lift: 22, fps: 30, rotation: this.rand() * Math.PI * 2, tint: 0xffffff, overlay: true, alpha: 0.7 });
           this.flurry.hitsLeft--;
           this.flurry.nextHit = 11;
           if (this.flurry.hitsLeft <= 0) this.flurry = null;
@@ -479,14 +620,18 @@ export class SkillSystem {
         d.sfx('skillWhirl');
         d.shake(0.3);
         p.showSlash('crit');
-        d.vfx('vfx_vortex', p.pos.x, p.pos.y, { scale: 1.7, lift: 14, fps: 26, tint: syn.status ? 0xffd090 : 0xd8d8e8 });
+        // CAST (it.115): the funnel rides the hero for half a second over a ground ring.
+        this.timedFx('fx_tornado_loop', { scale: 1.1, lift: 26, tint: syn.status ? 0xffd090 : 0xd8d8e8, alpha: 0.85 }, 32);
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.0, flat: true, fps: 24, tint: 0xd8cfc0, alpha: 0.7 });
+        d.vfx('fx_wide_arc', p.pos.x, p.pos.y, { scale: 2.2, lift: 18, tint: STEEL, alpha: 0.8, fps: 24 });
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
           d.burst(p.pos.x + Math.cos(a + 0.26) * 1.9, p.pos.y + Math.sin(a + 0.26) * 1.9, 0xd8cfc0, 3);
         }
         for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 2.2)) {
           this.damage(foe, Math.round(prof.minDamage * 1.4), Math.round(prof.maxDamage * 1.4), foe.pos.x - p.pos.x, foe.pos.y - p.pos.y, 0.7);
+          // IMPACT: a steel arc on every body the blade reaches.
+          d.vfx('fx_wide_arc', foe.pos.x, foe.pos.y, { scale: 1.0, lift: 20, rotation: SkillSystem.screenAngle({ x: foe.pos.x - p.pos.x, y: foe.pos.y - p.pos.y }), tint: STEEL, overlay: true, fps: 24 });
         }
         break;
       }
@@ -495,20 +640,26 @@ export class SkillSystem {
         const aim = this.takeAim(); // Charge where the cursor points (it.33).
         const sx = p.pos.x;
         const sy = p.pos.y;
+        // CAST (it.115): the wind-up flash where the hero stood.
+        d.vfx('fx_charge', sx, sy, { scale: 0.9, lift: 18, tint: 0xffd8a0, alpha: 0.9 });
         d.vfx('vfx_ring', sx, sy, { scale: 0.7, flat: true, fps: 26, tint: 0xd8b070, alpha: 0.8 });
         this.dash(4);
         d.shake(0.25);
         const hit = new Set<number>();
         const steps = 8;
+        const rot = SkillSystem.screenAngle(aim);
         for (let i = 0; i <= steps; i++) {
           const px = sx + ((p.pos.x - sx) * i) / steps;
           const py = sy + ((p.pos.y - sy) * i) / steps;
           if (i % 2 === 0) d.burst(px, py, 0xc8b090, 3);
-          if (i % 4 === 2) d.vfx('vfx_strike', px, py, { scale: 0.7, lift: 18, fps: 28, rotation: SkillSystem.screenAngle(aim) + Math.PI, tint: 0xe8d0a0, alpha: 0.85 });
+          // The dash trail lies flat on the ground behind the hero, along the run.
+          if (i % 2 === 1) d.vfx('fx_dash_trail', px, py, { scale: 1.6, rotation: rot, depthBias: -20, tint: 0xe8d0a0, alpha: 0.85 });
           for (const foe of d.enemiesNear(px, py, 1.1)) {
             if (hit.has(foe.id)) continue;
             hit.add(foe.id);
             this.damage(foe, Math.round(prof.minDamage * 1.2), Math.round(prof.maxDamage * 1.2), p.facing.x, p.facing.y, 1.2);
+            // IMPACT: the shoulder lands along the run.
+            d.vfx('fx_impact_dir_b', foe.pos.x, foe.pos.y, { scale: 0.8, lift: 18, rotation: rot, overlay: true, tint: 0xffe8c0 });
           }
         }
         break;
@@ -520,8 +671,13 @@ export class SkillSystem {
         p.buffMax.dmg = 600;
         p.dmgBuffMult = syn.status ? 1.45 : 1.35;
         d.text(p.pos.x, p.pos.y - 1.2, 'WAR CRY!', 'crit');
+        // CAST (it.115): the paladin shout bursts off the hero over a ground ring.
+        d.vfx('fx_paladin_2', p.pos.x, p.pos.y, { scale: 0.9, lift: 24, tint: 0xffc890, overlay: true });
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.5, flat: true, fps: 22, tint: 0xffb060 });
-        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.0, lift: 22, fps: 18, tint: 0xffc080, overlay: true });
+        // The buff rides the hero while it lasts.
+        this.buffAura('dmg', 'fx_attack_up', { scale: 0.6, lift: 20, alpha: 0.5, overlay: true, fps: 12 }, () => p.dmgBuffTicks);
+        // IMPACT: every foe in earshot startles.
+        for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 5)) d.vfx('fx_alert', foe.pos.x, foe.pos.y, { scale: 0.65, lift: 52, overlay: true });
         break;
       }
       case 'stoneskin': {
@@ -530,7 +686,10 @@ export class SkillSystem {
         p.buffMax.dr = 420;
         p.drFrac = syn.status ? 0.65 : 0.55;
         d.text(p.pos.x, p.pos.y - 1.2, 'STONE SKIN', 'miss');
-        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.0, lift: 22, fps: 16, tint: 0xb0a898, overlay: true });
+        // CAST (it.115): a shield flash, then the guard aura rides the hero while the skin holds.
+        d.vfx('fx_paladin_4', p.pos.x, p.pos.y, { scale: 0.8, lift: 22, tint: 0xc8c0b0, overlay: true });
+        d.vfx('fx_defense_up', p.pos.x, p.pos.y, { scale: 0.8, lift: 20, overlay: true, tint: 0xd0c8b8 });
+        this.buffAura('dr', 'fx_defense_up', { scale: 0.6, lift: 20, alpha: 0.45, overlay: true, fps: 12, tint: 0xd0c8b8 }, () => p.drTicks);
         d.burst(p.pos.x, p.pos.y, 0xb0a898, 10);
         break;
       }
@@ -541,10 +700,22 @@ export class SkillSystem {
         const aim = this.takeAim();
         const { x: tx, y: ty } = this.aimTarget(aim, 7, 1.2, 4);
         d.sfx('skillFire');
-        d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.6, flat: true, fps: 28, tint: 0xff9040, alpha: 0.8 });
+        // CAST (it.115): the fire sigil under the caster; the comet's trail
+        // is dead-reckoned along the shot at the projectile's own speed and
+        // stopped on impact (the projectile system exposes no handle).
+        d.vfx('fx_fire_cast', p.pos.x, p.pos.y, { scale: 0.8, depthBias: -20, alpha: 0.9 });
         const dist = Math.hypot(tx - p.pos.x, ty - p.pos.y);
         const dmgMin = Math.round(prof.minDamage * 1.8);
         const dmgMax = Math.round(prof.maxDamage * 1.8);
+        const trail: Trail = {
+          h: d.vfx('fx_fireball_a', p.pos.x, p.pos.y, { loop: true, scale: 1.3, lift: 18, rotation: SkillSystem.screenAngle(aim), alpha: 0.95 }),
+          x: p.pos.x,
+          y: p.pos.y,
+          dx: (tx - p.pos.x) / (dist || 1),
+          dy: (ty - p.pos.y) / (dist || 1),
+          ticksLeft: Math.ceil(((dist + 0.15) / FIREBALL_SPEED) / TICK) + 2,
+        };
+        this.trails.push(trail);
         const spawn: ProjectileSpawn = {
           faction: 'player',
           kind: 'fireball',
@@ -562,12 +733,18 @@ export class SkillSystem {
             this.syn = syn;
             d.shake(0.3);
             d.sfx('boltImpact');
-            d.vfx('vfx_explosion', ix, iy, { scale: 1.5, lift: 24, fps: 26 });
+            trail.ticksLeft = 0; // The trail dies with the comet.
+            trail.h.stop();
+            // IMPACT (it.115): the burst, a rising fire column, a ground ring.
+            d.vfx('fx_gexplosion_a', ix, iy, { scale: 1.3, lift: 26, overlay: true });
+            d.vfx('fx_fire_burst', ix, iy, { scale: 1.4, lift: 22 });
+            d.vfx('fx_explosion_b', ix, iy, { scale: 1.0, lift: 18, alpha: 0.9 });
             d.vfx('vfx_ring', ix, iy, { scale: 1.1, flat: true, fps: 24, tint: 0xff9040 });
             d.burst(ix, iy, 0xffb060, 12);
             d.glint(ix, iy);
             for (const victim of d.enemiesNear(ix, iy, 1.8)) {
               this.damage(victim, dmgMin, dmgMax, victim.pos.x - ix, victim.pos.y - iy, 0.6);
+              d.vfx('fx_fire_burst', victim.pos.x, victim.pos.y, { scale: 0.9, lift: 20, alpha: 0.85 });
             }
             this.syn = NO_SYNERGY;
           },
@@ -585,11 +762,21 @@ export class SkillSystem {
         const cells: Array<{ x: number; y: number }> = [];
         for (let i = -2; i <= 2; i++) cells.push({ x: cx + px * i * 1.15, y: cy + py * i * 1.15 });
         const disposers = cells.map((cell) => d.zoneVisual('fire', cell.x, cell.y));
+        // CAST (it.115): the sigil under the caster; a fire pillar loops on
+        // every cell of the wall for as long as it burns.
+        d.vfx('fx_fire_cast', p.pos.x, p.pos.y, { scale: 0.8, depthBias: -20, alpha: 0.9 });
+        const pillars = cells.map((cell, i) => {
+          d.vfx('fx_fire_burst', cell.x, cell.y, { scale: 1.2, lift: 18 });
+          return d.vfx('fx_fire_pillar', cell.x, cell.y, { loop: true, scale: 1.5, lift: 26, alpha: 0.9, fps: 24 + (i % 3) * 2 });
+        });
         this.zones.push({
           kind: 'firewall',
           cells,
           ticksLeft: 360,
-          dispose: () => disposers.forEach((fn) => fn()),
+          dispose: () => {
+            disposers.forEach((fn) => fn());
+            pillars.forEach((h) => h.stop());
+          },
           syn,
         });
         for (const cell of cells) d.burst(cell.x, cell.y, 0xffb060, 6);
@@ -599,17 +786,23 @@ export class SkillSystem {
       case 'frostnova': {
         d.sfx('freeze');
         d.shake(0.25);
-        d.vfx('vfx_splash', p.pos.x, p.pos.y, { scale: 2.2, lift: 10, fps: 16, tint: 0xbfe6ff });
+        // CAST (it.115): the ice sigil under the caster, the wide frost burst
+        // over it, and a ring of shattering ice at the nova's edge.
+        d.vfx('fx_ice_cast', p.pos.x, p.pos.y, { scale: 1.2, depthBias: -20 });
+        d.vfx('fx_frost_1', p.pos.x, p.pos.y, { scale: 1.1, lift: 18, overlay: true, alpha: 0.9 });
         d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 1.9, flat: true, fps: 22, tint: 0x9fd4f0 });
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
           d.burst(p.pos.x + Math.cos(a) * 2.4, p.pos.y + Math.sin(a) * 2.4, 0x9fd4f0, 4);
+          if (i % 2 === 0) d.vfx('fx_ice_shatter_a', p.pos.x + Math.cos(a) * 2.2, p.pos.y + Math.sin(a) * 2.2, { scale: 0.8, lift: 14, alpha: 0.85 });
         }
         for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 3)) {
           if (foe.hitRecoveryTicks === 0 && foe.def.kind.startsWith('boss')) continue; // Wardens shrug it off.
           foe.action = 'hit';
           foe.actionTicks = syn.status ? 140 : 110; // Frozen solid.
           this.damage(foe, 4, 8, 0, 0);
+          // IMPACT: the ice closes on the body.
+          d.vfx('fx_ice_shatter_b', foe.pos.x, foe.pos.y, { scale: 0.9, lift: 20, overlay: true });
         }
         d.text(p.pos.x, p.pos.y - 1.2, 'FROST NOVA', 'crit');
         break;
@@ -620,8 +813,12 @@ export class SkillSystem {
         p.buffMax.dmg = 900;
         p.dmgBuffMult = syn.status ? 1.55 : 1.45;
         d.glint(p.pos.x, p.pos.y);
-        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 1.1, lift: 24, fps: 18, tint: 0xb8a8f0, overlay: true });
+        // CAST (it.115): a light sigil under the mage and a sparkle over the head;
+        // the arcane barrier orbits the body while the buff lasts.
+        d.vfx('fx_light_cast', p.pos.x, p.pos.y, { scale: 0.9, depthBias: -20, tint: 0xc0b0ff });
+        d.vfx('fx_sparkle_c', p.pos.x, p.pos.y, { scale: 1.1, lift: 34, overlay: true, tint: 0xd0c0ff });
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.0, flat: true, fps: 22, tint: 0x9f8fe8 });
+        this.buffAura('dmg', 'fx_magic_barrier', { scale: 1.4, lift: 20, alpha: 0.6, overlay: true, tint: 0xc8b8ff }, () => p.dmgBuffTicks);
         d.text(p.pos.x, p.pos.y - 1.2, 'ARCANE MIGHT', 'crit');
         break;
       }
@@ -631,7 +828,12 @@ export class SkillSystem {
         const combat = d.combat();
         const aim = this.takeAim();
         const base = Math.atan2(aim.y, aim.x);
+        // CAST (it.115): the bow's arc flashes along the aim; impacts arrive
+        // through `projectile:impact` while the volley window is open.
+        d.vfx('fx_wide_arc', p.pos.x, p.pos.y, { scale: 1.2, lift: 20, rotation: SkillSystem.screenAngle(aim), tint: 0xd8f0c0, overlay: true, alpha: 0.85, fps: 24 });
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.55, flat: true, fps: 30, tint: 0xd8e8c0, alpha: 0.7 });
+        this.volleyTicks = 40;
+        this.volleyAim = { x: aim.x, y: aim.y };
         for (let i = -2; i <= 2; i++) {
           const a = base + i * 0.21;
           combat.fireProjectile?.({
@@ -652,14 +854,19 @@ export class SkillSystem {
       }
       case 'shadowstep': {
         d.sfx('skillDash');
-        this.takeAim(); // Step toward the cursor (it.33).
-        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 0.8, flat: true, fps: 30, tint: 0x8a86c0, alpha: 0.8 });
+        const aim = this.takeAim(); // Step toward the cursor (it.33).
+        // CAST (it.115): the rift closes where the hero stood, smoke trailing the step.
+        d.vfx('fx_warp_b', p.pos.x, p.pos.y, { scale: 0.8, lift: 20, tint: 0xb0a0e0, overlay: true });
+        d.vfx('fx_smoke_dir', p.pos.x, p.pos.y, { scale: 1.0, lift: 16, rotation: SkillSystem.screenAngle(aim), alpha: 0.8, tint: 0x9088b0 });
         d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
         this.dash(3.2);
         p.hasteTicks = 240;
         p.buffMax.haste = 240;
         p.hasteMult = syn.status ? 1.45 : 1.35;
-        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 0.8, flat: true, fps: 30, tint: 0x8a86c0, alpha: 0.8 });
+        // ARRIVAL: the rift opens again, then the haste aura rides the hero.
+        d.vfx('fx_warp_b', p.pos.x, p.pos.y, { scale: 0.8, lift: 20, tint: 0xb0a0e0, overlay: true });
+        d.vfx('fx_smoke_dir', p.pos.x, p.pos.y, { scale: 1.0, lift: 16, rotation: SkillSystem.screenAngle(aim) + Math.PI, alpha: 0.8, tint: 0x9088b0 });
+        this.buffAura('haste', 'fx_haste', { scale: 0.6, lift: 20, alpha: 0.5, overlay: true, fps: 15, tint: 0xb0ffc0 }, () => p.hasteTicks);
         d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
         break;
       }
@@ -667,8 +874,15 @@ export class SkillSystem {
         d.sfx('skillTrapSet');
         // VISIBLE FLOOR OBJECT (it.33): a gold rune sits armed on the tile
         // until something steps into it (or it expires).
-        const dispose = d.zoneVisual('trap', p.pos.x, p.pos.y);
+        const runeDispose = d.zoneVisual('trap', p.pos.x, p.pos.y);
+        // CAST (it.115): a gold circle turns under the rune until it springs or expires.
+        const circle = d.vfx('fx_magic_circle', p.pos.x, p.pos.y, { loop: true, scale: 0.9, depthBias: -20, tint: 0xd8b860, alpha: 0.7, fps: 10 });
+        const dispose = (): void => {
+          runeDispose();
+          circle.stop();
+        };
         this.zones.push({ kind: 'trap', x: p.pos.x, y: p.pos.y, armTicks: 40, ticksLeft: 1200, dispose, syn });
+        d.vfx('fx_sparkle_a', p.pos.x, p.pos.y, { scale: 0.9, lift: 10, tint: 0xe8c870, alpha: 0.9 });
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 0.7, flat: true, fps: 24, tint: 0xc8b060, alpha: 0.8 });
         d.burst(p.pos.x, p.pos.y, 0xc8b060, 8);
         d.text(p.pos.x, p.pos.y - 1, 'TRAP SET', 'miss');
@@ -680,6 +894,9 @@ export class SkillSystem {
         d.sfx('skillArrows');
         const dispose = d.zoneVisual('rain', tx, ty);
         this.zones.push({ kind: 'rain', x: tx, y: ty, wavesLeft: 5, nextWave: 12, dispose, syn });
+        // CAST (it.115): the bow's arc at the archer and a pale sigil where the sky opens.
+        d.vfx('fx_wide_arc', p.pos.x, p.pos.y, { scale: 1.1, lift: 20, rotation: SkillSystem.screenAngle(aim), tint: 0xd8f0c0, overlay: true, alpha: 0.8, fps: 24 });
+        d.vfx('fx_light_cast', tx, ty, { scale: 1.3, depthBias: -20, tint: 0xd8e0f0, alpha: 0.8 });
         d.vfx('vfx_ring', tx, ty, { scale: 1.4, flat: true, fps: 20, tint: 0xd8e0f0, alpha: 0.7 });
         d.text(tx, ty - 1, 'RAIN OF ARROWS', 'crit');
         break;
@@ -695,7 +912,9 @@ export class SkillSystem {
         }
         d.sfx('swing');
         p.showSlash('hit');
-        d.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.55, lift: 22, fps: 30, rotation: 0.4, overlay: true });
+        // CAST (it.115): the first steel arc opens the flurry; `update` cuts the rest.
+        d.vfx('fx_wide_arc', foe.pos.x, foe.pos.y, { scale: 1.0, lift: 22, rotation: 0.4, tint: STEEL, overlay: true, fps: 24 });
+        d.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.45, lift: 22, fps: 30, rotation: 0.4, overlay: true, alpha: 0.7 });
         this.damage(foe, Math.round(prof.minDamage * 0.8), Math.round(prof.maxDamage * 0.8), foe.pos.x - p.pos.x, foe.pos.y - p.pos.y, 0.15);
         this.flurry = { targetId: foe.id, hitsLeft: 3, nextHit: 11, syn };
         break;
@@ -704,7 +923,11 @@ export class SkillSystem {
         d.sfx('skillPoison');
         p.poisonBladeTicks = 900;
         p.buffMax.poison = 900;
-        d.vfx('vfx_aura', p.pos.x, p.pos.y, { scale: 0.9, lift: 22, fps: 18, tint: 0x86c85a, overlay: true });
+        // CAST (it.115): the poison sigil under the rogue, the claw over the blades;
+        // a green haze rides the hero while the coat lasts. Hits land through `combat:swing`.
+        d.vfx('fx_poison_cast', p.pos.x, p.pos.y, { scale: 0.8, depthBias: -20, alpha: 0.9 });
+        d.vfx('fx_poison_claw', p.pos.x, p.pos.y, { scale: 0.7, lift: 22, overlay: true });
+        this.buffAura('poison', 'fx_status_poison', { scale: 0.5, lift: 20, alpha: 0.45, overlay: true, fps: 15 }, () => p.poisonBladeTicks);
         d.burst(p.pos.x, p.pos.y, 0x86c85a, 10);
         d.text(p.pos.x, p.pos.y - 1.2, 'BLADES ENVENOMED', 'crit');
         break;
@@ -713,9 +936,21 @@ export class SkillSystem {
         d.sfx('skillVanish');
         p.stealthTicks = syn.status ? 360 : 300;
         p.buffMax.stealth = p.stealthTicks;
-        d.vfx('vfx_whirl', p.pos.x, p.pos.y, { scale: 1.1, flat: true, fps: 26, tint: 0x5a5478 });
-        d.vfx('vfx_splash', p.pos.x, p.pos.y, { scale: 1.2, lift: 18, fps: 18, tint: 0x6a6480, alpha: 0.8 });
+        // CAST (it.115): the rift swallows the hero in a burst of smoke; when
+        // the stealth clock runs out the rift reopens where they stand.
+        d.vfx('fx_warp_b', p.pos.x, p.pos.y, { scale: 0.9, lift: 20, tint: 0x9a90c8, overlay: true });
+        d.vfx('fx_smoke_burst', p.pos.x, p.pos.y, { scale: 1.3, lift: 14, alpha: 0.85, tint: 0x8880a0 });
+        d.vfx('fx_smoke_dir', p.pos.x, p.pos.y, { scale: 1.0, lift: 18, rotation: -Math.PI / 2, alpha: 0.7, tint: 0x8880a0 });
         d.burst(p.pos.x, p.pos.y, 0x6a6480, 16);
+        const token = ++this.stealthCast;
+        this.watch(
+          () => p.stealthTicks <= 0 || this.stealthCast !== token,
+          () => {
+            if (p.action === 'dead' || this.stealthCast !== token) return;
+            d.vfx('fx_warp_c', p.pos.x, p.pos.y, { scale: 0.7, lift: 20, tint: 0x9a90c8, overlay: true });
+            d.vfx('fx_smoke_dir', p.pos.x, p.pos.y, { scale: 0.9, lift: 16, rotation: -Math.PI / 2, alpha: 0.7, tint: 0x8880a0 });
+          },
+        );
         d.text(p.pos.x, p.pos.y - 1.2, 'VANISH', 'miss');
         break;
       }
@@ -728,18 +963,25 @@ export class SkillSystem {
         d.shake(0.3);
         p.showSlash('crit');
         const hit = new Set<number>();
+        const rot = SkillSystem.screenAngle(aim);
+        // CAST (it.115): the necrotic cut opens where the hero stood; a violet
+        // trail lies along the ground behind the dash.
+        d.vfx('fx_necro_2', sx, sy, { scale: 0.8, lift: 20, rotation: rot, overlay: true, alpha: 0.95 });
         for (let i = 0; i <= 8; i++) {
           const px = sx + ((p.pos.x - sx) * i) / 8;
           const py = sy + ((p.pos.y - sy) * i) / 8;
           d.burst(px, py, 0x6a6480, 2);
+          if (i % 2 === 1) d.vfx('fx_dash_trail', px, py, { scale: 1.4, rotation: rot, depthBias: -20, tint: 0xb090ff, alpha: 0.8 });
           for (const foe of d.enemiesNear(px, py, 1.1)) {
             if (hit.has(foe.id)) continue;
             hit.add(foe.id);
-            d.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.7, lift: 22, fps: 30, rotation: SkillSystem.screenAngle(aim), tint: 0xc0a8ff, overlay: true });
+            // IMPACT: the shadow blade through the body.
+            d.vfx('fx_necro_1', foe.pos.x, foe.pos.y, { scale: 0.75, lift: 20, rotation: rot, overlay: true });
+            d.vfx('vfx_slash', foe.pos.x, foe.pos.y, { scale: 0.6, lift: 22, fps: 30, rotation: rot, tint: 0xc0a8ff, overlay: true, alpha: 0.8 });
             this.damage(foe, Math.round(prof.minDamage * 1.8), Math.round(prof.maxDamage * 1.8), p.facing.x, p.facing.y, 0.5);
           }
         }
-        d.vfx('vfx_strike', p.pos.x, p.pos.y, { scale: 0.8, lift: 18, fps: 30, rotation: SkillSystem.screenAngle(aim) + Math.PI, tint: 0xb0a0e8 });
+        d.vfx('fx_necro_2', p.pos.x, p.pos.y, { scale: 0.7, lift: 18, rotation: rot + Math.PI, alpha: 0.8 });
         break;
       }
     }

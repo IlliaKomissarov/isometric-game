@@ -159,6 +159,12 @@ menu, `?depth=3` starts on a floor. Dev builds expose `window.__game` (the live 
 `loop.step(n)` advances the simulation), `window.__menu` (the title flow) and `window.__layout`
 (layout, performance scaler, touch controls).
 
+THE MENAGERIE (it.114) is on the title: any of the game's creatures or townsfolk worn as a
+costume on the sand, to judge an animation in motion. `docs/graphics-update.md` tracks the
+graphics update; the raw art drop lives under `public/assets/graphics update/` (gitignored)
+and is baked by the scripts under `scripts/` through `scripts/bakelib.py` (Python 3.12,
+Pillow, numpy).
+
 Two QA harnesses ship in `src/dev/` and never reach a build:
 
 ```js

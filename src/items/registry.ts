@@ -18,7 +18,7 @@
  * add affixes and an enchantment.
  */
 
-import type { ItemDef, WeaponKind } from './catalog';
+import type { FoodTier, ItemDef, WeaponKind } from './catalog';
 import { ENCHANTS, type Effect } from './effects';
 import type { EquipmentSlot } from '@/network/Serialization';
 
@@ -100,6 +100,47 @@ export const SHAPES: Shape[] = [
   { key: 'orbrod', desc: "A frost focus: it chills, and in every tier it chills harder.", name: 'Orb Rod', kind: 'wand', icon: 1498, dmg: [4, 7], speed: 0.95, innates: [proc('chill', 0.2), proc('chill', 0.3), proc('chill', 0.4, 1.2)] },
 ];
 
+/**
+ * THE TURNTABLES (it.114): the 25 baked weapon spins (`spin_weapon_<slug>`,
+ * 30 frames, one direction) mapped onto the shapes they resemble, so the
+ * inspect view can turn a blade in the light. A shape without one shows its
+ * icon; nothing is procedural.
+ */
+const SHAPE_SPIN: Record<string, string> = {
+  shortsword: 'elven_leaf_blade',
+  blade: 'knight_s_longsword',
+  longsword: 'knight_s_longsword',
+  saber: 'pirate_cutlass',
+  claymore: 'highland_claymore',
+  greatsword: 'crystal_greatsword',
+  rapier: 'duelist_s_rapier',
+  falchion: 'falchion',
+  dirk: 'rogue_s_dagger',
+  kris: 'jeweled_dagger',
+  katana: 'katana',
+  scimitar: 'pirate_cutlass',
+  twinblade: 'elven_leaf_blade',
+  hatchet: 'dwarven_war_axe',
+  cleaver: 'orcish_cleaver',
+  axe: 'dwarven_war_axe',
+  broadaxe: 'twin_moon_battle_axe',
+  battleaxe: 'twin_moon_battle_axe',
+  greataxe: 'twin_moon_battle_axe',
+  hammer: 'warhammer',
+  maul: 'giant_s_maul',
+  flail: 'spiked_mace',
+  morningstar: 'morning_star',
+  warpick: 'war_pick',
+  spear: 'hunting_spear',
+  pike: 'halberd',
+  glaive: 'halberd',
+  sickle: 'reaper_s_scythe',
+  wand: 'wizard_s_staff',
+  scepter: 'paladin_s_mace',
+  rod: 'wizard_s_staff',
+  orbrod: 'wizard_s_staff',
+};
+
 const weapon = (id: string, name: string, kind: WeaponKind, icon: number, band: Band, dmg: [number, number], color: number, extra: Partial<ItemDef> = {}): ItemDef => ({
   id,
   name,
@@ -128,6 +169,7 @@ for (let t = 0; t < TIERS.length; t++) {
         critBonus: s.crit,
         reachBonus: s.reach,
         innate,
+        spin: SHAPE_SPIN[s.key] ? `spin_weapon_${SHAPE_SPIN[s.key]}` : undefined,
         desc: `${s.desc} ${tier.name} tier: iLvl ${tier.band[0]}–${tier.band[1]}.`,
       }),
     );
@@ -135,9 +177,9 @@ for (let t = 0; t < TIERS.length; t++) {
 }
 // Staves (1801–1808): the mage's reach in three tiers.
 WEAPONS.push(
-  weapon('ashwood_staff', 'Ashwood Staff', 'wand', 1801, [1, 38], [4, 7], 0xb08a5a, { reachBonus: 0.5, innate: trait('manaOnHit', 0.6) }),
-  weapon('gilded_staff', 'Gilded Staff', 'wand', 1802, [25, 70], [5, 8], 0xe8b84c, { reachBonus: 0.5, innate: trait('manaOnHit') }),
-  weapon('crystal_staff', 'Crystal Staff', 'wand', 1803, [55, 100], [6, 9], 0x7fc8ff, { reachBonus: 0.5, innate: proc('chill', 0.35, 1.2) }),
+  weapon('ashwood_staff', 'Ashwood Staff', 'wand', 1801, [1, 38], [4, 7], 0xb08a5a, { reachBonus: 0.5, innate: trait('manaOnHit', 0.6), spin: 'spin_weapon_wizard_s_staff' }),
+  weapon('gilded_staff', 'Gilded Staff', 'wand', 1802, [25, 70], [5, 8], 0xe8b84c, { reachBonus: 0.5, innate: trait('manaOnHit'), spin: 'spin_weapon_wizard_s_staff' }),
+  weapon('crystal_staff', 'Crystal Staff', 'wand', 1803, [55, 100], [6, 9], 0x7fc8ff, { reachBonus: 0.5, innate: proc('chill', 0.35, 1.2), spin: 'spin_weapon_wizard_s_staff' }),
 );
 
 /** UNIQUES (1681–1800): legendary and mythic rolls only. Named steel with two innates. */
@@ -274,30 +316,99 @@ export const MATERIAL_ORDER: readonly string[] = ['iron_scrap', 'arcane_dust', '
  * belt; healing draughts share a five-second cooldown, the rest a short one.
  */
 export const DRAUGHTS: ItemDef[] = [
-  { id: 'rejuvenation', desc: "Life and resource together, a third each. Counts as a healing draught for the cooldown.", name: 'Draught of Rejuvenation', slot: 'consumable', rarity: 'uncommon', icon: 'raven122', value: 95, use: { heal: 0.35, resource: 0.35 }, color: 0x9a5ad8 },
-  { id: 'potion_haste', desc: "Thirty percent faster on your feet for eight seconds. Kiting, fleeing, and reaching the stairs first.", name: 'Draught of Haste', slot: 'consumable', rarity: 'uncommon', icon: 'raven121', value: 120, use: { haste: 480 }, color: 0x7fd67f },
-  { id: 'potion_stone', desc: "Forty percent of every blow turned for eight seconds; stacks under the 75% cap with Warding lines.", name: 'Draught of Stone', slot: 'consumable', rarity: 'uncommon', icon: 'raven123', value: 120, use: { stone: 480 }, color: 0x5f7fdf },
-  { id: 'potion_might', desc: "A quarter more damage from everything for ten seconds. Drink it before the warden, not after.", name: 'Draught of Might', slot: 'consumable', rarity: 'rare', icon: 'raven269', value: 150, use: { might: 600 }, color: 0xe0803a },
-  { id: 'greater_health', desc: "Eight tenths of your life back. The same five-second cooldown as any healing draught.", name: 'Greater Healing Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven270', value: 80, use: { heal: 0.8 }, color: 0xc83030 },
-  { id: 'greater_mana', desc: "Your whole pool refilled. The same two-second cooldown as any resource draught.", name: 'Greater Mana Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven68', value: 80, use: { resource: 1 }, color: 0x4a6ad8 },
+  { id: 'rejuvenation', desc: "Life and resource together, a third each. Counts as a healing draught for the cooldown.", name: 'Draught of Rejuvenation', slot: 'consumable', rarity: 'uncommon', icon: 'raven122', sprite: 'item_potion_rejuvenation', spin: 'spin_potion_rejuvenation', value: 95, use: { heal: 0.35, resource: 0.35 }, color: 0x9a5ad8 },
+  { id: 'potion_haste', desc: "Thirty percent faster on your feet for eight seconds. Kiting, fleeing, and reaching the stairs first.", name: 'Draught of Haste', slot: 'consumable', rarity: 'uncommon', icon: 'raven121', sprite: 'item_potion_haste', spin: 'spin_potion_haste', value: 120, use: { haste: 480 }, color: 0x7fd67f },
+  { id: 'potion_stone', desc: "Forty percent of every blow turned for eight seconds; stacks under the 75% cap with Warding lines.", name: 'Draught of Stone', slot: 'consumable', rarity: 'uncommon', icon: 'raven123', sprite: 'item_potion_stone', spin: 'spin_potion_stone', value: 120, use: { stone: 480 }, color: 0x5f7fdf },
+  { id: 'potion_might', desc: "A quarter more damage from everything for ten seconds. Drink it before the warden, not after.", name: 'Draught of Might', slot: 'consumable', rarity: 'rare', icon: 'raven269', sprite: 'item_potion_might', spin: 'spin_potion_might', value: 150, use: { might: 600 }, color: 0xe0803a },
+  { id: 'greater_health', desc: "Eight tenths of your life back. The same five-second cooldown as any healing draught.", name: 'Greater Healing Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven270', sprite: 'item_potion_greater_health', spin: 'spin_potion_greater_health', value: 80, use: { heal: 0.8 }, color: 0xc83030 },
+  { id: 'greater_mana', desc: "Your whole pool refilled. The same two-second cooldown as any resource draught.", name: 'Greater Mana Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven68', sprite: 'item_potion_greater_mana', spin: 'spin_potion_greater_mana', value: 80, use: { resource: 1 }, color: 0x4a6ad8 },
 ];
 
-/** RECIPE SCROLLS (it.80): read one to learn an enchantment for the forge. */
-export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r) => ({
+/** RECIPE SCROLLS (it.80): read one to learn an enchantment for the forge. Three baked scroll turntables take turns (it.114). */
+export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r, i) => ({
   id: `recipe_${r.key}`,
   name: `Recipe: ${r.name}`,
   slot: 'consumable',
   rarity: 'rare',
   icon: `raven${r.icon}`,
+  spin: `spin_scroll_${'abc'[i % 3]}`,
   value: 220,
   use: { recipe: r.key },
   color: 0xd8c890,
   desc: `${r.desc} Read it to learn the recipe forever; then lay it on a weapon at the camp forge.`,
 }));
 
-export const RAVEN_ITEMS: ItemDef[] = [...WEAPONS, ...UNIQUES, ...ARMOR, ...JEWELRY, ...MATERIALS, ...DRAUGHTS, ...RECIPES];
+/**
+ * FOOD (it.114). Twenty-five dishes from the bake (`item_food_<slug>` singles,
+ * `spin_food_<slug>` turntables), medieval fare only. Eaten from the pack or
+ * the belt; the heal is served over three seconds and every bite feeds the
+ * HUNGER gauge. Tiers:
+ *   snack  8% life  +15 hunger   12 gold
+ *   meal  15% life  +35 hunger   28 gold
+ *   feast 30% life  +70 hunger   70 gold  (heals to FULL when already full)
+ * Foods stack in the pack like draughts (one entry each, one cell together).
+ */
+export const FOOD_TIER: Record<FoodTier, { heal: number; hunger: number; value: number; rarity: ItemDef['rarity']; color: number }> = {
+  snack: { heal: 0.08, hunger: 15, value: 12, rarity: 'common', color: 0xd8a85c },
+  meal: { heal: 0.15, hunger: 35, value: 28, rarity: 'uncommon', color: 0xe0803a },
+  feast: { heal: 0.3, hunger: 70, value: 70, rarity: 'rare', color: 0xffb347 },
+};
 
-/** Every base that can be rolled or forged (no materials, draughts or recipes). */
+const food = (slug: string, name: string, tier: FoodTier, desc: string): ItemDef => {
+  const t = FOOD_TIER[tier];
+  return {
+    id: `food_${slug}`,
+    name,
+    slot: 'food',
+    rarity: t.rarity,
+    sprite: `item_food_${slug}`,
+    spin: `spin_food_${slug}`,
+    value: t.value,
+    use: { food: { heal: t.heal, hunger: t.hunger, tier } },
+    color: t.color,
+    desc,
+  };
+};
+
+export const FOODS: ItemDef[] = [
+  // Snacks: a bite on the stair.
+  food('crusty_bread_loaf', 'Crusty Loaf', 'snack', 'Yesterday’s bread, still good. The delver’s staple.'),
+  food('salted_pretzel', 'Salted Pretzel', 'snack', 'Twisted dough, coarse salt. Sold by the dozen outside the tavern.'),
+  food('grilled_sausage_pair', 'Grilled Sausages', 'snack', 'Two links off the brazier, skins split and hissing.'),
+  food('meat_skewer', 'Meat Skewer', 'snack', 'Mutton and onion on a stick, charred at the edges.'),
+  food('berry_tart', 'Berry Tart', 'snack', 'Hedge berries in a butter crust. Sweet enough to forget the dark for a bite.'),
+  food('blueberry_muffin', 'Bilberry Muffin', 'snack', 'A cake from the goodwife’s oven, studded with bilberries.'),
+  food('steamer_dumplings', 'Steamed Dumplings', 'snack', 'Pork and leek in thin dough, from the porter’s stall by the gate.'),
+  food('apple_pie_slice', 'Apple Pie Slice', 'snack', 'Orchard apples and cinnamon. The crust holds the warmth an hour.'),
+  // Meals: a plate at the table.
+  food('hearty_stew_bowl', 'Hearty Stew', 'meal', 'Root vegetables and mutton in a bowl you can stand a spoon in.'),
+  food('golden_meat_pie', 'Meat Pie', 'meal', 'A raised pie with a golden lid and a filling that is mostly meat.'),
+  food('roast_turkey_leg', 'Roast Turkey Leg', 'meal', 'The bird’s leg, skin crisp, eaten off the bone on the march.'),
+  food('grilled_fish_plate', 'Grilled Fish', 'meal', 'A river fish grilled whole, lemon and salt. The riverside’s supper.'),
+  food('fried_eggs_and_toast', 'Eggs and Toast', 'meal', 'Two eggs fried in butter on thick toast. Breakfast at any hour.'),
+  food('baked_mussels_plate', 'Baked Mussels', 'meal', 'Mussels baked with garlic and crumb. From the drowned levels, they say.'),
+  food('clam_chowder_bread_bowl', 'Clam Chowder', 'meal', 'Cream and clams in a hollowed loaf. Eat the bowl.'),
+  food('pumpkin_soup_bowl', 'Pumpkin Soup', 'meal', 'Autumn in a bowl, thick and orange, with a curl of cream.'),
+  food('stuffed_cabbage_rolls', 'Cabbage Rolls', 'meal', 'Cabbage leaves wrapped round spiced meat and barley, stewed soft.'),
+  food('shepherds_pie', 'Shepherd’s Pie', 'meal', 'Minced lamb under a roof of potato, browned at the ridges.'),
+  food('pancake_stack', 'Pancake Stack', 'meal', 'Four pancakes, honey between them, butter melting off the top.'),
+  food('loaded_baked_potato', 'Baked Potato', 'meal', 'A potato from the coals split and loaded with butter and cheese.'),
+  // Feasts: a board for the table.
+  food('whole_roast_chicken', 'Whole Roast Chicken', 'feast', 'A whole bird, roasted golden. Enough to bring a hero back from the edge.'),
+  food('glazed_holiday_ham', 'Glazed Ham', 'feast', 'A ham glazed in honey and cloves, carved thick. A feast day’s centrepiece.'),
+  food('grilled_steak_board', 'Steak Board', 'feast', 'A slab of beef seared on the iron, rested and sliced on the board.'),
+  food('roasted_quail_board', 'Roasted Quail', 'feast', 'A brace of quail roasted with herbs, the lord’s table brought underground.'),
+  food('pot_roast_board', 'Pot Roast', 'feast', 'Beef braised all day with carrots and onion, falling apart under the knife.'),
+];
+
+/** The dishes of one tier (for the drop roll and the merchants). */
+export function foodsOfTier(tier: FoodTier): ItemDef[] {
+  return FOODS.filter((d) => d.use?.food?.tier === tier);
+}
+
+export const RAVEN_ITEMS: ItemDef[] = [...WEAPONS, ...UNIQUES, ...ARMOR, ...JEWELRY, ...MATERIALS, ...DRAUGHTS, ...RECIPES, ...FOODS];
+
+/** Every base that can be rolled or forged (no materials, draughts, recipes or food). */
 export function gearBases(): ItemDef[] {
-  return RAVEN_ITEMS.filter((d) => d.slot !== 'material' && d.slot !== 'consumable');
+  return RAVEN_ITEMS.filter((d) => d.slot !== 'material' && d.slot !== 'consumable' && d.slot !== 'food');
 }

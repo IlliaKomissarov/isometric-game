@@ -81,7 +81,7 @@ export class DamageTextSystem {
     ft.node.visible = true;
     ft.active = true;
     ft.life = 0;
-    ft.maxLife = kind === 'crit' ? 1.25 : 1.0;
+    ft.maxLife = kind === 'crit' ? 1.6 : 1.35; // 1.25 / 1.0 until it.114: the owner could not read them.
     ft.vy = kind === 'crit' ? 40 : 32;
   }
 

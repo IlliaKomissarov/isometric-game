@@ -112,7 +112,7 @@ export class SettingsUI {
     ];
     this.panel.innerHTML = `
       <div class="set-corner tl"></div><div class="set-corner tr"></div><div class="set-corner bl"></div><div class="set-corner br"></div>
-      <h3 class="set-head">SETTINGS<button class="tp-close" data-close-x title="Close (O or ESC)"><i></i></button></h3>
+      <h3 class="set-head">SETTINGS<small class="set-ver">v${__APP_VERSION__} · ${__APP_ITERATION__}</small><button class="tp-close" data-close-x title="Close (O or ESC)"><i></i></button></h3>
       <div class="set-tabs">
         <button type="button" data-tab="audio" class="on">AUDIO</button>
         <button type="button" data-tab="visuals">VISUALS</button>

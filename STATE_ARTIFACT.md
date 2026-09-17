@@ -3,7 +3,7 @@
 A persistent tracking document for system health, architecture, audits and the roadmap.
 Update it with every iteration that changes a system's shape, a measured number, or a known issue.
 
-- **Project version:** 0.1.0 (iteration 113, 2026-09-14)
+- **Project version:** 0.2.0 (iteration 114, 2026-09-17)
 - **Branch / deploy:** `main` → GitHub Pages (`gh-pages`), https://illiakomissarov.github.io/isometric-game/
 - **Owner:** Illia Komissarov
 
@@ -258,6 +258,25 @@ Items examined and left as they are, with reasons:
 | Every placed town prop was pushed twice | Low (render) | `tryBlock` re-claims tiles without a second push |
 | Floor transitions stalled in a hidden tab (page timers throttled to once a minute) | Medium (robustness) | `core/workerTimer.ts`: the run's `later()` waits on a Web Worker's clock |
 | Tutorial cards could leave a phone's box; buttons under 44 px mid-animation | Medium (mobile) | cards clamped to the layout viewport, off-screen targets marked at the edge, 46 px touch targets, eleven-device sweep in qa75 |
+
+### Iteration 114 additions (the graphics update)
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| Depths 1-20 drew procedural stone cubes | High (visual) | `scripts/bake-dungeon.py` + `DungeonGenerator.planWallPieces` + `SceneManager`: tileset floors by theme, two-tile wall runs seated like the inn's, arches, doors, corners, pillars, torches; 660 cubes a floor → 188 pieces |
+| The visible set stepped per tile ("the light lags") | Medium (feel) | allocation-free `updateVisibility` re-run from `updateRender` past a third of a tile; a lit ring round the sub-tile position; `addDynamicLight` |
+| Dark foes unreadable (the cellar's widow) | High (UX) | `render/Outline.ts` rim driven by the light level, a hit flash rim, a target rim; `sprite.minLight` |
+| Shake capped at 5 px and unscaled by zoom | Low (feel) | 14 px, two-sine noise, roll, `zoomPunch`, zoom-scaled |
+| Torches, lamps, columns, banners blocked road tiles; houses were walk-through | High (bug) | `PROP_FOOTPRINT` (`full`/`post`/`none`), posts moved to the verge or dropped, clutter swept, door columns closed, sprites scaled to their painted base, `assertFootprints` audit (0 violations, every floor) |
+| Every open gateway's plate said "· THE FOREST"; notes never followed the quest | Medium (bug) | plates name the destination; notes read the ledger |
+| The training ground unreachable while the errand was open | Medium (bug) | THE YARD on the officer's `active` page |
+| Notices vanished unread; nine timers, no stack | Medium (UX) | `ui/Toast` + the ledger watcher; every literal lengthened |
+| The difficulty pick invisible (an `!important` metal plate flattened `.selected`) | High (UX) | the pick lifted and gold-framed; one shared button language |
+| Touch skill icons square in round buttons | Low (UX) | `clip-path: circle(50%)` over a socket |
+| No way to judge a creature's animation in motion | Feature | THE MENAGERIE (floor -2) + `render/Puppet` + `render/costumes` |
+| No food, invisible gold, gear too common | Feature | 25 dishes, hunger, coin drops, `rollDrop` 40→48% nothing, the INSPECT view |
+| The it.112 catapult swung a plank | Medium (visual) | the baked machine's throw/load/wreck clips when resident |
+| The dev server starved on the 21 GB drop | High (tooling) | `server.watch.ignored` for the raw folders |
 
 ### Iteration 113 additions (the earlier floor tiles)
 

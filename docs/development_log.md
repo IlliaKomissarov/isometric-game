@@ -1,5 +1,230 @@
 # Development Log
 
+## 2026-09-17 (iteration 114) - The graphics update: twenty-one gigabytes of art, and everything it touched
+
+The owner dropped 21 GB of new art under `public/assets/graphics update/` -
+700,000 files, 45 folders, most of them per-frame renders - and asked for a
+full pass: detail, variety, a dark-fantasy look, lighting attached to the hero,
+effects on everything, food, gold you can see, a menu you can read, a place to
+try any creature on, and a list of standing bugs. This iteration is the first
+shipment of it. `docs/graphics-update.md` is the tracker and says what is left.
+The drop itself is gitignored; nothing raw is committed, only what the scripts
+under `scripts/` bake out of it.
+
+### THE PIPELINE, THEN THE ART
+
+Eight bake scripts share `scripts/bakelib.py` now - the projection mask, the
+"columns are frames, rows are directions" layout, the painted-bounds anchor,
+and a LOCKED manifest writer, because eight bakes ran at once and two of them
+writing `manifest.json` in the same second would have lost each other's keys
+(Windows also refuses the rename while another process reads the file; the
+writer waits it out). The manifest went from 159 anims and 748 singles to 523
+anims and 1,271 singles (1,794 files, 153 MB).
+
+- **Creatures** (`bake-creatures-a/b/c.py`, 137 sheets): the packs are
+  pre-rendered 3D at SIXTEEN facings; every second angle gives our eight. Which
+  angle faces which way was never written down, so every pack was laid out on a
+  contact sheet and LOOKED AT before it was trusted - the vendor family reads
+  `000` as north and turns clockwise, the moth reads `000` as south, the PVGames
+  grids run S,W,E,N then the diagonals, the PixelOver exports start at SW.
+  Rig scale comes off the IDLE sheet's painted bounds, because a brute's club or
+  a halberdier's thrust paints twice the height of the body standing still.
+- **The crypt's stone** (`bake-dungeon.py`, 183 pieces): four depth themes of
+  64x32 floor diamonds cut with the projection mask and gain-matched so four
+  variants never read as a chequerboard (the first frost set did, and was
+  re-cut from one Ice family), wall runs seated EXACTLY like the inn and cellar
+  pieces of it.96/97 (same bottom-left rule, same 128x256 canvas, same painted
+  foot), arches, doors, corners, pillars, stairs, torches, a brazier, 88
+  Infernus props and 28 Ancient pieces. Depths 1-20 had drawn procedural cubes
+  since it.9.
+- **Effects** (`bake-vfx.py`, 111 one-direction strips) from six vendors, each
+  with its own fps and blend written down: additive for fire and light, NORMAL
+  for blood, smoke and the coin burst.
+- **Items** (`bake-items.py`, 278 entries): 50 dishes, 14 potions, six
+  scrolls, 25 weapons - each an icon AND a thirty-frame turntable - 80
+  hand-drawn Arsenal icons, and, because the drop had no coin in it, Flare's
+  coin piles and OpenGameArt's gold (CC-BY-SA 3.0, credited).
+- **Buildings and props** (`bake-buildings.py`, 165 singles), **siege engines**
+  (`bake-siege.py`: catapult idle/throw/load/move/break/wreck at eight facings,
+  the tumbling stone; ballista idle/shoot and the bolt).
+
+### THE CRYPT IS BUILT OF STONE NOW
+
+`SceneManager` draws the tileset when it is resident and the cubes when it is
+not. Floors: `dun_<theme>_<v>`, blood on 4.5% of open tiles past the second
+depth, one pentagram block in a big room on temple and ember depths, seeded.
+Walls: `DungeonGenerator.planWallPieces` turns every open tile with solid wall
+to its north or west into a FACE, groups faces into runs, and lays a two-tile
+piece at 0, 2, 4...; an odd run's last piece lands at L-2 and overlaps the one
+before, which is invisible, rather than hanging a face out over open floor.
+Corridor mouths take arches, the quarry's gates take doors, convex corners take
+the corner piece, and a wall tile with three open sides is a pillar. Nothing is
+drawn on a room's far sides - the tileset has no south-facing pieces and the
+inn never needed them. 660 cube sprites a floor became 188 pieces. The wall
+cutaway learned to test a tall piece by its own rect and its own key. Every
+sixth run piece carries a torch, lit by `lighting.addSource`.
+
+### LIGHT, RIM, SHAKE
+
+The owner: "attach the light source tightly to the player so it doesn't lag."
+The TINT already followed the interpolated position every frame; what stepped
+was the VISIBLE SET, recomputed only on tile crossings by a flood that
+allocated a `Set` and re-ran Bresenham over four thousand tiles on the town.
+`Lighting.updateVisibility` is allocation-free now (generation stamps, flat
+typed-array lists, a wall snapshot), so `updateRender` can re-run it when the
+sub-tile position has moved more than a third of a tile, and it lights a RING
+of explored tiles round the sub-tile position with a per-tile line-of-sight
+check. A dynamic light list (`addDynamicLight` / `moveDynamicLight`) composes
+into the same tint as the baked sources.
+
+"Some monsters are very hard to see in dark locations - noticeable on dark
+spiders." `render/Outline.ts` is a Pixi v8 filter that rims a sprite's alpha
+silhouette; `Enemy` wears it with an alpha DRIVEN BY THE DARK - a faint blood
+or gold rim where the light is under 0.42, none in torchlight - a flash rim on
+a hit, and a breathing gold rim on the foe being struck. The filter is attached
+only while its alpha is over 0.02, so the lit case costs nothing. `minLight`
+floors a kind's tint so a widow never renders black.
+
+The camera's shake was capped at five pixels and not scaled by zoom. It is
+fourteen now, two sines instead of per-frame noise, up to 0.6 degrees of roll,
+scaled by the zoom, with a `zoomPunch`; every landed blow moves the eye a
+little, a crit more, a warden's fall a lot, a catapult stone the most.
+
+### EFFECTS ON EVERYTHING
+
+`render/effects.ts` is a catalogue of COMPOSED beats - a death is a pool under,
+a spray up, a flash and the skull-smoke rising; a warden's death a ring of
+eight explosions walking outward; a level-up a pillar of light behind and in
+front of the body. Every skill has a cast beat and an impact beat from the
+elemental sets (fire under the caster and a burst on the victim, ice shatter
+in a ring, the whirlwind riding the hero, the trap's magic circle). Statuses
+ride the foe for their whole life - a bleed drips, a poison hazes, a burn
+flickers, a stun orbits stars - and stop with it. The draughts wear auras
+while they last. The screen fills with blood when the hero dies and drains
+when they rise. A foe that notices you shows an alert.
+
+### FOOD, HUNGER, GOLD
+
+Twenty-five dishes in three tiers (snack, meal, feast), bought from the
+alchemist, found in chests and dropped by foes, eaten from the belt or the
+pack, healing 8 / 15 / 30 percent OVER three seconds - a feast heals to full
+when the belly is nearly full already. HUNGER is a gauge on the plate and a
+label by the hero: it falls one point every forty seconds on the crypt's
+depths only, and below a quarter the hero is STARVING - no regeneration, a
+tenth off every blow. Foes drop coins now (a third of them, by level), chests
+always hold a purse, gear is rarer (a kill drops gear a quarter of the time,
+down from a third), and every dropped coin is a sprite that bounces and rests.
+The inventory has an INSPECT view (a right-click or a long press) that spins
+the item's thirty-frame turntable, rarity glows on the cells, and a fork on
+every dish.
+
+### TWENTY-THREE NEW KINDS, AND TWO KINDS OF TOWNSFOLK
+
+The widows (red, bone, venom), the orc brute, spearman and warrior, the frost
+howler, the blighted treant, the ember drake (a breather), the feathered wyrm,
+the marked ghoul, the crypt moth, the shambling corpse, the free company's
+halberdier and duelist, the grave reaper, the apex predator and stalker, the
+horned one, the temple gargoyle, the verdant spider, the flayed golem and the
+hooded creeper - each with stats against its neighbours, a lore line, a voice
+and a place in the pools. Nothing was retired: the old widow keeps the forest.
+
+"Some city residents look too high-quality and modern against the others."
+They did: the coc_chars citizens are 34x60 pixel art at four frames, the
+labourer, the carter and the Villager_01 body are smooth sixteen-frame renders.
+They are SEPARATED now, not deleted: `STREET_FOLK` (the pixel folk) keeps the
+old quarter and the burnt east; `MARKET_FOLK` (the smooth bodies, with the
+duelist and the halberdier) walks the Market Ward, the taproom and the open
+country past the gates, where the pre-rendered trees are their own kind.
+
+### THE MENAGERIE
+
+"A separate mode where I can select ANY mob or NPC and run around as them."
+The coliseum's sand with the gates shut (floor -2, mode `menagerie`), reached
+from the title, from the cheat sheet or from a creature's bestiary page. The
+simulation does not change: the hero is still the hero - the same collider,
+movement and actions - and `render/Puppet` draws another body's sheets over
+the hero's interpolated state, reading facing, action and distance walked. The
+picker lists 88 costumes with the label AND the source folder ("Blighted
+Treant · treant · mob13"), a search box, the costume's one-shots (roar,
+breath, awake, cast), DEATH and HIT, SUMMON THREE, and the way home. The
+bestiary carries the same reference line and a TRY THIS BODY ON button.
+
+### THE MENU, THE NOTICES, THE SHEET, THE ROADS
+
+The difficulty pick was invisible because an it.72 pressed-metal rule with
+`!important` flattened every `.selected` border on the class screen; the pick
+is lifted and framed in gold now (blood for hardcore), and one shared button
+language covers the title, the class cards, the pause sheet, settings, the
+save panel and the shops. The touch skill icons are clipped to circles over a
+dark socket. The COMMANDS sheet starts folded. The title foot and the settings
+head say `v0.2.0 · it.114`.
+
+Text vanished before it could be read: level-up 4.5 → 7 s, reward 3.4 → 6.5 s,
+descend and death 5.2 → 6.5-7 s, damage numbers 1.0 → 1.35 s, villager
+bubbles 2.2 → 3.4 s. And `ui/Toast`: one stack for every line said in passing,
+kept for a time that scales with its words, dismissed by a click. A LEDGER
+WATCHER compares the quest record to its last snapshot twice a second and
+announces every turn - QUEST TAKEN, QUEST COMPLETE, A ROAD OPENS - so no line
+of the eight thousand had to grow its own notice.
+
+The gateway plates: every open gateway's plate ended in "· THE FOREST" - the
+marsh path and the river gate included - and a gateway's note never changed
+when its quest opened it. The plate names where the road goes now, and the
+notes follow the ledger (the south fields say who holds them). The training
+ground: it.113b left the officer's `active` branch with one word, so a hero
+who took the muster could not reach the dummies; THE YARD is on that page too.
+
+A fresh hero used to appear on the cobbles with the command sheet open and
+nothing said. THE ARRIVAL: the hero starts at the training ground, the bars
+come down once, Sir Ham names the yard and the sign, and finishing the yard
+pays a hundred gold, once.
+
+The Forbidden Arts had not been touched since it.44: every place past the gate
+as well as every depth (one `jumpTo` shared with the harness, which used to
+have its own copy), a FOES tab that spawns any of the fifty kinds at any level,
+a QUESTS tab that sets any ledger key and rebuilds the floor, DRAUGHTS, NOCLIP
+and a purse.
+
+### COLLISION, CUTAWAY, THE CLICK
+
+"Some torches or a random stone on the road act as an impassable barrier,
+while the hero walks through houses." Both true, for different reasons.
+`CLUTTER_KINDS` was the only "does not block" switch and torches, lamps,
+columns and banners were not in it, so each took a whole tile - and the forest
+placed them with no road check. Houses blocked 3x3 and then re-opened two
+tiles as a door column, and their sprites were 30-44% wider than the footprint
+they blocked. There is one `PROP_FOOTPRINT` table now (`full` / `post` /
+`none`): a POST never blocks a road tile and moves to the verge or is dropped;
+clutter on a street is swept; the door columns are closed and the threshold
+sits outside the south edge; every building's sprite is scaled to its PAINTED
+BASE (measured off the atlas, not the texture width - the smithy's texture is
+350 px and its base 229) so what is drawn is what is blocked; the belts stop
+growing trees out of buildings (66 on the farm, 14 on the riverside);
+`assertFootprints` audits every floor and reports zero. A hero under a tree's
+canopy counts as behind it for the cutaway. The click ring is a smaller ring
+that bursts in from the click and breathes.
+
+### THE SIEGE ENGINES
+
+The it.112 sprite-stacked catapult swung a separate plank. When the
+`catapult_*` sheets are resident the dresser draws the artist's machine
+instead: the loaded rest frame, eight frames of the throw, eight of the crew
+winding it back over the four-second cooldown, the wreck, and a stone that
+tumbles through sixteen frames. The plank rig is the fallback.
+
+### Verification
+
+- `tsc --noEmit` clean; PAGES build clean.
+- qa75 gained the arrival read-through and a graphics-update section (the
+  new kinds' sheets, the engine switches, the notice stack, gateway notes, the
+  footprint audit, the yard's purse, the menagerie round trip).
+- The dev server's watcher was crawling the 21 GB drop and starving every
+  request; `vite.config.ts` ignores the raw folders now.
+- Walked in Chrome: the title, the class and difficulty screens, the arrival,
+  the cheat tabs, the menagerie with a costume on, the inventory and bestiary,
+  the battlefield; 0 console errors on the built game.
+- Python 3.12 + Pillow + numpy installed on this machine for the bakes.
+
 ## 2026-09-14 (iteration 113b) - The training ground after the fields
 
 Reported: after the fields errand the training ground cannot be used - pressing E

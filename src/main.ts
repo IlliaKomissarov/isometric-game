@@ -28,7 +28,7 @@ import { Ambience } from '@/engine/Ambience';
 import { Camera } from '@/engine/Camera';
 import { Lighting } from '@/engine/Lighting';
 import { Viewport } from '@/engine/Viewport';
-import { animsForKind, Enemy, PHASE_DIE_TICKS, PHASE_RISE_TICKS, type EnemyKind } from '@/entities/Enemy';
+import { animsForKind, Enemy, ENEMY_TYPES, PHASE_DIE_TICKS, PHASE_RISE_TICKS, type EnemyKind } from '@/entities/Enemy';
 import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, generateArenaMap, generateDungeon, planHearths, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
@@ -44,7 +44,7 @@ import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
 import { SceneManager } from '@/scenes/SceneManager';
 import { CombatSystem } from '@/systems/Combat';
 import { InventorySystem } from '@/systems/Inventory';
-import { LootSystem } from '@/systems/Loot';
+import { COIN_ANIMS, LootSystem } from '@/systems/Loot';
 import { MovementSystem, ATTACK_RANGE } from '@/systems/Movement';
 import { Pathfinder } from '@/systems/Pathfinding';
 import { ProjectileSystem } from '@/systems/Projectiles';
@@ -72,6 +72,10 @@ import { DamageTextSystem } from '@/render/DamageText';
 import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
 import { ChestSystem } from '@/systems/Chests';
 import { CheatMenuUI } from '@/ui/CheatMenu';
+import { MenagerieUI } from '@/ui/Menagerie';
+import { ToastUI } from '@/ui/Toast';
+import { Puppet } from '@/render/Puppet';
+import { allCostumes, costumeAnims, type Costume } from '@/render/costumes';
 import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
@@ -96,11 +100,12 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { RECLAIMED_WORDS, REFUGEE_WORDS, RIVER_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { MARKET_FOLK, RECLAIMED_WORDS, REFUGEE_WORDS, RIVER_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
 import { CineDialogue } from '@/ui/CineDialogue'; // THE CORNER WORD (it.102).
 import { Squad, SQUAD_ANIMS } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
-import { VFX_ANIMS, VfxSystem } from '@/render/Vfx';
+import { VFX_ANIMS, VfxSystem, type VfxHandle } from '@/render/Vfx';
+import { fxAlert, fxBossDeath, fxBuff, fxCatapultImpact, fxCrit, fxDeathBurst, fxHit, fxLevelUp, fxPickupGold, fxPickupRare, fxWarp } from '@/render/effects';
 import { SkillTreeUI } from '@/ui/SkillTree';
 import { CharacterSheetUI } from '@/ui/CharacterSheet';
 import { BestiaryUI } from '@/ui/Bestiary';
@@ -233,7 +238,9 @@ interface World {
   chief: Enemy | null;
 }
 
-type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm' | 'river' | 'field' | 'manor' | 'vault';
+type FloorMode = 'normal' | 'arena' | 'hub' | 'coliseum' | 'menagerie' | 'forest' | 'mines' | 'inn' | 'cellar' | 'farm' | 'river' | 'field' | 'manor' | 'vault';
+/** THE MENAGERIE (it.114): the coliseum's sand with the gates shut, where any body can be tried on. */
+const MENAGERIE_FLOOR = -2;
 /** THE DARK FOREST and THE QUARRY MINES (it.85): two floors past the depths' numbers. */
 const FOREST_FLOOR = 101;
 /**
@@ -293,7 +300,7 @@ const FIELD_MAX_LEVEL = 12;
  * stand on posts the layout picked, the way the eastern quarter's looters do,
  * so the field is the same field on every peer without a spawner in it.
  */
-const FIELD_POOL: EnemyKind[] = ['bandit', 'brigand', 'poacher'];
+const FIELD_POOL: EnemyKind[] = ['bandit', 'brigand', 'poacher', 'halberdier', 'duelist']; // The company's polearms and its fencer (it.114).
 /**
  * HOW MANY STRAGGLERS THE FIELD HAS LEFT (it.112). Once the fourteen scavengers
  * on the layout's posts have been put down for good, the battlefield is not left
@@ -303,7 +310,7 @@ const FIELD_POOL: EnemyKind[] = ['bandit', 'brigand', 'poacher'];
  */
 const FIELD_STRAGGLERS = 4;
 /** THE MANOR'S CELLAR (it.110): what has moved in under a house whose people ran. */
-const VAULT_POOL: EnemyKind[] = ['spider', 'spider', 'zombie', 'zombie', 'ahoul', 'shambler', 'skeleton', 'graveGuard'];
+const VAULT_POOL: EnemyKind[] = ['spider', 'boneWidow', 'zombie', 'corpse', 'ahoul', 'shambler', 'skeleton', 'graveGuard', 'apexStalker']; // The new flesh (it.114).
 /**
  * THE CUTAWAY'S REACH (it.107): how far from the camera, in tiles (Manhattan),
  * a body may be and still ghost the roof in front of it. Wide enough to cover
@@ -322,14 +329,14 @@ const ALLY_AGGRO = 14;
  */
 const ALLY_BIAS = [0.55, 1.35, 0.7, 0.6, 1.5, 0.75] as const;
 const allyBias = (id: number): number => ALLY_BIAS[Math.abs(id) % ALLY_BIAS.length];
-const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'wolf', 'poacher', 'poacher', 'spider', 'spider', 'orc'];
-const MINES_POOL: EnemyKind[] = ['orc', 'orc', 'spider', 'spider', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton'];
+const FOREST_POOL: EnemyKind[] = ['wolf', 'wolf', 'tealSpider', 'poacher', 'poacher', 'venomWidow', 'wyrm', 'orc', 'treant', 'giantMoth', 'krampus']; // it.114
+const MINES_POOL: EnemyKind[] = ['orc', 'orcSpearman', 'orcWarrior', 'orcBrute', 'spider', 'venomWidow', 'lizard', 'shaman', 'archer', 'shambler', 'skeleton', 'wyrm']; // it.114
 /** THE CELLAR (it.97): what crawled in under the inn - vermin and the risen, no men. */
-const CELLAR_POOL: EnemyKind[] = ['spider', 'spider', 'spider', 'zombie', 'zombie', 'ahoul', 'skeleton', 'shambler'];
+const CELLAR_POOL: EnemyKind[] = ['spider', 'boneWidow', 'giantMoth', 'zombie', 'corpse', 'ahoul', 'skeleton', 'shambler']; // it.114
 /** THE FARMLANDS (it.100): a company that took the fields - men under arms, nothing else. */
-const FARM_POOL: EnemyKind[] = ['mercenary', 'mercenary', 'mercenary', 'brigand', 'bandit', 'poacher'];
+const FARM_POOL: EnemyKind[] = ['mercenary', 'mercenary', 'halberdier', 'duelist', 'brigand', 'bandit', 'poacher']; // The company is men (it.114): the treant keeps to the woods.
 /** The mode a floor number stands for (the arena is decided by the caller). */
-const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : f === RIVER_FLOOR ? 'river' : f === FIELD_FLOOR ? 'field' : f === MANOR_FLOOR ? 'manor' : f === VAULT_FLOOR ? 'vault' : 'normal');
+const modeFor = (f: number): FloorMode => (f === 0 ? 'hub' : f === MENAGERIE_FLOOR ? 'menagerie' : f < 0 ? 'coliseum' : f === FOREST_FLOOR ? 'forest' : f === MINES_FLOOR ? 'mines' : f === INN_FLOOR ? 'inn' : f === CELLAR_FLOOR ? 'cellar' : f === FARM_FLOOR ? 'farm' : f === RIVER_FLOOR ? 'river' : f === FIELD_FLOOR ? 'field' : f === MANOR_FLOOR ? 'manor' : f === VAULT_FLOOR ? 'vault' : 'normal');
 
 /** THE QUARRY (it.85): the gates, the keys, the hall and the way home. */
 interface MinesState {
@@ -356,6 +363,8 @@ interface ColiseumState {
   exit: { x: number; y: number } | null;
   /** Active-clock reading when the trial began (it.54). */
   startActive: number;
+  /** THE MENAGERIE (it.114): the same sand with no waves, where costumes are tried on. */
+  menagerie: boolean;
   update: (dt: number) => void;
   destroy: () => void;
 }
@@ -820,6 +829,8 @@ async function boot(): Promise<void> {
       if (s) void beginRun(s.player.archetype, s.pos && s.floor > 0 ? s.floor : 0, { slot: s.slot, save: s });
     },
     settings: () => settings.open(),
+    // THE MENAGERIE (it.114): a throwaway hero on the sand, any body on.
+    menagerie: () => void beginRun(lastHero ?? 'warrior', 0, { slot: MENAGERIE_SLOT, menagerie: true }),
   });
   mainMenu.setLastHero(lastHero);
 
@@ -869,7 +880,11 @@ async function boot(): Promise<void> {
     coop?: CoopStart;
     /** THE DARK'S MEASURE (it.89): a new run's difficulty (a loaded run keeps its own). */
     difficulty?: DifficultyId;
+    /** THE MENAGERIE (it.114): straight onto the sand, and never a save. */
+    menagerie?: boolean;
   }
+  /** The menagerie's throwaway slot: never listed, never continued. */
+  const MENAGERIE_SLOT = 99;
 
   /**
    * CO-OP HEROES (it.59): each class keeps one persistent co-op hero in a
@@ -1084,6 +1099,8 @@ async function boot(): Promise<void> {
     // anything renders; buildWorld fetches the floor's roster itself.
     await spriteLib.ensure([...roster.flatMap((m) => animsForHero(m.cls)), ...animsForHero('warrior')]);
 
+    /** THE BELLY (it.114): hunger read off a save before its inventory system exists. */
+    const savedHunger = new Map<Player, number>();
     /** RESTORE (it.39): the sheet, the bags, the worn gear. */
     const applyHeroSave = (p: Player, ps: PlayerSave): void => {
       p.level = ps.level;
@@ -1102,6 +1119,11 @@ async function boot(): Promise<void> {
       });
       for (const [k, v] of Object.entries(ps.materials ?? {})) if (v > 0) p.addMaterial(k, v);
       if (ps.belt) p.belt = [ps.belt[0] ?? null, ps.belt[1] ?? null];
+      // THE BELLY (it.114): the system may not exist yet on a load; it is applied again once it does.
+      if (ps.hunger !== undefined) {
+        savedHunger.set(p, ps.hunger);
+        InventorySystem.of(p)?.setHunger(ps.hunger);
+      }
       for (const k of ps.recipes ?? []) p.recipes.add(k);
       for (const id of ps.backpack) if (itemDef(id)) p.addItem(id);
       for (const { itemId } of ps.equipped) {
@@ -1404,7 +1426,7 @@ async function boot(): Promise<void> {
       waveBanner.classList.remove('show');
       void waveBanner.offsetWidth;
       waveBanner.classList.add('show');
-      later(() => waveBanner.classList.remove('show'), 2600);
+      later(() => waveBanner.classList.remove('show'), 4200); // 2600 → 4200 (it.114).
     };
     const arenaModal = document.createElement('div');
     arenaModal.id = 'arena-modal';
@@ -1687,6 +1709,16 @@ async function boot(): Promise<void> {
     let pendingRest: number | null = null;
     const makeInventory = (p: Player, slot: number): InventorySystem => {
       const inv = new InventorySystem(p, {
+        // FOOD (it.114): a dish heals in slices, and says what it was.
+        feed: (fraction) => {
+          const healed = world.combat.heal(p.id, Math.round(p.hpMax * fraction));
+          if (healed > 0 && p === player) updateOrb();
+        },
+        eat: (def, hunger) => {
+          if (p !== player) return;
+          world.dmgText.show(p.pos.x, p.pos.y - 0.9, `${def.name.toUpperCase()} · +${hunger} HUNGER`, 'crit');
+          world.ambience.burst(p.pos.x, p.pos.y, 0xe0a458, 8);
+        },
         heal: (fraction) => {
           const healed = world.combat.heal(p.id, Math.round(p.hpMax * fraction));
           if (p === player) audio.sfx('potion');
@@ -1704,6 +1736,10 @@ async function boot(): Promise<void> {
         buff: (kind, ticks) => {
           if (p !== player) return;
           audio.sfx('skillBuff');
+          // THE AURA (it.114): a looping effect rides the hero while the draught lasts.
+          buffAuras[kind]?.h.stop();
+          const ticksOf = kind === 'haste' ? () => p.hasteTicks : kind === 'stone' ? () => p.drTicks : () => p.dmgBuffTicks;
+          buffAuras[kind] = { h: fxBuff(world.vfx, kind, () => p.pos), until: () => ticksOf() <= 0 || p.action === 'dead' };
           const label = kind === 'haste' ? 'HASTE' : kind === 'stone' ? 'STONE SKIN' : 'MIGHT';
           world.dmgText.show(p.pos.x, p.pos.y - 1.1, `${label} · ${Math.round(ticks / 60)} s`, 'crit');
           world.ambience.burst(p.pos.x, p.pos.y, kind === 'haste' ? 0x7fd67f : kind === 'stone' ? 0x9fb4e8 : 0xffb347, 12);
@@ -1733,6 +1769,8 @@ async function boot(): Promise<void> {
       return inv;
     };
     const inventories: Array<InventorySystem | null> = party.map((s) => (s ? makeInventory(s.player, s.slot) : null));
+    // THE BELLY, RESTORED (it.114): a save applied before the systems existed left its hunger here.
+    for (const s of party) if (s) { const h = savedHunger.get(s.player); if (h !== undefined) InventorySystem.of(s.player)?.setHunger(h); }
     if (pendingLocal) inventories[localSlot] = makeInventory(pendingLocal.player, localSlot); // The HUD binds before the JOIN lands.
     const stateSync = new StateSyncSystem(inputQueue);
     const inventoryUI = new InventoryUI(player, inputQueue, 0, buildPaperdollFrames);
@@ -1749,7 +1787,7 @@ async function boot(): Promise<void> {
     let victoryShown = false;
 
     /** Cheat state survives floor transitions (worlds are rebuilt). */
-    const cheatState = { god: false };
+    const cheatState = { god: false, noclip: false };
 
     // --- HUD refs -----------------------------------------------------------
     const deathNote = document.getElementById('death-note');
@@ -1876,7 +1914,9 @@ async function boot(): Promise<void> {
     const buildWorld = (floorNum: number, mode: FloorMode = 'normal'): World => {
       const isArena = mode === 'arena';
       const isHub = mode === 'hub';
-      const isColiseum = mode === 'coliseum';
+      // THE MENAGERIE (it.114) is the coliseum's sand with the gates shut.
+      const isMenagerie = mode === 'menagerie';
+      const isColiseum = mode === 'coliseum' || isMenagerie;
       const isForest = mode === 'forest';
       const isMines = mode === 'mines';
       const isInn = mode === 'inn';
@@ -2110,6 +2150,9 @@ async function boot(): Promise<void> {
       audio.setRiver(isRiver);
 
       const ambience = new Ambience(viewport);
+      // THE CRYPT'S OWN TORCHES (it.114): the tileset walls come with spots for
+      // them; the flames are anims, streamed in with the floor's roster.
+      if (scene.torchSpots.length && spriteLib.hasAnim('dun_torch_n') && spriteLib.hasAnim('dun_torch_w')) scene.placeTorches(viewport, lighting, ambience);
       ambience.setBudget(perf.particleBudget); // A weak device gets a calmer crypt (it.66).
       if (spriteLib.loaded) ambience.setGlintFrames(spriteLib.anim('glint').frames[0]);
       // NO POP-IN ON OPEN COUNTRY (it.103). The fields are a field: a hero standing
@@ -2243,6 +2286,7 @@ async function boot(): Promise<void> {
       const makeMovement = (hero: Player, slot: number): MovementSystem => {
         const mv = new MovementSystem(hero, pathfinder, scene.isWalkable, loot, chests, () => Math.max(ATTACK_RANGE, hero.weaponProfile.range), viewport);
         mv.playerId = slot;
+        mv.noclip = cheatState.noclip; // Cheats survive the floor transition (it.114).
         return mv;
       };
       const movements: Array<MovementSystem | null> = party.map((seat) => (!seat || seat.gone || seat.pending ? null : makeMovement(seat.player, seat.slot)));
@@ -2306,6 +2350,7 @@ async function boot(): Promise<void> {
         combat: () => combat,
         burst: (x, y, c, n) => ambience.burst(x, y, c, n),
         text: (x, y, m, st) => dmgText.show(x, y, m, st),
+        vfxFollow: (anim, get, opts) => vfx.playFollowing(anim, get, opts), // Auras that ride the foe (it.114).
         vfx: (anim, x, y, opts) => {
           vfx.play(anim, x, y, opts);
         },
@@ -2590,7 +2635,7 @@ async function boot(): Promise<void> {
       if (isColiseum) {
         const cmap = dungeon as ColiseumMap;
         const dressing = dressColiseum(cmap, viewport, lighting, ambience);
-        coliseumState = { waves: 5, wave: 0, phase: 'intermission', timer: 5 * 60, alive: 0, pads: cmap.pads, center: cmap.center, exit: null, startActive: 0, update: dressing.update, destroy: dressing.destroy };
+        coliseumState = { waves: 5, wave: 0, phase: isMenagerie ? 'done' : 'intermission', timer: 5 * 60, alive: 0, pads: cmap.pads, center: cmap.center, exit: null, startActive: 0, menagerie: isMenagerie, update: dressing.update, destroy: dressing.destroy };
       }
       let townState: World['town'] = null;
       // THE QUARRY'S DRESSING (it.85): pit props, torches and the iron gates, drawn by the town's dresser.
@@ -2601,18 +2646,18 @@ async function boot(): Promise<void> {
         // THE STREETS (it.92): the folk walk the district's roads, path-found, and keep to them three times in four.
         const streets = { roads: layout.road, mapWidth: layout.map.width };
         const villagers = isForest
-          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined, sheets: STREET_FOLK }) // A cleared forest keeps folk and sentries (it.87).
+          ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined, sheets: MARKET_FOLK }) // A cleared forest keeps folk and sentries (it.87).
           : isCellar
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isFarm
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, farmWon ? 8 : 0, null, [], null, {}, null, { chatter: farmWon ? TOWN_WORDS : undefined, sheets: STREET_FOLK })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, farmWon ? 8 : 0, null, [], null, {}, null, { chatter: farmWon ? TOWN_WORDS : undefined, sheets: MARKET_FOLK })
           : isRiver
             // THE RIVERSIDE (it.106): nobody wanders while the three are in the
             // yard - Oscar and his two are placed by the layout, and a farm with
             // people strolling through an ambush reads as a farm with no ambush.
             // THE WATCH ON THE BRIDGE (it.110) are this floor's SENTRIES, and are
             // stood up whichever state the farm is in: the crossing is the city's.
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, layout.guards, null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: STREET_FOLK })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, layout.guards, null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: MARKET_FOLK })
           : isField || isManor || isVault
             // ACROSS THE RIVER (it.110): nobody lives on any of these three.
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
@@ -2622,7 +2667,7 @@ async function boot(): Promise<void> {
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
         const villagers2 = isForest || isInn || isCellar || isFarm || isRiver || isField || isManor || isVault
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
-          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
+          : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 8, layout.jeweler, [...layout.guards2, layout.bowyer], layout.scribe, { merchant: 0xffe2a8, alchemist: 0xa8dcff }, null, { chatter: TOWN_WORDS, sheets: MARKET_FOLK, ...streets }); // The smooth bodies walk the ward (it.114).
         // THE EASTERN QUARTER (it.91): the refugees huddled before the barricade with the innkeeper among
         // them - or, the quarter reclaimed, ten of the folk on the burnt square and the keeper behind his counter.
         const east = layout.east;
@@ -2659,6 +2704,12 @@ async function boot(): Promise<void> {
           destroyDressing: dressing.destroy,
           fireSiege: dressing.fireSiege,
         };
+      }
+      if (isMenagerie && coliseumState) {
+        // THE MENAGERIE (it.114): three dummies on the sand, so an attack has something to land on.
+        const c = coliseumState.center;
+        for (const [dx, dy, v] of [[3, 0, 'dummy'], [0, 3, 'dummyB'], [-3, 0, 'dummy']] as const)
+          if (scene.isWalkable(c.x + dx, c.y + dy)) enemies.spawn(v, c.x + dx + 0.5, c.y + dy + 0.5, 1);
       }
 
       // SARAH (it.98): she is not standing in the open while the vault still has
@@ -3026,6 +3077,14 @@ async function boot(): Promise<void> {
 
     const destroyWorld = (w: World): void => {
       w.unsubscribe();
+      // A costume belongs to the sand it was put on (it.114).
+      if (puppet) {
+        puppet.destroy();
+        puppet = null;
+        wornCostumeId = null;
+        player.container.renderable = true;
+      }
+      if (w.coliseum?.menagerie) menagerieUI.close();
       w.town?.villagers.destroy();
       w.town?.villagers2.destroy();
       w.town?.villagers3?.destroy();
@@ -3109,10 +3168,12 @@ async function boot(): Promise<void> {
         goldCollected: p.goldCollected,
         materials: Object.fromEntries(p.materials),
         belt: [...p.belt],
+        hunger: InventorySystem.of(p)?.hunger ?? 100, // it.114
         recipes: [...p.recipes],
       };
     };
     const saveNow = (): boolean => {
+      if (opts.menagerie) return false; // The menagerie is never a save (it.114).
       if (!alive || hardcoreOver) return false; // A spent life is never written back (it.89).
       captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
       const save: SaveGame = {
@@ -3202,6 +3263,7 @@ async function boot(): Promise<void> {
       for (const seat of liveSeats()) seat.player.action = 'idle';
       if (viaPortal) {
         placeParty(t.layout.portal.x + 0.5, t.layout.portal.y + 0.5, world.scene.isWalkable);
+        fxWarp(world.vfx, player.pos.x, player.pos.y); // it.114
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         audio.sfx('portal');
       }
@@ -3270,6 +3332,7 @@ async function boot(): Promise<void> {
         floorStartTick = state.tick;
         floorActiveTicks = 0;
         placeParty(r.x, r.y, world.scene.isWalkable);
+        fxWarp(world.vfx, player.pos.x, player.pos.y); // it.114
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         minimap.markDirty();
         updateOrb();
@@ -3313,6 +3376,7 @@ async function boot(): Promise<void> {
       inTown: () => !!world.town, // Respec is a town rite (it.48).
       interruptMove: () => world.movements[slot]?.interrupt(), // Casts cut the walk (it.53).
       text: (x, y, m, s) => world.dmgText.show(x, y, m, s),
+      vfxFollow: (anim, get, opts) => world.vfx.playFollowing(anim, get, opts), // Auras that ride the hero (it.114).
       sfx: (n) => audio.sfx(n as Parameters<typeof audio.sfx>[0]),
       vfx: (anim, x, y, opts) => world.vfx.play(anim, x, y, opts),
       aim: () => aimFor(hero),
@@ -3597,7 +3661,7 @@ async function boot(): Promise<void> {
         later(() => {
           descendNote?.classList.remove('show');
           descendSub?.classList.remove('show');
-        }, 5200); // Doubled (it.50).
+        }, 7000); // Doubled (it.50); 7 s (it.114).
       }, `descending to depth ${ROMAN[floor] ?? floor + 1}`);
 
     /**
@@ -3640,6 +3704,122 @@ async function boot(): Promise<void> {
         world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE TRIAL BEGINS', 'crit');
         tutorial.notify('coliseum', 'The Trial Coliseum: waves pour from the four gates. Between waves you have fifteen seconds to loot and drink. T abandons the trial.');
       }, 'the trial coliseum');
+    /**
+     * THE MENAGERIE (it.114). The owner asked for "a separate mode where I can
+     * select ANY mob or NPC and run around as them in a test arena". It is the
+     * coliseum's sand with no waves: the hero is still the hero in the
+     * simulation - the same collider, movement and actions - and a PUPPET
+     * (`render/Puppet`) draws another creature's sheets over the hero's
+     * interpolated position, reading the hero's state each frame. Nothing in
+     * the sim knows a costume is on. The picker lists every costume with the
+     * label and source folder the owner can quote back.
+     */
+    let puppet: Puppet | null = null;
+    let wornCostumeId: string | null = null;
+    const foeCostumes = (): Costume[] =>
+      (Object.keys(ENEMY_TYPES) as EnemyKind[])
+        .filter((k) => ENEMY_TYPES[k].sprite && !ENEMY_TYPES[k].passive)
+        .map((k) => {
+          const d = ENEMY_TYPES[k];
+          const sp = d.sprite!;
+          return {
+            id: k,
+            label: d.name,
+            source: `${sp.walk.replace(/_[a-z]+$/, '')}_* sheets · kind ${k}`,
+            group: isBossKind(k) ? 'boss' : 'foe',
+            idle: sp.idle ?? sp.walk,
+            walk: sp.walk,
+            attack: sp.attack,
+            death: sp.death,
+            hit: sp.hitAnim,
+            heightMult: sp.heightMult,
+            ownShadow: sp.ownShadow !== true ? false : true,
+            stride: sp.stride,
+          } as Costume;
+        });
+    const menagerieCostumes = (): Costume[] => [...foeCostumes(), ...allCostumes()];
+    const wearCostume = async (id: string | null): Promise<void> => {
+      wornCostumeId = id;
+      if (puppet) {
+        puppet.destroy();
+        puppet = null;
+      }
+      player.container.renderable = true;
+      if (!id) return;
+      const cst = menagerieCostumes().find((c) => c.id === id);
+      if (!cst) return;
+      await spriteLib.ensure(costumeAnims(cst));
+      if (!alive || wornCostumeId !== id || !world.coliseum?.menagerie) return;
+      if (!spriteLib.hasAnim(cst.idle) || !spriteLib.hasAnim(cst.walk)) {
+        tutorial.say(`${cst.label}: its sheets are not in the atlas yet.`);
+        return;
+      }
+      puppet = new Puppet(cst);
+      world.viewport.objectLayer.addChild(puppet.container);
+      player.container.renderable = false;
+      world.vfx.play('vfx_burst', player.pos.x, player.pos.y, { scale: 1.3, tint: 0xc0a0ff });
+      audio.sfx('portal');
+    };
+    const menagerieUI = new MenagerieUI({
+      costumes: menagerieCostumes,
+      wear: (id) => void wearCostume(id),
+      extras: () => puppet?.extras ?? [],
+      play: (extra) => {
+        if (!puppet) return;
+        if (extra === '__death') {
+          const c = puppet.costume;
+          if (c.death) puppet.play(c.death, 1.4);
+        } else if (extra === '__hit') {
+          const c = puppet.costume;
+          if (c.hit) puppet.play(c.hit, 0.4);
+        } else puppet.play(extra, 1.3);
+      },
+      summon: () => {
+        const id = wornCostumeId;
+        if (!id || !(id in ENEMY_TYPES)) {
+          tutorial.say('Only a creature that is a KIND in the bestiary can be summoned; the drop\'s new bodies get theirs as they are wired in.');
+          return;
+        }
+        void spriteLib.ensure(animsForKind(id as EnemyKind)).then(() => {
+          if (!alive || !world.coliseum?.menagerie) return;
+          const c = world.coliseum;
+          for (const [dx, dy] of [[2, 2], [-2, 2], [2, -2]] as const) {
+            if (world.scene.isWalkable(c.center.x + dx, c.center.y + dy)) world.enemies.spawn(id as EnemyKind, c.center.x + dx + 0.5, c.center.y + dy + 0.5, Math.max(1, player.level));
+          }
+        });
+      },
+      leave: () => {
+        menagerieUI.close();
+        leaveColiseum();
+      },
+    });
+    subs.push(() => {
+      puppet?.destroy();
+      puppet = null;
+      menagerieUI.destroy();
+    });
+    /** Onto the sand with the gates shut; `wear` puts a costume on straight away. */
+    const enterMenagerie = (wear: string | null): void =>
+      withFade(async () => {
+        await preloadFloor(MENAGERIE_FLOOR, 'menagerie');
+        captureFloor();
+        if (!swapWorld(() => buildWorld(MENAGERIE_FLOOR, 'menagerie'))) return;
+        floor = MENAGERIE_FLOOR;
+        updateDepth();
+        floorStartTick = state.tick;
+        floorActiveTicks = 0;
+        for (const seat of liveSeats()) seat.player.action = 'idle';
+        placeParty(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5, world.scene.isWalkable);
+        world.lighting.revealAll();
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        minimap.markDirty();
+        updateOrb();
+        menagerieUI.open();
+        menagerieUI.setWorn(wear);
+        void wearCostume(wear);
+        world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE MENAGERIE', 'crit');
+        tutorial.notify('menagerie', 'The menagerie: pick any body on the left and walk the sand as it. WASD moves, Space strikes the dummies, T raises the way home.');
+      }, 'the menagerie');
     /** Home from the sand — no return rift, the trial is over. */
     const leaveColiseum = (): void =>
       withFade(async () => {
@@ -3699,6 +3879,61 @@ async function boot(): Promise<void> {
 
     // --- Cheat menu (F1 / `) ------------------------------------------------
     const portraitFrames: HTMLCanvasElement[] = classPreviewFrames(player.archetype);
+    /**
+     * JUMP ANYWHERE (it.114). The dev harness had `devTravel`, which knew about
+     * the nine places past the town gate; the cheat sheet had its own copy that
+     * clamped every number to a depth, so 101-109 landed on depth XX. One
+     * function now, shared by the harness, the sheet and the QUESTS tab's
+     * rebuild. No fade of its own: the caller decides.
+     */
+    const jumpTo = async (target: number, arena = false): Promise<void> => {
+      const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR || target === RIVER_FLOOR || target === FIELD_FLOOR || target === MANOR_FLOOR || target === VAULT_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
+      const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
+      await preloadFloor(dest, mode);
+      captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
+      if (!swapWorld(() => buildWorld(dest, mode))) return;
+      floor = dest;
+      if (floor <= MAX_DEPTH) deepestFloor = Math.max(deepestFloor, floor);
+      if (mode === 'hub') enterTown(false);
+      updateDepth();
+      floorStartTick = state.tick;
+      floorActiveTicks = 0;
+      player.action = 'idle';
+      if (floor <= MAX_DEPTH) levelSelect.unlock(floor);
+      // THE FIRST LOOK (it.109): every real way onto a floor opens the fog at
+      // the feet; a jump must too, or the floor stays hidden until a tile crossing.
+      world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+      minimap.markDirty();
+      updateOrb();
+    };
+    const CHEAT_PLACES = [
+      { id: 0, label: 'THE TOWN', sub: 'the old quarter' },
+      { id: FOREST_FLOOR, label: 'THE DARK FOREST', sub: 'floor 101' },
+      { id: MINES_FLOOR, label: 'THE QUARRY MINES', sub: 'floor 102' },
+      { id: INN_FLOOR, label: 'THE GILDED STAG', sub: 'floor 103' },
+      { id: CELLAR_FLOOR, label: 'THE CELLAR', sub: 'floor 104' },
+      { id: FARM_FLOOR, label: 'THE FARMLANDS', sub: 'floor 105' },
+      { id: RIVER_FLOOR, label: 'THE RIVERSIDE', sub: 'floor 106' },
+      { id: FIELD_FLOOR, label: 'THE BATTLEFIELD', sub: 'floor 107' },
+      { id: MANOR_FLOOR, label: 'THE MANOR', sub: 'floor 108' },
+      { id: VAULT_FLOOR, label: 'THE VAULT', sub: 'floor 109' },
+      { id: 'coliseum' as const, label: 'THE COLISEUM', sub: 'five waves' },
+      { id: 'menagerie' as const, label: 'THE MENAGERIE', sub: 'try any body on' },
+    ];
+    /** The ledger's keys and every state each one takes, in story order (it.114). */
+    const CHEAT_QUESTS = [
+      { key: 'forest', label: 'THE FOREST ERRAND', states: ['new', 'active', 'done'] },
+      { key: 'east', label: 'THE EASTERN QUARTER', states: ['new', 'open', 'cleared', 'done'] },
+      { key: 'looters', label: 'LOOTERS DOWN', states: ['0', '10', '19', '20'] },
+      { key: 'cellar', label: 'THE CELLAR', states: ['new', 'active', 'done'] },
+      { key: 'rally', label: 'THE MUSTER', states: ['seen'] },
+      { key: 'farm', label: 'THE FARMLANDS', states: ['new', 'active', 'done'] },
+      { key: 'river', label: 'THE RIVERSIDE', states: ['new', 'active', 'done'] },
+      { key: 'riverPass', label: "OSCAR'S SEAL", states: ['held'] },
+      { key: 'manor', label: 'THE MANOR', states: ['new', 'heard', 'held', 'done'] },
+      { key: 'merchant', label: 'THE MERCHANT', states: ['saved'] },
+    ];
+    const isBossKind = (kind: string): boolean => /^boss/.test(kind) || kind === 'hydra' || kind === 'general' || kind === 'chief';
     // In co-op the cheat menu stays shut (it.59): a local-only edit would fork the sim.
     const cheatMenu = new CheatMenuUI({
       toggleGod: () => {
@@ -3708,6 +3943,54 @@ async function boot(): Promise<void> {
         player.bestiaryRevealed = cheatState.god;
         eventBus.emit('bestiary:changed', {});
         return cheatState.god;
+      },
+      toggleNoclip: () => {
+        cheatState.noclip = !cheatState.noclip;
+        world.movement.noclip = cheatState.noclip;
+        return cheatState.noclip;
+      },
+      addGold: (n) => {
+        player.gold = Math.max(0, player.gold + n);
+        updateProgressHud();
+        eventBus.emit('inventory:changed', {});
+        audio.sfx(n > 0 ? 'rarePickup' : 'uiClick');
+      },
+      places: () => CHEAT_PLACES,
+      foes: () =>
+        (Object.keys(ENEMY_TYPES) as EnemyKind[])
+          .filter((k) => !ENEMY_TYPES[k].passive)
+          .map((k) => ({ kind: k, name: ENEMY_TYPES[k].name, boss: isBossKind(k) })),
+      spawnFoe: (kindName, count, level) => {
+        const kind = kindName as EnemyKind;
+        if (!ENEMY_TYPES[kind]) return;
+        void spriteLib.ensure(animsForKind(kind)).then(() => {
+          if (!alive) return;
+          const px = Math.floor(player.pos.x);
+          const py = Math.floor(player.pos.y);
+          // The nearest open tiles two out from the hero, dealt round the ring.
+          const spots: Array<{ x: number; y: number }> = [];
+          for (let r = 2; r <= 4 && spots.length < count; r++)
+            for (let dy = -r; dy <= r && spots.length < count; dy++)
+              for (let dx = -r; dx <= r && spots.length < count; dx++) {
+                if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                if (world.scene.isWalkable(px + dx, py + dy)) spots.push({ x: px + dx, y: py + dy });
+              }
+          for (let i = 0; i < count; i++) {
+            const s = spots[i % Math.max(1, spots.length)] ?? { x: px + 2, y: py };
+            world.enemies.spawn(kind, s.x + 0.5, s.y + 0.5, level);
+          }
+          world.vfx.play('vfx_burst', player.pos.x, player.pos.y, { scale: 1.2, tint: 0xa040c0 });
+        });
+      },
+      quests: () => ({ defs: CHEAT_QUESTS, state: { ...quests } }),
+      setQuest: (key, value) => {
+        if (value === null) delete quests[key];
+        else quests[key] = value;
+        saveNow();
+      },
+      rebuildFloor: () => {
+        if (floor < 0) return; // The coliseum is its own thing.
+        withFade(() => jumpTo(floor, false));
       },
       healFull: () => {
         if (player.action !== 'dead') player.hp = player.hpMax;
@@ -3727,23 +4010,17 @@ async function boot(): Promise<void> {
         world.lighting.revealAll();
         minimap.markDirty();
       },
-      // QUICK TELEPORT (it.33): jump straight to any floor or boss arena.
-      teleport: (target: number, arena: boolean) => {
-        const dest = Math.max(1, Math.min(target, MAX_DEPTH));
-        withFade(async () => {
-          const mode: FloorMode = arena && isBossFloor(dest) ? 'arena' : 'normal';
-          await preloadFloor(dest, mode);
-          captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
-          if (!swapWorld(() => buildWorld(dest, mode))) return;
-          floor = dest;
-          deepestFloor = Math.max(deepestFloor, floor);
-          updateDepth();
-          floorStartTick = state.tick;
-        floorActiveTicks = 0;
-          player.action = 'idle';
-          levelSelect.unlock(floor);
-          updateOrb();
-        });
+      // QUICK TELEPORT (it.33): jump straight to any floor, place or boss arena (it.114).
+      teleport: (target, arena) => {
+        if (target === 'coliseum') {
+          enterColiseum(5);
+          return;
+        }
+        if (target === 'menagerie') {
+          enterMenagerie(null);
+          return;
+        }
+        withFade(() => jumpTo(target, arena));
       },
       items: () =>
         Object.values(ITEMS).map((def) => ({
@@ -3771,6 +4048,7 @@ async function boot(): Promise<void> {
       },
       heroInfo: () => ({
         skillPoints: player.skillPoints,
+        gold: player.gold,
         level: player.level,
         xp: player.xp,
         xpToNext: player.xpToNext(),
@@ -3818,7 +4096,8 @@ async function boot(): Promise<void> {
       // The Frost Warden's blow just froze the legs — the ice crackles.
       if (entity === player && player.slowTicks >= 178) audio.sfx('freeze');
       // Heavy blows tremble the view (subtle, quadratic — see Camera.addShake).
-      if (amount >= 10) world.camera.addShake(entity === player ? 0.3 : 0.18);
+      // THE SHAKE (it.114): every landed blow moves the eye a little; a heavy one more.
+      world.camera.addShake(entity === player ? (amount >= 10 ? 0.3 : 0.16) : amount >= 10 ? 0.22 : 0.1);
       // DIRECTIONAL RECOIL (it.48): the view kicks along the blow's screen direction.
       const kdx = (dirX ?? 0) - (dirY ?? 0);
       const kdy = ((dirX ?? 0) + (dirY ?? 0)) * 0.5;
@@ -3829,7 +4108,7 @@ async function boot(): Promise<void> {
         if (!player.weaponProfile.ranged) audio.sfx('swing');
         if (klen > 0) world.camera.addKickDir(kdx / klen, kdy / klen, amount >= 12 ? 4 : 2.5);
         else world.camera.addKick(2.5); // Felt on every landed blow.
-        if (amount >= 8) world.vfx.play('vfx_burst', entity.pos.x, entity.pos.y, { scale: 0.55, lift: 20, fps: 30 });
+        if (amount >= 5) fxHit(world.vfx, entity.pos.x, entity.pos.y, dirX ?? 1, dirY ?? 0, amount >= 12); // The blow reads along its direction (it.114).
         if (amount >= 12) hitStop(1);
         // Impact sparks (it.36): steel meets flesh — a hot fleck burst.
         world.ambience.sparks(entity.pos.x, entity.pos.y, dirX ?? 0, dirY ?? 0, Math.min(10, 4 + (amount >> 1)));
@@ -3867,7 +4146,10 @@ async function boot(): Promise<void> {
       }
       if (result === 'crit') {
         const target = state.getEntity(targetId);
-        if (target) world.dmgText.show(target.pos.x - 0.4, target.pos.y - 0.4, 'CRIT!', 'crit');
+        if (target) {
+          world.dmgText.show(target.pos.x - 0.4, target.pos.y - 0.4, 'CRIT!', 'crit');
+          fxCrit(world.vfx, target.pos.x, target.pos.y); // it.114
+        }
       }
       const strikerSeat = seatOf(state.getEntity(sourceId));
       if (strikerSeat && strikerSeat.player !== player) {
@@ -3896,7 +4178,7 @@ async function boot(): Promise<void> {
         if (result === 'crit') {
           hitStop(2); // Heavy steel (it.48): two frozen frames.
           world.camera.addKick(4.5);
-          world.camera.addShake(0.3);
+          world.camera.addShake(0.35);
           if (target) world.ambience.burst(target.pos.x, target.pos.y, 0xffd9a0, 8);
         } else if (result === 'hit' && target) {
           // Steel-on-flesh sparks on every landed blow (particle pass, it.15).
@@ -3931,11 +4213,63 @@ async function boot(): Promise<void> {
     rewardNote.id = 'reward-note';
     document.body.appendChild(rewardNote);
     let rewardTimer = 0;
+    /**
+     * THE NOTICES (it.114). One stack for every line the game says in passing:
+     * rewards, quests turning over, roads opening. They stay long enough to be
+     * read (`ui/Toast` scales the time with the words) and can be clicked away.
+     */
+    const toast = new ToastUI();
     const showReward = (text: string): void => {
       rewardNote.textContent = text;
       rewardNote.classList.add('show');
       window.clearTimeout(rewardTimer);
-      rewardTimer = window.setTimeout(() => rewardNote.classList.remove('show'), 3400);
+      rewardTimer = window.setTimeout(() => rewardNote.classList.remove('show'), 6500); // 3400 → 6500 (it.114): time to read it.
+      toast.show({ kind: 'reward', title: 'REWARD RECEIVED', sub: text, key: 'reward' });
+    };
+    /**
+     * THE LEDGER WATCHER (it.114). Every quest turns over somewhere in eight
+     * thousand lines; rather than a notice at each of those places, the ledger
+     * is compared to its last snapshot twice a second and the difference is
+     * announced - and the roads a state opens are named with it.
+     */
+    const QUEST_LABEL: Record<string, string> = {
+      forest: 'THE FOREST ERRAND',
+      east: 'THE EASTERN QUARTER',
+      cellar: 'THE CELLAR',
+      farm: 'THE FARMLANDS',
+      river: 'THE RIVERSIDE',
+      manor: 'THE MANOR',
+      riverPass: "OSCAR'S SEAL",
+      merchant: 'THE MERCHANT',
+    };
+    const OPENS: Record<string, string> = {
+      'forest:done': 'The eastern road is yours: the woods are a safe road now.',
+      'farm:active': 'The marsh path is open - the muster ground lies past the old quarter.',
+      'farm:done': 'The river gate is unchained. The riverside farm lies beyond it.',
+      'east:open': 'The east gate is open. The looters hold the quarter beyond.',
+      'cellar:active': 'The back door of the Gilded Stag is unbolted.',
+      'riverPass:held': 'The bridge will let you through: you carry Oscar\'s seal.',
+    };
+    const questSnapshot: Record<string, string> = { ...quests };
+    let questWatchClock = 0;
+    const watchQuests = (dt: number): void => {
+      questWatchClock += dt;
+      if (questWatchClock < 0.5) return;
+      questWatchClock = 0;
+      for (const key of Object.keys(quests)) {
+        const now = quests[key];
+        if (questSnapshot[key] === now) continue;
+        const before = questSnapshot[key];
+        questSnapshot[key] = now;
+        const label = QUEST_LABEL[key];
+        if (!label || before === undefined && now === 'new') continue;
+        const taken = now === 'active' || now === 'open' || now === 'heard' || now === 'held';
+        const done = now === 'done' || now === 'cleared' || now === 'saved';
+        if (taken) toast.show({ kind: 'quest', title: `QUEST TAKEN · ${label}`, sub: 'The journal keeps the terms. The chart marks the way.', key: `q:${key}` });
+        else if (done) toast.show({ kind: 'quest', title: `QUEST COMPLETE · ${label}`, sub: 'Return to whoever asked, if you have not already.', key: `q:${key}` });
+        const road = OPENS[`${key}:${now}`];
+        if (road) toast.show({ kind: 'gate', title: 'A ROAD OPENS', sub: road, key: `road:${key}` });
+      }
     };
     /** ENEMIES REMAINING (it.88): the forest's tally, in the corner column under the plate. */
     const questHud = document.createElement('div');
@@ -3945,6 +4279,7 @@ async function boot(): Promise<void> {
       window.clearTimeout(rewardTimer);
       rewardNote.remove();
       questHud.remove();
+      toast.destroy();
     });
     /**
      * A KEY IS TAKEN (it.88): a quest item is not a coin. The hero holds it
@@ -3986,6 +4321,7 @@ async function boot(): Promise<void> {
     // An idle thing in the dark just noticed you (species growl/hiss/moan).
     on('enemy:aggro', ({ entityId }) => {
       const entity = state.getEntity(entityId);
+      if (entity) fxAlert(world.vfx, entity.pos.x, entity.pos.y); // The foe has seen you (it.114).
       const v = entity instanceof Enemy ? voiceProfile(entity.def.kind) : { pitch: 1, bank: 'hGrunt' };
       audio.enemyVoice('idle', v.pitch, v.bank);
     });
@@ -4017,7 +4353,9 @@ async function boot(): Promise<void> {
           return;
         }
         if (seat.player === player) {
-          audio.sfx(['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '') ? 'rarePickup' : 'pickup');
+          const rare = ['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '');
+          audio.sfx(rare ? 'rarePickup' : 'pickup');
+          if (rare) fxPickupRare(world.vfx, seat.player.pos.x, seat.player.pos.y); // it.114
           tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
           tutorial.notify('journal', 'The JOURNAL (H, or the book on the bar) explains every item, effect and recipe.');
         } else if (chat) {
@@ -4034,8 +4372,9 @@ async function boot(): Promise<void> {
         else haptics.kill();
         player.noteKill(entity.def.kind); // Bestiary (it.42).
         eventBus.emit('bestiary:changed', {});
-        stats.noteKill(!!world.coliseum, entity.def.kind.startsWith('boss')); // The ledgers (it.54).
-        if (world.coliseum && (entity.affix || entity.def.kind.startsWith('boss'))) {
+        const onSand = !!world.coliseum && !world.coliseum.menagerie; // The menagerie's kills are nobody's record (it.114).
+        stats.noteKill(onSand, entity.def.kind.startsWith('boss')); // The ledgers (it.54).
+        if (onSand && (entity.affix || entity.def.kind.startsWith('boss'))) {
           // THE CROWD ROARS (it.54): a champion or a boss falls on the sand.
           audio.sfx('crowd');
           world.vfx.play('vfx_bloodburst', entity.pos.x, entity.pos.y, { scale: 1.3, lift: 16, fps: 30, additive: false });
@@ -4077,9 +4416,11 @@ async function boot(): Promise<void> {
           audio.sfx('levelUp');
           world.ambience.burst(player.pos.x, player.pos.y, 0xffd98a, 26);
           world.ambience.playGlint(player.pos.x, player.pos.y);
-          world.camera.addShake(0.25);
+          world.camera.addShake(0.2);
+          world.camera.zoomPunch(0.05, 260); // The level-up beat (it.114).
           // The overhead banner carries the words now (it.50) — no floating duplicate.
           world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 1.2, flat: true, fps: 20, tint: 0xffd070 });
+          fxLevelUp(world.vfx, player.pos.x, player.pos.y); // The pillar of light (it.114).
           // GOLDEN PILLAR (it.48): a column of light climbs off the hero; a second chime rings.
           audio.sfx('rarePickup');
           haptics.levelUp();
@@ -4094,7 +4435,7 @@ async function boot(): Promise<void> {
             if (banner) {
               banner.innerHTML = `LEVEL UP!<small>LEVEL ${player.level} · +${levelsGained} SKILL POINT${levelsGained > 1 ? 'S' : ''}</small>`;
               banner.classList.add('show');
-              later(() => banner.classList.remove('show'), 4500); // Readable (it.50).
+              later(() => banner.classList.remove('show'), 7000); // Readable (it.50); longer still (it.114).
             }
           }
           world.vfx.play('vfx_aura', player.pos.x, player.pos.y, { scale: 1.5, lift: 30, fps: 16, tint: 0xffd070, overlay: true });
@@ -4122,7 +4463,8 @@ async function boot(): Promise<void> {
           const by = entity.pos.y;
           const w = world; // Capture — the sequence must hit THIS floor's systems.
           w.camera.addKick(9);
-          w.camera.addShake(0.55);
+          w.camera.addShake(0.8, { decay: 1.2 }); // A warden's fall is felt (it.114).
+          w.camera.zoomPunch(0.08, 320);
           for (let i = 0; i < 8; i++) {
             later(() => {
               if (world !== w) return; // Floor changed mid-sequence — stand down.
@@ -4149,7 +4491,9 @@ async function boot(): Promise<void> {
         // PERSISTENT GORE (it.43): the floor keeps the kill.
         world.gore.kill(entity.pos.x, entity.pos.y, entity.facing.x, entity.facing.y, entity === world.boss);
         hitStop(entity === world.boss ? 3 : 2);
-        world.vfx.play('vfx_splat', entity.pos.x, entity.pos.y, { scale: entity === world.boss ? 2.2 : 1.3, flat: true, fps: 24, additive: false, depthBias: -30, alpha: 0.9 });
+        // THE DEATH (it.114): a pool under, a spray up, a flash, and the skull-smoke rising; a warden goes in a ring of explosions.
+        if (entity === world.boss || entity.def.kind.startsWith('boss')) fxBossDeath(world.vfx, entity.pos.x, entity.pos.y);
+        else fxDeathBurst(world.vfx, entity.pos.x, entity.pos.y, !!entity.affix);
         audio.sfx('goreKill');
         entity.beginDeath();
 
@@ -4182,10 +4526,12 @@ async function boot(): Promise<void> {
         // CO-OP (it.59): they lie there and rise beside the entrance later.
         fallen.player.action = 'dead';
         fallen.player.actionTicks = 0;
+        fxDeathBurst(world.vfx, fallen.player.pos.x, fallen.player.pos.y, true); // it.114
+        if (fallen.player === player) vignetteEl?.classList.add('dead'); // THE BLOODY SCREEN (it.114).
         if (fallen.player === player) {
           inputQueue.enqueue({ type: 'STOP', playerId: localSlot });
           deathNote?.classList.add('show');
-          if (!coop) later(() => deathNote?.classList.remove('show'), 5200); // Doubled (it.50).
+          if (!coop) later(() => deathNote?.classList.remove('show'), 6500); // Doubled (it.50); 6.5 s (it.114).
           else chat?.system('You have fallen. You rise beside the entrance in 10 s.');
         } else {
           chat?.system(`${fallen.name} has fallen.`);
@@ -4250,6 +4596,7 @@ async function boot(): Promise<void> {
       hero.action = 'idle';
       hero.actionTicks = 0;
       hero.wardTicks = SPAWN_WARD_TICKS; // THE SPAWN WARD (it.89), the party too.
+      if (hero === player) vignetteEl?.classList.remove('dead'); // The blood drains off the glass (it.114).
       world.ambience.burst(hero.pos.x, hero.pos.y, 0xffd98a, 18);
       if (hero === player) {
         world.lighting.updateVisibility(Math.floor(hero.pos.x), Math.floor(hero.pos.y));
@@ -5214,6 +5561,47 @@ async function boot(): Promise<void> {
     };
 
     /**
+     * THE ARRIVAL (it.114). A new hero used to appear on the cobbles with a
+     * command sheet open and nothing said. Now the bars come down once: the
+     * camera settles on the training ground, the sentry names the place and
+     * the sign, and the hero is standing at the yard when the bars lift - so
+     * the tutorial is the first thing in reach, not the first thing to find.
+     * Plays on a FRESH run only (no save, no party, not the menagerie).
+     */
+    const startArrival = (): void => {
+      if (reclaim || !world.town) return;
+      const yard = world.town.layout.training?.mark ?? { x: 16, y: 72 };
+      lightTheWayIn({ x: yard.x, y: yard.y }, [{ x: yard.x + 3, y: yard.y + 2 }, { x: yard.x - 3, y: yard.y - 2 }]);
+      reclaim = new ProcessionScene({
+        layer: world.viewport.objectLayer,
+        ambience: world.ambience,
+        fx: gateFx,
+        carts: [],
+        at: { x: yard.x, y: yard.y },
+        from: { x: yard.x, y: yard.y },
+        route: [{ x: yard.x, y: yard.y }],
+        titles: [['THE OLD QUARTER', 'a town on the mouth of the crypt'], ['THE TRAINING GROUND', 'learn the sword before the dark does']],
+        walkers: 0,
+        isWalkable: cineWalk,
+        say: cineSay,
+        sayDone: () => cineSpeak.clear(),
+        speech: [
+          { t: 1.2, x: yard.x + 2, y: yard.y + 2, text: 'NEW BLOOD. THE YARD IS YOURS - THE DUMMIES DO NOT HIT BACK.', speaker: 'SIR HAM', role: 'of the city watch', portrait: keeperPortrait(), hold: 3.5 },
+          { t: 2.6, x: yard.x + 2, y: yard.y + 2, text: 'READ THE SIGN. THE CRYPT GATE IS SOUTH, AND IT WAITS.', speaker: 'SIR HAM', role: 'of the city watch', portrait: keeperPortrait(), hold: 3.5 },
+        ],
+        hold: 3.5,
+        ...cineFocusHooks,
+        sfx: (n) => audio.sfx(n),
+        onDone: () => {
+          reclaim?.destroy();
+          reclaim = null;
+          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+          toast.show({ kind: 'lore', title: 'THE TRAINING GROUND', sub: 'Press E at the sign by the dummies to learn the yard. It pays a hundred gold.', ms: 9000 });
+        },
+      });
+    };
+
+    /**
      * THE GENERAL'S ORDERS (it.101). The first thing the fields do is show you
      * why you came: the camera crosses to the far end of the burning rows and the
      * company's general gives the order to put the crop and the farmers to the
@@ -5287,11 +5675,18 @@ async function boot(): Promise<void> {
         return;
       }
       if (quests.farm === 'active') {
-        await dialogue.open({
+        // THE YARD STAYS A YARD (it.114). While the errand is open the officer
+        // holds the post, and it.113b left this branch with one word - so a
+        // player who took the muster and wanted the dummies had no way to them.
+        const v = await dialogue.open({
           ...who,
           lines: ['My men are on the muster ground and the road is open. Go when you are ready - and stay near them, they fight better with someone to follow.'],
-          choices: [{ label: 'UNDERSTOOD', value: 'ok' }],
+          choices: [
+            { label: 'UNDERSTOOD', value: 'ok' },
+            { label: 'THE YARD', sub: 'walk the training ground first', value: 'train' },
+          ],
         });
+        if (v === 'train') await offerTraining();
         return;
       }
       const v = await dialogue.open({
@@ -6307,13 +6702,12 @@ async function boot(): Promise<void> {
          * ring of burning spill round it, sparks off the ground and a kick hard
          * enough to feel from the far end of the field.
          */
-        world.vfx.play('vfx_explosion', cx, cy, { scale: 2.1, fps: 24, lift: 14 });
-        world.vfx.play('vfx_burst', cx, cy, { scale: 1.5, fps: 20, lift: 4 });
-        world.vfx.play('vfx_firewall', cx, cy, { scale: 1.25, fps: 16, lift: 2, alpha: 0.8 });
+        fxCatapultImpact(world.vfx, cx, cy); // A stone the size of a barrel (it.114).
         world.ambience.burst(cx, cy, 0xffa848, 34);
         world.ambience.burst(cx, cy, 0x9a8a70, 30);
         world.ambience.impactFlash(cx, cy, 0xffc070, 2.2);
         world.camera.addKick(9);
+        world.camera.addShake(0.6, { decay: 1.6 }); // A stone the size of a barrel lands (it.114).
         audio.sfx('barrelBreak');
         later(() => audio.sfx('gore'), 60);
         const caught: Enemy[] = [];
@@ -6445,6 +6839,18 @@ async function boot(): Promise<void> {
 
     // --- Loop ---------------------------------------------------------------
     const cameraFocus = vec2();
+    let lastTargetedEnemy: Enemy | null = null;
+    /** The draught auras (it.114): one looping effect per buff kind, stopped when its ticks run out. */
+    const buffAuras: Partial<Record<'haste' | 'stone' | 'might', { h: VfxHandle; until: () => boolean }>> = {};
+    const tickBuffAuras = (): void => {
+      for (const k of Object.keys(buffAuras) as Array<keyof typeof buffAuras>) {
+        const a = buffAuras[k];
+        if (a && a.until()) {
+          a.h.stop();
+          delete buffAuras[k];
+        }
+      }
+    };
     /** THE RECLAIMING (it.91): where the camera looks instead of the hero, and its eased position. */
     let cineFocus: { x: number; y: number } | null = null;
     let cineBlend = false;
@@ -6694,6 +7100,8 @@ async function boot(): Promise<void> {
         for (const mv of world.movements) mv?.applyCommands(commands);
         world.combat.applyCommands(commands);
         for (const inv of inventories) inv?.apply(commands);
+        // THE BELLY (it.114): hunger only falls on the crypt's depths; the town and the places feed a hero for free.
+        for (const inv of inventories) inv?.tickHunger(floor >= 1 && floor <= MAX_DEPTH);
         for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
         town.apply(commands); // Buy / sell / stash (it.39).
         crafting.apply(commands); // The camp forge (it.78).
@@ -6897,6 +7305,22 @@ async function boot(): Promise<void> {
           }
         }
 
+        // COINS ON THE GROUND (it.114): what foes and chests drop is scooped like a pile.
+        for (const seat of liveSeats()) {
+          const hero = seat.player;
+          if (hero.action === 'dead') continue;
+          const raw = world.loot.scoopGold(hero.pos.x, hero.pos.y);
+          if (!raw) continue;
+          const scooped = Math.round(raw * (0.5 + 0.5 * powerScale(world.loot.ilvl)) * (1 + 0.25 * hero.traitPower('fortune')));
+          hero.gold += scooped;
+          hero.goldCollected += scooped;
+          if (hero === player) {
+            audio.sfx('gold');
+            updateProgressHud();
+          }
+          fxPickupGold(world.vfx, hero.pos.x, hero.pos.y);
+          world.dmgText.show(hero.pos.x, hero.pos.y - 0.4, `+${scooped} gold`, 'crit');
+        }
         // GOLD PICKUP (it.22): walking over a pile scoops it up — whichever hero gets there (it.59).
         for (const pile of world.goldPiles) {
           if (pile.taken) continue;
@@ -6912,6 +7336,7 @@ async function boot(): Promise<void> {
             hero.gold += scooped;
             hero.goldCollected += scooped;
             if (hero === player) audio.sfx('gold');
+            fxPickupGold(world.vfx, pile.x, pile.y); // it.114
             world.ambience.sparks(pile.x, pile.y, 0, 0, 6, 0xffd870);
             world.dmgText.show(pile.x, pile.y, `+${pile.amount} gold`, 'crit');
             if (hero === player) updateProgressHud();
@@ -7006,6 +7431,15 @@ async function boot(): Promise<void> {
         const timeSec = now / 1000;
 
         state.forEach((entity) => entity.syncRender(alpha));
+        // THE MENAGERIE (it.114): the costume rides the hero's interpolated state.
+        if (puppet) {
+          puppet.update(
+            { pos: player.pos, prevPos: player.prevPos, facing: player.facing, action: player.action, actionTicks: player.actionTicks, attackTicks: player.weaponProfile.windupTicks + player.weaponProfile.recoverTicks },
+            alpha,
+            frameDt,
+            world.lighting.getTintAt(player.pos.x, player.pos.y, 0.35),
+          );
+        }
         lerpVec(cameraFocus, player.prevPos, player.pos, alpha);
         // THE RECLAIMING (it.91): the camera crosses to the gate and back on its own clock.
         if (cineFocus || cineBlend) {
@@ -7039,6 +7473,7 @@ async function boot(): Promise<void> {
           (gx, gy) => world.lighting.isVisible(gx, gy),
         );
         world.loot.updateRender(timeSec, world.lighting);
+        world.movement.updateRender(frameDt);
         world.projectiles.updateRender(world.lighting, world.ambience, frameDt);
         world.vfx.update(frameDt);
         // THE RIVER RUNS (it.106) on the WALL clock, so the current keeps moving
@@ -7076,6 +7511,8 @@ async function boot(): Promise<void> {
           if (hurtFlashTimer <= 0) vignetteEl?.classList.remove('hurt');
         }
         updateBuffHud();
+        watchQuests(frameDt);
+        tickBuffAuras();
         if (world.coliseum) {
           const c = world.coliseum;
           c.update(frameDt);
@@ -7091,8 +7528,9 @@ async function boot(): Promise<void> {
               f.beam.scale.x = 1.6 + 0.15 * Math.sin(f.clock * 4);
             }
           }
-          waveHud.textContent =
-            c.phase === 'intermission'
+          waveHud.textContent = c.menagerie
+            ? 'THE MENAGERIE · pick a body on the left · T raises the way home'
+            : c.phase === 'intermission'
               ? `WAVE ${c.wave + 1} / ${c.waves} · NEXT WAVE IN ${Math.ceil(c.timer / 60)}s`
               : c.phase === 'fight'
                 ? `WAVE ${c.wave} / ${c.waves} · ${c.alive} FOE${c.alive === 1 ? '' : 'S'} REMAIN`
@@ -7110,6 +7548,11 @@ async function boot(): Promise<void> {
             banner.style.left = `${Math.round(bp.x)}px`;
             banner.style.top = `${Math.round(bp.y - 150 * world.camera.currentZoom)}px`;
           }
+        }
+        // THE HUNGER LABEL BY THE HERO (it.114).
+        {
+          const hp = world.camera.worldToCanvas(player.pos.x, player.pos.y, buffScratch);
+          statusFrame.trackHero(hp.x, hp.y, world.camera.currentZoom, !reclaim?.running && player.action !== 'dead');
         }
 
         // The hero's warm halo rides his interpolated position, breathing gently.
@@ -7216,7 +7659,7 @@ async function boot(): Promise<void> {
             }
             const tint = world.lighting.getTintAt(enemy.pos.x, enemy.pos.y, 0.5);
             // Own tile unseen (neighbor-visible corner case): dim neutral, not black.
-            enemy.setLightTint(tint === 0 ? 0x6b6472 : tint);
+            enemy.setLightTint(tint === 0 ? 0x6b6472 : tint, world.lighting.getLightAt(enemy.pos.x, enemy.pos.y)); // The rim fades in with the dark (it.114).
             enemy.setShadowLight(world.lighting.lightDirAt(enemy.pos.x, enemy.pos.y));
           }
         });
@@ -7380,7 +7823,9 @@ async function boot(): Promise<void> {
             // and front wall drop to a ghost so the room reads.
             const inside = heroTx >= o.tiles.x && heroTx < o.tiles.x + o.tiles.w && heroTy >= o.tiles.y && heroTy < o.tiles.y + o.tiles.h;
             // A TREE IS A GHOST (it.88): whatever stands behind a trunk reads through it.
-            const target = inside ? 0.2 : behind ? (o.tree ? 0.12 : 0.38) : 1;
+            // UNDER THE CANOPY (it.114): on a tile the crown hangs over, behind the trunk, the hero is hidden even when the body point misses the sprite's inset rect.
+            const under = !!o.canopy && o.depth > heroDepth && heroTx >= o.canopy.x && heroTx < o.canopy.x + o.canopy.w && heroTy >= o.canopy.y && heroTy < o.canopy.y + o.canopy.h;
+            const target = inside ? 0.2 : behind || under ? (o.tree ? 0.12 : 0.38) : 1;
             spr.alpha += (target - spr.alpha) * k;
           }
           if (t.stashSprite && spriteLib.hasSingle('stash_open')) {
@@ -7390,6 +7835,12 @@ async function boot(): Promise<void> {
 
         // Target ring: pulsing bracket under the foe the player is striking.
         const target = world.combat.getDisplayTarget(localSlot);
+        // THE TARGET RIM (it.114): the foe being struck wears a breathing gold outline.
+        if (target !== lastTargetedEnemy) {
+          lastTargetedEnemy?.setTargeted(false);
+          lastTargetedEnemy = target instanceof Enemy ? target : null;
+          lastTargetedEnemy?.setTargeted(true);
+        }
         if (target) {
           const s = worldToScreen(target.pos.x, target.pos.y, pickRingScratch);
           world.targetRing.position.set(s.x, s.y);
@@ -7558,6 +8009,17 @@ async function boot(): Promise<void> {
       onFinish: () => {
         world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE YARD IS DONE · THE GATE WAITS', 'crit');
         audio.sfx('questDone');
+        // THE YARD PAYS (it.114): a hundred gold the first time the lesson is
+        // finished on this hero, kept in the ledger so a second run through the
+        // sign is practice and not a purse.
+        if (quests.tutorial !== 'done') {
+          quests.tutorial = 'done';
+          player.gold += 100;
+          updateProgressHud();
+          showReward('REWARD RECEIVED · 100 GOLD · THE YARD IS YOURS');
+          world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 18);
+          saveNow();
+        }
       },
     });
     /** The sign at the yard (it.90): the word, then the tutorial. */
@@ -8138,36 +8600,23 @@ async function boot(): Promise<void> {
     // tabs throttle timers to once a minute — deterministic QA needs a
     // promise, not a setTimeout chain).
     if (import.meta.env.DEV) {
-      const devTravel = async (target: number, arena = false): Promise<void> => {
-        // ACROSS THE RIVER (it.110): 107-109 are places, not depths, so they must
-        // be listed here or the clamp lands the harness on depth XX instead.
-        const dest = target === FOREST_FLOOR || target === MINES_FLOOR || target === INN_FLOOR || target === CELLAR_FLOOR || target === FARM_FLOOR || target === RIVER_FLOOR || target === FIELD_FLOOR || target === MANOR_FLOOR || target === VAULT_FLOOR ? target : Math.max(0, Math.min(target, MAX_DEPTH));
-        const mode: FloorMode = arena && (isBossFloor(dest) || dest === MINES_FLOOR) ? 'arena' : modeFor(dest);
-        await preloadFloor(dest, mode);
-        captureFloor(); // Every floor writes its fog down now (it.98); the function decides the rest.
-        if (!swapWorld(() => buildWorld(dest, mode))) return;
-        floor = dest;
-        if (floor <= MAX_DEPTH) deepestFloor = Math.max(deepestFloor, floor);
-        if (mode === 'hub') enterTown(false);
-        updateDepth();
-        floorStartTick = state.tick;
-        floorActiveTicks = 0;
-        player.action = 'idle';
-        if (floor <= MAX_DEPTH) levelSelect.unlock(floor);
-        // THE FIRST LOOK (it.109). Every real way onto a floor does this -
-        // `goPlace`, the stairs, the portal - but this dev jump never did, so a
-        // floor entered through the harness stayed entirely HIDDEN until the
-        // hero happened to step across a tile boundary. Harmless in a build (no
-        // player can reach this), and thoroughly misleading in a test: it is why
-        // restoring the fog first looked like a black screen.
-        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-        minimap.markDirty();
-        updateOrb();
-      };
+      // One jump for the harness and the sheet alike (it.114): `jumpTo`, defined by the cheat hooks.
+      const devTravel = jumpTo;
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, INN_FLOOR, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, menagerie: enterMenagerie, wear: wearCostume, get puppet() { return puppet; }, toast, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, INN_FLOOR, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
+    }
+
+    // THE MENAGERIE from the title (it.114): the town is built, everything above is
+    // declared, and the sand is one fade away.
+    if (opts.menagerie) enterMenagerie(null);
+    // THE ARRIVAL (it.114): a fresh hero starts at the yard, with a word from the sentry.
+    else if (!loaded && !coop && floor === 0 && world.town?.layout.training) {
+      const yard = world.town.layout.training.mark;
+      placeParty(yard.x + 0.5, yard.y + 1.5, world.scene.isWalkable);
+      world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+      later(startArrival, 400);
     }
 
     return {
@@ -8205,7 +8654,7 @@ async function boot(): Promise<void> {
         headBuffs.remove();
         statusFrame.destroy();
         systemBar.destroy();
-        vignetteEl?.classList.remove('hurt');
+        vignetteEl?.classList.remove('hurt', 'dead');
         tpButton.remove();
         skillTreeUI.destroy();
         charSheetUI.destroy();
@@ -8271,15 +8720,15 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
   // THE MUSTER (it.101): the standing crowd on the training yard rides the coliseum's spectator sheets.
-  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS];
+  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS, ...COIN_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
-  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS];
+  if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS, ...COIN_ANIMS];
   // THE FARMLANDS (it.100): the company, the city's guards, the fires and the folk who come back.
   if (mode === 'farm') {
     // THE RANKS TURN OUT (it.102): every sheet the squad can be dealt is pulled
     // in with the floor. Without this the bag could only ever deal the sheets
     // some OTHER system happened to need, and the watch was guards and knights.
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', 'captain_idle', ...SQUAD_ANIMS, ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'guard_idle', 'guard_walk', 'guard_attack', 'guard_hit', 'folk_walk', 'banner', 'gateway', 'captain_idle', ...SQUAD_ANIMS, ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of FARM_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
@@ -8288,7 +8737,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // river bridge. The family is drawn from the STREET_FOLK sheets, so they come
   // in with the rest rather than as a special case.
   if (mode === 'river') {
-    const out = new Set<string>(['torch', 'campfire', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'guard_idle', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'guard_idle', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of RIVER_AMBUSH) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
@@ -8302,25 +8751,25 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'field' || mode === 'manor') {
     // THE ENGINES (it.112) come in with the floor: `siege_engine` is eight
     // facings of a stacked catapult and `siege_wreck` the same machine down.
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', 'siege_engine', 'siege_wreck', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', 'siege_engine', 'siege_wreck', 'catapult_idle', 'catapult_throw', 'catapult_load', 'catapult_wreck', 'catapult_stone', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of [...FIELD_POOL, 'mercenary' as EnemyKind, 'chief' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
   // THE MANOR'S CELLAR (it.110): the wall torches, and what moved in below.
   if (mode === 'vault') {
-    const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'folk_walk', ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'folk_walk', ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of VAULT_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
   // THE CELLAR (it.97): the wall torches, the woman at the deep end, and what crawled in.
   if (mode === 'cellar') {
-    const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'cellar_girl', 'folk_walk', ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'inn_torch', 'inn_fire', 'cellar_girl', 'folk_walk', ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of CELLAR_POOL) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
   if (mode === 'coliseum') {
     // Every wave pool plus the stands (it.53).
-    const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS]);
+    const all = new Set<string>(['folk_walk', 'torch', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const f of [1, 3, 5, 9, 14, 20]) for (const k of kindPoolFor(f)) for (const a of animsForKind(k)) all.add(a);
     for (const a of animsForKind('fallen')) all.add(a);
     for (const k of BOSS_LADDER) for (const a of animsForKind(k)) all.add(a); // Boss waves (it.54).
@@ -8328,7 +8777,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   }
   // THE FOREST AND THE QUARRY (it.85): their own packs, the town's torches and braziers, the hydra.
   if (mode === 'forest' || mode === 'mines' || (mode === 'arena' && floor === MINES_FLOOR)) {
-    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'poacher_idle', ...STREET_FOLK.map((f) => f.anim), ...VFX_ANIMS]);
+    const out = new Set<string>(['torch', 'brazier_stand', 'campfire', 'folk_walk', 'poacher_idle', 'dun_torch_n', 'dun_torch_w', 'dun_brazier', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of mode === 'forest' ? FOREST_POOL : [...MINES_POOL, 'hydra' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
@@ -8337,7 +8786,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'arena') kinds.add(BOSS_LADDER[Math.min(Math.floor(floor / 5), BOSS_LADDER.length) - 1]);
   const out = new Set<string>();
   for (const k of kinds) for (const a of animsForKind(k)) out.add(a);
-  return [...VFX_ANIMS, ...[...out]];
+  return [...VFX_ANIMS, ...COIN_ANIMS, 'dun_torch_n', 'dun_torch_w', 'dun_brazier', ...[...out]]; // The crypt's own torches (it.114).
 }
 
 /**
@@ -8412,6 +8861,17 @@ function voiceProfile(kind: EnemyKind): { pitch: number; bank: string } {
     case 'fallen': return { pitch: 1.25, bank: 'hGrunt' };
     case 'shaman': return { pitch: 1.0, bank: 'hGrunt' };
     case 'bossEmber': return { pitch: 0.9, bank: 'hHiss' }; // The serpent.
+    // THE NEW FLESH (it.114).
+    case 'redWidow': case 'boneWidow': case 'venomWidow': case 'tealSpider': return { pitch: 1.2, bank: 'hHiss' };
+    case 'wyrm': case 'drake': return { pitch: 0.95, bank: 'hHiss' };
+    case 'giantMoth': return { pitch: 1.4, bank: 'hHiss' };
+    case 'frostWolf': case 'creeper': return { pitch: 0.95, bank: 'hGrowl' };
+    case 'apexPredator': case 'apexStalker': return { pitch: 0.85, bank: 'hGrowl' };
+    case 'markedGhoul': case 'corpse': case 'fleshGolem': return { pitch: 0.9, bank: 'hZombie' };
+    case 'orcBrute': return { pitch: 0.75, bank: 'hGrunt' };
+    case 'orcSpearman': case 'orcWarrior': case 'halberdier': case 'duelist': return { pitch: 1.05, bank: 'hGrunt' };
+    case 'reaper': return { pitch: 1.0, bank: 'hMoan' };
+    case 'treant': case 'gargoyle': return { pitch: 0.7, bank: 'hMoan' };
     default: return { pitch: 0.8, bank: 'hRoar' }; // Wardens ROAR.
   }
 }
@@ -8422,14 +8882,14 @@ function kindPoolFor(floor: number): EnemyKind[] {
   return floor === 1
     ? ['fallen', 'fallen', 'skeleton', 'skeleton', 'zombie']
     : floor <= 3
-      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc', 'spider']
+      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc', 'spider', 'redWidow', 'corpse', 'markedGhoul', 'gargoyle']
       : floor <= 5
-        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher', 'spider']
+        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher', 'spider', 'redWidow', 'corpse', 'markedGhoul', 'orcSpearman', 'gargoyle']
         : floor <= 9
-          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher', 'spider', 'spider']
+          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher', 'spider', 'redWidow', 'markedGhoul', 'orcSpearman', 'orcBrute', 'creeper', 'gargoyle']
           : floor <= 14
-            ? ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'shambler']
-            : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'hydra'];
+            ? ['zombie', 'archer', 'guard', 'wolf', 'frostWolf', 'frostWolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'orcBrute', 'creeper', 'reaper', 'fleshGolem']
+            : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'hydra', 'drake', 'drake', 'reaper', 'fleshGolem', 'apexPredator', 'apexStalker']; // THE NEW FLESH (it.114).
 }
 
 /**

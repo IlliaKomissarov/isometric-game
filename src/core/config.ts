@@ -53,6 +53,21 @@ export const WALL_FADE_ALPHA = 0.32;
 /** Camera smoothing factor — fraction of remaining distance closed per second. */
 export const CAMERA_LERP = 6.0;
 
+/** CAMERA FEEL (it.114): shake displacement at trauma 1 (px at the opening zoom), its roll, and the cap on kick + shake together. */
+export const CAMERA_SHAKE_MAX_PX = 14;
+export const CAMERA_SHAKE_ROT_DEG = 0.6;
+export const CAMERA_SHAKE_MAX_OFFSET_PX = 24;
+
+/**
+ * THE RING (it.114): the torch's bright core is re-lit every frame around the
+ * hero's sub-tile position out to min(fullRadius, this) + 1.5 tiles, so a
+ * floor lit end to end (full 30) does not pay for a 3000-tile ring.
+ */
+export const LIGHT_RING_MAX_RADIUS = 6;
+
+/** A foe never renders darker than this light level (it.114); a kind may raise it via `sprite.minLight`. */
+export const ENEMY_MIN_LIGHT = 0.18;
+
 /** Camera zoom limits (mouse wheel). Rotation is permanently disabled. */
 export const ZOOM_MIN = 0.6;
 export const ZOOM_MAX = 2.2;

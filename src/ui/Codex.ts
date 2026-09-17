@@ -27,15 +27,16 @@ import { RARITY_AFFIX_COUNT, RARITY_COLOR, RARITY_MULT, RARITY_ORDER, RARITY_WEI
 import { ENCHANTS, STATUS_INFO, TRAIT_INFO, effectIcon, effectLine, type Effect } from '@/items/effects';
 import { weaponIconUrl } from '@/render/SpriteLibrary';
 import { ilvlForDepth, itemDef } from '@/items/instance';
-import { DRAUGHTS, MATERIALS, SHAPES, TIERS, gearBases } from '@/items/registry';
-import { QUAFF_COOLDOWN } from '@/systems/Inventory';
+import { DRAUGHTS, FOOD_TIER, MATERIALS, SHAPES, TIERS, foodsOfTier, gearBases } from '@/items/registry';
+import { FEED_TICKS, HUNGER_DECAY_TICKS, HUNGER_FULL, HUNGER_HUNGRY, HUNGER_MAX, HUNGER_STARVING, QUAFF_COOLDOWN, STARVING_MALUS } from '@/systems/Inventory';
+import { FOE_GOLD_CHANCE } from '@/items/instance';
 import { REINFORCE_CHANCE, TRANSMUTE_RECIPES, enchantCost, forgeCost, goldOnlyCost, reinforceCost, rerollCost, salvageYield } from '@/systems/Crafting';
 import { DOT_TABLE, MARK_TICKS } from '@/systems/Status';
 import { BUYBACK_CAPACITY, RESTOCK_TICKS, SELL_RATIO, STASH_CAPACITY } from '@/systems/Town';
 import { itemIconHtml } from './itemIcons';
 import { keepScroll } from './keepScroll';
 
-export type Chapter = 'items' | 'catalogue' | 'statuses' | 'traits' | 'enchants' | 'forge' | 'log' | 'belt' | 'merchants' | 'combat' | 'legend';
+export type Chapter = 'items' | 'catalogue' | 'statuses' | 'traits' | 'enchants' | 'forge' | 'log' | 'belt' | 'food' | 'merchants' | 'combat' | 'legend';
 
 const CHAPTERS: Array<[Chapter, string]> = [
   ['items', 'ITEMS'],
@@ -46,6 +47,7 @@ const CHAPTERS: Array<[Chapter, string]> = [
   ['forge', 'CRAFTING'],
   ['log', 'CRAFT LOG'],
   ['belt', 'BELT'],
+  ['food', 'FOOD & HUNGER'],
   ['merchants', 'TRADE'],
   ['combat', 'COMBAT'],
   ['legend', 'LEGEND'],
@@ -240,6 +242,8 @@ export class CodexUI {
         return this.log();
       case 'belt':
         return this.belt();
+      case 'food':
+        return this.food();
       case 'merchants':
         return this.merchants();
       case 'combat':
@@ -495,6 +499,30 @@ export class CodexUI {
       </ol>
       <p>Draughts share cooldowns by kind: <b>healing ${QUAFF_COOLDOWN.heal / 60} s</b>, <b>resource ${QUAFF_COOLDOWN.resource / 60} s</b>, <b>brews ${QUAFF_COOLDOWN.buff / 60} s</b>. A brew refreshes its own timer; it never stacks with itself. Stone skin stacks under the 75% cap with Warding lines.</p>
       <table class="cx-table"><thead><tr><th>Draught</th><th>Does</th><th>Cooldown</th><th>Worth</th></tr></thead><tbody>${draughts}</tbody></table>
+      </section>`;
+  }
+
+  /** FOOD & HUNGER (it.114): every dish with its numbers, and the belly's rules - all from the tables the sim reads. */
+  private food(): string {
+    const tiers = (['snack', 'meal', 'feast'] as const)
+      .map((tier) => {
+        const t = FOOD_TIER[tier];
+        const rows = foodsOfTier(tier)
+          .map((d) => `<tr data-find="${esc(`${d.name} ${tier} food`.toLowerCase())}"><td>${itemIconHtml(d, 'cx-food-icon')} <b style="color:${hex(d.color)}">${d.name}</b></td><td>${pct(t.heal)} life over ${FEED_TICKS / 60} s</td><td>+${t.hunger}</td><td>${d.value} gold</td><td><i>${d.desc ?? ''}</i></td></tr>`)
+          .join('');
+        return `<div class="cx-group"><h5 class="cx-fam">${tier === 'snack' ? 'Snacks' : tier === 'meal' ? 'Meals' : 'Feasts'} <small>${pct(t.heal)} of max life · +${t.hunger} hunger · ${t.value} gold</small></h5><table class="cx-table cx-food"><thead><tr><th>Dish</th><th>Heals</th><th>Hunger</th><th>Worth</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      })
+      .join('');
+    return `
+      <section><h4>FOOD &amp; HUNGER</h4>
+      <p><b>Food</b> is the other way to heal. A dish is eaten from the pack (click it, tap it) or off the belt (Q or R, like a draught; the ▾ lists every dish you carry). It heals <b>less than a potion</b> — a snack ${pct(FOOD_TIER.snack.heal)}, a meal ${pct(FOOD_TIER.meal.heal)}, a feast ${pct(FOOD_TIER.feast.heal)} of your life — and unlike a potion the healing is <b>served over ${FEED_TICKS / 60} seconds</b>, in six slices, on a short cooldown of its own (${(QUAFF_COOLDOWN.food / 60).toFixed(1)} s, shared with no draught). Carry a stack and you can eat your way back to full: the slices of one bite join the next.</p>
+      <h5>The belly</h5>
+      <p>The <b>HUNGER</b> gauge (under the XP sliver, and at the head of the inventory) runs 0–${HUNGER_MAX}; ${HUNGER_MAX} is <b>WELL FED</b>. It empties <b>one point every ${HUNGER_DECAY_TICKS / 60} seconds on a dungeon floor</b> — never in town, the inn or the fields, and never below zero. Under ${HUNGER_HUNGRY} you are <b>HUNGRY</b> (a warning, nothing more). Under ${HUNGER_STARVING} you are <b>STARVING</b>: your health regeneration stops and every blow you land loses <b>${pct(STARVING_MALUS)}</b>. Every bite fills the gauge by its tier (+${FOOD_TIER.snack.hunger} / +${FOOD_TIER.meal.hunger} / +${FOOD_TIER.feast.hunger}); at ${HUNGER_FULL} or more you are <b>FULL</b>, and a feast eaten then heals you <b>to full at once</b>.</p>
+      <h5>Where food comes from</h5>
+      <p>The <b>tavern keeper</b> sells the larder (bread and pretzels always, a spread of snacks and meals, a feast or two once you have walked the crypt a way) and the <b>alchemist</b> keeps a few bites beside the flasks — priced by tier. On the floor, food is about one drop in eight from a slain foe (snacks mostly, a meal a third of the time, a feast rarely and a little more often the deeper you go), a third of crypt chests hold a dish, and a town chest holds one three times in ten.</p>
+      <h5>Gold on the floor</h5>
+      <p>Coins lie in the world now, not only in the crypt's piles: <b>${pct(FOE_GOLD_CHANCE)} of slain foes</b> leave a purse that grows with the floor's level, and <b>every chest</b> spills one (a grand chest three). Walk over them and they are yours — the same reach as a pile — with the +N over your head.</p>
+      ${tiers}
       </section>`;
   }
 

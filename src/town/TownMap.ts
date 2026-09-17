@@ -429,24 +429,347 @@ export interface EastQuarter {
 }
 
 /**
- * SMALL CLUTTER (it.88): decoration that stands in no one's way. A jar, a
- * pot, a box, a bin, a wood pile, a grass clump, a sign on a wall - drawn,
- * never a blocked tile. Every placer (the town, the forest, the quarry)
- * asks this before it claims a tile.
+ * HOW A PROP MEETS THE GROUND (it.114). One entry per kind, and the ONLY place
+ * the answer lives - every placer on every floor asks `claims()` /
+ * `footprintOf()` instead of keeping a list of its own:
+ *
+ *   full   the prop stands on its footprint and the footprint is solid.
+ *   none   paint underfoot (it.88 / it.93): a jar, a pot, a rug, a boulder, a
+ *          heap, a keg, a chair - drawn, never a blocked tile.
+ *   post   a thin vertical thing - a torch, a lamp, a column, a banner pole,
+ *          a signpost, a plinth, a dummy. It blocks its own tile like anything
+ *          else, but it NEVER stands in a street: a post placed on a road tile
+ *          steps to the nearest verge, and if there is none it is not placed.
+ *
+ * `w`/`h` are the footprint a placer gets when it names the kind without one
+ * (a well is two by two wherever it stands; a cart is two long). The town's
+ * hand-laid props may still carry their own.
  */
-export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
-  'grassclump', 'jar', 'pots', 'box', 'trashbox', 'potions', 'hanging_sign', 'crates_wood', 'wood_pile', 'rubble', 'slab', 'debris', 'corpse', 'embers', 'carpet',
-  // WALK THROUGH (it.93): everything knee-high or broken is paint underfoot - a heap, a stub of wall, a boulder, a bench, a keg, a chair, a candle stand.
-  'heap', 'ruinwall', 'rock', 'bench', 'table', 'crates', 'barrel', 'barrels_stacked', 'innchair', 'candle', 'doorway',
-  'inndeco', 'innrug', 'sconce', 'innwall',
-  // ACROSS THE RIVER (it.110): a camp fire, a cauldron and a bridge bay are all paint underfoot.
-  'firepit', 'tripod', 'bridgedeck', 'bridgepost', 'bridgeshadow', 'gore',
-  // THE CELLAR (it.97): both doorways are drawn into a wall run, so the tile under them stays open.
-  'cellardoor', 'cellarup',
-  // THE FARMLANDS (it.100): a field you cannot walk into is not a field, and the
-  // fire in it is paint - the corn parts around you.
-  'farmcrop', 'fieldfire', 'farmgate',
+export type PropBlock = 'full' | 'none' | 'post';
+export interface PropFootprint {
+  w: number;
+  h: number;
+  block: PropBlock;
+}
+const F = (w: number, h: number, block: PropBlock): PropFootprint => ({ w, h, block });
+export const PROP_FOOTPRINT: Readonly<Record<TownPropKind, PropFootprint>> = {
+  // ---- buildings ----
+  house: F(3, 3, 'full'),
+  tavern: F(5, 4, 'full'),
+  tavern2: F(6, 5, 'full'),
+  guildhall: F(4, 4, 'full'),
+  manor: F(5, 5, 'full'),
+  smithy: F(3, 3, 'full'),
+  barracks: F(4, 4, 'full'),
+  watchtower: F(2, 2, 'full'),
+  stall: F(3, 2, 'full'),
+  ruin: F(3, 3, 'full'),
+  tent: F(2, 2, 'full'),
+  well: F(2, 2, 'full'),
+  siege: F(2, 2, 'full'),
+  ruingate: F(1, 4, 'full'),
+  // ---- solid furniture and gates ----
+  campfire: F(1, 1, 'full'),
+  forge: F(1, 1, 'full'),
+  stash: F(1, 1, 'full'),
+  pillar: F(1, 1, 'full'),
+  fence: F(1, 1, 'full'),
+  supports: F(1, 1, 'full'),
+  table_chairs: F(1, 1, 'full'),
+  rack: F(1, 1, 'full'),
+  barricade: F(1, 1, 'full'),
+  cart: F(2, 1, 'full'),
+  chest_market: F(1, 1, 'full'),
+  chest: F(1, 1, 'full'),
+  bed: F(2, 1, 'full'),
+  gate: F(1, 1, 'full'),
+  gatebar: F(1, 1, 'full'),
+  arenagate: F(1, 1, 'full'),
+  gateway: F(1, 1, 'full'),
+  pentagram: F(1, 1, 'full'),
+  stairs_stone: F(1, 1, 'none'), // the tavern's step: walked up, not round
+  hearth: F(1, 1, 'full'),
+  inntable: F(1, 1, 'full'),
+  innprop: F(1, 1, 'full'),
+  shelf: F(1, 1, 'full'),
+  inndoor: F(1, 1, 'full'),
+  // ---- trees ----
+  tree: F(1, 1, 'full'),
+  pine: F(1, 1, 'full'),
+  deadtree: F(1, 1, 'full'),
+  bigtree: F(1, 1, 'full'),
+  // ---- posts: thin, vertical, never in a street ----
+  torch: F(1, 1, 'post'),
+  lamp: F(1, 1, 'post'),
+  brazier: F(1, 1, 'post'),
+  column: F(1, 1, 'post'),
+  banner: F(1, 1, 'post'),
+  signpost: F(1, 1, 'post'),
+  statue: F(1, 1, 'post'), // the seated king is placed 2x2, and a 2x2 post is solid ground
+  dummy: F(1, 1, 'post'),
+  // ---- landmarks and passage markers: they stand where the layout says, roads included ----
+  board: F(1, 1, 'full'),
+  notice: F(1, 1, 'full'),
+  trainpost: F(1, 1, 'full'),
+  quarry: F(1, 1, 'full'),
+  townroad: F(1, 1, 'full'),
+  farmroad: F(1, 1, 'full'),
+  riverroad: F(1, 1, 'full'),
+  fieldroad: F(1, 1, 'full'),
+  bridgegate: F(1, 1, 'full'),
+  manordoor: F(1, 1, 'full'),
+  manorout: F(1, 1, 'full'),
+  manordown: F(1, 1, 'full'),
+  vaultup: F(1, 1, 'full'),
+  citygate: F(1, 1, 'full'),
+  fishspot: F(1, 1, 'none'),
+  // ---- bodies drawn by Villagers or the dresser: a person takes a tile ----
+  merchant: F(1, 1, 'full'),
+  alchemist: F(1, 1, 'full'),
+  arenamaster: F(1, 1, 'full'),
+  guard: F(1, 1, 'full'),
+  jeweler: F(1, 1, 'full'),
+  scribe: F(1, 1, 'full'),
+  bowyer: F(1, 1, 'full'),
+  gatekeeper: F(1, 1, 'full'),
+  innkeeper: F(1, 1, 'full'),
+  barkeep: F(1, 1, 'full'),
+  cellargirl: F(1, 1, 'full'),
+  oscar: F(1, 1, 'full'),
+  oscarkin: F(1, 1, 'full'),
+  angler: F(1, 1, 'full'),
+  merchantman: F(1, 1, 'full'),
+  // ---- paint underfoot (it.88, it.93, it.97, it.100, it.110) ----
+  grassclump: F(1, 1, 'none'),
+  jar: F(1, 1, 'none'),
+  pots: F(1, 1, 'none'),
+  box: F(1, 1, 'none'),
+  trashbox: F(1, 1, 'none'),
+  potions: F(1, 1, 'none'),
+  hanging_sign: F(1, 1, 'none'),
+  crates_wood: F(1, 1, 'none'),
+  wood_pile: F(1, 1, 'none'),
+  rubble: F(1, 1, 'none'),
+  slab: F(1, 1, 'none'),
+  debris: F(1, 1, 'none'),
+  corpse: F(1, 1, 'none'),
+  embers: F(1, 1, 'none'),
+  carpet: F(1, 1, 'none'),
+  heap: F(1, 1, 'none'),
+  ruinwall: F(1, 1, 'none'),
+  rock: F(1, 1, 'none'),
+  bench: F(2, 1, 'none'),
+  table: F(1, 1, 'none'),
+  crates: F(1, 1, 'none'),
+  barrel: F(1, 1, 'none'),
+  barrels_stacked: F(1, 1, 'none'),
+  innchair: F(1, 1, 'none'),
+  candle: F(1, 1, 'none'), // the manor's hall is lit down its middle and the fight walks through the stands (it.110)
+  doorway: F(1, 1, 'none'),
+  inndeco: F(1, 1, 'none'),
+  innrug: F(1, 1, 'none'),
+  sconce: F(1, 1, 'none'), // on the wall; the tile it faces stays open
+  innwall: F(2, 1, 'none'),
+  firepit: F(1, 1, 'none'),
+  tripod: F(1, 1, 'none'),
+  bridgedeck: F(1, 1, 'none'),
+  bridgepost: F(1, 1, 'none'),
+  bridgeshadow: F(1, 1, 'none'),
+  gore: F(1, 1, 'none'),
+  cellardoor: F(1, 1, 'none'),
+  cellarup: F(1, 1, 'none'),
+  farmcrop: F(1, 1, 'none'),
+  fieldfire: F(1, 1, 'none'),
+  farmgate: F(1, 1, 'none'),
+  jetty: F(1, 1, 'none'),
+  reeds: F(1, 1, 'none'),
+};
+
+/** The footprint a prop actually takes: its own `w`/`h` when it carries them, the kind's otherwise. */
+export function footprintOf(p: TownProp): PropFootprint {
+  const f = PROP_FOOTPRINT[p.kind];
+  return { w: p.w ?? f.w, h: p.h ?? f.h, block: f.block };
+}
+
+/** Does this prop take its tiles? False for paint underfoot. */
+export function claims(p: TownProp): boolean {
+  return PROP_FOOTPRINT[p.kind].block !== 'none';
+}
+
+/** A one-tile post: the thing the road rule moves. A 2x2 "post" (the seated king) is solid ground. */
+export function isPost(p: TownProp): boolean {
+  const f = footprintOf(p);
+  return f.block === 'post' && f.w * f.h === 1;
+}
+
+/**
+ * SMALL CLUTTER (it.88), kept for the floors that still ask by name (the inn,
+ * the cellars, the manor): every kind the table says is paint underfoot.
+ */
+export const CLUTTER_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>(
+  (Object.keys(PROP_FOOTPRINT) as TownPropKind[]).filter((k) => PROP_FOOTPRINT[k].block === 'none'),
+);
+
+/**
+ * WHAT MAY STAND IN A STREET. Buildings and stalls define the street's sides,
+ * fences and pillars frame it, a gate or a barricade closes it, a passage
+ * marker stands at its end, and a sentry or a vendor is a person. Everything
+ * else that claims a road tile is a mistake the audit reports.
+ */
+export const ROAD_OK: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
+  'house', 'tavern', 'tavern2', 'guildhall', 'manor', 'smithy', 'barracks', 'watchtower', 'stall', 'ruin', 'tent', 'siege', 'ruingate',
+  'fence', 'pillar', 'gate', 'gatebar', 'barricade', 'arenagate', 'gateway',
+  'board', 'notice', 'trainpost', 'quarry', 'townroad', 'farmroad', 'riverroad', 'fieldroad', 'bridgegate', 'manordoor', 'manorout', 'manordown', 'vaultup', 'citygate',
+  'merchant', 'alchemist', 'arenamaster', 'guard', 'jeweler', 'scribe', 'bowyer', 'gatekeeper', 'innkeeper', 'barkeep', 'cellargirl', 'oscar', 'oscarkin', 'angler', 'merchantman',
+  'stash', 'forge', 'campfire', 'chest',
+  'well', // a well stands in a square: the market's, the east quarter's yard
 ]);
+
+/**
+ * LAID AS PAINT, TOO (it.114). A passage marker, a gate leaf, a fence stub or a
+ * signpost claims its tile when a placer says `block`, but a floor may also lay
+ * one as a decal on open ground (a road marker the hero walks onto, the estate
+ * wall's stubs, the market's signposts). The footprint audit does not call
+ * that a hole: it is a hole only when a BUILDING or a tree stands on a tile
+ * the hero can walk.
+ */
+export const PAINT_OK: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
+  'board', 'notice', 'trainpost', 'quarry', 'townroad', 'farmroad', 'riverroad', 'fieldroad', 'bridgegate', 'manordoor', 'manorout', 'manordown', 'vaultup', 'citygate', 'inndoor', 'gateway',
+  'fence', 'gate', 'gatebar', 'arenagate', 'signpost', 'pentagram',
+  'ruingate', // the dungeon gate's arch: its opening is the threshold
+  // A person drawn by Villagers may be laid on open ground (the riverside's anglers, the smith and his kin).
+  'merchant', 'alchemist', 'arenamaster', 'guard', 'jeweler', 'scribe', 'bowyer', 'gatekeeper', 'innkeeper', 'barkeep', 'cellargirl', 'oscar', 'oscarkin', 'angler', 'merchantman',
+]);
+
+/**
+ * STREET FURNITURE THAT GOES (it.85, widened it.114): a store, a bench, a cart,
+ * a tree, a boulder, a heap or a stub of wall that lands in a street is taken
+ * away by `sweepRoads`. A boulder does not block - but a boulder in the middle
+ * of the high street is still a boulder in the middle of the high street.
+ */
+export const ROAD_SWEEP_KINDS: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
+  'barrel', 'barrels_stacked', 'crates', 'crates_wood', 'wood_pile', 'bench', 'cart', 'jar', 'box', 'pots', 'table', 'trashbox',
+  'bigtree', 'pine', 'deadtree', 'tree', 'rock', 'table_chairs', 'supports', 'heap', 'ruinwall', 'rack', 'tripod', 'candle',
+]);
+
+/** What a placer hands the road rule: the floor's grid and its street mask (and the town's forest belt). */
+export interface RoadCtx {
+  width: number;
+  height: number;
+  grid: Uint8Array;
+  road: Uint8Array;
+  belt?: Uint8Array;
+  /**
+   * Tiles a standing prop has claimed (it.114), stamped by `claimProp`. A
+   * floor that clears ground for a later building (the town's `clearFor`)
+   * leaves these alone, so one building's pad never re-opens a column of the
+   * one beside it.
+   */
+  claimed?: Uint8Array;
+}
+
+/**
+ * OFF THE ROAD (it.85, shared it.114): the nearest open tile beside (x, y) that
+ * is floor, not a street and not the forest belt - (x, y) itself when it
+ * already is one. A lamp lights the road from its verge, it never stands in
+ * it. Null when no verge is free within `r`.
+ */
+export function offRoadTile(c: RoadCtx, x: number, y: number, r = 2): { x: number; y: number } | null {
+  const free = (tx: number, ty: number): boolean =>
+    tx >= 0 && ty >= 0 && tx < c.width && ty < c.height && c.grid[ty * c.width + tx] === TILE_FLOOR && !c.road[ty * c.width + tx] && !(c.belt && c.belt[ty * c.width + tx]);
+  if (free(x, y)) return { x, y };
+  for (let ring = 1; ring <= r; ring++)
+    for (let dy = -ring; dy <= ring; dy++)
+      for (let dx = -ring; dx <= ring; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === ring && free(x + dx, y + dy)) return { x: x + dx, y: y + dy };
+  return null;
+}
+
+/**
+ * PLACE A PROP (it.114): the one way a standing thing claims its tiles.
+ *
+ *   paint      listed, the ground untouched;
+ *   a post     moved to the verge when its tile is a street (or already taken),
+ *              DROPPED when there is no verge within two tiles;
+ *   anything   listed with its footprint stamped on (so the dresser draws what
+ *   else       the grid blocks) and every tile of it made solid.
+ *
+ * Returns the prop as placed, or null when it was dropped.
+ */
+export function claimProp(c: RoadCtx, props: TownProp[], p: TownProp): TownProp | null {
+  const f = footprintOf(p);
+  if (f.block === 'none') {
+    props.push(p);
+    return p;
+  }
+  if (p.w === undefined && f.w !== 1) p.w = f.w;
+  if (p.h === undefined && f.h !== 1) p.h = f.h;
+  // A post on a STREET steps to the verge. A post on a cliff or in the brush
+  // (the ward gate's pillars, the guildhall's flag) is scenery on ground nobody
+  // walks and stays where the layout put it, as it always has.
+  if (isPost(p) && p.x >= 0 && p.y >= 0 && p.x < c.width && p.y < c.height && c.road[p.y * c.width + p.x]) {
+    const at = offRoadTile(c, p.x, p.y);
+    if (!at) return null;
+    p.x = at.x;
+    p.y = at.y;
+  }
+  props.push(p);
+  for (let y = p.y; y < p.y + f.h; y++)
+    for (let x = p.x; x < p.x + f.w; x++)
+      if (x >= 0 && y >= 0 && x < c.width && y < c.height) {
+        c.grid[y * c.width + x] = TILE_BLOCKED;
+        if (c.claimed) c.claimed[y * c.width + x] = 1;
+      }
+  return p;
+}
+
+/**
+ * THE ROADS STAY OPEN (it.85, shared it.114). After a floor is dressed: a post
+ * that landed in a street steps to the verge (or goes); street furniture and
+ * standing clutter in a street goes. Buildings, stalls, fences, gates, markers
+ * and people stay - they are what a street is made of.
+ */
+export function sweepRoads(c: RoadCtx, props: TownProp[]): { moved: number; dropped: number } {
+  const onRoad = (p: TownProp): boolean => {
+    const f = footprintOf(p);
+    for (let y = p.y; y < p.y + f.h; y++) for (let x = p.x; x < p.x + f.w; x++) if (x >= 0 && y >= 0 && x < c.width && y < c.height && c.road[y * c.width + x]) return true;
+    return false;
+  };
+  const free = (p: TownProp): void => {
+    const f = footprintOf(p);
+    if (f.block === 'none') return;
+    for (let y = p.y; y < p.y + f.h; y++)
+      for (let x = p.x; x < p.x + f.w; x++)
+        if (x >= 0 && y >= 0 && x < c.width && y < c.height && c.grid[y * c.width + x] === TILE_BLOCKED) {
+          c.grid[y * c.width + x] = TILE_FLOOR;
+          if (c.claimed) c.claimed[y * c.width + x] = 0;
+        }
+  };
+  let moved = 0;
+  let dropped = 0;
+  for (let i = props.length - 1; i >= 0; i--) {
+    const p = props[i];
+    if (ROAD_OK.has(p.kind) || !onRoad(p)) continue;
+    if (isPost(p)) {
+      free(p);
+      const at = offRoadTile(c, p.x, p.y);
+      if (at) {
+        p.x = at.x;
+        p.y = at.y;
+        c.grid[at.y * c.width + at.x] = TILE_BLOCKED;
+        if (c.claimed) c.claimed[at.y * c.width + at.x] = 1;
+        moved++;
+      } else {
+        props.splice(i, 1);
+        dropped++;
+      }
+    } else if (ROAD_SWEEP_KINDS.has(p.kind)) {
+      free(p);
+      props.splice(i, 1);
+      dropped++;
+    }
+  }
+  return { moved, dropped };
+}
 
 export interface TownProp {
   /**
@@ -506,8 +829,12 @@ export interface TownLayout {
   portal: { x: number; y: number };
   /** Villagers wander inside this room. */
   wander: Room;
-  /** Cottage footprints (for the "inside" cutaway). */
-  houses: Array<{ x: number; y: number; w: number; h: number }>;
+  /**
+   * Cottage footprints (for the "inside" cutaway), and each one's THRESHOLD
+   * (it.114): the walkable tile in front of the door, just outside the south
+   * face. The footprint itself is solid - a house blocks what it draws.
+   */
+  houses: Array<{ x: number; y: number; w: number; h: number; door?: { x: number; y: number } }>;
   /** Gate guards (render-only sentries). */
   guards: Array<{ x: number; y: number }>;
   // ---- THE MARKET WARD (it.84) ----
@@ -700,51 +1027,46 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   // ---- PROPS ----
   const props: TownProp[] = [];
   const houses: TownLayout['houses'] = [];
-  const block = (p: TownProp): void => {
-    props.push(p);
-    if (CLUTTER_KINDS.has(p.kind)) return; // Small clutter never blocks (it.88).
-    const w = p.w ?? 1;
-    const h = p.h ?? 1;
-    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;
-  };
+  /** The road rule's view of the town (it.114): grid, streets, and the forest belt a post may not step into. */
+  const claimed = new Uint8Array(W * H);
+  const ctx: RoadCtx = { width: W, height: H, grid, road, belt, claimed };
+  /** Every standing thing goes through the one placer (it.114): paint is listed, a post keeps off the street, the rest is solid. */
+  const block = (p: TownProp): boolean => claimProp(ctx, props, p) !== null;
   const decal = (p: TownProp): void => {
     props.push(p);
   };
-  /**
-   * OFF THE ROAD (it.85): the nearest open grass tile beside (x, y) when
-   * (x, y) is a street tile — a lamp lights the road from its verge, it
-   * never stands in it. Null when no verge is free.
-   */
-  const offRoad = (x: number, y: number): { x: number; y: number } | null => {
-    const free = (tx: number, ty: number): boolean => inside(tx, ty) && grid[idx(tx, ty)] === TILE_FLOOR && !road[idx(tx, ty)] && !belt[idx(tx, ty)];
-    if (free(x, y)) return { x, y };
-    for (let r = 1; r <= 2; r++)
-      for (let dy = -r; dy <= r; dy++)
-        for (let dx = -r; dx <= r; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r && free(x + dx, y + dy)) return { x: x + dx, y: y + dy };
-    return null;
-  };
+  /** A street light: a post, so `claimProp` already keeps it to the verge (it.85). */
   const placeLamp = (kind: 'torch' | 'lamp', x: number, y: number): void => {
-    const at = offRoad(x, y);
-    if (at) block({ kind, x: at.x, y: at.y });
+    block({ kind, x, y });
   };
   const clearFor = (x: number, y: number, w: number, h: number, pad = 1, kind = KIND_GRASS): void => {
     for (let ty = y - pad; ty < y + h + pad; ty++) {
       for (let tx = x - pad; tx < x + w + pad; tx++) {
-        if (!inside(tx, ty) || grid[idx(tx, ty)] === TILE_WALL) continue;
+        // A tile a standing prop already claimed stays claimed (it.114): a ruin's
+        // pad used to re-open the inn's east column, a cottage's pad the ruin's.
+        if (!inside(tx, ty) || grid[idx(tx, ty)] === TILE_WALL || claimed[idx(tx, ty)]) continue;
         grid[idx(tx, ty)] = TILE_FLOOR;
         belt[idx(tx, ty)] = 0;
         if (kind !== KIND_GRASS) tileKind[idx(tx, ty)] = kind;
       }
     }
   };
-  const house = (x: number, y: number, variant: string): void => {
-    clearFor(x, y, 3, 3);
-    block({ kind: 'house', x, y, w: 3, h: 3, variant });
-    grid[idx(x + 1, y + 1)] = TILE_FLOOR;
-    grid[idx(x + 1, y + 2)] = TILE_FLOOR;
-    tileKind[idx(x + 1, y + 2)] = KIND_DIRT;
-    tileKind[idx(x + 1, y + 1)] = KIND_DIRT;
-    houses.push({ x, y, w: 3, h: 3 });
+  /**
+   * A COTTAGE BLOCKS WHAT IT DRAWS (it.114). Up to it.113 a house was a 3x3
+   * footprint with a two-tile "door column" carved back out of it, so the hero
+   * walked INTO the painted building and vanished under its roof. The footprint
+   * is solid now; the threshold is the tile in front of the south face, worn to
+   * dirt, and that is where anything that wants "the door" stands.
+   */
+  const house = (x: number, y: number, variant: string, w = 3, h = 3): void => {
+    clearFor(x, y, w, h);
+    block({ kind: 'house', x, y, w, h, variant });
+    const door = { x: x + Math.floor(w / 2), y: y + h };
+    if (inside(door.x, door.y) && grid[idx(door.x, door.y)] !== TILE_WALL) {
+      grid[idx(door.x, door.y)] = TILE_FLOOR;
+      tileKind[idx(door.x, door.y)] = KIND_DIRT;
+    }
+    houses.push({ x, y, w, h, door });
   };
 
   // The DUNGEON GATE (WEST, it.47 — glued to the wall): the baked ruin
@@ -892,14 +1214,13 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   const tryBlock = (p: TownProp, kind = KIND_GRASS): boolean => {
     // A prop that would seal a route, or land on paint, a door or another
     // prop, is not placed: the roads stay open by construction.
-    const w = p.w ?? 1;
-    const h = p.h ?? 1;
+    const { w, h } = footprintOf(p);
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (!inside(x, y) || grid[idx(x, y)] !== TILE_FLOOR || (kind === KIND_GRASS && tileKind[idx(x, y)] !== KIND_GRASS) || belt[idx(x, y)] || road[idx(x, y)]) return false;
-    if (CLUTTER_KINDS.has(p.kind)) {
+    if (!claims(p)) {
       props.push(p); // Drawn on its tile, the tile stays open (it.88).
       return true;
     }
-    block(p);
+    if (!block(p)) return false; // Every tile was free, so a post is never dropped here - but the contract says check.
     const seen0 = wardReach();
     for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) grid[idx(x, y)] = TILE_FLOOR;
     const seen1 = wardReach();
@@ -1031,7 +1352,8 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   const gateways: TownLayout['gateways'] = [
     // THE FARMLANDS (it.100): the road the fields lie along. It is only a road once
     // the officer has asked for a sword; before that the boards are still being laid.
-    { x: 31, y: 88, label: 'THE MARSH PATH', note: 'The marsh path is not open yet — the boards are still being laid.', dest: opts.farmOpen ? 'farm' : undefined },
+    // THE NOTE FOLLOWS THE QUEST (it.114): an open road no longer carries a shut road's note.
+    { x: 31, y: 88, label: 'THE MARSH PATH', note: opts.farmOpen ? 'The boards are laid. The marsh path runs out to the farmlands.' : 'The marsh path is not open yet — the boards are still being laid.', dest: opts.farmOpen ? 'farm' : undefined },
     { x: 52, y: 72, label: 'THE EASTERN ROAD', note: 'The road runs east into the dark forest, and the quarry beyond it.', dest: 'forest' },
   ];
   clearFor(29, 86, 5, 3, 0, KIND_COBBLE);
@@ -1069,11 +1391,8 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
     block({ kind: 'wood_pile', x: 56, y: 30 });
     placeLamp('torch', 59, 30);
   } else {
-    // THE QUARTER RECLAIMED: banners on the road where the carts stood.
-    for (const [x, y] of [[62, gateTiles[0]?.y ?? 30], [62, gateTiles[gateTiles.length - 1]?.y ?? 34]] as const) {
-      const at = offRoad(x, y);
-      if (at) block({ kind: 'banner', x: at.x, y: at.y });
-    }
+    // THE QUARTER RECLAIMED: banners on the road where the carts stood (a post steps to the verge by itself).
+    for (const [x, y] of [[62, gateTiles[0]?.y ?? 30], [62, gateTiles[gateTiles.length - 1]?.y ?? 34]] as const) block({ kind: 'banner', x, y });
     placeLamp('torch', 59, 30);
     placeLamp('torch', 59, 35);
   }
@@ -1083,8 +1402,10 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   // bed, chest and bench stand inside.
   // THE GILDED STAG INSIDE (it.92): the building is solid; its hall is its own
   // floor (`scenes/Inn.ts`), entered at the door tile in the south face.
+  // THE DOOR IS THE THRESHOLD (it.114): the tile just outside the south face,
+  // not a tile carved out of the building. The inn is solid to its wall.
   const tavern = { x: 74, y: 46, w: 6, h: 5 };
-  const door = { x: tavern.x + 2, y: tavern.y + tavern.h - 1 };
+  const door = { x: tavern.x + 2, y: tavern.y + tavern.h };
   clearFor(tavern.x, tavern.y, tavern.w, tavern.h, 1);
   block({ kind: 'tavern2', x: tavern.x, y: tavern.y, w: tavern.w, h: tavern.h });
   grid[idx(door.x, door.y)] = TILE_FLOOR;
@@ -1134,13 +1455,7 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   house(68, 44, 'house_e');
   house(82, 50, 'house_f');
   house(98, 55, 'house_g');
-  clearFor(96, 30, 4, 4, 1);
-  block({ kind: 'house', x: 96, y: 30, w: 4, h: 4, variant: 'house_h' });
-  grid[idx(97, 32)] = TILE_FLOOR; // The tall house's door column, two deep like a cottage's.
-  grid[idx(97, 33)] = TILE_FLOOR;
-  tileKind[idx(97, 32)] = KIND_DIRT;
-  tileKind[idx(97, 33)] = KIND_DIRT;
-  houses.push({ x: 96, y: 30, w: 4, h: 4 });
+  house(96, 30, 'house_h', 4, 4); // The tall house: solid to its wall, its threshold on the lane (it.114).
   // Heaps and stubs where the fire went through.
   for (const [x, y, v] of [[74, 24, 'heap_a'], [90, 28, 'heap_b'], [84, 30, 'heap_c'], [78, 54, 'heap_d'], [100, 38, 'heap_e'], [88, 52, 'heap_a'], [76, 40, 'heap_c'], [104, 44, 'heap_b'], [92, 66, 'heap_d'], [84, 64, 'heap_e']] as const) {
     if (grid[idx(x, y)] === TILE_FLOOR && !road[idx(x, y)]) block({ kind: 'heap', x, y, variant: v });
@@ -1161,8 +1476,8 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
     // THE RIVER GATE (it.91, opened it.106). Chained shut until the fields are
     // the city's; after that the chain comes off and the water meadow behind it
     // is a road like any other. The note is what a hero is told before then.
-    { x: 110, y: 40, label: 'THE RIVER GATE', note: 'The river gate is chained shut. There is a farm on the water past it, and a bridge past that.', dest: opts.riverOpen ? 'river' : undefined },
-    { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: 'The south fields are empty. The way is not open yet.' },
+    { x: 110, y: 40, label: 'THE RIVER GATE', note: opts.riverOpen ? 'The chain is off the river gate. The water meadow and the bridge lie past it.' : 'The river gate is chained shut. There is a farm on the water past it, and a bridge past that.', dest: opts.riverOpen ? 'river' : undefined },
+    { x: 88, y: 66, label: 'THE SOUTH FIELDS', note: opts.riverOpen ? 'The south fields are the city\'s again. The marsh path, off the old quarter, is the road to them.' : opts.farmOpen ? 'The south fields are held by the company. The marsh path, off the old quarter, is the road to them.' : 'The south fields are empty. The way is not open yet.' },
     { x: 105, y: 13, label: 'THE HILL ROAD', note: 'The hill road climbs out of the quarter. Not open yet.' },
   ];
   clearFor(86, 9, 5, 3, 0, KIND_COBBLE);
@@ -1302,10 +1617,11 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
         }
       if (!nearOpen) continue;
       // NO BARE CUBE (it.92): every cliff tile by the open ground wears a tree - a boulder on the gate's flank - and brush besides.
+      // SCENERY ONLY (it.114): the belt stands between these and every walker, so nothing can be behind one - the cutaway skips them.
       const roll = rand();
       if (!gateFlank(x, y)) {
         const v = roll < 0.36 ? 'pine_a' : roll < 0.64 ? 'pine_b' : roll < 0.8 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
-        props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
+        props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v, bare: true });
       } else {
         props.push({ kind: 'rock', x, y, variant: ROCKS[Math.floor(rand() * ROCKS.length)] });
       }
@@ -1313,37 +1629,11 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
     }
   }
 
-  // ---- THE ROADS STAY OPEN (it.85): clutter that landed in a street steps to
-  // the verge (lights, columns, banners) or goes (stores, benches, carts,
-  // trees, rocks). Stalls, cottages and fences define the street's sides and
-  // stay; the plaza props stand on plaza paint, not road, and stay too.
-  {
-    const movable = new Set<TownPropKind>(['torch', 'lamp', 'column', 'banner']);
-    const clutter = new Set<TownPropKind>(['barrel', 'barrels_stacked', 'crates', 'crates_wood', 'wood_pile', 'bench', 'cart', 'jar', 'box', 'table', 'trashbox', 'bigtree', 'pine', 'deadtree', 'tree', 'rock', 'statue', 'table_chairs', 'supports']);
-    const onRoad = (p: TownProp): boolean => {
-      for (let y = p.y; y < p.y + (p.h ?? 1); y++) for (let x = p.x; x < p.x + (p.w ?? 1); x++) if (inside(x, y) && road[idx(x, y)]) return true;
-      return false;
-    };
-    const free = (p: TownProp): void => {
-      for (let y = p.y; y < p.y + (p.h ?? 1); y++) for (let x = p.x; x < p.x + (p.w ?? 1); x++) if (inside(x, y) && grid[idx(x, y)] === TILE_BLOCKED) grid[idx(x, y)] = TILE_FLOOR;
-    };
-    for (let i = props.length - 1; i >= 0; i--) {
-      const p = props[i];
-      if (!onRoad(p)) continue;
-      if (movable.has(p.kind) && (p.w ?? 1) === 1 && (p.h ?? 1) === 1) {
-        free(p);
-        const at = offRoad(p.x, p.y);
-        if (at) {
-          p.x = at.x;
-          p.y = at.y;
-          grid[idx(at.x, at.y)] = TILE_BLOCKED;
-        } else props.splice(i, 1);
-      } else if (clutter.has(p.kind) && !((p.kind === 'statue' && (p.w ?? 1) > 1))) {
-        free(p);
-        props.splice(i, 1);
-      }
-    }
-  }
+  // ---- THE ROADS STAY OPEN (it.85, shared it.114): a post that landed in a
+  // street steps to the verge or goes; stores, benches, carts, trees, boulders
+  // and heaps in a street go. Stalls, cottages and fences define the street's
+  // sides and stay; the plaza props stand on plaza paint, not road, and stay too.
+  sweepRoads(ctx, props);
 
   // ---- SELF-HEAL #1: any floor the hero cannot reach becomes brush ----
   const spawn = { x: 30, y: 30 };
@@ -1406,21 +1696,58 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
         props.pop();
       } else before = afterCount;
     } else if (roll < 0.115 && grid[i] === TILE_FLOOR) {
-      // ROCKS (it.55): a boulder in the lawn, taken back if it seals a route.
+      // ROCKS (it.55): a boulder in the lawn. A boulder is paint underfoot
+      // everywhere else in the game (it.93), so it is here too (it.114): the
+      // lawn stays open and the route check is not needed.
       const v = ['rock_a', 'rock_b', 'rock_c', 'rock_d', 'rock_e', 'rock_f'][Math.floor(rand() * 6)];
-      grid[i] = TILE_BLOCKED;
       props.push({ kind: 'rock', x, y, variant: v });
-      const afterCount = reachable().reduce((a, b) => a + b, 0);
-      if (afterCount < before - 1) {
-        grid[i] = TILE_FLOOR;
-        props.pop();
-      } else before = afterCount;
     } else if (roll < 0.26) {
       decal({ kind: 'grassclump', x, y }); // A bush tuft.
     }
   }
   seen = reachable();
   for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
+  // A CHEST NOBODY CAN REACH IS NOT A CHEST (it.114): a district chest is set
+  // down before the belt and the lawn grow round it, and two of them (the
+  // portal yard's corner, the south row) ended up walled in by the woods. A
+  // chest with no reachable tile on any of its eight sides is MOVED to the
+  // nearest reachable, unclaimed, off-road tile (a district keeps its count,
+  // which the harness holds it to); only when none lies within six tiles does
+  // it go, prop and all.
+  const openBeside = (x: number, y: number): boolean => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && inside(x + dx, y + dy) && seen[idx(x + dx, y + dy)]) return true;
+    return false;
+  };
+  for (let i = chestSpots.length - 1; i >= 0; i--) {
+    const c = chestSpots[i];
+    if (openBeside(c.x, c.y)) continue;
+    let moved: { x: number; y: number } | null = null;
+    for (let r = 1; r <= 6 && !moved; r++)
+      for (let dy = -r; dy <= r && !moved; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const x = c.x + dx;
+          const y = c.y + dy;
+          if (!inside(x, y)) continue;
+          const j = idx(x, y);
+          if (grid[j] !== TILE_FLOOR || !seen[j] || road[j] || belt[j] || !openBeside(x, y)) continue;
+          moved = { x, y };
+          break;
+        }
+    const at = props.findIndex((q) => q.kind === 'chest' && q.x === c.x && q.y === c.y);
+    if (moved) {
+      grid[idx(moved.x, moved.y)] = TILE_BLOCKED; // A chest claims its tile like any standing prop.
+      c.x = moved.x;
+      c.y = moved.y;
+      if (at >= 0) {
+        props[at].x = moved.x;
+        props[at].y = moved.y;
+      }
+      continue;
+    }
+    chestSpots.splice(i, 1);
+    if (at >= 0) props.splice(at, 1);
+  }
   // THE STREETS' CLUTTER (it.91): a body or a slab whose tile the healing took (a tree, brush) goes with it.
   for (let i = props.length - 1; i >= 0; i--) {
     const q = props[i];
@@ -1543,11 +1870,76 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
 }
 
 /**
+ * FOOTPRINT AUDIT (it.114): the invariants the road rule and the solid
+ * buildings rest on, checked against a finished layout. Returns one line per
+ * violation (empty when clean); never throws.
+ *
+ *   - a standing prop (full or post) whose footprint has a walkable tile in it
+ *     (drawn, but the hero walks through it) - except the kinds `PAINT_OK`
+ *     says a floor may lay as a decal on open ground;
+ *   - a standing prop in a street that is not part of what a street is made of;
+ *   - a landmark, a vendor, a chest, a gateway or a threshold with no walkable
+ *     tile on or beside it (the prompt could never be reached).
+ */
+export function assertFootprints(layout: TownLayout): string[] {
+  const { width, height, grid } = layout.map;
+  const road = layout.road;
+  const out: string[] = [];
+  const inside = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < width && y < height;
+  const walkable = (x: number, y: number): boolean => inside(x, y) && grid[y * width + x] === TILE_FLOOR;
+  const touches = (x: number, y: number): boolean => walkable(x, y) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => walkable(x + dx, y + dy));
+  for (const p of layout.props) {
+    const f = footprintOf(p);
+    if (f.block === 'none') continue;
+    for (let y = p.y; y < p.y + f.h; y++)
+      for (let x = p.x; x < p.x + f.w; x++) {
+        if (!inside(x, y)) continue;
+        if (grid[y * width + x] === TILE_FLOOR && !PAINT_OK.has(p.kind)) out.push(`${p.kind}@${p.x},${p.y} stands on walkable ground at ${x},${y}`);
+        if (road && road[y * width + x] && !ROAD_OK.has(p.kind)) out.push(`${p.kind}@${p.x},${p.y} stands in a street at ${x},${y}`);
+      }
+  }
+  const touches8 = (x: number, y: number): boolean =>
+    touches(x, y) || [[1, 1], [-1, 1], [1, -1], [-1, -1]].some(([dx, dy]) => walkable(x + dx, y + dy));
+  const need = (name: string, at: { x: number; y: number } | undefined | null, diagonal = false): void => {
+    if (!at || !inside(at.x, at.y)) return; // A landmark parked off the map (the bare floors) is not one.
+    if (!(diagonal ? touches8 : touches)(at.x, at.y)) out.push(`${name}@${at.x},${at.y} has no walkable tile on or beside it`);
+  };
+  const needAny = (name: string, tiles: Array<{ x: number; y: number }>): void => {
+    if (tiles.length && !tiles.some((t) => touches(t.x, t.y))) out.push(`${name} has no walkable tile beside any of its tiles`);
+  };
+  need('gate', layout.gate);
+  need('stash', layout.stash);
+  need('board', layout.board);
+  need('arena gate', layout.arenaGate);
+  need('campfire', layout.campfire);
+  need('forge', layout.forge);
+  need('portal', layout.portal);
+  need('notice board', layout.notice);
+  need('training post', layout.training?.post);
+  need('gatekeeper', layout.gatekeeper);
+  need('inn door', layout.east?.door);
+  needAny('merchant', layout.merchant.tiles);
+  needAny('alchemist', layout.alchemist.tiles);
+  needAny('jeweler', layout.jeweler.tiles);
+  needAny('scribe', layout.scribe.tiles);
+  needAny('bowyer', layout.bowyer.tiles);
+  for (const [i, g] of layout.gateways.entries()) need(`gateway ${i}`, g);
+  for (const [i, c] of (layout.chests ?? []).entries()) need(`chest ${i}`, c, true); // opened from 2.2 tiles: a corner is enough
+  for (const [i, h] of layout.houses.entries()) {
+    const door = h.door ?? { x: h.x + Math.floor(h.w / 2), y: h.y + h.h };
+    if (inside(door.x, door.y) && !walkable(door.x, door.y)) out.push(`house ${i} threshold@${door.x},${door.y} is not walkable`);
+  }
+  return out;
+}
+
+/**
  * COLLISION AUDIT: every walkable tile must be reachable from the spawn
  * (4-connected), and every point of interest must touch reachable ground.
  * Returns the unreachable tiles; the caller warns (dev) — never throws.
+ * IT.114: the footprint audit rides along as `footprints`, and warns here in
+ * DEV so a violation is never silent.
  */
-export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: number; y: number }>; missing: string[] } {
+export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: number; y: number }>; missing: string[]; footprints: string[] } {
   const { width, height, grid } = layout.map;
   const seen = new Uint8Array(width * height);
   const stack = [layout.map.spawn.y * width + layout.map.spawn.x];
@@ -1584,7 +1976,10 @@ export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: n
   if (!touches(layout.arenaGate.x, layout.arenaGate.y)) missing.push('arena gate');
   if (!touches(layout.portal.x, layout.portal.y)) missing.push('portal');
   if (!touches(layout.campfire.x, layout.campfire.y)) missing.push('campfire');
-  for (const [i, h] of layout.houses.entries()) if (!seen[(h.y + 2) * width + h.x + 1]) missing.push(`house ${i} door`);
+  for (const [i, h] of layout.houses.entries()) {
+    const door = h.door ?? { x: h.x + Math.floor(h.w / 2), y: h.y + h.h };
+    if (door.y < height && !seen[door.y * width + door.x]) missing.push(`house ${i} threshold`);
+  }
   // THE MARKET WARD (it.84).
   if (!layout.jeweler.tiles.some((t) => touches(t.x, t.y))) missing.push('jeweler');
   if (!layout.scribe.tiles.some((t) => touches(t.x, t.y))) missing.push('scribe');
@@ -1592,5 +1987,7 @@ export function auditTownLayout(layout: TownLayout): { unreachable: Array<{ x: n
   if (!touches(layout.notice.x, layout.notice.y)) missing.push('notice board');
   for (const [i, g] of layout.gateways.entries()) if (!touches(g.x, g.y)) missing.push(`gateway ${i}`);
   if (!seen[(layout.wander2.y + 7) * width + layout.wander2.x + 8]) missing.push('ward plaza');
-  return { unreachable, missing };
+  const footprints = assertFootprints(layout);
+  if (footprints.length && import.meta.env.DEV) console.warn('[town] footprint audit:', footprints.length, 'violations', footprints.slice(0, 16));
+  return { unreachable, missing, footprints };
 }

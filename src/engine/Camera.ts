@@ -1,21 +1,49 @@
 /**
  * @module engine/Camera
- * Smooth follow camera with clamped mouse-wheel zoom. Rotation is permanently
- * disabled by design (isometric readability + deterministic picking).
+ * Smooth follow camera with clamped mouse-wheel zoom. Rotation as a VIEW
+ * control is permanently disabled by design (isometric readability +
+ * deterministic picking); the only rotation the world container ever takes
+ * is the shake's transient ≤ 0.6° roll, and picking accounts for it exactly.
  *
  * The camera never mutates entity state — it only transforms the world
  * container so the followed target's interpolated screen position sits at the
  * viewport center. Exponential damping gives frame-rate-independent easing.
+ *
+ * CAMERA FEEL (it.114). Three layers ride on the smoothed base position:
+ *   - KICK: an instant offset (directional or random-angle) that decays
+ *     exponentially — the recoil of a landed blow.
+ *   - SHAKE: `trauma` 0..1, displacement = trauma² × CAMERA_SHAKE_MAX_PX,
+ *     driven by two-sine smooth noise per axis (no per-frame RNG, so the
+ *     view sways rather than jitters) plus a roll of ≤ CAMERA_SHAKE_ROT_DEG.
+ *     Trauma decays linearly at `decay`/s (2.2 by default; a call may set
+ *     its own).
+ *   - ZOOM PUNCH: a brief push on the zoom that eases back over `ms`.
+ * All displacement scales with the current zoom relative to the opening
+ * zoom, so a shake reads the same size on the ground zoomed in or out, and
+ * the total offset is capped. Everything is gated on `visuals.shake`.
+ * The base position is kept apart from the offsets, so the shake never
+ * feeds back into the follow lerp.
  */
 
 import { visuals } from '@/core/VisualSettings';
 import type { Application } from 'pixi.js';
-import { CAMERA_LERP, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/core/config';
+import { CAMERA_LERP, CAMERA_SHAKE_MAX_OFFSET_PX, CAMERA_SHAKE_MAX_PX, CAMERA_SHAKE_ROT_DEG, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP } from '@/core/config';
 import { damp, vec2, type Vec2 } from '@/utils/Vec2';
 import { screenToWorld, worldToScreen } from '@/utils/iso';
 import type { Viewport } from './Viewport';
 
 const DEFAULT_ZOOM = 1.5;
+const TWO_PI = Math.PI * 2;
+
+export interface ShakeOptions {
+  /** Trauma lost per second (default 2.2). Lower = a longer tremble. */
+  decay?: number;
+}
+
+/** Two sines at unrelated frequencies: smooth, non-repeating-looking noise in -1..1. */
+function noise(t: number, f1: number, f2: number, phase: number): number {
+  return (Math.sin(t * TWO_PI * f1 + phase) + 0.55 * Math.sin(t * TWO_PI * f2 + phase * 1.7 + 0.9)) / 1.55;
+}
 
 export class Camera {
   /** THE OPENING ZOOM (it.85): half again closer than the old 1.0 — the wheel still ranges ZOOM_MIN..ZOOM_MAX. */
@@ -29,9 +57,22 @@ export class Camera {
   private layoutZoom = 1;
   private readonly focusScreen = vec2();
   private initialized = false;
+  /** The smoothed follow position, before any kick or shake. */
+  private baseX = 0;
+  private baseY = 0;
   private kickX = 0;
   private kickY = 0;
   private trauma = 0;
+  private traumaDecay = 2.2;
+  /** The shake's own clock (seconds), advanced only while there is trauma. */
+  private shakeTime = 0;
+  /** Zoom punch: the amount, the seconds left and the seconds it was given. */
+  private punchAmount = 0;
+  private punchLeft = 0;
+  private punchTotal = 0;
+  private punchNow = 0;
+  /** The roll applied this frame (radians), for picking. */
+  private roll = 0;
 
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
@@ -66,6 +107,15 @@ export class Camera {
     // Smooth zoom toward the wheel target.
     this.zoom += (this.targetZoom - this.zoom) * damp(10, dt);
 
+    // Zoom punch: full push at once, quadratic ease back to nothing.
+    if (this.punchLeft > 0) {
+      this.punchLeft = Math.max(0, this.punchLeft - dt);
+      const p = this.punchTotal > 0 ? this.punchLeft / this.punchTotal : 0;
+      this.punchNow = this.punchAmount * p * p;
+    } else {
+      this.punchNow = 0;
+    }
+
     const zoom = this.currentZoom;
     const cx = this.app.screen.width / 2;
     const cy = this.app.screen.height / 2;
@@ -75,29 +125,67 @@ export class Camera {
     const world = this.viewport.world;
     if (!this.initialized) {
       // First frame: snap, don't glide in from (0,0).
-      world.position.set(targetX, targetY);
+      this.baseX = targetX;
+      this.baseY = targetY;
       this.initialized = true;
     } else {
       const t = damp(CAMERA_LERP, dt);
-      world.position.set(
-        world.position.x + (targetX - world.position.x) * t,
-        world.position.y + (targetY - world.position.y) * t,
-      );
+      this.baseX += (targetX - this.baseX) * t;
+      this.baseY += (targetY - this.baseY) * t;
     }
-    // Impact kick: a decaying offset punched in by combat hits.
-    const decay = Math.exp(-10 * dt);
-    this.kickX *= decay;
-    this.kickY *= decay;
-    // Trauma shake: tiny random tremble, quadratic falloff (subtle by design).
-    let shakeX = 0;
-    let shakeY = 0;
-    if (this.trauma > 0) {
-      const mag = this.trauma * this.trauma * 5;
-      shakeX = (Math.random() * 2 - 1) * mag;
-      shakeY = (Math.random() * 2 - 1) * mag * 0.7;
-      this.trauma = Math.max(0, this.trauma - dt * 2.2);
+
+    // Offsets scale with the zoom so they read the same on the ground at any
+    // wheel setting; the existing call-site magnitudes were tuned at 1.5.
+    const zs = Math.max(0.5, Math.min(2, zoom / DEFAULT_ZOOM));
+    let offX = 0;
+    let offY = 0;
+    let roll = 0;
+    if (visuals.shake) {
+      // Impact kick: a decaying offset punched in by combat hits.
+      const decay = Math.exp(-10 * dt);
+      this.kickX *= decay;
+      this.kickY *= decay;
+      offX = this.kickX * zs;
+      offY = this.kickY * zs;
+      // Trauma shake: smooth two-sine noise, quadratic falloff.
+      if (this.trauma > 0) {
+        this.shakeTime += dt;
+        const t = this.shakeTime;
+        const k = this.trauma * this.trauma;
+        const mag = k * CAMERA_SHAKE_MAX_PX * zs;
+        offX += noise(t, 11.3, 23.7, 0.0) * mag;
+        offY += noise(t, 9.7, 27.1, 2.1) * mag * 0.7;
+        roll = noise(t, 7.9, 19.3, 0.7) * k * ((CAMERA_SHAKE_ROT_DEG * Math.PI) / 180);
+        this.trauma = Math.max(0, this.trauma - dt * this.traumaDecay);
+      }
+      // Cap the total displacement so stacked violence never throws the view.
+      const cap = CAMERA_SHAKE_MAX_OFFSET_PX * zs;
+      const len = Math.hypot(offX, offY);
+      if (len > cap) {
+        offX *= cap / len;
+        offY *= cap / len;
+      }
+    } else {
+      this.kickX = 0;
+      this.kickY = 0;
+      this.trauma = 0;
     }
-    world.position.set(world.position.x + this.kickX + shakeX, world.position.y + this.kickY + shakeY);
+    this.roll = roll;
+
+    // The roll turns about the SCREEN CENTRE, not the world's origin:
+    // pos' = C + R(roll)·(pos − C), rotation = roll.
+    const px = this.baseX + offX;
+    const py = this.baseY + offY;
+    if (roll !== 0) {
+      const c = Math.cos(roll);
+      const s = Math.sin(roll);
+      const dx = px - cx;
+      const dy = py - cy;
+      world.position.set(cx + dx * c - dy * s, cy + dx * s + dy * c);
+    } else {
+      world.position.set(px, py);
+    }
+    world.rotation = roll;
     world.scale.set(zoom);
   }
 
@@ -122,22 +210,54 @@ export class Camera {
   }
 
   /**
-   * SUBTLE screen shake (it.15): trauma accumulates on heavy hits and decays
-   * fast; displacement scales with trauma² so small hits barely whisper and
-   * only stacked violence visibly trembles. Deliberately restrained.
+   * Screen shake (it.15, retuned it.114): trauma accumulates and decays;
+   * displacement scales with trauma² so small hits barely whisper and only
+   * stacked violence visibly sways. `decay` (trauma/s) lets a long rumble
+   * (a collapsing gate) outlast a hit's flick; the slowest live decay wins
+   * so a later short shake never cuts a longer one off.
    */
-  addShake(amount: number): void {
+  addShake(amount: number, opts?: ShakeOptions): void {
     if (!visuals.shake) return;
+    if (this.trauma <= 0) {
+      this.traumaDecay = opts?.decay ?? 2.2;
+      this.shakeTime = Math.random() * 10; // A fresh phase per burst (render-side RNG only).
+    } else if (opts?.decay !== undefined) {
+      this.traumaDecay = Math.min(this.traumaDecay, opts.decay);
+    }
     this.trauma = Math.min(1, this.trauma + amount);
+  }
+
+  /**
+   * ZOOM PUNCH (it.114): the view pushes in by `amount` (a fraction: 0.08 =
+   * 8 % closer) at once and eases back to rest over `ms`. Negative pulls out.
+   */
+  zoomPunch(amount: number, ms = 220): void {
+    if (!visuals.shake) return;
+    const seconds = Math.max(0.016, ms / 1000);
+    // A stronger punch replaces a weaker one in flight; a weaker one adds a little.
+    if (Math.abs(amount) >= Math.abs(this.punchNow)) {
+      this.punchAmount = amount;
+      this.punchLeft = this.punchTotal = seconds;
+    } else {
+      this.punchAmount = this.punchNow + amount * 0.5;
+      this.punchLeft = this.punchTotal = Math.max(this.punchLeft, seconds);
+    }
   }
 
   /** Convert a pointer event position (canvas pixels) to world coordinates. */
   pointerToWorld(px: number, py: number, out: Vec2): Vec2 {
     const world = this.viewport.world;
     const zoom = this.currentZoom;
-    const localX = (px - world.position.x) / zoom;
-    const localY = (py - world.position.y) / zoom;
-    return screenToWorld(localX, localY, out);
+    let dx = px - world.position.x;
+    let dy = py - world.position.y;
+    if (this.roll !== 0) {
+      const c = Math.cos(-this.roll);
+      const s = Math.sin(-this.roll);
+      const rx = dx * c - dy * s;
+      dy = dx * s + dy * c;
+      dx = rx;
+    }
+    return screenToWorld(dx / zoom, dy / zoom, out);
   }
 
   /** Project a world position to canvas pixels (for screen-space hit tests). */
@@ -145,13 +265,22 @@ export class Camera {
     const world = this.viewport.world;
     worldToScreen(wx, wy, out);
     const zoom = this.currentZoom;
-    out.x = out.x * zoom + world.position.x;
-    out.y = out.y * zoom + world.position.y;
+    let sx = out.x * zoom;
+    let sy = out.y * zoom;
+    if (this.roll !== 0) {
+      const c = Math.cos(this.roll);
+      const s = Math.sin(this.roll);
+      const rx = sx * c - sy * s;
+      sy = sx * s + sy * c;
+      sx = rx;
+    }
+    out.x = sx + world.position.x;
+    out.y = sy + world.position.y;
     return out;
   }
 
-  /** Current zoom factor (canvas pixels per iso-screen pixel). */
+  /** Current zoom factor (canvas pixels per iso-screen pixel), punch included. */
   get currentZoom(): number {
-    return this.zoom * this.layoutZoom;
+    return this.zoom * this.layoutZoom * (1 + this.punchNow);
   }
 }

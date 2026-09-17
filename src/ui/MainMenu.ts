@@ -24,6 +24,8 @@ export interface MainMenuHooks {
   coop: () => void;
   /** SETTINGS → the tabbed settings panel. */
   settings: () => void;
+  /** THE MENAGERIE (it.114) → straight onto the sand to try any body on. */
+  menagerie: () => void;
   /** EXIT GAME → the leave prompt. */
   exit: () => void;
   /** A button was struck at this screen point (spark burst). */
@@ -52,6 +54,10 @@ export class MainMenuUI {
     this.credits = document.getElementById('credits')!;
     const { signal } = this.abort;
 
+    // THE BUILD'S NAME (it.114): the foot says which game this is.
+    const ver = this.root.querySelector<HTMLElement>('[data-version]');
+    if (ver) ver.textContent = `v${__APP_VERSION__} · ${__APP_ITERATION__}`;
+
     this.root.querySelectorAll<HTMLButtonElement>('[data-menu]').forEach((btn) => {
       btn.addEventListener('mouseenter', () => audio.sfx('uiHover'), { signal });
       btn.addEventListener(
@@ -73,6 +79,9 @@ export class MainMenuUI {
           } else if (act === 'coop') {
             audio.sfx('uiConfirm');
             this.hooks.coop();
+          } else if (act === 'menagerie') {
+            audio.sfx('uiConfirm');
+            this.hooks.menagerie();
           } else if (act === 'settings') {
             audio.sfx('uiClick');
             this.hooks.settings();

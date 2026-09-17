@@ -16,7 +16,25 @@
 
 import { Texture } from 'pixi.js';
 import type { ItemDef } from '@/items/catalog';
-import { uiAssetUrl, weaponIconUrl } from '@/render/SpriteLibrary';
+import { atlasUrl, spriteLib, uiAssetUrl, weaponIconUrl } from '@/render/SpriteLibrary';
+
+/** URL of an atlas SINGLE's PNG (the bake names every single `single_<name>.png`) — for DOM <img> (it.114). */
+export function singleUrl(name: string): string {
+  return atlasUrl(`single_${name}.png`);
+}
+
+/**
+ * THE TURNTABLE (it.114): what the inspect view needs to step an item's
+ * `spin_*` strip with background-position, straight from the atlas PNG (no
+ * residency needed, the way the bestiary animates a creature). Null when the
+ * item has no turntable or the manifest does not know it.
+ */
+export function itemSpin(def: ItemDef): { url: string; cellW: number; cellH: number; frames: number } | null {
+  if (!def.spin) return null;
+  const e = spriteLib.entry(def.spin);
+  if (!e) return null;
+  return { url: atlasUrl(e.file), cellW: e.cellW, cellH: e.cellH, frames: e.frameCount };
+}
 
 const cache = new Map<string, string>();
 const textureCache = new Map<string, Texture>();
@@ -324,6 +342,8 @@ function drawIconCanvas(def: ItemDef, scale: number): HTMLCanvasElement {
 export function itemIconHtml(def: ItemDef, base = '', px = 'px'): string {
   const cls = (extra: string): string => [base, extra].filter(Boolean).join(' ');
   if (def.art) return `<img class="${cls('art')}" src="${uiAssetUrl(`items/${def.art}.png`)}" alt="${def.name}" draggable="false">`;
+  // THE BAKED SINGLES (it.114): food and flasks - 64 px art with a dark rim, contain-fit like painted art.
+  if (def.sprite) return `<img class="${cls('art baked')}" src="${singleUrl(def.sprite)}" alt="${def.name}" draggable="false">`;
   if (def.icon) return `<img class="${cls('')}" src="${weaponIconUrl(def.icon)}" alt="${def.name}" draggable="false">`;
   return `<img class="${cls(px)}" src="${itemIconDataUrl(def)}" alt="${def.name}" draggable="false">`;
 }

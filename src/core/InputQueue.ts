@@ -17,7 +17,7 @@ import type { EquipmentSlot } from '@/network/Serialization';
 
 /** All player intents. Must stay JSON-serializable for network transport. */
 /** THE COUNTERS (it.48, it.84): the old quarter's two and the Market Ward's three. */
-export type Vendor = 'armorer' | 'alchemist' | 'jeweler' | 'scribe' | 'bowyer';
+export type Vendor = 'armorer' | 'alchemist' | 'jeweler' | 'scribe' | 'bowyer' | 'tavern';
 
 export type InputCommand =
   | { type: 'MOVE_TO'; playerId: number; gx: number; gy: number }

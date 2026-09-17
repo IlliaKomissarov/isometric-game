@@ -40,6 +40,8 @@ export interface StashState {
 }
 
 export interface PlayerSave {
+  /** THE BELLY (it.114): 0..100, 100 well fed. Absent in older saves. */
+  hunger?: number;
   archetype: ClassArchetype;
   level: number;
   xp: number;

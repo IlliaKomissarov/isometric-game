@@ -12,6 +12,7 @@
 import { Container, Sprite, type ContainerChild } from 'pixi.js';
 import { SPAWN_WARD_TICKS } from '@/core/Difficulty';
 import { assets } from '@/core/AssetManager';
+import { InventorySystem } from '@/systems/Inventory';
 import { eventBus } from '@/core/EventBus';
 import { overlayTextureFor, WEAPON_FAMILY, WEAPON_TIMING, type UniqueEffect, type WeaponKind } from '@/items/catalog';
 import { itemDef, itemLevers, powerScale } from '@/items/instance';
@@ -754,7 +755,7 @@ export class Player extends Entity {
     this.resource = Math.min(this.resourceMax, this.resource + this.resourceRegen * (1 + this.passiveBonus('regen')));
     // HEALTH REGROWTH (it.78, a share of max life since it.82): "of Regrowth" lines heal a trickle every tick.
     if (this.hp > 0 && this.hp < this.hpMax) {
-      const regrow = this.passiveBonus('hpRegen');
+      const regrow = this.passiveBonus('hpRegen') * (InventorySystem.of(this)?.regenMult() ?? 1); // A starving hero does not knit (it.114).
       if (regrow > 0) this.hp = Math.min(this.hpMax, this.hp + (this.hpMax * regrow) / 60);
     }
     if (this.dmgBuffTicks > 0) this.dmgBuffTicks--;
@@ -1131,7 +1132,7 @@ export class Player extends Entity {
   equipFromBackpack(index: number): void {
     const itemId = this.backpack[index];
     const def = itemId ? itemDef(itemId) : undefined;
-    if (!def || def.slot === 'consumable' || def.slot === 'material') return; // Potions are used, not worn.
+    if (!def || def.slot === 'consumable' || def.slot === 'material' || def.slot === 'food') return; // Potions are drunk and food eaten, not worn (it.114).
     this.backpack.splice(index, 1);
     const previous = this.equipped.get(def.slot);
     if (previous) this.backpack.push(previous);

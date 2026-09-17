@@ -61,7 +61,61 @@ export interface Occluder {
   tree?: boolean;
   /** Blocked footprint (tiles) — standing inside it means "indoors". */
   tiles: { x: number; y: number; w: number; h: number };
+  /**
+   * THE CANOPY (it.114): the tiles a tree's crown actually covers on screen,
+   * behind the trunk - a tile in every direction that is not in front of it.
+   * A hero standing on one of these is under the tree and hidden by it even
+   * when the body point misses the sprite's inset rect. Trees only.
+   */
+  canopy?: { x: number; y: number; w: number; h: number };
 }
+
+/**
+ * A BUILDING BLOCKS WHAT IT DRAWS (it.114). The town's sprites were painted at
+ * their own sizes and stood on footprints laid by hand, so a cottage with a
+ * 262 px wall base sat on a 192 px footprint and the hero walked under its
+ * painted wall. A multi-tile prop of one of these kinds is scaled so its
+ * PAINTED BASE is at most `max` times the footprint's screen width,
+ * `(w + h) * 32`; eaves may overhang by that much and no more. `fill` scales
+ * UP to the same line as well, for the one piece that was being enlarged by
+ * hand (the manor).
+ */
+const FIT: Partial<Record<TownProp['kind'], { max: number; fill?: boolean }>> = {
+  house: { max: 1.08 },
+  tavern: { max: 1.08 },
+  tavern2: { max: 1.08 },
+  guildhall: { max: 1.1 }, // the eaves and the tower: the one building allowed a little more
+  manor: { max: 1.08, fill: true },
+  smithy: { max: 1.08 },
+  barracks: { max: 1.08 },
+  watchtower: { max: 1.1 },
+  stall: { max: 1.08 },
+  ruin: { max: 1.08 },
+  tent: { max: 1.08 },
+  well: { max: 1.08 },
+  cart: { max: 1.08 },
+  bench: { max: 1.08 },
+  statue: { max: 1.08 },
+  bed: { max: 1.08 },
+};
+
+/**
+ * THE PAINTED BASE (it.114): the widest opaque row in the bottom of each
+ * building single - the wall's foot, not the roof's eaves - measured once from
+ * the atlas PNGs (alpha > 40, the band `(w + h) * 8 * 1.3` px above the last
+ * painted row, at the footprint the single is placed on). A roof may overhang
+ * its wall by a third (the smithy is 350 px wide on a 229 px base), so fitting
+ * the TEXTURE to the footprint would shrink a building well past its wall and
+ * leave blocked tiles drawn as open ground. Singles not listed fit by their
+ * texture width.
+ */
+const PAINTED_BASE: Readonly<Record<string, number>> = {
+  house_a: 262, house_b: 248, house_c: 271, house_d: 249, house_e: 207, house_f: 212, house_g: 222, house_h: 316,
+  guildhall: 310, tavern_a: 273, tavern_east: 389, smithy: 229, barracks: 327, 'barracks@3x3': 253 /* the farm's great barn */, watchtower: 104,
+  stall_a: 163, stall_b: 163, stall_c: 163, stall_d: 163, well_b: 130, cart: 69, bench_a: 77, bench_b: 84, statue_a: 85, inn_bed: 84,
+  tent_a: 239, tent_b: 202, tent_c: 186, tent_d: 134, tent_e: 101,
+  ruin_a: 127, ruin_b: 103, ruin_c: 153, ruin_d: 132, ruin_e: 126, ruin_f: 136, ruin_g: 98, ruin_h: 137, ruin_i: 110, ruin_j: 182, ruin_k: 129, ruin_l: 181, gl_wreck_tower: 223,
+};
 
 export interface Interactable {
   id: number;
@@ -136,11 +190,16 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     /** Where the machine stands, in world tiles (the ember trail's origin). */
     wx: number;
     wy: number;
-    arm: Container;
-    shot: Sprite;
+    /** The it.112 plank rig; null on the real machine, whose arm is in its frames (it.114). */
+    arm: Container | null;
+    shot: Sprite | null;
     /** Screen angles the arm sits at cocked and at full release. */
     rest: number;
     fire: number;
+    /** Drawn from the baked `catapult_*` clips rather than the plank rig (it.114). */
+    real: boolean;
+    /** How long its throw takes: the baked clip's eight frames, or the plank's swing. */
+    swing: number;
     t: number;
     /**
      * The stone in flight: screen-space arc, and the tile it is going to.
@@ -163,6 +222,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       ty: number;
       /** Seconds since the last ember was dropped. */
       ember: number;
+      /** The baked stone's frame count, or 0 for the old single (it.114). */
+      stoneFrames: number;
       hit: (x: number, y: number) => void;
     } | null;
   }
@@ -211,10 +272,22 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     const s = w === 1 && h === 1 ? worldToScreen(cx, cy, scratch) : worldToScreen(p.x + w, p.y + h, scratch);
     spr.position.set(s.x, s.y + (w === 1 && h === 1 ? 4 : 0));
     spr.zIndex = depthKey(p.x + w - 0.5, p.y + h - 0.5);
+    // THE SPRITE FITS ITS FOOTPRINT (it.114): see FIT and PAINTED_BASE.
+    const fit = FIT[p.kind];
+    if (fit && w * h > 1) {
+      const line = (w + h) * (TILE_W / 2) * fit.max;
+      const painted = PAINTED_BASE[`${single}@${w}x${h}`] ?? PAINTED_BASE[single] ?? spr.texture.width;
+      if (painted > line || (fit.fill && painted < line)) spr.scale.set(line / painted);
+    }
     (layer === 'ground' ? viewport.groundLayer : viewport.objectLayer).addChild(spr);
     lighting.registerProp(Math.min(layout.map.width - 1, Math.floor(cx)), Math.min(layout.map.height - 1, Math.floor(cy)), spr);
     return spr;
   };
+  /**
+   * How far a sprite's crown reaches past its tile, in tiles, from its drawn
+   * width: a 77 px pine and a 174 px oak both spread a tile either side.
+   */
+  const reachOf = (spr: Sprite): number => Math.max(1, Math.ceil((spr.width / TILE_W - 1) / 2));
 
   /** A looping animated prop on one tile (campfire, torch, brazier flame). */
   const animated = (
@@ -253,6 +326,25 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   };
 
   const footprint = (p: TownProp): Occluder['tiles'] => ({ x: p.x, y: p.y, w: p.w ?? 1, h: p.h ?? 1 });
+  /**
+   * REGISTER A CUTAWAY (it.114): one door for every roof and trunk. A `bare`
+   * prop is scenery nothing can stand behind and is left out of the per-frame
+   * loop (it.105). A tree carries its canopy: the tiles behind the trunk its
+   * crown hangs over - the row above and the column beside it, `reach` deep -
+   * which are the tiles a hero is hidden on even when the body point misses
+   * the sprite's inset rect. The tiles in FRONT of the trunk are not in it: a
+   * hero there is drawn over the tree and must not ghost it.
+   */
+  const occlude = (spr: Sprite | null, p: TownProp, tree = false): void => {
+    if (!spr || p.bare) return;
+    const tiles = footprint(p);
+    if (!tree) {
+      occluders.push({ sprite: spr, depth: spr.zIndex, tiles });
+      return;
+    }
+    const r = reachOf(spr);
+    occluders.push({ sprite: spr, depth: spr.zIndex, tiles, tree: true, canopy: { x: p.x - r, y: p.y - r, w: r + 1, h: r + 1 } });
+  };
 
   /**
    * THE DUNGEON GATE (it.43): the ruin archway sprite stands on its 3×2
@@ -355,12 +447,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     switch (p.kind) {
       case 'house': {
         const spr = standing(p, p.variant ?? 'house_a', 0.96);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         break;
       }
       case 'stall': {
         const spr = standing(p, p.variant ?? 'stall_a', 0.94);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         // Vendors by POSITION (it.48): the armorer's and the alchemist's stalls.
         // THE MARKET WARD (it.84): the jeweler's, the scribe's, the bowyer's.
         if (layout.jeweler.tiles.some((t) => t.x === p.x && t.y === p.y)) {
@@ -439,7 +531,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'tavern': {
         const spr = standing(p, p.variant ?? 'tavern_a', 0.95);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         break;
       }
       case 'well':
@@ -450,7 +542,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       case 'watchtower': {
         const spr = standing(p, 'watchtower', 0.97);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         break;
       }
       case 'pine':
@@ -459,7 +551,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         if (spr && p.variant?.startsWith('tree_')) spr.tint = 0x8e9c86; // The oaks stand in deeper shade (it.57).
         // A tree on a cliff tile (it.50) stands in front of that tile's cube.
         if (spr && layout.map.grid[p.y * layout.map.width + p.x] === 0) spr.zIndex += 40;
-        if (spr && !p.bare) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p), tree: true });
+        occlude(spr, p, true);
         break;
       }
       case 'column':
@@ -510,7 +602,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       case 'tree': {
         const spr = standing(p, p.variant ?? 'tree_a', 0.94);
-        if (spr && !p.bare) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p), tree: true });
+        occlude(spr, p, true);
         break;
       }
       case 'barrel':
@@ -544,7 +636,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // The timber-frame hall: its south corner sits a little inside its
         // box (the eaves overhang), so the anchor is measured, not 0.5/1.
         const spr = standing(p, 'guildhall', 0.985, 'object', 0.47);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         lighting.addSource(p.x + 1, p.y + 3.5, 3.2, 255, 190, 110, 0.4);
         break;
       }
@@ -582,7 +674,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         if (spr) spr.tint = 0xc4b8aa;
         // THE ROTUNDA (it.93): open ground - sorted at its centre so the hero walks behind its far columns and before its near ones; never ghosted.
         if (spr && p.variant === 'ruin_ring') spr.zIndex = depthKey(p.x + 1.5, p.y + 1.5);
-        else if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        else occlude(spr, p);
         break;
       }
       case 'heap': {
@@ -666,7 +758,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // THE GILDED STAG: the inn with its own floor inside (it.92). The door
         // tile is the way in; the building stays solid.
         const spr = standing(p, 'tavern_east', 0.975, 'object', 0.5);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         const east = layout.east;
         const dx = east ? east.door.x + 0.5 : p.x + 2.5;
         const dy = east ? east.door.y + 1.5 : p.y + 5.5;
@@ -992,7 +1084,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'smithy':
       case 'barracks': {
         const spr = standing(p, p.kind, 0.96);
-        if (spr) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+        occlude(spr, p);
         break;
       }
       case 'dummy':
@@ -1029,7 +1121,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const spr = standing(p, p.variant ?? 'bigtree_a', 0.96);
         if (spr) {
           spr.tint = 0x8a9a8c; // Deep shade, like the oaks.
-          if (!p.bare) occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p), tree: true });
+          occlude(spr, p, true);
         }
         break;
       }
@@ -1101,7 +1193,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const keeper = g?.dest === 'forest' ? layout.gatekeeper : undefined;
         const gateTiles = keeper ? [{ x: p.x, y: p.y }, { x: keeper.x, y: keeper.y }] : [{ x: p.x, y: p.y }];
         interactables.push({ id: nextId++, kind: 'gateway', x: p.x + 0.5, y: p.y + 0.5, label: g?.dest ? (keeper ? `E · SIR HAM · ${g.label}` : `E · ${g.label}`) : `E · ${g?.label ?? 'THE WAY'} (NOT YET OPEN)`, tiles: gateTiles, note: g?.note, dest: g?.dest });
-        plate(p.x, p.y, g?.dest ? `${g.label} · THE FOREST` : (g?.label ?? 'THE WAY'), 118);
+        // THE PLATE NAMES WHERE THE ROAD GOES (it.114). Until now every open
+        // gateway's plate ended in "· THE FOREST" - the marsh path and the river
+        // gate included, once their quests opened them.
+        const DEST_NAME: Record<'forest' | 'farm' | 'river', string> = { forest: 'THE FOREST', farm: 'THE FARMLANDS', river: 'THE RIVERSIDE' };
+        plate(p.x, p.y, g?.dest ? `${g.label} · ${DEST_NAME[g.dest]}` : (g?.label ?? 'THE WAY'), 118);
         break;
       }
       case 'arenagate': {
@@ -1321,7 +1417,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
          * arm hanging in the air.
          */
         const wrecked = p.variant === 'wreck';
-        const sheet = wrecked ? 'siege_wreck' : 'siege_engine';
+        /**
+         * THE REAL MACHINE (it.114). `scripts/bake-siege.py` cut Remus Turcuman's
+         * isometric catapult renders into eight facings of idle, throw, load and
+         * break, with the arm IN the frames - so when those sheets are resident
+         * the plank rig below is not built, and the throw is the artist's.
+         */
+        const real = spriteLib.loaded && spriteLib.hasAnim('catapult_idle') && spriteLib.hasAnim('catapult_throw') && spriteLib.hasAnim('catapult_load') && spriteLib.hasAnim('catapult_wreck');
+        const sheet = real ? (wrecked ? 'catapult_wreck' : 'catapult_idle') : wrecked ? 'siege_wreck' : 'siege_engine';
         if (!spriteLib.loaded || !spriteLib.hasAnim(sheet)) break;
         const w = p.w ?? 1;
         const h = p.h ?? 1;
@@ -1339,8 +1442,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const body = new Sprite(spriteLib.frame(sheet, dir, 0));
         // The bake's own ground centre (its header prints these): the machine's
         // footprint centre sits here inside the cell, for every facing.
-        body.anchor.set(0.5, wrecked ? SIEGE_WRECK_ANCHOR_Y : SIEGE_ANCHOR_Y);
-        body.scale.set(SIEGE_SCALE);
+        // The real bake's ground centre is (0.487, 0.747) of its 148x135 cell,
+        // for every facing and every clip (the pack is a turntable about the
+        // frame's centre); its widest facing is 127 px, a 2x2 footprint at 1.0.
+        if (real) body.anchor.set(0.487, 0.747);
+        else body.anchor.set(0.5, wrecked ? SIEGE_WRECK_ANCHOR_Y : SIEGE_ANCHOR_Y);
+        body.scale.set(real ? 1 : SIEGE_SCALE);
         root.addChild(body);
         parts.push(body);
         let arm: Container | null = null;
@@ -1358,7 +1465,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const ang = Math.atan2((aimX + aimY) * 0.5, aimX - aimY);
         const rest = ang + Math.PI - 0.25;
         const fire = ang - 0.9;
-        if (!wrecked && has('siege_arm')) {
+        if (!wrecked && !real && has('siege_arm')) {
           // THE ARM, pivoted at its own left edge on the machine's frame head.
           arm = new Container();
           // The pivot is the frame head: up on the machine, and set back along
@@ -1391,10 +1498,10 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
           lighting.registerProp(p.x, p.y, q);
         }
         viewport.objectLayer.addChild(root);
-        occluders.push({ sprite: body, depth: root.zIndex, tiles: footprint(p) });
-        if (wrecked || !arm || !shot) break;
+        if (!p.bare) occluders.push({ sprite: body, depth: root.zIndex, tiles: footprint(p) });
+        if (wrecked || (!real && (!arm || !shot))) break;
         const id = nextId++;
-        engines.push({ id, root, body, dir, wx: p.x + w / 2, wy: p.y + h / 2, arm, shot, rest, fire, t: -1, flight: null });
+        engines.push({ id, root, body, dir, wx: p.x + w / 2, wy: p.y + h / 2, arm, shot, rest, fire, real, swing: real ? 0.62 : SWING, t: -1, flight: null });
         interactables.push({ id, kind: 'catapult', x: p.x + 0.5, y: p.y + 0.5, label: 'E · WORK THE ENGINE', tiles: [{ x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }, { x: p.x + 2, y: p.y }, { x: p.x + 2, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
         plate(p.x, p.y, 'A SIEGE ENGINE', 108);
         break;
@@ -1404,7 +1511,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         const spr = standing(p, p.variant ?? 'tent_a', 0.94);
         if (spr) {
           spr.tint = 0xc8bda8;
-          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
+          occlude(spr, p);
         }
         break;
       }
@@ -1440,11 +1547,9 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // THE HOUSE. The only thing standing whole on the field, and the reason
         // anybody is still on it: lit from inside, so it reads as occupied from
         // the far side of the map.
+        // IT.114: `standing` fits it to its 5x5 (FIT.manor fills the line), where it.110 scaled it by hand.
         const spr = standing(p, 'guildhall', 0.985, 'object', 0.47);
-        if (spr) {
-          spr.scale.set(1.18);
-          occluders.push({ sprite: spr, depth: spr.zIndex, tiles: footprint(p) });
-        }
+        occlude(spr, p);
         lighting.addSource(p.x + 2, p.y + 3.5, 5.5, 255, 190, 110, 0.6);
         glowAt(p.x + 2, p.y + 2, 0xffc070, 0.3, 2.4, 90);
         break;
@@ -1671,26 +1776,40 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const e of engines) {
       if (e.t >= 0) {
         e.t += dt;
-        if (e.t <= SWING) {
-          const k2 = e.t / SWING;
-          const ease = 1 - (1 - k2) * (1 - k2) * (1 - k2);
-          e.arm.rotation = e.rest + (e.fire - e.rest) * ease;
-          e.shot.visible = k2 < 0.55;
-          // THE MACHINE MOVES TOO (it.112): three baked frames of the whole
-          // body rocking on its wheels, so the throw is the engine's and not
-          // just a plank swinging over a static picture of one.
-          e.body.texture = spriteLib.frame('siege_engine', e.dir, k2 < 0.5 ? 1 : 2);
-        } else if (e.t <= SWING + 4) {
-          // The crew winds it back. Linear and slow: this is the cooldown.
-          const k2 = (e.t - SWING) / 4;
-          e.arm.rotation = e.fire + (e.rest - e.fire) * k2;
-          e.shot.visible = k2 > 0.85;
-          e.body.texture = spriteLib.frame('siege_engine', e.dir, k2 < 0.25 ? 2 : 0);
-        } else {
-          e.arm.rotation = e.rest;
-          e.shot.visible = true;
-          e.body.texture = spriteLib.frame('siege_engine', e.dir, 0);
-          e.t = -1;
+        if (e.real) {
+          // THE REAL MACHINE (it.114): eight frames of the throw over the swing,
+          // eight of the crew winding it back over the four seconds after, then
+          // the loaded rest frame.
+          if (e.t <= e.swing) {
+            e.body.texture = spriteLib.frame('catapult_throw', e.dir, Math.min(7, Math.floor((e.t / e.swing) * 8)));
+          } else if (e.t <= e.swing + 4) {
+            e.body.texture = spriteLib.frame('catapult_load', e.dir, Math.min(7, Math.floor(((e.t - e.swing) / 4) * 8)));
+          } else {
+            e.body.texture = spriteLib.frame('catapult_idle', e.dir, 0);
+            e.t = -1;
+          }
+        } else if (e.arm && e.shot) {
+          if (e.t <= SWING) {
+            const k2 = e.t / SWING;
+            const ease = 1 - (1 - k2) * (1 - k2) * (1 - k2);
+            e.arm.rotation = e.rest + (e.fire - e.rest) * ease;
+            e.shot.visible = k2 < 0.55;
+            // THE MACHINE MOVES TOO (it.112): three baked frames of the whole
+            // body rocking on its wheels, so the throw is the engine's and not
+            // just a plank swinging over a static picture of one.
+            e.body.texture = spriteLib.frame('siege_engine', e.dir, k2 < 0.5 ? 1 : 2);
+          } else if (e.t <= SWING + 4) {
+            // The crew winds it back. Linear and slow: this is the cooldown.
+            const k2 = (e.t - SWING) / 4;
+            e.arm.rotation = e.fire + (e.rest - e.fire) * k2;
+            e.shot.visible = k2 > 0.85;
+            e.body.texture = spriteLib.frame('siege_engine', e.dir, k2 < 0.25 ? 2 : 0);
+          } else {
+            e.arm.rotation = e.rest;
+            e.shot.visible = true;
+            e.body.texture = spriteLib.frame('siege_engine', e.dir, 0);
+            e.t = -1;
+          }
         }
       }
       const fl = e.flight;
@@ -1700,7 +1819,9 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       const fx = fl.ax + (fl.bx - fl.ax) * k3;
       const fy = fl.ay + (fl.by - fl.ay) * k3 - Math.sin(k3 * Math.PI) * 130;
       fl.spr.position.set(fx, fy);
-      fl.spr.rotation += dt * 6;
+      // The baked stone tumbles through its own sixteen frames (it.114); the old single spins.
+      if (fl.stoneFrames) fl.spr.texture = spriteLib.frame('catapult_stone', 0, Math.floor(Math.max(0, fl.t) * 18) % fl.stoneFrames);
+      else fl.spr.rotation += dt * 6;
       fl.spr.zIndex = 1e5; // over everything it passes: it is in the air
       // The payload burns: the halo rides with it and guts as it falls, so the
       // stone is a light crossing the field and not a grey dot on a dark one.
@@ -1750,14 +1871,22 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     if (!e || e.t >= 0 || e.flight) return false;
     e.t = 0;
     const tip = worldToScreen(0, 0, vec2()); // scratch is in use by the caller's loop
-    const armX = e.root.position.x + e.arm.position.x;
-    const armY = e.root.position.y + e.arm.position.y;
-    tip.x = armX + Math.cos(e.fire) * 58;
-    tip.y = armY + Math.sin(e.fire) * 58;
+    if (e.arm) {
+      const armX = e.root.position.x + e.arm.position.x;
+      const armY = e.root.position.y + e.arm.position.y;
+      tip.x = armX + Math.cos(e.fire) * 58;
+      tip.y = armY + Math.sin(e.fire) * 58;
+    } else {
+      // THE REAL MACHINE (it.114): the stone leaves the top of the arm's arc,
+      // above the frame and a little out along the aim.
+      tip.x = e.root.position.x + Math.cos(e.fire) * 22;
+      tip.y = e.root.position.y + Math.sin(e.fire) * 22 - 64;
+    }
     const mark = worldToScreen(tx + 0.5, ty + 0.5, vec2());
-    const spr = new Sprite(has('siege_stone') ? spriteLib.single('siege_stone') : assets.get('glow'));
+    const stoneFrames = e.real && spriteLib.hasAnim('catapult_stone') ? spriteLib.anim('catapult_stone').frameCount : 0;
+    const spr = new Sprite(stoneFrames ? spriteLib.frame('catapult_stone', 0, 0) : has('siege_stone') ? spriteLib.single('siege_stone') : assets.get('glow'));
     spr.anchor.set(0.5);
-    spr.scale.set(0.9);
+    spr.scale.set(stoneFrames ? 1.1 : 0.9);
     spr.tint = 0xffc890; // pitched and lit: the stone leaves the sling burning
     spr.position.set(tip.x, tip.y);
     // THE FIRE ON IT (it.112). An additive halo under the stone, added first so
@@ -1770,7 +1899,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     fireGlow.alpha = 0;
     fireGlow.position.set(tip.x, tip.y);
     viewport.ambienceLayer.addChild(fireGlow, spr);
-    e.flight = { spr, fireGlow, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, wax: e.wx, way: e.wy, t: -SWING * 0.55, tx, ty, ember: 0, hit: onImpact };
+    // The stone leaves mid-swing: past the top of the old arc, at frame three of the baked throw.
+    e.flight = { spr, fireGlow, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, wax: e.wx, way: e.wy, t: -e.swing * (e.real ? 0.42 : 0.55), tx, ty, ember: 0, stoneFrames, hit: onImpact };
     return true;
   };
 

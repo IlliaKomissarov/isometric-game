@@ -999,6 +999,76 @@
         color: var(--gold);
         text-align: center;
       }
+      /* THE FORBIDDEN ARTS REWRITTEN (it.114): places, foes, quests. */
+      #cheat-menu { width: 312px; }
+      #cheat-menu .cheat-items { max-height: 300px; }
+      #cheat-menu .cheat-section {
+        font-family: 'Cinzel', serif;
+        font-size: 9.5px;
+        letter-spacing: 0.22em;
+        color: var(--ink-dim, #a89c86);
+        margin: 8px 0 4px;
+        padding-bottom: 2px;
+        border-bottom: 1px solid rgba(200, 165, 88, 0.18);
+      }
+      #cheat-menu .cheat-place-grid,
+      #cheat-menu .cheat-foe-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+      }
+      #cheat-menu .cheat-place,
+      #cheat-menu .cheat-foe {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        padding: 5px 8px;
+        text-align: left;
+        color: #d8cfc0;
+        background: #17131e;
+        border: 1px solid #3c3448;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #cheat-menu .cheat-place b,
+      #cheat-menu .cheat-foe b { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.1em; color: #e8dfcc; }
+      #cheat-menu .cheat-place small,
+      #cheat-menu .cheat-foe small { font-family: 'Crimson Pro', serif; font-size: 11px; color: #a89c86; }
+      #cheat-menu .cheat-place:hover,
+      #cheat-menu .cheat-foe:hover { border-color: var(--gold); }
+      #cheat-menu .cheat-foe.boss { border-color: #5a2a2a; }
+      #cheat-menu .cheat-foe.boss b { color: #ffb0a0; }
+      #cheat-menu .cheat-foe.given { border-color: var(--gold); box-shadow: inset 0 0 12px rgba(200, 165, 88, 0.2); }
+      #cheat-menu .cheat-spawn-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 4px;
+      }
+      #cheat-menu .cheat-spawn-bar span,
+      #cheat-menu .cheat-quest b { font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.16em; color: var(--frame-gold-hi, #ffd070); margin-right: 4px; }
+      #cheat-menu .cheat-pick {
+        padding: 3px 7px;
+        font-family: 'Cinzel', serif;
+        font-size: 9.5px;
+        color: #d8cfc0;
+        background: #17131e;
+        border: 1px solid #3c3448;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      #cheat-menu .cheat-pick:hover { border-color: var(--gold); color: var(--gold); }
+      #cheat-menu .cheat-pick.lit { border-color: var(--gold); color: var(--gold); background: #2a2135; }
+      #cheat-menu .cheat-quest { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+      #cheat-menu .cheat-quest small { display: block; font-family: 'Crimson Pro', serif; font-size: 11px; color: #a89c86; margin: 1px 0 4px; }
+      #cheat-menu .cheat-quest-states { display: flex; flex-wrap: wrap; gap: 4px; }
+      /* THE BESTIARY'S REFERENCE LINE AND TRY-OUT (it.114). */
+      .bs-title { flex-wrap: wrap; }
+      .bs-title .bs-ref { flex-basis: 100%; font-family: 'Crimson Pro', serif; font-size: 11.5px; color: var(--ink-dim); }
+      .bs-title .bs-ref b { color: #d8cfc0; font-weight: 600; }
+      .bs-title .bs-tryout { flex-basis: 100%; margin-top: 6px; padding: 7px 10px; font-size: 11px; letter-spacing: 0.14em; }
       #cheat-menu .cheat-tip {
         margin-top: 6px;
         text-align: center;
@@ -1134,10 +1204,6 @@
         border: 1px solid var(--gold-dim);
         cursor: pointer;
         text-shadow: 0 1px 3px #000;
-      }
-      #endgame-again:hover {
-        filter: brightness(1.4);
-        box-shadow: 0 0 24px rgba(200, 165, 88, 0.3);
       }
 
       /* ---- Descend note ---- */
@@ -1318,19 +1384,16 @@
       }
       #class-cards { display: flex; gap: 18px; }
       .class-card {
+        position: relative;
         width: 205px;
         padding: 18px 16px 14px;
         border: 1px solid #4a3c28;
         border-radius: 8px;
         background: linear-gradient(180deg, #17131e, #0b0910);
         cursor: pointer;
-        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
       }
-      .class-card:hover {
-        transform: translateY(-6px);
-        border-color: var(--gold, #c8a558);
-        box-shadow: 0 8px 30px rgba(200, 165, 88, 0.18);
-      }
+      /* hover / selected / focus states: "IT.114 — THE MENU REMADE" at the end of the sheet. */
       .cc-preview {
         display: block;
         margin: 0 auto 4px;
@@ -1413,14 +1476,7 @@
         cursor: pointer;
         transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.08s ease;
       }
-      .menu-btn:hover {
-        border-color: var(--gold);
-        box-shadow: 0 0 22px rgba(200, 165, 88, 0.25), inset 0 0 16px rgba(200, 165, 88, 0.08);
-        transform: translateY(-1px);
-      }
-      .menu-btn:active {
-        transform: translateY(1px);
-      }
+      /* hover / focus / active: one shared rule set, "IT.114 — THE MENU REMADE". */
       .menu-btn .mm-sub {
         display: block;
         margin-top: 3px;
@@ -1435,10 +1491,6 @@
       .menu-btn.danger {
         color: #d8a090;
         border-color: #5a2c34;
-      }
-      .menu-btn.danger:hover {
-        border-color: #c05a5a;
-        box-shadow: 0 0 22px rgba(192, 90, 90, 0.25);
       }
 
       /* ---- Main menu ---- */
@@ -1595,33 +1647,40 @@
         width: 220px;
         margin: 0;
       }
-      #class-select .cs-confirm:disabled {
-        opacity: 0.4;
-        cursor: default;
-        transform: none;
-        box-shadow: none;
-      }
-      .class-card.selected {
-        border-color: var(--gold, #c8a558);
-        box-shadow: 0 0 34px rgba(200, 165, 88, 0.32), inset 0 0 22px rgba(200, 165, 88, 0.12);
-        transform: translateY(-6px);
-      }
-      .class-card.selected h2 {
-        color: var(--gold, #c8a558);
-      }
+      /* .cs-confirm:disabled and .class-card.selected: "IT.114 — THE MENU REMADE". */
       /* THE DARK'S MEASURE (it.89): five settings under the delvers. */
       .cs-diff-title { margin: 14px 0 8px; }
       #difficulty-cards { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-      .diff-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 158px; min-height: 44px; padding: 9px 11px; border: 1px solid #4a3c28; border-radius: 6px; background: linear-gradient(180deg, #17131e, #0b0910); color: var(--parchment, #e8dfc8); cursor: pointer; text-align: left; font-family: 'Cinzel', 'Georgia', serif; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-      .diff-card b { font-size: 12px; letter-spacing: 0.18em; color: #cfc4a8; }
+      /* THE CHOICE MUST READ (it.114). Idle: a dark plate with a dim diamond in
+         its corner. Hover (pointer only): a 1 px lift and a bronze rim — nothing
+         more, so it can never be mistaken for the pick. Selected: the card rises
+         3 px on a lit gold frame, the title ignites, and the diamond turns solid
+         gold — visible without a pointer, which is all a phone ever has.
+         Hardcore does the same in blood. These buttons are kept OUT of the
+         pressed-metal rule below (it.72) so no !important plate can flatten them. */
+      .diff-card { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 158px; min-height: 44px; padding: 9px 30px 9px 11px; border: 1px solid #4a3c28; border-radius: 6px; background: radial-gradient(120% 90% at 50% -10%, rgba(231, 207, 143, 0.1), transparent 60%), linear-gradient(180deg, #17131e, #0b0910); color: var(--parchment, #e8dfc8); cursor: pointer; text-align: left; font-family: 'Cinzel', 'Georgia', serif; box-shadow: inset 0 1px 0 rgba(231, 207, 143, 0.08), 0 2px 0 rgba(0, 0, 0, 0.8); transition: transform 0.12s ease, border-color 0.16s ease, box-shadow 0.16s ease; -webkit-tap-highlight-color: transparent; }
+      .diff-card b { font-size: 12px; letter-spacing: 0.18em; color: #cfc4a8; transition: color 0.16s ease; }
       .diff-card .dc-tag { font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 12px; color: #a89c86; }
       .diff-card .dc-blurb { font-family: 'Crimson Pro', 'Georgia', serif; font-size: 11.5px; line-height: 1.3; color: #8d8496; }
-      .diff-card:hover { border-color: var(--gold, #c8a558); }
-      .diff-card.selected { border-color: var(--gold, #c8a558); box-shadow: 0 0 22px rgba(200, 165, 88, 0.26), inset 0 0 14px rgba(200, 165, 88, 0.1); }
-      .diff-card.selected b { color: var(--gold, #c8a558); }
-      .diff-card[data-diff="hardcore"].selected { border-color: var(--blood-bright, #c8443a); box-shadow: 0 0 22px rgba(200, 68, 58, 0.3); }
-      .diff-card[data-diff="hardcore"].selected b { color: var(--blood-bright, #c8443a); }
-      body.tier-micro .diff-card, body.tier-compact .diff-card, body.tier-standard .diff-card { width: 132px; padding: 7px 8px; }
+      .diff-card::after { content: ''; position: absolute; top: 12px; right: 11px; width: 8px; height: 8px; transform: rotate(45deg) scale(0.6); background: #3a3025; border: 1px solid #5a4a34; opacity: 0.55; pointer-events: none; transition: transform 0.16s ease, opacity 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease; }
+      .diff-card[data-diff="hardcore"] { border-color: #4e2a28; }
+      @media (hover: hover) {
+        .diff-card:hover { transform: translateY(-1px); border-color: rgba(226, 189, 102, 0.6); }
+        .diff-card:hover b { color: #efe6d2; }
+        .diff-card:hover::after { opacity: 0.9; transform: rotate(45deg) scale(0.8); }
+        .diff-card[data-diff="hardcore"]:hover { border-color: rgba(208, 70, 58, 0.7); }
+      }
+      .diff-card:focus-visible { outline: 1px solid rgba(255, 226, 160, 0.7); outline-offset: 3px; border-color: rgba(226, 189, 102, 0.6); }
+      .diff-card:active { transform: translateY(0) scale(0.97); transition-duration: 0.04s; }
+      .diff-card.selected { transform: translateY(-3px); border-color: #e2bd66; background: radial-gradient(120% 90% at 50% -10%, rgba(226, 189, 102, 0.24), transparent 60%), linear-gradient(180deg, #221a27, #0e0b12); box-shadow: inset 0 0 0 1px rgba(255, 226, 160, 0.35), inset 0 0 18px rgba(226, 189, 102, 0.16), 0 0 0 3px rgba(226, 189, 102, 0.14), 0 6px 18px rgba(0, 0, 0, 0.7), 0 0 26px rgba(226, 189, 102, 0.38); }
+      .diff-card.selected b { color: #ffe2a0; text-shadow: 0 0 10px rgba(255, 208, 112, 0.6), 0 1px 0 #000; }
+      .diff-card.selected .dc-tag { color: #d8c9a4; }
+      .diff-card.selected::after { opacity: 1; transform: rotate(45deg) scale(1); background: linear-gradient(135deg, #ffe2a0, #c8a558 60%, #8a6a2e); border-color: #ffe9b8; box-shadow: 0 0 10px rgba(255, 208, 112, 0.85), 0 0 2px #fff; }
+      .diff-card[data-diff="hardcore"].selected { border-color: #d0463a; background: radial-gradient(120% 90% at 50% -10%, rgba(208, 70, 58, 0.24), transparent 60%), linear-gradient(180deg, #24161a, #100a0c); box-shadow: inset 0 0 0 1px rgba(255, 150, 130, 0.3), inset 0 0 18px rgba(208, 70, 58, 0.18), 0 0 0 3px rgba(208, 70, 58, 0.14), 0 6px 18px rgba(0, 0, 0, 0.7), 0 0 26px rgba(208, 70, 58, 0.42); }
+      .diff-card[data-diff="hardcore"].selected b { color: #ff9a86; text-shadow: 0 0 10px rgba(255, 90, 70, 0.65), 0 1px 0 #000; }
+      .diff-card[data-diff="hardcore"].selected .dc-tag { color: #d8b0a6; }
+      .diff-card[data-diff="hardcore"].selected::after { background: linear-gradient(135deg, #ffb8a8, #d0463a 60%, #6a1a14); border-color: #ffc8ba; box-shadow: 0 0 10px rgba(255, 90, 70, 0.85), 0 0 2px #fff; }
+      body.tier-micro .diff-card, body.tier-compact .diff-card, body.tier-standard .diff-card { width: 132px; padding: 7px 26px 7px 8px; }
       body.tier-micro .diff-card .dc-blurb, body.tier-compact .diff-card .dc-blurb { display: none; }
       /* HARDCORE (it.89): the death sheet says THE END and offers no rising. */
       #death-menu.hardcore [data-act="respawn"], #death-menu.hardcore [data-act="class"] { display: none; }
@@ -1699,9 +1758,6 @@
         border: 1px solid var(--gold-dim);
         cursor: pointer;
       }
-      #settings-panel .set-close:hover {
-        filter: brightness(1.4);
-      }
       #settings-panel {
         width: 340px;
         z-index: 95;
@@ -1710,7 +1766,6 @@
       /* ===================================================================
          IT.39 — TOWN PANELS (shop / stash), SAVE SLOTS, SHARED ITEM TIP
          =================================================================== */
-      .menu-btn:active,
       .town-panel button:active,
       #inv-panel button:active,
       #cheat-menu button:active {
@@ -2508,7 +2563,6 @@
       #tp-button:hover { border-color: var(--frame-gold); }
       body:not(.in-run) #tp-button { display: none; }
       #endgame-town { display: block; margin: 14px auto 6px; padding: 12px 40px; font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.2em; color: #0b0910; background: linear-gradient(180deg, #e8c46a, #a8843a); border: 2px solid #3a3240; cursor: pointer; box-shadow: 0 0 18px rgba(200, 165, 88, 0.5); }
-      #endgame-town:hover { filter: brightness(1.1); }
       .bs-stage.unknown { background: radial-gradient(ellipse at 50% 85%, rgba(60, 40, 80, 0.5), transparent 60%); }
       #inv-panel .inv-cell.inv-cell-framed { background-size: 100% 100%; background-repeat: no-repeat; border: none; opacity: 0.9; }
 
@@ -2681,6 +2735,8 @@
       /* Hurt flash: a short, soft pulse. */
       #vignette { transition: background 0.15s ease-out; }
       #vignette.hurt { background: radial-gradient(ellipse at center, rgba(120, 0, 0, 0) 40%, rgba(160, 12, 12, 0.25) 100%); }
+      /* THE BLOODY SCREEN (it.114): the glass fills with blood while the hero lies dead. */
+      #vignette.dead { background: radial-gradient(ellipse at center, rgba(90, 0, 0, 0.25) 0%, rgba(120, 6, 6, 0.6) 60%, rgba(40, 0, 0, 0.92) 100%); transition: background 0.9s ease-out; }
       /* Buff timers over the hero's head. */
       #player-buffs .buff-time { bottom: -11px; font-size: 8px; }
       /* Level-up flash + banner. */
@@ -3126,12 +3182,12 @@
          IT.61 — THE TITLE REBUILT: LOGO, STACK, TRANSITIONS, EXIT, CREDITS REEL
          =================================================================== */
       #main-menu { background: none; }
-      #main-menu .mm-panel { width: 460px; transition: filter 0.2s ease-out, opacity 0.2s ease-out; }
-      #main-menu.dim .mm-panel { filter: brightness(0.45) blur(1px); opacity: 0.6; pointer-events: none; }
+      #main-menu .mm-panel { width: 460px; transition: opacity 0.2s ease-out; }
+      #main-menu.dim .mm-panel { opacity: 0.45; pointer-events: none; }
       #main-menu .mm-logo { position: relative; margin: 0 0 6px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-family: 'Cinzel Decorative', 'Cinzel', 'Georgia', serif; font-weight: 900; line-height: 1.05; letter-spacing: 0.16em; text-shadow: none; animation: mm-float 5.2s ease-in-out infinite; }
-      #main-menu .mm-logo span { position: relative; display: block; font-size: 44px; color: transparent; background: linear-gradient(180deg, #fff3cc 0%, #e6c26a 28%, #b3822e 50%, #f2d68a 62%, #7c5a22 80%, #d9b25e 100%); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 2px 0 #2a1c08) drop-shadow(0 4px 0 #120c04) drop-shadow(0 0 4px rgba(0, 0, 0, 0.95)); }
+      #main-menu .mm-logo span { position: relative; display: block; padding: 0.1em 0.16em; margin: -0.1em -0.16em; line-height: 1.12; font-size: 44px; color: transparent; background: linear-gradient(180deg, #fff3cc 0%, #e6c26a 28%, #b3822e 50%, #f2d68a 62%, #7c5a22 80%, #d9b25e 100%); -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 2px 0 #2a1c08) drop-shadow(0 4px 0 #120c04) drop-shadow(0 0 4px rgba(0, 0, 0, 0.95)); }
       #main-menu .mm-logo span:last-child { font-size: 52px; letter-spacing: 0.2em; }
-      #main-menu .mm-logo span::after { content: attr(data-text); position: absolute; inset: 0; color: transparent; -webkit-text-stroke: 1px rgba(255, 224, 150, 0.9); text-shadow: 0 0 14px rgba(255, 200, 100, 0.7); animation: mm-edge 3.4s ease-in-out infinite; pointer-events: none; }
+      #main-menu .mm-logo span::after { content: attr(data-text); position: absolute; inset: 0; padding: inherit; box-sizing: border-box; color: transparent; -webkit-text-stroke: 1px rgba(255, 224, 150, 0.9); text-shadow: 0 0 14px rgba(255, 200, 100, 0.7); animation: mm-edge 3.4s ease-in-out infinite; pointer-events: none; }
       @keyframes mm-float { 0%, 100% { transform: translateY(-4px); } 50% { transform: translateY(4px); } }
       @keyframes mm-edge { 0%, 100% { opacity: 0.12; } 50% { opacity: 0.7; } }
       #main-menu .mm-tag { margin: 0 0 16px; font-size: 14.5px; color: #9a8f9e; text-shadow: 0 1px 2px #000; }
@@ -3143,13 +3199,9 @@
       #main-menu .mm-btn::before, #main-menu .mm-btn::after { content: ''; position: absolute; top: 50%; width: 7px; height: 7px; transform: translateY(-50%) rotate(45deg); background: #4a3d2c; transition: background 0.12s, box-shadow 0.12s; }
       #main-menu .mm-btn::before { left: -4px; }
       #main-menu .mm-btn::after { right: -4px; }
-      #main-menu .mm-btn:hover, #main-menu .mm-btn:focus-visible { color: #ffd070; border-color: #c8a558; outline: none; box-shadow: inset 0 0 0 1px #07050a, inset 0 12px 18px rgba(0, 0, 0, 0.55), 0 0 18px rgba(200, 165, 88, 0.35), 0 0 2px rgba(255, 208, 112, 0.6), 0 2px 0 #000; }
-      #main-menu .mm-btn:hover::before, #main-menu .mm-btn:hover::after, #main-menu .mm-btn:focus-visible::before, #main-menu .mm-btn:focus-visible::after { background: #ffd070; box-shadow: 0 0 8px rgba(255, 208, 112, 0.8); }
-      #main-menu .mm-btn:active { transform: translateY(1px); box-shadow: inset 0 0 0 1px #07050a, inset 0 14px 20px rgba(0, 0, 0, 0.7), 0 0 10px rgba(200, 165, 88, 0.25); }
+      /* hover / focus-visible / active / disabled: "IT.114 — THE MENU REMADE" at the end of the sheet. */
       #main-menu .mm-btn.struck { animation: mm-flash 0.35s ease-out; }
       @keyframes mm-flash { 0% { color: #fff6d0; box-shadow: inset 0 0 0 1px #07050a, 0 0 30px rgba(255, 220, 140, 0.9), 0 0 4px #ffe9a8; } 100% { color: #ffd070; } }
-      #main-menu .mm-btn:disabled, #main-menu .mm-btn.muted { color: #5d5148; border-color: #2e2820; cursor: default; }
-      #main-menu .mm-btn:disabled::before, #main-menu .mm-btn:disabled::after { background: #2e2820; }
       #main-menu .mm-pill { padding: 2px 8px; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-weight: 500; font-size: 11px; letter-spacing: 0.04em; color: #c9b58a; background: rgba(0, 0, 0, 0.45); border: 1px solid #4a3d2c; white-space: nowrap; }
       #main-menu .mm-btn:disabled .mm-pill { color: #5d5148; border-color: #2e2820; }
       #main-menu .mm-foot { margin-top: 20px; font-size: 11.5px; color: #6a6058; }
@@ -3179,7 +3231,6 @@
       #settings-panel .set-corner.br { bottom: 5px; right: 5px; border-left: none; border-top: none; }
       #settings-panel .set-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 6px 0 12px; }
       #settings-panel .set-tabs button { padding: 6px 4px; font-family: 'Cinzel', serif; font-size: 10.5px; letter-spacing: 0.16em; color: #a89c80; background: #0d0a12; border: 1px solid #3b3145; cursor: pointer; }
-      #settings-panel .set-tabs button:hover { color: var(--ink); border-color: #7a6238; }
       #settings-panel .set-tabs button.on { color: #ffd070; border-color: #c8a558; box-shadow: 0 0 10px rgba(200, 165, 88, 0.25); }
       #settings-panel .set-toggle span { display: flex; flex-direction: column; gap: 1px; }
       #settings-panel .set-toggle small { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
@@ -3196,7 +3247,6 @@
       #exit-modal .am-choices button { display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; background: linear-gradient(180deg, #221b2c, #0f0c14); border: 1px solid var(--frame-iron); cursor: pointer; color: var(--ink); }
       #exit-modal .am-choices button b { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.14em; color: #ffd070; }
       #exit-modal .am-choices button span { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 12px; color: var(--ink-dim); }
-      #exit-modal .am-choices button:hover { border-color: var(--frame-gold); box-shadow: 0 0 12px rgba(200, 165, 88, 0.35); }
 
       /* Credits: a rolling reel inside a carved window. */
       #credits .modal-panel { width: 560px; box-shadow: inset 0 0 0 3px #0a080d, inset 0 0 0 4px #7a6238, inset 0 0 40px rgba(0, 0, 0, 0.8), 0 24px 60px rgba(0, 0, 0, 0.9); }
@@ -3674,7 +3724,6 @@
       #settings-panel .set-action span { display: flex; flex-direction: column; gap: 1px; }
       #settings-panel .set-action small { font-family: 'Crimson Pro', serif; font-style: italic; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--ink-dim); }
       #settings-panel .set-btn { padding: 6px 12px; font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.16em; color: var(--ink); background: #0d0a12; border: 1px solid #5a4a30; cursor: pointer; }
-      #settings-panel .set-btn:hover { color: #ffd070; border-color: #c8a558; }
       #settings-panel .set-segs { display: flex; gap: 4px; flex: 0 0 auto; }
       #settings-panel .set-segs .set-btn { min-height: 36px; }
       #settings-panel .set-segs .set-btn.on { color: #0b0910; background: linear-gradient(180deg, #e8c46a, #a8843a); border-color: #c8a558; }
@@ -4065,10 +4114,15 @@
       }
 
       /* ---- 2. PRESSED METAL: every button in the game ------------------ */
+      /* THE ONE BUTTON LANGUAGE (it.114): this is the plate. Its four states —
+         hover, focus-visible, active, disabled — live once, in "IT.114 — THE
+         MENU REMADE" at the end of the sheet, together with the title stack's
+         .mm-btn, so every sheet answers the same way. The difficulty cards are
+         their own control and stay out of this plate. */
       body .menu-btn,
       body #endgame button,
       body .modal button:not(.tp-close):not(.ds-icon-btn),
-      body #class-select button:not(.tp-close),
+      body #class-select button:not(.tp-close):not(.diff-card),
       body #coop-panel button:not(.tp-close),
       body #settings-panel button:not(.tp-close),
       body #cheat-menu button:not(.tp-close),
@@ -4090,32 +4144,8 @@
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
         transition: transform 0.08s ease, box-shadow 0.14s ease, border-color 0.14s ease, color 0.14s ease;
       }
-      body .menu-btn:hover, body #endgame button:hover,
-      body .modal button:not(.tp-close):not(.ds-icon-btn):hover,
-      body #class-select button:not(.tp-close):hover,
-      body #coop-panel button:not(.tp-close):hover,
-      body #settings-panel button:not(.tp-close):hover,
-      .ds-btn:hover {
-        border-color: var(--ds-gold-lit) !important;
-        color: #fff2cf !important;
-        box-shadow:
-          inset 0 1px 0 rgba(231, 207, 143, 0.34),
-          inset 0 -3px 8px rgba(0, 0, 0, 0.6),
-          0 0 18px rgba(212, 175, 55, 0.28) !important;
-      }
-      /* THE PRESS. A control that does not move under the finger reads as
-         broken on a touch screen, where there is no cursor to confirm the
-         hit. Every button in the game answers with the same 5%. */
-      body .menu-btn:active, body #endgame button:active,
-      body .modal button:not(.tp-close):not(.ds-icon-btn):active,
-      body #class-select button:not(.tp-close):active,
-      body #coop-panel button:not(.tp-close):active,
-      body #settings-panel button:not(.tp-close):active,
-      .ds-btn:active, .ds-icon-btn:active, .ds-icon-btn.held {
-        transform: scale(0.95);
-      }
+      .ds-icon-btn:active, .ds-icon-btn.held { transform: scale(0.95); }
       body .menu-btn.danger { color: #ffb0a4 !important; border-color: #7a3a34 !important; }
-      body .menu-btn.danger:hover { border-color: #ff8f7c !important; color: #ffd8cf !important; }
 
       /* ---- 3. ICON BUTTONS: the 48 px system targets ------------------- */
       .ds-icon-btn {
@@ -4523,7 +4553,13 @@
         pointer-events: none;
         transition: opacity 0.12s ease;
       }
-      .tc-skill .tc-face img { width: 64%; height: 64%; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 1px 2px #000); }
+      /* A ROUND FACE (it.114): the hotbar's square icons are cropped to a circle
+         and sit on a dark socket, so a transparent icon still reads and no square
+         corner ever shows on the round button. The cooldown veil is a later
+         sibling and keeps painting on top. */
+      .tc-skill .tc-face::before, #touch-controls .tc-use .tc-face-draught::before { content: ''; position: absolute; left: 50%; top: 50%; width: 82%; height: 82%; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(circle at 50% 35%, #2b2334 0%, #130f19 62%, #0b0910 100%); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.9), inset 0 3px 8px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(200, 165, 88, 0.32); pointer-events: none; }
+      .tc-skill .tc-face img { position: relative; width: 78%; height: 78%; border-radius: 50%; object-fit: cover; clip-path: circle(50% at 50% 50%); image-rendering: pixelated; }
+      .tc-skill .tc-face b, .tc-skill .tc-face .tc-lock { position: relative; }
       .tc-skill .tc-face b { font: 700 calc(var(--tc-s, 56px) * 0.36)/1 'Cinzel', 'Georgia', serif; color: #e6c88a; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.9); }
       .tc-skill .tc-face .tc-lock { font-size: calc(var(--tc-s, 56px) * 0.32); opacity: 0.55; filter: grayscale(1); }
       .tc-skill .tc-cd {
@@ -4775,7 +4811,7 @@
       /* The touch draughts wear the belt's faces. */
       /* The face fills the button's own box: no baseline gap, no growth (the matrix caught 3 px). */
       #touch-controls .tc-use .tc-face-draught { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-      #touch-controls .tc-use .tc-face-draught img { display: block; width: 58%; height: 58%; object-fit: contain; image-rendering: pixelated; }
+      #touch-controls .tc-use .tc-face-draught img { position: relative; display: block; width: 74%; height: 74%; border-radius: 50%; object-fit: cover; clip-path: circle(50% at 50% 50%); image-rendering: pixelated; }
       #touch-controls .tc-use .tc-count { position: absolute; right: 4px; bottom: 3px; font-family: 'Cinzel', 'Georgia', serif; font-size: 10px; font-style: normal; color: #e8dfc8; text-shadow: 0 1px 2px #000; }
       #touch-controls .tc-use .tc-cd { position: absolute; inset: 0; border-radius: inherit; background: conic-gradient(rgba(8, 6, 10, 0.75) var(--cd, 0deg), transparent 0); pointer-events: none; }
       #touch-controls .tc-use.empty { opacity: 0.45; }
@@ -5440,6 +5476,423 @@
       }
       body .tp-close:active { transform: scale(min(1.52, calc(0.95 / var(--fit-scale, 1)))); }
 
+      /* ===================================================================
+         IT.114 — THE MENU REMADE: ONE BUTTON LANGUAGE, A VISIBLE CHOICE,
+         AND A TITLE THAT HOLDS UP ON A PHONE
+         ===================================================================
+         Every button in the game shares four states: hover (pointer screens
+         only), focus-visible (the keyboard walk looks exactly like a hover,
+         plus a thin ring), active (the press — visible without a pointer)
+         and disabled. A selected card is unmistakable without any hover: a
+         lifted gold frame, a lit title and a solid gold diamond. Nothing
+         transitions or animates `filter`; sheens are opacity, lifts are
+         transform, so a phone composites the whole menu. Hover-only effects
+         sit under @media (hover: hover) so a touch never leaves a stuck hover.
+
+         The shared selector, written out below wherever a state needs it:
+           body :is(...every button...):where(:not(.tp-close, .ds-icon-btn, .diff-card, .class-card))
+         The ids are wrapped in :where() so the whole thing weighs (0,1,2) and
+         any panel's own `.on` / `.danger` / `[aria-selected]` rule outranks it
+         by ordinary specificity. Colour, border and shadow carry !important
+         because the it.72 plate above sets them so. */
+      :root {
+        --mn-gold: #e2bd66;
+        --mn-gold-hi: #ffe2a0;
+        --mn-rim: rgba(226, 189, 102, 0.62);
+        --mn-glow: rgba(226, 189, 102, 0.32);
+        --mn-ring: rgba(226, 189, 102, 0.14);
+        --mn-blood: #d0463a;
+        --mn-blood-hi: #ff9a86;
+      }
+
+      /* ---- 1. the four states ------------------------------------------ */
+      body :is(:where(#main-menu) .mm-btn, .menu-btn, :where(#endgame) button, .modal button, :where(#class-select) button, :where(#coop-panel) button, :where(#settings-panel) button, :where(#cheat-menu) button, :where(#exit-modal) .am-choices button, :where(#shop-panel) button.shop-buy, :where(#stash-panel) button.stash-move, .ds-btn):where(:not(.tp-close, .ds-icon-btn, .diff-card, .class-card)) {
+        -webkit-tap-highlight-color: transparent;
+        transition: transform 0.1s ease, box-shadow 0.16s ease, border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease, opacity 0.16s ease;
+      }
+      /* HOVER (pointer only): a 2 px lift on a warm gold rim, the plate's
+         shadow growing to 4 px so the button rises off the floor it stood on. */
+      @media (hover: hover) {
+        body :is(:where(#main-menu) .mm-btn, .menu-btn, :where(#endgame) button, .modal button, :where(#class-select) button, :where(#coop-panel) button, :where(#settings-panel) button, :where(#cheat-menu) button, :where(#exit-modal) .am-choices button, :where(#shop-panel) button.shop-buy, :where(#stash-panel) button.stash-move, .ds-btn):where(:not(.tp-close, .ds-icon-btn, .diff-card, .class-card)):hover:not(:disabled) {
+          transform: translateY(-2px);
+          color: #fff2cf !important;
+          border-color: var(--mn-rim) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255, 226, 160, 0.38),
+            inset 0 -3px 8px rgba(0, 0, 0, 0.55),
+            0 0 0 1px var(--mn-ring),
+            0 4px 0 rgba(0, 0, 0, 0.85),
+            0 8px 18px rgba(0, 0, 0, 0.55),
+            0 0 22px var(--mn-glow) !important;
+        }
+      }
+      /* FOCUS-VISIBLE: the keyboard walk (↑ ↓ on the title, Tab anywhere)
+         looks exactly like the hover, with a thin ring set off the plate. */
+      body :is(:where(#main-menu) .mm-btn, .menu-btn, :where(#endgame) button, .modal button, :where(#class-select) button, :where(#coop-panel) button, :where(#settings-panel) button, :where(#cheat-menu) button, :where(#exit-modal) .am-choices button, :where(#shop-panel) button.shop-buy, :where(#stash-panel) button.stash-move, .ds-btn):where(:not(.tp-close, .ds-icon-btn, .diff-card, .class-card)):focus-visible {
+        outline: 1px solid rgba(255, 226, 160, 0.7);
+        outline-offset: 3px;
+        transform: translateY(-2px);
+        color: #fff2cf !important;
+        border-color: var(--mn-rim) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 226, 160, 0.38),
+          inset 0 -3px 8px rgba(0, 0, 0, 0.55),
+          0 0 0 1px var(--mn-ring),
+          0 4px 0 rgba(0, 0, 0, 0.85),
+          0 8px 18px rgba(0, 0, 0, 0.55),
+          0 0 22px var(--mn-glow) !important;
+      }
+      /* ACTIVE: the press. It sinks 1 px and 3 %, the plate's shadow closes
+         and the inside darkens — legible under a thumb, where there is no
+         cursor to confirm the hit. */
+      body :is(:where(#main-menu) .mm-btn, .menu-btn, :where(#endgame) button, .modal button, :where(#class-select) button, :where(#coop-panel) button, :where(#settings-panel) button, :where(#cheat-menu) button, :where(#exit-modal) .am-choices button, :where(#shop-panel) button.shop-buy, :where(#stash-panel) button.stash-move, .ds-btn):where(:not(.tp-close, .ds-icon-btn, .diff-card, .class-card)):active:not(:disabled) {
+        transform: translateY(1px) scale(0.97);
+        transition-duration: 0.04s;
+        color: var(--mn-gold-hi) !important;
+        border-color: var(--mn-gold) !important;
+        box-shadow:
+          inset 0 3px 10px rgba(0, 0, 0, 0.85),
+          inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+          0 0 0 1px var(--mn-ring),
+          0 0 14px var(--mn-glow) !important;
+      }
+      /* DISABLED (and the title's `muted` CONTINUE): dim, flat, still. */
+      body :is(:where(#main-menu) .mm-btn, .menu-btn, :where(#endgame) button, .modal button, :where(#class-select) button, :where(#coop-panel) button, :where(#settings-panel) button, :where(#cheat-menu) button, :where(#exit-modal) .am-choices button, :where(#shop-panel) button.shop-buy, :where(#stash-panel) button.stash-move, .ds-btn):where(:not(.tp-close, .ds-icon-btn, .diff-card, .class-card)):is(:disabled, .muted) {
+        opacity: 0.5;
+        cursor: default;
+        transform: none;
+        outline: none;
+        color: #8a7e6c !important;
+        border-color: #3a3128 !important;
+        box-shadow:
+          inset 0 1px 0 rgba(231, 207, 143, 0.08),
+          inset 0 -3px 8px rgba(0, 0, 0, 0.6),
+          0 2px 0 rgba(0, 0, 0, 0.85) !important;
+      }
+      /* The blood-red buttons (RETURN TO MAIN MENU, DELETE, OVERWRITE) keep
+         their colour through every state. */
+      body .modal .menu-btn.danger:focus-visible, body .modal .menu-btn.danger:active { color: #ffd8cf !important; border-color: rgba(255, 143, 124, 0.8) !important; box-shadow: inset 0 1px 0 rgba(255, 200, 190, 0.3), inset 0 -3px 8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(208, 70, 58, 0.16), 0 4px 0 rgba(0, 0, 0, 0.85), 0 8px 18px rgba(0, 0, 0, 0.55), 0 0 22px rgba(208, 70, 58, 0.35) !important; }
+      @media (hover: hover) {
+        body .modal .menu-btn.danger:hover { color: #ffd8cf !important; border-color: rgba(255, 143, 124, 0.8) !important; box-shadow: inset 0 1px 0 rgba(255, 200, 190, 0.3), inset 0 -3px 8px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(208, 70, 58, 0.16), 0 4px 0 rgba(0, 0, 0, 0.85), 0 8px 18px rgba(0, 0, 0, 0.55), 0 0 22px rgba(208, 70, 58, 0.35) !important; }
+      }
+      /* A LIT TAB OR SEGMENT. The it.72 plate's !important colours used to
+         flatten these, so a chosen tab looked like every other; they answer
+         with !important of their own and the extra weight of their panel. */
+      body #settings-panel .set-tabs button.on, body .ds-btn[aria-selected="true"] {
+        color: var(--mn-gold-hi) !important;
+        border-color: var(--mn-gold) !important;
+        box-shadow: inset 0 -2px 0 var(--mn-gold), inset 0 1px 0 rgba(255, 226, 160, 0.3), 0 0 14px var(--mn-glow) !important;
+      }
+      body #settings-panel .set-segs .set-btn.on {
+        color: #0b0910 !important;
+        background: linear-gradient(180deg, #f0cf85 0%, #c8a558 55%, #a8843a 100%) !important;
+        border-color: var(--mn-gold-hi) !important;
+        text-shadow: none;
+        box-shadow: inset 0 1px 0 rgba(255, 245, 210, 0.6), 0 0 14px var(--mn-glow) !important;
+      }
+      @media (hover: hover) {
+        body #settings-panel .set-segs .set-btn.on:hover { color: #0b0910 !important; transform: none; }
+      }
+      /* THE PRESSED-METAL SPECIFICS: the settings panel's own buttons never
+         wore the plate's font; now every button in that sheet does. */
+      body #settings-panel .set-close, body #settings-panel .set-btn, body #settings-panel .set-tabs button { font-family: 'Cinzel', 'Georgia', serif; }
+
+      /* ---- 2. the title stack ------------------------------------------ */
+      #main-menu .mm-panel { padding: 22px 26px 18px; box-sizing: border-box; }
+      #main-menu .mm-btn { isolation: isolate; color: #c9a466; border-color: #55462f; min-height: 44px; }
+      #main-menu .mm-btn::before, #main-menu .mm-btn::after { background: #55462f; transition: background-color 0.16s ease, box-shadow 0.16s ease; }
+      #main-menu .mm-btn > span { position: static; }
+      /* THE EMBER SHEEN: a warm wash inside the plate that breathes while the
+         button is lit. It is a single opacity, painted under the text. */
+      #main-menu .mm-btn > span::before {
+        content: ''; position: absolute; inset: 1px; z-index: -1; border-radius: 2px;
+        background: linear-gradient(100deg, transparent 16%, rgba(255, 226, 160, 0.14) 44%, rgba(255, 150, 70, 0.11) 56%, transparent 84%);
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      /* THE STRIKE (click): the old mm-flash animated colour and shadow, which
+         the shared hover now holds with !important — so the strike is its own
+         layer: a white-gold flash over the plate that fades in 0.4 s, and the
+         pips going white. Opacity only. */
+      #main-menu .mm-btn > span::after { content: ''; position: absolute; inset: 1px; z-index: -1; border-radius: 2px; background: rgba(255, 240, 200, 0.42); opacity: 0; pointer-events: none; }
+      #main-menu .mm-btn.struck > span::after { animation: mn-strike 0.4s ease-out; }
+      #main-menu .mm-btn.struck::before, #main-menu .mm-btn.struck::after { animation: mn-strike-pip 0.4s ease-out; }
+      @keyframes mn-strike { 0% { opacity: 1; } 100% { opacity: 0; } }
+      @keyframes mn-strike-pip { 0% { background: #fff8e6; box-shadow: 0 0 14px rgba(255, 240, 200, 1), 0 0 3px #fff; } 100% { background: var(--mn-gold-hi); box-shadow: 0 0 8px rgba(255, 208, 112, 0.9), 0 0 2px #fff; } }
+      #main-menu .mm-btn:focus-visible > span::before { opacity: 1; animation: mn-ember 2.4s ease-in-out infinite; }
+      #main-menu .mm-btn:focus-visible::before, #main-menu .mm-btn:focus-visible::after { background: var(--mn-gold-hi); box-shadow: 0 0 8px rgba(255, 208, 112, 0.9), 0 0 2px #fff; }
+      #main-menu .mm-btn:focus-visible .mm-pill { color: var(--mn-gold-hi); border-color: var(--mn-rim); }
+      @media (hover: hover) {
+        #main-menu .mm-btn:hover:not(:disabled) > span::before { opacity: 1; animation: mn-ember 2.4s ease-in-out infinite; }
+        #main-menu .mm-btn:hover:not(:disabled)::before, #main-menu .mm-btn:hover:not(:disabled)::after { background: var(--mn-gold-hi); box-shadow: 0 0 8px rgba(255, 208, 112, 0.9), 0 0 2px #fff; }
+        #main-menu .mm-btn:hover:not(:disabled) .mm-pill { color: var(--mn-gold-hi); border-color: var(--mn-rim); }
+      }
+      #main-menu .mm-btn:active:not(:disabled)::before, #main-menu .mm-btn:active:not(:disabled)::after { background: var(--mn-gold); box-shadow: 0 0 5px rgba(255, 208, 112, 0.6); }
+      #main-menu .mm-btn:disabled::before, #main-menu .mm-btn:disabled::after, #main-menu .mm-btn.muted::before, #main-menu .mm-btn.muted::after { background: #2e2820; box-shadow: none; }
+      #main-menu .mm-btn:disabled .mm-pill { color: #6a6058; border-color: #2e2820; }
+      @keyframes mn-ember { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+      /* The foot carries the build (MainMenu.ts writes it). */
+      #main-menu .mm-foot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+      #main-menu .mm-ver { font-family: 'Cinzel', 'Georgia', serif; font-style: normal; font-size: 9.5px; letter-spacing: 0.22em; color: #6a6058; }
+      #main-menu .mm-ver:empty { display: none; }
+
+      /* ---- 3. the class cards ------------------------------------------ */
+      /* A rune rule along the top edge and a diamond in the corner: both dim
+         at rest, both lit only on the chosen card. */
+      .class-card { -webkit-tap-highlight-color: transparent; }
+      .class-card h2, .class-card .cc-glyph { transition: color 0.16s ease, text-shadow 0.16s ease; }
+      .class-card::before { content: ''; position: absolute; left: 12%; right: 12%; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--mn-gold-hi) 50%, transparent); opacity: 0; transition: opacity 0.16s ease; pointer-events: none; }
+      .class-card::after { content: ''; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; transform: rotate(45deg) scale(0.6); background: #3a3025; border: 1px solid #5a4a34; opacity: 0.5; transition: transform 0.16s ease, opacity 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease; pointer-events: none; }
+      @media (hover: hover) {
+        .class-card:hover { transform: translateY(-3px); border-color: var(--mn-rim); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--mn-ring); }
+        .class-card:hover h2 { color: #efe6d2; }
+        .class-card:hover::after { opacity: 0.9; transform: rotate(45deg) scale(0.8); }
+      }
+      .class-card:active { transform: translateY(0) scale(0.985); transition-duration: 0.04s; }
+      .class-card.selected {
+        transform: translateY(-6px);
+        border-color: var(--mn-gold);
+        background: radial-gradient(120% 70% at 50% 0%, rgba(226, 189, 102, 0.16), transparent 60%), linear-gradient(180deg, #1e1826, #0d0a12);
+        box-shadow:
+          inset 0 0 0 1px rgba(255, 226, 160, 0.3),
+          inset 0 0 30px rgba(226, 189, 102, 0.12),
+          0 0 0 3px var(--mn-ring),
+          0 12px 32px rgba(0, 0, 0, 0.7),
+          0 0 40px var(--mn-glow);
+      }
+      .class-card.selected h2 { color: var(--mn-gold-hi); text-shadow: 0 0 14px rgba(255, 208, 112, 0.55), 0 1px 0 #000; }
+      .class-card.selected .cc-glyph { color: var(--mn-gold-hi); text-shadow: 0 0 22px rgba(255, 208, 112, 0.7); }
+      .class-card.selected::before { opacity: 1; }
+      .class-card.selected::after { opacity: 1; transform: rotate(45deg) scale(1); background: linear-gradient(135deg, #ffe2a0, #c8a558 60%, #8a6a2e); border-color: #ffe9b8; box-shadow: 0 0 10px rgba(255, 208, 112, 0.85), 0 0 2px #fff; }
+      /* CONFIRM sleeps until a delver is chosen, then breathes a gold halo. */
+      #class-select .cs-confirm:disabled { opacity: 0.4; }
+      #class-select .cs-confirm:not(:disabled) { color: var(--mn-gold-hi) !important; border-color: var(--mn-gold) !important; }
+      #class-select .cs-confirm::after { content: ''; position: absolute; inset: -4px; border-radius: 5px; box-shadow: 0 0 0 1px rgba(226, 189, 102, 0.5), 0 0 24px rgba(226, 189, 102, 0.45); opacity: 0; pointer-events: none; }
+      #class-select .cs-confirm:not(:disabled)::after { animation: mn-pulse 2.2s ease-in-out infinite; }
+      @keyframes mn-pulse { 0%, 100% { opacity: 0.15; } 50% { opacity: 1; } }
+
+      /* ---- 4. the sheets: pause, death, credits, save, settings, exit --- */
+      /* A faint vellum mottle under every sheet (large soft gradients only:
+         a 1 px hatch would moiré under the fit scale) and a rune rule under
+         each title. */
+      .modal .modal-panel, #exit-modal .am-box { position: relative; }
+      .modal .modal-panel, #exit-modal .am-box, #settings-panel, #main-menu .mm-panel { isolation: isolate; }
+      .modal .modal-panel::before, #exit-modal .am-box::before, #settings-panel::before, #main-menu .mm-panel::before {
+        content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+        background:
+          radial-gradient(60% 50% at 18% 8%, rgba(226, 189, 102, 0.07), transparent 70%),
+          radial-gradient(50% 40% at 84% 92%, rgba(120, 60, 40, 0.08), transparent 70%),
+          radial-gradient(120% 60% at 50% 0%, rgba(226, 189, 102, 0.05), transparent 60%);
+      }
+      .modal .modal-panel > h2 { position: relative; padding-bottom: 10px; }
+      .modal .modal-panel > h2::after { content: ''; position: absolute; left: 10%; right: 10%; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(226, 189, 102, 0.6) 30%, rgba(226, 189, 102, 0.6) 70%, transparent); pointer-events: none; }
+      #death-menu .modal-panel > h2::after { background: linear-gradient(90deg, transparent, rgba(208, 70, 58, 0.65) 30%, rgba(208, 70, 58, 0.65) 70%, transparent); }
+      #settings-panel > h3.set-head { background: linear-gradient(90deg, transparent, rgba(226, 189, 102, 0.55) 30%, rgba(226, 189, 102, 0.55) 70%, transparent) bottom center / 80% 1px no-repeat, rgba(12, 10, 15, 0.97); }
+      #settings-panel .set-ver { margin-left: 8px; margin-right: auto; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-weight: 500; font-size: 10.5px; letter-spacing: 0.04em; text-transform: none; color: #7d7466; text-shadow: none; white-space: nowrap; }
+      /* Settings and the save sheet are not fit-scaled: they clamp and scroll. */
+      #settings-panel { width: 388px; max-width: calc(var(--app-w, 100vw) - 20px); max-height: calc(var(--app-h, 100vh) - 20px); box-sizing: border-box; overflow-y: auto; }
+      #save-panel .sv-panel, #credits .modal-panel { max-width: calc(var(--app-w, 100vw) - 24px); box-sizing: border-box; }
+      body.orient-portrait #save-panel .sv-row { grid-template-columns: 56px minmax(0, 1fr); }
+      body.orient-portrait #save-panel .sv-row .sv-btn { grid-column: 2; justify-self: start; }
+      body.orient-portrait #settings-panel input[type='range'] { width: 120px; }
+      /* Touch: every target in these sheets is at least 44 px tall. */
+      body.input-touch #settings-panel .set-btn, body.input-touch #settings-panel .set-segs .set-btn, body.input-touch #settings-panel .set-close,
+      body.input-touch #save-panel .sv-btn, body.input-touch .diff-card, body.input-touch #exit-modal .am-choices button { min-height: 44px; }
+      body.input-touch #settings-panel .set-row { padding: 8px 0; }
+      body.input-touch #settings-panel input[type='checkbox'] { width: 22px; height: 22px; }
+      body.input-touch #settings-panel input[type='range'] { height: 28px; }
+
+      /* ---- 5. stillness ------------------------------------------------ */
+      @media (prefers-reduced-motion: reduce) {
+        #main-menu .mm-btn > span::before, #main-menu .mm-btn > span::after, #main-menu .mm-btn.struck::before, #main-menu .mm-btn.struck::after, #class-select .cs-confirm::after { animation: none !important; }
+        .class-card, .diff-card, .menu-btn, #main-menu .mm-btn { transition-duration: 0.01s !important; }
+      }
+
+
+      /* ===================================================================
+         IT.114 — ITEMS, FOOD, HUNGER, INSPECT
+         ===================================================================
+         The HUNGER gauge (HUD, inventory header, and the small label under
+         the hero), the food cells and the fork mark, the equip / eat pulse,
+         the rarity glows and hover lift, the baked 64 px item art, the belt
+         chooser's dishes, the item card's INSPECT button, and the INSPECT
+         view itself: a rune-framed stage that turns the item's baked
+         turntable under a light sweep. Everything animates transform or
+         opacity; nothing transitions `filter`. Phone tiers clamp the stage
+         to the viewport and every target to 44 px. */
+
+      /* ---- 1. the HUD gauge ------------------------------------------- */
+      .sf-hunger { --bar: #c98a3a; --bar-lit: #ffd98a; --bar-glow: rgba(240, 170, 70, 0.32); height: 9px; margin-top: 2px; }
+      .sf-hunger .ds-bar-text { font-size: 8px; opacity: 0.9; letter-spacing: 0.1em; justify-content: flex-end; padding-right: 6px; } /* right of the HUNGER label, never over it */
+      /* The smallest plates have no room for a fourth bar (the device matrix, it.114); the label by the hero carries hunger there. */
+      body.tier-micro .sf-hunger, body.tier-compact .sf-hunger { display: none; }
+      .sf-hunger .ds-bar-label { font-size: 7.5px; }
+      .sf-hunger .ds-bar-label .ds-glyph { color: #ffd98a; }
+      .sf-hunger .ds-fill { transition: width 0.35s ease; }
+      .sf-hunger.hungry { --bar: #d9772e; --bar-lit: #ffbf7a; --bar-glow: rgba(255, 150, 60, 0.4); }
+      .sf-hunger.hungry .ds-bar-text { color: #ffd0a0; }
+      .sf-hunger.starving { --bar: #c0392b; --bar-lit: #ff8a70; --bar-glow: rgba(255, 90, 70, 0.5); animation: hg-starve 1.1s ease-in-out infinite; }
+      .sf-hunger.starving .ds-bar-text { color: #ffb0a0; }
+      /* A bite being served: a soft green shimmer walks the fill. */
+      .sf-hunger.feeding .ds-fill::after, #inv-panel .inv-hunger.feeding .inv-hunger-bar b::after, #hero-hunger.feeding .hh-bar b::after {
+        content: ''; position: absolute; inset: 0; display: block;
+        background: linear-gradient(90deg, transparent 0%, rgba(160, 255, 170, 0.55) 50%, transparent 100%);
+        background-size: 60% 100%; background-repeat: no-repeat;
+        animation: hg-feed 0.9s linear infinite;
+      }
+      #status-frame.starving { border-color: rgba(255, 120, 70, 0.5) !important; }
+      @keyframes hg-starve { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(231, 207, 143, 0.13), inset 0 3px 8px rgba(0, 0, 0, 0.8); } 50% { box-shadow: inset 0 0 0 1px rgba(255, 110, 80, 0.6), inset 0 3px 8px rgba(0, 0, 0, 0.8), 0 0 8px rgba(255, 90, 70, 0.45); } }
+      @keyframes hg-feed { from { background-position: -60% 0; } to { background-position: 160% 0; } }
+
+      /* ---- 2. the label under the hero -------------------------------- */
+      #hero-hunger {
+        position: fixed; left: 0; top: 0; transform: translate(-50%, 0);
+        display: flex; flex-direction: column; align-items: center; gap: 2px;
+        font-family: 'Cinzel', 'Georgia', serif; font-size: 8.5px; letter-spacing: 0.2em; font-weight: 700;
+        color: rgba(244, 236, 216, 0.55); text-shadow: 0 1px 2px #000, 0 0 4px #000;
+        opacity: 0; transition: opacity 0.25s ease, color 0.25s ease; pointer-events: none; z-index: 12; white-space: nowrap;
+      }
+      #hero-hunger.show { opacity: 1; }
+      #hero-hunger > span { display: inline-flex; align-items: center; gap: 3px; }
+      #hero-hunger .hh-glyph { font-size: 9px; color: rgba(255, 217, 138, 0.7); }
+      #hero-hunger .hh-bar { position: relative; display: block; width: 42px; height: 3px; background: rgba(0, 0, 0, 0.7); border: 1px solid rgba(0, 0, 0, 0.9); box-shadow: inset 0 0 0 1px rgba(231, 207, 143, 0.12); overflow: hidden; }
+      #hero-hunger .hh-bar b { position: absolute; left: 0; top: 0; bottom: 0; display: block; width: 100%; background: linear-gradient(180deg, #ffd98a, #c98a3a); transition: width 0.35s ease; }
+      #hero-hunger.hungry { color: #ffcf9a; }
+      #hero-hunger.hungry .hh-bar b { background: linear-gradient(180deg, #ffbf7a, #d9772e); }
+      #hero-hunger.starving { color: #ff9a86; animation: hh-starve 1.1s ease-in-out infinite; }
+      #hero-hunger.starving .hh-bar b { background: linear-gradient(180deg, #ff8a70, #c0392b); }
+      #hero-hunger .hh-bite { position: absolute; left: 50%; top: -4px; transform: translate(-50%, 0); font-size: 11px; letter-spacing: 0.08em; color: #ffe2a0; text-shadow: 0 0 8px rgba(255, 200, 80, 0.8), 0 1px 2px #000; opacity: 0; pointer-events: none; }
+      #hero-hunger.bite .hh-bite { animation: hh-bite 1.4s ease-out forwards; }
+      @keyframes hh-starve { 0%, 100% { transform: translate(-50%, 0) scale(1); } 50% { transform: translate(-50%, 0) scale(1.08); } }
+      @keyframes hh-bite { 0% { opacity: 0; transform: translate(-50%, 6px) scale(0.8); } 15% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); } 70% { opacity: 1; transform: translate(-50%, -22px) scale(1); } 100% { opacity: 0; transform: translate(-50%, -34px) scale(0.95); } }
+      body:not(.in-run) #hero-hunger, body.cine #hero-hunger { display: none; }
+
+      /* ---- 3. the inventory header line -------------------------------- */
+      #inv-panel .inv-hunger {
+        display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; padding: 5px 8px;
+        background: linear-gradient(180deg, rgba(20, 16, 24, 0.9), rgba(10, 8, 13, 0.9));
+        border: 1px solid rgba(200, 165, 88, 0.22); box-shadow: inset 0 0 0 1px #000, inset 0 0 10px rgba(0, 0, 0, 0.7);
+        cursor: pointer; transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      #inv-panel .inv-hunger:hover { border-color: rgba(226, 189, 102, 0.55); }
+      #inv-panel .inv-hunger-glyph { font-size: 12px; color: #ffd98a; text-shadow: 0 0 6px rgba(255, 200, 80, 0.4); }
+      #inv-panel .inv-hunger-label { font-family: 'Cinzel', 'Georgia', serif; font-size: 9.5px; letter-spacing: 0.18em; color: #e8cf8a; text-shadow: 0 1px 2px #000; }
+      #inv-panel .inv-hunger-bar { position: relative; display: block; flex: 1 1 auto; height: 8px; min-width: 60px; background: linear-gradient(180deg, #0b0a10, #14121b); border: 1px solid rgba(0, 0, 0, 0.85); box-shadow: inset 0 0 0 1px rgba(231, 207, 143, 0.13), inset 0 2px 6px rgba(0, 0, 0, 0.8); overflow: hidden; }
+      #inv-panel .inv-hunger-bar b { position: absolute; left: 0; top: 0; bottom: 0; display: block; background: linear-gradient(180deg, #ffd98a 0%, #c98a3a 50%, rgba(0, 0, 0, 0.3) 100%); box-shadow: 0 0 8px rgba(240, 170, 70, 0.35); transition: width 0.35s ease; }
+      #inv-panel .inv-hunger-word { font-family: 'Cinzel', 'Georgia', serif; font-style: normal; font-size: 9px; letter-spacing: 0.12em; color: #f4ecd8; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+      #inv-panel .inv-hunger.hungry .inv-hunger-bar b { background: linear-gradient(180deg, #ffbf7a 0%, #d9772e 50%, rgba(0, 0, 0, 0.3) 100%); }
+      #inv-panel .inv-hunger.hungry .inv-hunger-word { color: #ffd0a0; }
+      #inv-panel .inv-hunger.starving { border-color: rgba(255, 110, 80, 0.55); animation: hg-starve 1.1s ease-in-out infinite; }
+      #inv-panel .inv-hunger.starving .inv-hunger-bar b { background: linear-gradient(180deg, #ff8a70 0%, #c0392b 50%, rgba(0, 0, 0, 0.3) 100%); }
+      #inv-panel .inv-hunger.starving .inv-hunger-word { color: #ffb0a0; }
+      #inv-panel .inv-hunger.bite { animation: inv-bite 0.7s ease-out; }
+      @keyframes inv-bite { 0% { box-shadow: inset 0 0 0 1px #000, 0 0 0 rgba(255, 200, 80, 0); border-color: rgba(255, 226, 160, 0.9); } 30% { box-shadow: inset 0 0 0 1px #000, 0 0 18px rgba(255, 200, 80, 0.7); } 100% { box-shadow: inset 0 0 0 1px #000, 0 0 0 rgba(255, 200, 80, 0); } }
+      #inv-panel .inv-hint { margin: 4px 0 0; text-align: center; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 11px; color: #7d7466; }
+      #inv-panel .inv-hint b { color: #a89c88; font-weight: 600; }
+
+      /* ---- 4. cells: baked art, the fork, glows, lift, the pulse -------- */
+      #inv-panel .inv-cell img.baked, .town-panel .tp-row img.baked, #cheat-menu img.baked, #codex img.baked { image-rendering: auto; object-fit: contain; }
+      .town-panel .tp-row img.baked { width: 36px; height: 36px; }
+      #inv-panel .inv-cell.inv-item { position: relative; transition: transform 0.12s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
+      #inv-panel .inv-cell.inv-item.inv-food { --rar: #e0a458; }
+      #inv-panel .inv-cell.inv-item.inv-food.rarity-uncommon { --rar: #f0b060; }
+      #inv-panel .inv-cell.inv-item.inv-food.rarity-rare { --rar: #ffc46a; }
+      #inv-panel .inv-fork { position: absolute; left: 2px; top: 1px; font-style: normal; font-size: 10px; line-height: 1; color: #ffd98a; text-shadow: 0 0 4px rgba(255, 200, 80, 0.7), 0 1px 1px #000; pointer-events: none; z-index: 2; }
+      @media (hover: hover) {
+        #inv-panel .inv-pack-grid .inv-cell.inv-item:hover, #inv-panel .inv-equip-grid .inv-cell.inv-item:hover, #inv-panel .inv-belt-slot .inv-cell.inv-item:hover {
+          transform: translateY(-2px) scale(1.05); z-index: 3;
+          box-shadow: inset 0 0 0 1px var(--rar, var(--frame-gold-hi)), 0 0 14px color-mix(in srgb, var(--rar, #c8a558) 70%, transparent), 0 4px 8px rgba(0, 0, 0, 0.6) !important;
+        }
+      }
+      #inv-panel .inv-cell.inv-item:active { transform: translateY(0) scale(0.97); }
+      #inv-panel .inv-cell.inv-pulse { animation: inv-pulse 0.55s ease-out; z-index: 3; }
+      @keyframes inv-pulse {
+        0% { transform: scale(1); box-shadow: inset 0 0 0 1px #000, 0 0 0 rgba(255, 226, 160, 0); }
+        30% { transform: scale(1.14); box-shadow: inset 0 0 0 1px var(--rar, #ffe2a0), 0 0 22px color-mix(in srgb, var(--rar, #ffe2a0) 85%, transparent); }
+        100% { transform: scale(1); box-shadow: inset 0 0 0 1px #000, 0 0 0 rgba(255, 226, 160, 0); }
+      }
+      #inv-panel .inv-belt-opt.inv-food span small { font-family: 'Cinzel', 'Georgia', serif; font-size: 8.5px; letter-spacing: 0.12em; color: #e0a458; margin-left: 5px; }
+
+      /* ---- 5. the card takes the pointer; the INSPECT button ------------ */
+      #inv-tooltip { pointer-events: auto; }
+      #inv-tooltip .tip-gold { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .tip-inspect {
+        flex: 0 0 auto; padding: 3px 8px; font-family: 'Cinzel', 'Georgia', serif; font-size: 9px; letter-spacing: 0.16em; font-weight: 700;
+        color: #ffe2a0; background: linear-gradient(180deg, #2a2230, #15111a); border: 1px solid rgba(226, 189, 102, 0.5); border-radius: 2px;
+        box-shadow: inset 0 0 0 1px #000, 0 0 6px rgba(226, 189, 102, 0.15); cursor: pointer; transition: transform 0.1s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+      }
+      .tip-inspect:hover { border-color: #ffe2a0; box-shadow: inset 0 0 0 1px #000, 0 0 12px rgba(226, 189, 102, 0.45); transform: translateY(-1px); }
+      .tip-inspect:active { transform: translateY(0) scale(0.97); }
+      body.input-touch .tip-inspect { min-height: 36px; padding: 6px 12px; font-size: 10px; }
+
+      /* ---- 6. the INSPECT view ------------------------------------------ */
+      #inspect-panel { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.82)); z-index: 62; }
+      #inspect-panel.open { display: flex; animation: insp-in 0.18s ease-out; }
+      @keyframes insp-in { from { opacity: 0; } to { opacity: 1; } }
+      #inspect-panel .insp-frame {
+        position: relative; width: 340px; max-width: calc(var(--app-w, 100vw) - 16px); max-height: calc(var(--app-h, 100vh) - 16px); box-sizing: border-box; overflow-y: auto;
+        padding: 8px 14px 12px; color: var(--ink, #e8dfc8);
+        background: linear-gradient(180deg, rgba(20, 16, 24, 0.98), rgba(9, 7, 12, 0.98));
+        border: 1px solid var(--rar, var(--frame-gold, #c8a558)); border-radius: 3px;
+        box-shadow: inset 0 0 0 1px #000, inset 0 0 24px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(0, 0, 0, 0.8), 0 0 30px color-mix(in srgb, var(--rar, #c8a558) 42%, transparent), 0 18px 40px rgba(0, 0, 0, 0.75);
+        animation: insp-rise 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+      }
+      @keyframes insp-rise { from { transform: translateY(10px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+      #inspect-panel .insp-rune { position: absolute; font-style: normal; font-size: 13px; line-height: 1; color: var(--rar, #c8a558); text-shadow: 0 0 8px color-mix(in srgb, var(--rar, #c8a558) 80%, transparent), 0 1px 1px #000; pointer-events: none; animation: insp-rune 2.8s ease-in-out infinite; }
+      #inspect-panel .insp-rune.tl { left: 3px; top: 2px; } #inspect-panel .insp-rune.tr { right: 3px; top: 2px; animation-delay: 0.7s; }
+      #inspect-panel .insp-rune.bl { left: 3px; bottom: 2px; animation-delay: 1.4s; } #inspect-panel .insp-rune.br { right: 3px; bottom: 2px; animation-delay: 2.1s; }
+      @keyframes insp-rune { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+      #inspect-panel .insp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 6px; }
+      #inspect-panel .insp-title { font-family: 'Cinzel', 'Georgia', serif; font-size: 11px; letter-spacing: 0.3em; color: var(--frame-gold-hi, #e8cf8a); text-shadow: 0 1px 2px #000, 0 0 10px rgba(200, 165, 88, 0.25); }
+      #inspect-panel .insp-stage {
+        position: relative; margin: 0 auto 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; box-sizing: border-box;
+        background: radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--rar-hex, #c8a558) 22%, transparent), transparent 62%), linear-gradient(180deg, #07060a, #100c15);
+        border: 1px solid rgba(0, 0, 0, 0.9); box-shadow: inset 0 0 0 1px rgba(231, 207, 143, 0.1), inset 0 0 26px rgba(0, 0, 0, 0.85);
+      }
+      #inspect-panel .insp-floor { position: absolute; left: 50%; bottom: 14%; width: 62%; height: 18%; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(ellipse at center, color-mix(in srgb, var(--rar-hex, #c8a558) 45%, transparent), transparent 70%); opacity: 0.8; pointer-events: none; animation: insp-floor 3.2s ease-in-out infinite; }
+      @keyframes insp-floor { 0%, 100% { opacity: 0.55; transform: translateX(-50%) scaleX(1); } 50% { opacity: 0.9; transform: translateX(-50%) scaleX(1.06); } }
+      /* The light sweep: a soft diagonal band crossing the stage, screened over the art. */
+      #inspect-panel .insp-sweep { position: absolute; inset: -40% -60%; background: linear-gradient(115deg, transparent 40%, rgba(255, 240, 200, 0.16) 48%, rgba(255, 255, 255, 0.28) 50%, rgba(255, 240, 200, 0.16) 52%, transparent 60%); mix-blend-mode: screen; pointer-events: none; animation: insp-sweep 3.4s linear infinite; z-index: 2; }
+      @keyframes insp-sweep { from { transform: translateX(-45%); } to { transform: translateX(45%); } }
+      #inspect-panel .insp-turn { position: relative; z-index: 1; background-repeat: no-repeat; image-rendering: auto; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.7)); }
+      #inspect-panel .insp-static-wrap { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; animation: insp-hover 2.6s ease-in-out infinite; }
+      #inspect-panel img.insp-static { max-width: 60%; max-height: 78%; width: auto; height: auto; image-rendering: pixelated; filter: drop-shadow(0 8px 8px rgba(0, 0, 0, 0.75)); }
+      #inspect-panel img.insp-static.art { image-rendering: auto; }
+      @keyframes insp-hover { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+      #inspect-panel .insp-hint { position: absolute; right: 6px; bottom: 4px; z-index: 3; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 10px; color: #6f665a; pointer-events: none; }
+      #inspect-panel .insp-name { text-align: center; font-family: 'Cinzel', 'Georgia', serif; font-size: 15px; letter-spacing: 0.08em; font-weight: 700; text-shadow: 0 1px 2px #000, 0 0 12px color-mix(in srgb, var(--rar, #c8a558) 45%, transparent); margin: 2px 0 1px; }
+      #inspect-panel .insp-meta { text-align: center; font-family: 'Cinzel', 'Georgia', serif; font-size: 9px; letter-spacing: 0.16em; color: #8a8072; margin-bottom: 6px; }
+      #inspect-panel .insp-meta b { color: #e8cf8a; font-weight: 600; }
+      #inspect-panel .insp-card { padding: 6px 8px 4px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(200, 165, 88, 0.16); box-shadow: inset 0 0 0 1px #000; }
+      #inspect-panel .insp-card .tip-name { font-family: 'Cinzel', 'Georgia', serif; font-size: 12.5px; letter-spacing: 0.04em; margin-bottom: 1px; }
+      #inspect-panel .insp-card .tip-slot { font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 11.5px; color: var(--ink-dim, #8f8677); }
+      #inspect-panel .insp-card .tip-slot b { color: var(--frame-gold, #c8a558); font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+      #inspect-panel .insp-card .tip-stats { font-family: 'Crimson Pro', 'Georgia', serif; font-size: 12.5px; color: var(--ink, #e8dfc8); margin-top: 3px; }
+      #inspect-panel .insp-card .tip-gold { margin-top: 4px; font-family: 'Cinzel', 'Georgia', serif; font-size: 10px; letter-spacing: 0.08em; color: #e8cf8a; }
+      #inspect-panel .insp-flavour { margin: 6px 2px 0; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 12px; line-height: 1.35; color: #b8ac98; }
+      #inspect-panel .insp-actions { display: flex; gap: 8px; justify-content: center; margin: 10px 0 4px; }
+      #inspect-panel .insp-actions .ds-btn { min-width: 96px; }
+      #inspect-panel .insp-act { color: #ffe2a0 !important; border-color: rgba(226, 189, 102, 0.7) !important; }
+      #inspect-panel .insp-foot { text-align: center; font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 10.5px; color: #6f665a; }
+      /* Phones: the frame fills what the viewport allows; every target reaches 44 px. */
+      body.tier-micro #inspect-panel .insp-frame, body.tier-compact #inspect-panel .insp-frame { width: calc(var(--app-w, 100vw) - 16px); padding: 6px 10px 10px; }
+      body.tier-micro #inspect-panel .insp-name { font-size: 13px; }
+      body.tier-micro #inspect-panel .insp-hint { display: none; }
+      body.input-touch #inspect-panel .insp-actions .ds-btn { min-height: 44px; }
+      body.orient-landscape.short-screen #inspect-panel .insp-frame, body.tiny-height #inspect-panel .insp-frame { max-height: calc(var(--app-h, 100vh) - 8px); }
+
+      /* ---- 7. the codex's food table ----------------------------------- */
+      #codex .cx-table.cx-food img { width: 26px; height: 26px; image-rendering: auto; }
+      #codex .cx-table.cx-food td:first-child { white-space: nowrap; }
+      #codex .cx-table.cx-food td:last-child { min-width: 140px; }
+
+      /* ---- 8. stillness -------------------------------------------------- */
+      @media (prefers-reduced-motion: reduce) {
+        .sf-hunger.starving, #hero-hunger.starving, #inv-panel .inv-hunger.starving, #inspect-panel .insp-rune, #inspect-panel .insp-floor, #inspect-panel .insp-sweep, #inspect-panel .insp-static-wrap { animation: none !important; }
+        .sf-hunger.feeding .ds-fill::after, #inv-panel .inv-hunger.feeding .inv-hunger-bar b::after, #hero-hunger.feeding .hh-bar b::after { animation: none !important; opacity: 0.5; }
+        #inv-panel .inv-cell.inv-pulse, #inspect-panel.open, #inspect-panel .insp-frame { animation-duration: 0.01s !important; }
+      }
+
     </style>
   </head>
   <body>
@@ -5467,7 +5920,8 @@
           }
           var stored = null;
           try { stored = localStorage.getItem(KEY); } catch (e) {}
-          apply(stored === '1');
+          // it.114: folded by default; the handle opens it, and the choice is remembered.
+          apply(stored === null ? true : stored === '1');
           btn.addEventListener('click', function () { apply(!panel.classList.contains('collapsed')); });
         })();
       </script>
@@ -5574,11 +6028,12 @@
           <button class="mm-btn" data-menu="continue"><span>CONTINUE</span><small class="mm-pill" data-continue-pill>no delver yet</small></button>
           <button class="mm-btn" data-menu="play"><span>SINGLE PLAYER</span></button>
           <button class="mm-btn" data-menu="coop"><span>CO-OP MULTIPLAYER</span></button>
+          <button class="mm-btn" data-menu="menagerie"><span>THE MENAGERIE</span><small class="mm-pill">try any body on</small></button>
           <button class="mm-btn" data-menu="settings"><span>SETTINGS</span></button>
           <button class="mm-btn" data-menu="credits"><span>CREDITS</span></button>
           <button class="mm-btn" data-menu="exit"><span>EXIT GAME</span></button>
         </nav>
-        <div class="mm-foot">&uarr; &darr; walk the stack &middot; ESC steps back &middot; the dark remembers your last delver</div>
+        <div class="mm-foot"><span>&uarr; &darr; walk the stack &middot; ESC steps back &middot; the dark remembers your last delver</span><span class="mm-ver" data-version></span></div>
       </div>
     </div>
 
@@ -5637,12 +6092,27 @@
           <b>CHARACTER ART</b>
           2D HD Character Knight &middot; the &ldquo;big pack 8 moves&rdquo; paperdoll set &middot;
           the 256/320/512&nbsp;px creature packs (naga, werewolf, lizardman, halberdier, hydra, villager) &middot;
-          zombie cinematic pack &middot; Lords of Pain (demo) &middot; Infernus tiles.
+          zombie cinematic pack &middot; Lords of Pain (demo) &middot; Infernus tiles &middot;
+          the graphics-update creature packs (the widows, the brute, the frost werewolf, the treant,
+          the drake, the wyrm, the ghouls, the orc host, the moth, the halberdier, the reaper, the duelist)
+          &middot; Apex and Krampus by Jesse, Pioneer Valley Games (pioneervalleygames.com) &middot;
+          the PixelOver knight and the girl in black.
           <b>ENVIRONMENT ART</b>
-          Ancient Isometric Tileset &middot; the town, farm and river kits &middot;
-          Medieval Catapult by Bleed &mdash; Remus Turcuman (remusprites.carbonmade.com), the
+          Ancient Isometric Tileset (The Wanderer Tiles) &middot; the town, farm and river kits &middot;
+          Medieval Catapult, Tavern and Cart by Bleed &mdash; Remus Turcuman (remusprites.carbonmade.com), the
           battlefield&rsquo;s siege engines &middot; the grassland isometric prop kit,
-          the eastern road&rsquo;s gateway and the field&rsquo;s wreckage.
+          the eastern road&rsquo;s gateway and the field&rsquo;s wreckage &middot;
+          Screaming Brain Studios isometric floors, walls and objects (CC0) &middot;
+          City Builder: Village Buildings and Castles by polyy.ai (CC0) &middot;
+          Infernus dark-fantasy props by Pioneer Valley Games.
+          <b>EFFECTS</b>
+          Super Pixel Effects Gigapack and Will&rsquo;s Pixel Explosions &mdash; Will Tice / unTied Games &middot;
+          VFX by Frostwindz (frostwindz.itch.io) &middot; PIXELCORE effects &middot; the GameFX elemental set &middot;
+          Pipoya light pillar.
+          <b>ITEMS</b>
+          Food, potion, scroll and weapon turntables by polyy.ai (CC0) &middot;
+          The Adventurer&rsquo;s Arsenal pixel icons &middot;
+          coins and gold piles by Clint Bellanger / Flare and OpenGameArt (CC-BY-SA 3.0).
           <b>ICONS &amp; TYPE</b>
           Oubliette weapon icons by Timberwolf Games &middot; Cinzel &middot; IM Fell English.
           <b>SOUND EFFECTS</b>

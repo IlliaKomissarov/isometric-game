@@ -37,8 +37,8 @@ function clock(ticks: number): string {
 }
 
 /** THE COUNTERS' SIGNS (it.84). */
-const VENDOR_TITLE: Record<Vendor, string> = { armorer: 'THE ARMORER', alchemist: 'THE ALCHEMIST', jeweler: 'THE JEWELER', scribe: 'THE SCRIBE', bowyer: 'THE BOWYER' };
-const VENDOR_SUB: Record<Vendor, string> = { armorer: 'arms · armor · materials', alchemist: 'draughts · scrolls', jeweler: 'rings · amulets · the Market Ward', scribe: 'recipe scrolls · brews · the Market Ward', bowyer: 'bows · wands · staves · polearms · the Market Ward' };
+const VENDOR_TITLE: Record<Vendor, string> = { armorer: 'THE ARMORER', alchemist: 'THE ALCHEMIST', jeweler: 'THE JEWELER', scribe: 'THE SCRIBE', bowyer: 'THE BOWYER', tavern: 'THE GILDED STAG' };
+const VENDOR_SUB: Record<Vendor, string> = { armorer: 'arms · armor · materials', alchemist: 'draughts · scrolls · a bite to eat', jeweler: 'rings · amulets · the Market Ward', scribe: 'recipe scrolls · brews · the Market Ward', bowyer: 'bows · wands · staves · polearms · the Market Ward', tavern: 'bread · stews · roasts' };
 
 export class ShopUI {
   private readonly panel: HTMLElement;

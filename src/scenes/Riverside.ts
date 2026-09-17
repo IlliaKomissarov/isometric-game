@@ -55,7 +55,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
-import { KIND_DIRT, KIND_GRASS, KIND_SAND, KIND_WATER, type RiverLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { claimProp, claims, footprintOf, KIND_DIRT, KIND_GRASS, KIND_SAND, KIND_WATER, type RiverLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -405,18 +405,18 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
 
   // ---- PROPS ------------------------------------------------------------
   const props: TownProp[] = [];
-  const block = (p: TownProp): void => {
-    props.push(p);
-    for (let yy = p.y; yy < p.y + (p.h ?? 1); yy++)
-      for (let xx = p.x; xx < p.x + (p.w ?? 1); xx++) if (inside(xx, yy)) grid[idx(xx, yy)] = TILE_BLOCKED;
-  };
+  const ctx: RoadCtx = { width: W, height: H, grid, road: onTrack };
+  /** The one placer (it.114): paint is listed (a keg by a jetty is walked round, not into), a post keeps off the track, the rest is solid. */
+  const block = (p: TownProp): boolean => claimProp(ctx, props, p) !== null;
   const decal = (p: TownProp): void => {
     props.push(p);
   };
-  /** A standing piece: only on open, off-track ground on the hero's own bank. */
+  /** A standing piece: its whole footprint (a cart is two long, a well two by two) on open, off-track ground on the hero's own bank. */
   const put = (kind: TownProp['kind'], x: number, y: number, variant?: string): void => {
-    if (!isNear(x, y) || onTrack[idx(x, y)]) return;
-    block({ kind, x, y, variant });
+    const p: TownProp = { kind, x, y, variant };
+    const f = footprintOf(p);
+    for (let yy = y; yy < y + f.h; yy++) for (let xx = x; xx < x + f.w; xx++) if (!isNear(xx, yy) || onTrack[idx(xx, yy)]) return;
+    block(p);
   };
   /**
    * ZERO CLIPPING, BY CONSTRUCTION (it.107).
@@ -715,8 +715,17 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   {
     const depth = new Int16Array(W * H).fill(-1);
     const q: number[] = [];
+    // A TREE NEVER GROWS OUT OF A KEG (it.114): a tile a standing prop claims
+    // seeds the belt like floor and water do - a dozen trunks stood on the
+    // farm's casks, crates and carts before this.
+    const claimedTile = new Uint8Array(W * H);
+    for (const p of props) {
+      if (!claims(p)) continue;
+      const f = footprintOf(p);
+      for (let yy = p.y; yy < p.y + f.h; yy++) for (let xx = p.x; xx < p.x + f.w; xx++) if (inside(xx, yy)) claimedTile[idx(xx, yy)] = 1;
+    }
     for (let y = 0; y < H; y++)
-      for (let x = 0; x < W; x++) if (grid[idx(x, y)] === TILE_FLOOR || tileKind[idx(x, y)] === KIND_WATER) {
+      for (let x = 0; x < W; x++) if (grid[idx(x, y)] === TILE_FLOOR || tileKind[idx(x, y)] === KIND_WATER || claimedTile[idx(x, y)]) {
         depth[idx(x, y)] = 0;
         q.push(idx(x, y));
       }

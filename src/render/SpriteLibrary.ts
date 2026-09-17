@@ -221,7 +221,43 @@ export type AnimName =
   // facings, three frames of recoil, and the same machine collapsed.
   | 'siege_engine'
   | 'siege_wreck'
-  | 'well';
+  // THE REAL SIEGE ENGINES (it.114): `scripts/bake-siege.py`, eight facings each.
+  | 'catapult_idle'
+  | 'catapult_throw'
+  | 'catapult_load'
+  | 'catapult_move'
+  | 'catapult_break'
+  | 'catapult_wreck'
+  | 'catapult_stone'
+  | 'ballista_idle'
+  | 'ballista_shoot'
+  | 'well'
+  // THE NEW FLESH (it.114): twenty-three more bodies out of the packs. Every
+  // sheet here is eight-direction with canonical rows [E, NE, N, NW, W, SW, S,
+  // SE], so none of them needs a DIR_ROW_FIX entry.
+  | 'widow2_idle' | 'widow2_walk' | 'widow2_attack' | 'widow2_death' | 'widow2_hit'
+  | 'widow3_idle' | 'widow3_walk' | 'widow3_attack' | 'widow3_death' | 'widow3_hit'
+  | 'widow4_idle' | 'widow4_walk' | 'widow4_attack' | 'widow4_death' | 'widow4_hit'
+  | 'brute_idle' | 'brute_walk' | 'brute_attack' | 'brute_death' | 'brute_hit'
+  | 'frostwolf_idle' | 'frostwolf_walk' | 'frostwolf_attack' | 'frostwolf_death' | 'frostwolf_hit'
+  | 'treant_idle' | 'treant_walk' | 'treant_attack' | 'treant_death' | 'treant_hit' | 'treant_awake'
+  | 'drake_idle' | 'drake_walk' | 'drake_attack' | 'drake_death' | 'drake_hit' | 'drake_breath'
+  | 'wyrm_idle' | 'wyrm_walk' | 'wyrm_attack' | 'wyrm_fly'
+  | 'ghoul2_idle' | 'ghoul2_walk' | 'ghoul2_attack' | 'ghoul2_death' | 'ghoul2_crawl'
+  | 'spearman_idle' | 'spearman_walk' | 'spearman_attack' | 'spearman_death' | 'spearman_hit' | 'spearman_shout'
+  | 'orcess_idle' | 'orcess_walk' | 'orcess_attack' | 'orcess_death' | 'orcess_hit' | 'orcess_levelup'
+  | 'moth_idle' | 'moth_walk' | 'moth_attack' | 'moth_death' | 'moth_hit'
+  | 'zomb2_idle' | 'zomb2_walk' | 'zomb2_attack' | 'zomb2_death' | 'zomb2_hit' | 'zomb2_roar'
+  | 'halberd_idle' | 'halberd_walk' | 'halberd_attack' | 'halberd_death' | 'halberd_hit'
+  | 'reaper_idle' | 'reaper_walk' | 'reaper_attack' | 'reaper_death' | 'reaper_hit' | 'reaper_dash' | 'reaper_talk'
+  | 'duelist_idle' | 'duelist_walk' | 'duelist_attack' | 'duelist_death' | 'duelist_hit' | 'duelist_cast' | 'duelist_block'
+  | 'apex_idle' | 'apex_walk' | 'apex_attack' | 'apex_attack2' | 'apex_hit' | 'apex_death'
+  | 'apex2_idle' | 'apex2_walk' | 'apex2_attack' | 'apex2_attack2' | 'apex2_hit' | 'apex2_death'
+  | 'krampus_idle' | 'krampus_walk' | 'krampus_attack' | 'krampus_hit' | 'krampus_death'
+  | 'gargoyle_idle' | 'gargoyle_awake' | 'gargoyle_walk'
+  | 'spider2_idle' | 'spider2_walk' | 'spider2_attack' | 'spider2_death' | 'spider2_hit'
+  | 'flesh_idle' | 'flesh_walk' | 'flesh_attack' | 'flesh_death'
+  | 'creeper_idle' | 'creeper_walk' | 'creeper_attack' | 'creeper_death';
 
 export interface PaintedBounds {
   top: number;

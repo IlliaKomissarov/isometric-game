@@ -14,7 +14,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type Room } from '@/scenes/DungeonGenerator';
-import { CLUTTER_KINDS, KIND_COBBLE, KIND_DIRT, KIND_GRASS, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { claimProp, KIND_COBBLE, KIND_DIRT, KIND_GRASS, sweepRoads, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 
 export const FOREST_W = 56;
@@ -81,7 +81,10 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
       if (edge < 2 || (edge === 2 && rand() < 0.45)) grid[idx(x, y)] = TILE_WALL;
     }
 
+  /** Road AND clearings: what the woods keep off. */
   const road = new Uint8Array(W * H);
+  /** THE WAY ITSELF (it.114): the dirt road only - what a post keeps off and the sweep clears. A clearing is open ground, not a street. */
+  const way = new Uint8Array(W * H);
   const street = (pts: Array<[number, number]>, kind: number, half: number): void => {
     for (let i = 0; i + 1 < pts.length; i++) {
       const [x0, y0] = pts[i];
@@ -99,6 +102,7 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
             grid[idx(tx, ty)] = TILE_FLOOR;
             tileKind[idx(tx, ty)] = kind;
             road[idx(tx, ty)] = 1;
+            way[idx(tx, ty)] = 1;
           }
       }
     }
@@ -137,13 +141,9 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
 
   // ---- THE PASSAGES AND THE DRESSING ----
   const props: TownProp[] = [];
-  const block = (p: TownProp): void => {
-    props.push(p);
-    if (CLUTTER_KINDS.has(p.kind)) return; // Small clutter never blocks (it.88).
-    const w = p.w ?? 1;
-    const h = p.h ?? 1;
-    for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;
-  };
+  const ctx: RoadCtx = { width: W, height: H, grid, road: way };
+  /** The one placer (it.114): paint is listed, a post keeps off the way, the rest is solid. */
+  const block = (p: TownProp): boolean => claimProp(ctx, props, p) !== null;
   const decal = (p: TownProp): void => {
     props.push(p);
   };
@@ -206,9 +206,12 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
       const roll = rand();
       if (roll < 0.6) {
         const v = roll < 0.25 ? 'pine_a' : roll < 0.42 ? 'pine_b' : roll < 0.5 ? 'pine_c' : rand() < 0.5 ? 'dead_a' : 'dead_b';
-        props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v });
+        // SCENERY ONLY (it.114): a tree on the cliff has the wall behind it and the woods before it - nothing stands behind one.
+        props.push({ kind: v.startsWith('dead') ? 'deadtree' : 'pine', x, y, variant: v, bare: true });
       }
     }
+  // THE WAY STAYS OPEN (it.114): a post that landed on the road steps to the verge; a boulder or a store on it goes.
+  sweepRoads(ctx, props);
 
   // ---- SELF-HEAL: any floor the road cannot reach becomes forest ----
   const seen = new Uint8Array(W * H);

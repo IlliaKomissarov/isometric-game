@@ -1,6 +1,14 @@
 import { defineConfig, type Plugin } from 'vite';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'path';
+
+/**
+ * THE BUILD'S NAME (it.114): package.json's version and the iteration are
+ * compiled in as globals (declared in src/vite-env.d.ts) so the title foot
+ * and the settings head can say which game this is. Bump the iteration here.
+ */
+const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')) as { version: string };
+const APP_ITERATION = 'it.114';
 
 /**
  * Vite configuration for the isometric ARPG core.
@@ -61,6 +69,10 @@ export default defineConfig({
   // A Pages build copies nothing from public/ (2.5 GB of raw uploads); the deploy script adds the git-tracked subset (it.91).
   publicDir: process.env.PAGES ? false : 'public',
   plugins: [atlasBakePlugin()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_ITERATION__: JSON.stringify(APP_ITERATION),
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
@@ -85,5 +97,12 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     open: false,
+    // THE RAW DROPS ARE NOT WATCHED (it.114). `public/assets/graphics update`
+    // is 21 GB and 700,000 files; the dev server's watcher crawling it took
+    // minutes and starved every request. Nothing under these paths is served
+    // or imported - only the baked atlas under public/assets/atlas is.
+    watch: {
+      ignored: ['**/public/assets/graphics update/**', '**/public/assets/test-models/**', '**/public/assets/use now/**', '**/dist/**'],
+    },
   },
 });

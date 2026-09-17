@@ -48,6 +48,11 @@ const PICKUP_RANGE = 0.9;
 
 export type MoveMode = 'path' | 'direct';
 
+/** The click ring's resting size: the 26 px art diamond at 1.55x is 40 px across, inside the tile rather than over it. */
+const MARKER_SCALE = 1.55;
+/** How long the ring takes to land after a click. */
+const BURST_SECONDS = 0.38;
+
 export class MovementSystem {
   private mode: MoveMode = 'path';
   private path: Array<{ x: number; y: number }> = [];
@@ -55,6 +60,12 @@ export class MovementSystem {
   private readonly directDir = vec2();
   private readonly scratch = vec2();
   private readonly destinationMarker: Sprite;
+  /** THE PING (it.114): a second ring that bursts outward from the click and fades. */
+  private readonly destinationPing: Sprite;
+  /** Seconds since the marker was last set; drives the burst and the idle pulse. */
+  private markerAge = 0;
+  /** NOCLIP (it.114, the Forbidden Arts): every tile walks, every click is a straight line. */
+  noclip = false;
   private attackTarget: Entity | null = null;
   private attackRepathCooldown = 0;
   private readonly lastAttackGoal = vec2(-1, -1);
@@ -75,17 +86,50 @@ export class MovementSystem {
   ) {
     // Destination marker: the pack's tile highlight when available, else the
     // procedural diamond. Tinted gold to sit in the palette.
-    if (spriteLib.loaded) {
-      this.destinationMarker = new Sprite(spriteLib.single('tile_highlight'));
-      this.destinationMarker.scale.set(2.46); // 26px art diamond → 64px tile.
-      this.destinationMarker.tint = 0xd8a83c;
-      this.destinationMarker.alpha = 0.85;
-    } else {
-      this.destinationMarker = new Sprite(assets.get('pathDot'));
+    // THE CLICK RING (it.114). The old marker was the pack's highlight blown up
+    // to the whole tile at 2.46x and left there: a fat blurred ring. It is a
+    // smaller ring now that BURSTS in from the click (a ping expands past it and
+    // fades) and then breathes while the walk lasts.
+    const tex = spriteLib.loaded ? spriteLib.single('tile_highlight') : assets.get('pathDot');
+    this.destinationMarker = new Sprite(tex);
+    this.destinationPing = new Sprite(tex);
+    for (const s of [this.destinationMarker, this.destinationPing]) {
+      s.anchor.set(0.5, 0.5);
+      s.tint = 0xe8b64a;
+      s.visible = false;
+      s.blendMode = 'add';
+      viewport.groundLayer.addChild(s);
     }
-    this.destinationMarker.anchor.set(0.5, 0.5);
-    this.destinationMarker.visible = false;
-    viewport.groundLayer.addChild(this.destinationMarker);
+    this.destinationMarker.scale.set(MARKER_SCALE);
+    this.destinationMarker.alpha = 0.8;
+  }
+
+  /**
+   * Render-side only: animate the click ring. Called once per render frame from
+   * main; the marker's position is set by `moveTo`, its life by `clearPath`.
+   */
+  updateRender(dt: number): void {
+    if (!this.destinationMarker.visible) return;
+    this.markerAge += dt;
+    const t = this.markerAge;
+    const m = this.destinationMarker;
+    const p = this.destinationPing;
+    if (t < BURST_SECONDS) {
+      // The ring lands: from a point to its size with an ease-out, and the ping
+      // runs on past it.
+      const k = 1 - Math.pow(1 - t / BURST_SECONDS, 3);
+      m.scale.set(MARKER_SCALE * (0.35 + 0.65 * k));
+      m.alpha = 0.55 + 0.45 * k;
+      p.visible = true;
+      p.position.copyFrom(m.position);
+      p.scale.set(MARKER_SCALE * (0.4 + 1.6 * k));
+      p.alpha = 0.7 * (1 - k);
+    } else {
+      p.visible = false;
+      const breathe = 0.5 + 0.5 * Math.sin((t - BURST_SECONDS) * 5.2);
+      m.scale.set(MARKER_SCALE * (0.96 + 0.06 * breathe));
+      m.alpha = 0.62 + 0.24 * breathe;
+    }
   }
 
   /** Apply one tick's worth of drained input commands (local or remote). */
@@ -283,8 +327,11 @@ export class MovementSystem {
     // Normalize so diagonals aren't √2 faster; input is screen-axis-aligned,
     // and world axes ARE the isometric diagonals, so this feels correct.
     normalize(this.scratch, this.directDir);
-    moveWithCollision(this.player.pos, this.scratch.x * this.speed * dt, this.scratch.y * this.speed * dt, this.isWalkable);
+    moveWithCollision(this.player.pos, this.scratch.x * this.speed * dt, this.scratch.y * this.speed * dt, this.walkable);
   }
+
+  /** The floor's walkability, or everything when NOCLIP is on. */
+  private readonly walkable: WalkableFn = (gx, gy) => this.noclip || this.isWalkable(gx, gy);
 
   private updatePath(dt: number): void {
     if (this.pathIndex >= this.path.length) return;
@@ -303,7 +350,7 @@ export class MovementSystem {
     const step = Math.min(this.speed * dt, dist);
     // Path tiles are guaranteed walkable, but collision keeps us honest at
     // corner transitions with the entity radius.
-    moveWithCollision(this.player.pos, (dx / dist) * step, (dy / dist) * step, this.isWalkable);
+    moveWithCollision(this.player.pos, (dx / dist) * step, (dy / dist) * step, this.walkable);
   }
 
   /**
@@ -378,7 +425,7 @@ export class MovementSystem {
   private startPathTo(gx: number, gy: number): void {
     const sx = Math.floor(this.player.pos.x);
     const sy = Math.floor(this.player.pos.y);
-    let path = this.pathfinder.findPath(sx, sy, gx, gy);
+    let path = this.noclip ? [{ x: gx, y: gy }] : this.pathfinder.findPath(sx, sy, gx, gy);
     if (!path) path = this.pathToNearest(sx, sy, gx, gy); // SMART CLICKS (it.48).
     if (!path || path.length === 0) return; // Already there — ignore click.
 
@@ -393,6 +440,7 @@ export class MovementSystem {
     const offsetY = spriteLib.loaded ? 0 : TILE_H / 4; // Highlight is tile-centered.
     this.destinationMarker.position.set(screen.x, screen.y + offsetY);
     this.destinationMarker.visible = true;
+    this.markerAge = 0;
 
     eventBus.emit('player:pathStarted', { path });
   }
@@ -441,6 +489,7 @@ export class MovementSystem {
     this.path = [];
     this.pathIndex = 0;
     this.destinationMarker.visible = false;
+    this.destinationPing.visible = false;
   }
 
   private setMode(mode: MoveMode): void {

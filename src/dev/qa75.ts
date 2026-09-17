@@ -25,7 +25,17 @@
  * `errors: []`.
  */
 
+import { animsForKind, type EnemyKind } from '@/entities/Enemy';
+import { assertFootprints } from '@/town/TownMap';
+
 type Cls = 'warrior' | 'mage' | 'ranger' | 'rogue';
+
+/** THE NEW FLESH (it.114): every kind the graphics update added; each must have its sheets in the atlas. */
+const NEW_KINDS: EnemyKind[] = [
+  'redWidow', 'boneWidow', 'venomWidow', 'orcBrute', 'orcSpearman', 'orcWarrior', 'frostWolf', 'treant', 'wyrm', 'tealSpider',
+  'giantMoth', 'krampus', 'markedGhoul', 'corpse', 'fleshGolem', 'creeper', 'gargoyle', 'drake', 'reaper', 'apexPredator', 'apexStalker',
+  'halberdier', 'duelist',
+];
 
 interface Report {
   seed: number;
@@ -168,6 +178,22 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     if (!g) throw new Error('no run');
     g.loop.step(30);
     check('starts in town', g.floor === 0 && !!g.town);
+    /**
+     * THE ARRIVAL (it.114). A fresh hero now starts at the training ground and
+     * the bars come down once: the sentry's two lines, each waiting for the
+     * reader. The scene is armed on a short wall-clock timer, so the harness
+     * waits for it and reads it through before the town is touched - a running
+     * scene clears the input queue by design.
+     */
+    {
+      await wait(900);
+      const gg = game();
+      const yard = gg.town?.layout?.training?.mark;
+      check('a fresh hero stands at the training ground', !!yard && Math.hypot(gg.player.pos.x - (yard.x + 0.5), gg.player.pos.y - (yard.y + 1.5)) < 3, `hero ${gg.player.pos.x.toFixed(1)},${gg.player.pos.y.toFixed(1)} yard ${yard?.x},${yard?.y}`);
+      const turned = readScene();
+      check('the arrival plays and the sentry speaks twice', turned >= 2, `${turned} lines turned`);
+      check('the arrival ends and the town is the hero own again', !game().reclaim);
+    }
     /**
      * THE FOG OF WAR IS BACK (it.109). it.107 defaulted `omniscient` on and took
      * the shroud out of the whole game; the crypt without it is a different game.
@@ -951,7 +977,9 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // THE ROADS STAY OPEN: no clutter on a street tile.
       const L = g.town.layout;
       const W = L.map.width;
-      const clutter = ['torch', 'lamp', 'barrel', 'crates', 'bench', 'cart', 'jar', 'box', 'table', 'trashbox', 'bigtree', 'pine', 'deadtree', 'tree', 'rock', 'column', 'banner', 'wood_pile', 'barrels_stacked', 'crates_wood'];
+      // IT.114: derived from the footprint table - every post, and every kind the road sweep takes off a street.
+      const { PROP_FOOTPRINT, ROAD_SWEEP_KINDS } = await import('@/town/TownMap');
+      const clutter: string[] = [...new Set([...ROAD_SWEEP_KINDS, ...(Object.keys(PROP_FOOTPRINT) as Array<keyof typeof PROP_FOOTPRINT>).filter((k) => PROP_FOOTPRINT[k].block === 'post')])];
       const onRoad = L.props.filter((pr: { kind: string; x: number; y: number }) => clutter.includes(pr.kind) && L.road[pr.y * W + pr.x]);
       check('no clutter stands in a street', onRoad.length === 0, onRoad.map((pr: { kind: string; x: number; y: number }) => `${pr.kind}@${pr.x},${pr.y}`).join(' '));
       // SMALL CLUTTER (it.88) never blocks a tile.
@@ -2197,7 +2225,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           check('and his blow scales with the field too', !!sq && sq.damage >= 16, `${sq?.damage} a blow`);
         }
       }
-      check('the company is men, not monsters', roster.length >= 8 && roster.every((k) => ['mercenary', 'general', 'bandit', 'brigand', 'poacher', 'archer'].includes(k)), roster.join());
+      check('the company is men, not monsters', roster.length >= 8 && roster.every((k) => ['mercenary', 'general', 'bandit', 'brigand', 'poacher', 'archer', 'halberdier', 'duelist'].includes(k)), roster.join()); // The polearms and the fencer joined (it.114).
       check('no hostile wears the city own guard rig', !roster.includes('guard'));
       // ONE LOCKED GATE, AND IT IS ON THE WEST EDGE (it.102).
       {
@@ -3080,6 +3108,61 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await until(() => game() && game().floor === 0, 15000);
       g = game();
       await fadeClear();
+    }
+
+    // ---- THE GRAPHICS UPDATE (it.114): the wardrobe, the menagerie, the notices, the roads' names ----
+    {
+      g = game();
+      if (g.floor !== 0) {
+        await g.travel(0);
+        await until(() => game() && game().floor === 0, 15000);
+        g = game();
+        await fadeClear();
+      }
+      // The build says which game it is.
+      check('the title foot carries the version', /v\d+\.\d+/.test(document.querySelector('[data-version]')?.textContent ?? ''), document.querySelector('[data-version]')?.textContent ?? '');
+      // The new flesh: every kind's sheets are in the manifest.
+      {
+        const missing: string[] = [];
+        for (const kind of NEW_KINDS) for (const a of animsForKind(kind)) if (!g.sprites.entry(a)) missing.push(a);
+        check('every new creature kind has its sheets in the atlas', missing.length === 0, missing.slice(0, 8).join(', '));
+      }
+      // The engine's new switches exist.
+      check('the camera can punch its zoom', typeof g.camera.zoomPunch === 'function');
+      check('the lighting keeps dynamic lights', typeof g.lighting.addDynamicLight === 'function');
+      // The notices: one stack, and a reward lands on it.
+      g.toast.show({ kind: 'reward', title: 'QA NOTICE', sub: 'a line for the harness', ms: 4000 });
+      check('a notice stacks on the screen', document.querySelectorAll('#toast-stack .toast').length >= 1);
+      // The roads' names: no open gateway carries a shut road's note, and the plate names where it goes.
+      {
+        const bad = (g.town.interactables as Array<{ kind: string; dest?: string; note?: string; label: string }>)
+          .filter((i) => i.kind === 'gateway' && i.dest && /not (yet )?open/i.test(`${i.label} ${i.note ?? ''}`));
+        check('no open gateway says it is shut', bad.length === 0, bad.map((b) => b.label).join(', '));
+      }
+      // The footprints: nothing drawn stands on open ground, nothing blocks a road.
+      {
+        const v = assertFootprints(g.town.layout);
+        check('the town footprint audit is clean', v.length === 0, v.slice(0, 4).join(' | '));
+      }
+      // The training ground paid.
+      check('the yard paid its hundred gold once', g.quests.tutorial === 'done', String(g.quests.tutorial));
+      // THE MENAGERIE: onto the sand, a costume on, the hero hidden under it, and home again.
+      g.menagerie(null);
+      check('the menagerie is the sand with the gates shut', await until(() => game() && game().floor === -2 && !!game().coliseum?.menagerie, 15000));
+      g = game();
+      await fadeClear();
+      check('the menagerie picker is open', !!document.querySelector('#menagerie.open'));
+      await g.wear('treant');
+      check('a costume goes on and the hero is drawn as it', await until(() => !!game().puppet && game().player.container.renderable === false, 6000));
+      driveRender(600);
+      check('the costume rides the hero position', !!g.puppet && Math.abs(g.puppet.container.zIndex - g.player.container.zIndex) <= 2, `${g.puppet?.container.zIndex} vs ${g.player.container.zIndex}`);
+      await g.wear(null);
+      check('the hero own body comes back', await until(() => !game().puppet && game().player.container.renderable === true, 3000));
+      await g.travel(0);
+      check('home from the sand', await until(() => game() && game().floor === 0, 15000));
+      g = game();
+      await fadeClear();
+      check('the picker closes with the sand', !document.querySelector('#menagerie.open'));
     }
 
     // ---- the device matrix in this state ------------------------------------------------

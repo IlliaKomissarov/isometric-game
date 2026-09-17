@@ -985,6 +985,31 @@ User-confirmed direction: **classic ARPG deliberate pacing** (0.8 s swings).
 - [x] it.113b: THE TRAINING GROUND after the fields - the officer's word (in Sir Ham's guard face) held the post for good and opened over the tutorial's cards; after the errand the post is the sign again, and E at it during the tutorial opens nothing (reproduced and verified in Chrome; qa75 checks both)
 - [x] it.113b: all ten boundary stones and stumps stand on the battlefield; the manor harness waits for the chief's last line
 
+## Iteration 114 - The graphics update (2026-09-17)
+
+- [x] `scripts/bakelib.py`: shared mask, sheet layout, painted anchor, locked manifest writer
+- [x] Eight bakes from the drop: 137 creature sheets, the crypt tileset (183), 111 VFX strips, 278 item entries, 165 buildings and props, the catapult and the ballista
+- [x] Depths 1-20 drawn from the tileset: floors by theme, wall runs, arches, doors, corners, pillars, torches; cubes are the fallback
+- [x] Lighting: allocation-free visibility that follows the hero sub-tile; a lit ring; dynamic lights
+- [x] `render/Outline.ts`: a rim on foes in the dark, on hit, on the target; `minLight`
+- [x] Camera: zoom-scaled shake with roll and a zoom punch; beats retuned
+- [x] `render/effects.ts`: composed beats for death, boss death, crit, hit, level-up, pickups, warp, catapult, alert, buffs; every skill has a cast and an impact; statuses ride the foe
+- [x] Food (25 dishes, three tiers), hunger (gauge + hero label, starving stops regen and softens blows), coin drops from foes and chests, rarer gear, the INSPECT turntable view
+- [x] 23 new creature kinds with stats, lore, voices, pools
+- [x] Townsfolk separated by style: pixel folk in the old quarter and the east, smooth folk in the Market Ward, the inn and the country
+- [x] THE MENAGERIE: any of 88 costumes on the hero, from the title, the cheat sheet or the bestiary
+- [x] Menu restyle: one button language, the difficulty pick visible, circular touch icons, COMMANDS folded, the version on the title
+- [x] `ui/Toast` notices + the ledger watcher; longer on-screen times everywhere
+- [x] Gateway plates name where the road goes; notes follow the quest; THE YARD reachable during the errand
+- [x] THE ARRIVAL scene at the training ground; the yard pays 100 gold once
+- [x] Forbidden Arts rewritten: places, FOES, QUESTS, DRAUGHTS, noclip, the purse; one `jumpTo`
+- [x] `PROP_FOOTPRINT` table: posts off roads, clutter swept, door columns closed, buildings scaled to their painted base, `assertFootprints`
+- [x] The real catapult on the battlefield
+- [x] qa75: the arrival read-through and the graphics-update section
+- [ ] Ballistae placed on the battlefield (sheets baked, not yet dressed)
+- [ ] The polyy village buildings, the tavern and the props placed for variety (baked, not yet placed)
+- [ ] The HD knight as an alternate warrior rig (baked)
+
 ## Milestone 5 — Co-op Foundation
 
 - [ ] WebSocket/WebRTC transport implementing `INetworkTransport`

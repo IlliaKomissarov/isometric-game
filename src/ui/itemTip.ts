@@ -20,8 +20,13 @@ import { weaponIconUrl } from '@/render/SpriteLibrary';
 import { itemDef } from '@/items/instance';
 
 const SLOT_LABEL: Record<string, string> = {
-  head: 'Head', torso: 'Body', legs: 'Legs', mainHand: 'Main Hand', offHand: 'Off Hand', cloak: 'Back', ring: 'Ring', consumable: 'Consumable', material: 'Material',
+  head: 'Head', torso: 'Body', legs: 'Legs', mainHand: 'Main Hand', offHand: 'Off Hand', cloak: 'Back', ring: 'Ring', consumable: 'Consumable', material: 'Material', food: 'Food',
 };
+
+/** The card's word for a slot (the inspect view shares it). */
+export function slotLabel(slot: string): string {
+  return SLOT_LABEL[slot] ?? slot;
+}
 
 const VERDICT_TEXT: Record<Verdict, string> = { upgrade: '▲ Upgrade', downgrade: '▼ Downgrade', tradeoff: '◆ Trade-off', equal: '= Equal' };
 
@@ -45,7 +50,7 @@ function classWeapon(player: Player): ItemDef {
 
 /** The piece the hero wears in `def`'s slot, or the class weapon for a bare main hand, or null. */
 export function wornFor(player: Player, def: ItemDef): ItemDef | null {
-  if (def.slot === 'consumable' || def.slot === 'material') return null;
+  if (def.slot === 'consumable' || def.slot === 'material' || def.slot === 'food') return null;
   const id = player.getEquipped(def.slot);
   const worn = id ? itemDef(id) : undefined;
   if (worn) return worn;
@@ -59,6 +64,8 @@ export interface CardOptions {
   self?: boolean;
   /** The footer line ("◆ worth 30 gold", "◆ Buy 45 gold"). */
   goldLine: string;
+  /** INSPECT (it.114): a footer button that opens the turntable view; the panel that owns the card wires `[data-inspect]`. */
+  inspect?: boolean;
 }
 
 function rowsHtml(rows: CompareRow[], compare: boolean): string {
@@ -94,8 +101,9 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
   };
   const affixHtml = def.affixLines?.length ? `<ul class="tip-affixes">${def.affixLines.map((l) => `<li class="${cls(l)}">${lead(l)}${detail(l)}</li>`).join('')}</ul>` : '';
   const descHtml = def.desc ? `<div class="tip-desc">${def.desc}</div>` : '';
-  if (def.slot === 'consumable' || def.slot === 'material' || (opts.worn === undefined && !opts.self)) {
-    body = `<div class="tip-stats">${statLine(def)}</div>`;
+  if (def.slot === 'consumable' || def.slot === 'material' || def.slot === 'food' || (opts.worn === undefined && !opts.self)) {
+    // A dish (it.114) keeps its one-line stats and its own words under them.
+    body = `<div class="tip-stats">${statLine(def)}</div>${def.slot === 'food' && def.desc ? descHtml : ''}`;
   } else if (opts.self) {
     const rows = soloRows(def);
     body = rows.length
@@ -114,7 +122,8 @@ export function itemCardHtml(def: ItemDef, opts: CardOptions): string {
       `<div class="tip-yours">vs ${yours}</div>` +
       `<div class="tip-verdict ${cmp.verdict}">${VERDICT_TEXT[cmp.verdict]}</div>`;
   }
-  return head + body + `<div class="tip-gold">◆ ${opts.goldLine}</div>`;
+  const inspect = opts.inspect ? `<button type="button" class="tip-inspect" data-inspect="${def.id}" title="Turn it in the light (right-click a cell does the same)">✦ INSPECT</button>` : '';
+  return head + body + `<div class="tip-gold">◆ ${opts.goldLine}${inspect}</div>`;
 }
 
 let node: HTMLElement | null = null;

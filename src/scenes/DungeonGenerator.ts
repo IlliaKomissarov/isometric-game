@@ -67,6 +67,206 @@ export interface DungeonMap {
   /** Guaranteed-walkable player spawn tile (center of the first room). */
   readonly spawn: { x: number; y: number };
   readonly seed: number;
+  /**
+   * THE CRYPT'S TORCH BRACKETS (it.115): filled in by `SceneManager.build` when
+   * the tileset walls are up - every sixth wall piece on a room wall. The
+   * integrator hangs the flames (`SceneManager.placeTorches`) once the torch
+   * atlases are resident; nothing here draws them.
+   */
+  torchSpots?: TorchSpot[];
+}
+
+/** Where a wall torch hangs (it.115): a bracket on a north (`n`, faces south) or west (`w`, faces east) wall piece. */
+export interface TorchSpot {
+  side: 'n' | 'w';
+  /** The wall tile the bracket is on. */
+  x: number;
+  y: number;
+  /** The floor tile the flame faces: fog gating and the light's home. */
+  gx: number;
+  gy: number;
+  /** The wall piece's sort key; the flame draws one above it. */
+  zIndex: number;
+}
+
+// ---------------------------------------------------------------------------
+// THE TILESET WALL PLAN (it.115)
+// ---------------------------------------------------------------------------
+
+/**
+ * One 128x256 tileset piece, in grid terms. `n` pieces face SOUTH: they stand
+ * on the south edge of wall tiles (x, y) and (x + 1, y), which is the north
+ * wall of the floor tiles below them. `w` pieces face EAST: the east edge of
+ * wall tiles (x, y) and (x, y + 1). `corner` is the convex L of both, on wall
+ * tiles (x, y), (x + 1, y) and (x + 1, y - 1): the block's bottom-left and
+ * bottom-right edges meeting at its bottom vertex. `arch` and `door` are a
+ * piece whose FIRST tile is an opening (a one-wide corridor mouth, or an iron
+ * gate) and whose second is the pier. `(x, y)` is always the first wall tile.
+ */
+export interface WallPiece {
+  kind: 'wall' | 'arch' | 'door' | 'corner';
+  side: 'n' | 'w';
+  x: number;
+  y: number;
+  /** True when the piece stands on a room's wall (torches go on those). */
+  room: boolean;
+}
+
+export interface WallPlan {
+  pieces: WallPiece[];
+  /** Free-standing wall tiles (three or four open sides): a 1x1 pillar each. */
+  pillars: Array<{ x: number; y: number }>;
+}
+
+const FACE = 1;
+const MOUTH = 2;
+
+/**
+ * Turn the grid's wall tiles into tileset runs (it.115). Pure and pixi-free,
+ * so a node script can count and check it.
+ *
+ * THE RULE: a floor (or gate, or hearth) tile whose NORTH neighbour is wall
+ * needs a north face; whose WEST neighbour is wall, a west face. South and
+ * east faces are never drawn - the far side is dark void, as in the inn and
+ * the cellar. Faces are grouped into runs: along +x for north faces sharing a
+ * row, along +y for west faces sharing a column. A piece covers TWO tiles of
+ * run and goes at run offsets 0, 2, 4...; an ODD run puts its last piece at
+ * L-2, overlapping the previous by one tile of identical art, so nothing ever
+ * overhangs into open floor. A run of ONE leans onto whichever side has wall
+ * behind it, and is skipped when neither has.
+ *
+ * MOUTHS: a one-wide corridor opening in a run (a floor tile with floor - or
+ * a gate - behind it, walls either side of that) takes an `arch` (a `door`
+ * over a gate) whose opening is the mouth and whose pier is the next face.
+ * A mouth is only accepted when it will not leave a lone face on its left
+ * (the stretch before it is 0 or >= 2 long), so the overlap rule never has
+ * to draw a wall over an arch's opening; a lone face AFTER a pier overlaps
+ * the pier, which narrows the arch by a tile and still reads.
+ *
+ * CORNERS: where a row run's last piece and a column run's last piece meet
+ * on a convex corner (the wall tile with floor south AND east of it), both
+ * are replaced by the one `corner` piece, on the row piece's block.
+ *
+ * PILLARS: a wall tile with three or four open orthogonal neighbours is a
+ * free-standing pillar, drawn as one, and never a face for its neighbours.
+ */
+export function planWallPieces(map: DungeonMap): WallPlan {
+  const { width, height, grid, rooms } = map;
+  const at = (x: number, y: number): number => (x < 0 || y < 0 || x >= width || y >= height ? TILE_WALL : grid[y * width + x]);
+  const open = (x: number, y: number): boolean => at(x, y) !== TILE_WALL;
+
+  const pillar = new Uint8Array(width * height);
+  const pillars: Array<{ x: number; y: number }> = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (grid[y * width + x] !== TILE_WALL) continue;
+      const n = (open(x, y - 1) ? 1 : 0) + (open(x + 1, y) ? 1 : 0) + (open(x, y + 1) ? 1 : 0) + (open(x - 1, y) ? 1 : 0);
+      if (n >= 3) {
+        pillar[y * width + x] = 1;
+        pillars.push({ x, y });
+      }
+    }
+  }
+  const solid = (x: number, y: number): boolean => at(x, y) === TILE_WALL && !(x >= 0 && y >= 0 && x < width && y < height && pillar[y * width + x]);
+
+  const inRoom = new Uint8Array(width * height);
+  for (const r of rooms) {
+    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) if (x >= 0 && y >= 0 && x < width && y < height) inRoom[y * width + x] = 1;
+  }
+
+  const pieces: WallPiece[] = [];
+  const cls = new Uint8Array(Math.max(width, height));
+
+  /**
+   * One line of run positions `0..n-1`. `face(i)` / `mouth(i)` classify the
+   * OPEN tile at position i by what is behind it; `behindSolid(i)` says whether
+   * the wall tile behind position i is real wall (for a run of one's lean).
+   */
+  const scanLine = (
+    n: number,
+    face: (i: number) => boolean,
+    mouth: (i: number) => boolean,
+    behindSolid: (i: number) => boolean,
+    emit: (kind: WallPiece['kind'], i: number) => void,
+  ): void => {
+    for (let i = 0; i < n; i++) cls[i] = face(i) ? FACE : mouth(i) ? MOUTH : 0;
+    let i = 0;
+    let prev: 'none' | 'wall' | 'arch' = 'none';
+    let lastStretch = -1;
+    while (i < n) {
+      const c = cls[i];
+      if (c === MOUTH && i + 1 < n && cls[i + 1] === FACE && lastStretch !== 1) {
+        emit('arch', i); // `emit` turns it into a door over a gate.
+        i += 2;
+        prev = 'arch';
+        lastStretch = 0;
+        continue;
+      }
+      if (c !== FACE) {
+        i++;
+        prev = 'none';
+        lastStretch = -1;
+        continue;
+      }
+      let j = i;
+      while (j < n && cls[j] === FACE) j++;
+      const L = j - i;
+      if (L === 1) {
+        if (prev === 'arch') emit('wall', i - 1); // Over the pier: the arch narrows, the wall stays whole.
+        else if (i - 1 >= 0 && behindSolid(i - 1)) emit('wall', i - 1);
+        else if (i + 1 < n && behindSolid(i + 1)) emit('wall', i);
+      } else {
+        for (let o = 0; o + 2 <= L; o += 2) emit('wall', i + o);
+        if (L % 2 === 1) emit('wall', i + L - 2);
+      }
+      i = j;
+      prev = 'wall';
+      lastStretch = L;
+    }
+  };
+
+  // North faces: row by row, along +x. The wall tiles are the row above.
+  for (let fy = 1; fy < height; fy++) {
+    scanLine(
+      width,
+      (x) => open(x, fy) && solid(x, fy - 1),
+      (x) => open(x, fy) && open(x, fy - 1),
+      (x) => solid(x, fy - 1),
+      (kind, x) => {
+        const gate = kind === 'arch' && at(x, fy - 1) === TILE_DOOR;
+        pieces.push({ kind: gate ? 'door' : kind, side: 'n', x, y: fy - 1, room: inRoom[fy * width + x] === 1 });
+      },
+    );
+  }
+  // West faces: column by column, along +y. The wall tiles are the column to the left.
+  for (let fx = 1; fx < width; fx++) {
+    scanLine(
+      height,
+      (y) => open(fx, y) && solid(fx - 1, y),
+      (y) => open(fx, y) && open(fx - 1, y),
+      (y) => solid(fx - 1, y),
+      (kind, y) => {
+        const gate = kind === 'arch' && at(fx - 1, y) === TILE_DOOR;
+        pieces.push({ kind: gate ? 'door' : kind, side: 'w', x: fx - 1, y, room: inRoom[y * width + fx] === 1 });
+      },
+    );
+  }
+
+  // Convex corners: the row piece on (x..x+1, y) and the column piece on
+  // (x+1, y-1..y) meet on wall tile (x+1, y), which has floor south and east.
+  const byKey = new Map<string, number>();
+  pieces.forEach((p, i) => byKey.set(`${p.side}:${p.x},${p.y}`, i));
+  const dead = new Set<number>();
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (p.side !== 'n' || p.kind !== 'wall') continue;
+    const j = byKey.get(`w:${p.x + 1},${p.y - 1}`);
+    if (j === undefined || dead.has(j) || pieces[j].kind !== 'wall') continue;
+    if (!(solid(p.x + 1, p.y) && open(p.x + 1, p.y + 1) && open(p.x + 2, p.y))) continue;
+    p.kind = 'corner';
+    dead.add(j);
+  }
+  return { pieces: pieces.filter((_, i) => !dead.has(i)), pillars };
 }
 
 /**

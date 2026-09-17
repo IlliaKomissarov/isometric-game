@@ -43,7 +43,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
-import { CLUTTER_KINDS, KIND_FIELD_CHURN, KIND_FIELD_GORE, KIND_FIELD_GRASS, KIND_FIELD_MUD, KIND_FIELD_ROAD, type FieldLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { claimProp, claims, footprintOf, KIND_FIELD_CHURN, KIND_FIELD_GORE, KIND_FIELD_GRASS, KIND_FIELD_MUD, KIND_FIELD_ROAD, type FieldLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -232,21 +232,19 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
 
   // ---- PROPS -------------------------------------------------------------
   const props: TownProp[] = [];
-  const block = (p: TownProp): void => {
-    props.push(p);
-    if (CLUTTER_KINDS.has(p.kind)) return;
-    for (let y = p.y; y < p.y + (p.h ?? 1); y++)
-      for (let x = p.x; x < p.x + (p.w ?? 1); x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;
-  };
+  const ctx: RoadCtx = { width: W, height: H, grid, road: onRoad };
+  /** The one placer (it.114): paint is listed, a post keeps off the road, the rest is solid. */
+  const block = (p: TownProp): boolean => claimProp(ctx, props, p) !== null;
   const decal = (p: TownProp): void => {
     props.push(p);
   };
-  /** A standing piece: open ground, never on the road. */
+  /** A standing piece: its whole footprint (the kind's own - a cart is two long) on open ground, never on the road. */
   const put = (kind: TownProp['kind'], x: number, y: number, variant?: string): boolean => {
-    if (!isFloor(x, y) || onRoad[idx(x, y)]) return false;
-    if (props.some((q) => q.x === x && q.y === y && !CLUTTER_KINDS.has(q.kind))) return false;
-    block({ kind, x, y, variant });
-    return true;
+    const p: TownProp = { kind, x, y, variant };
+    const f = footprintOf(p);
+    for (let yy = y; yy < y + f.h; yy++) for (let xx = x; xx < x + f.w; xx++) if (!isFloor(xx, yy) || onRoad[idx(xx, yy)]) return false;
+    if (props.some((q) => q.x === x && q.y === y && claims(q))) return false;
+    return block(p);
   };
   /** Paint on the ground: anywhere open, road included - a body fell where it fell. */
   const lay = (kind: TownProp['kind'], x: number, y: number, variant?: string): void => {
@@ -375,7 +373,7 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   for (let y = 4; y < H - 4; y++) {
     for (let x = 4; x < W - 4; x++) {
       if (!isFloor(x, y)) continue;
-      if (props.some((q) => q.x === x && q.y === y && !CLUTTER_KINDS.has(q.kind))) continue;
+      if (props.some((q) => q.x === x && q.y === y && claims(q))) continue;
       // Thickest on the line the armies met, thinning east. STREWN, NOT PAVED
       // (it.110): the first pass laid two hundred bodies and the field read as a
       // carpet of them - which is both worse to look at and a great deal of
@@ -650,7 +648,7 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   };
   const layout = bareLayout(map, props, 'THE BATTLEFIELD');
   layout.wander = { x: 20, y: 24, w: 20, h: 12 };
-  layout.houses = [{ x: MANOR.x, y: MANOR.y, w: MANOR.w, h: MANOR.h }];
+  layout.houses = [{ x: MANOR.x, y: MANOR.y, w: MANOR.w, h: MANOR.h, door: manorDoor }];
   layout.chests = [];
   for (const c of chestSpots) {
     if (!isFloor(c.x, c.y) || onRoad[idx(c.x, c.y)]) continue;

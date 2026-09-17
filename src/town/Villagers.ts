@@ -40,9 +40,9 @@ export interface FolkSheet {
  */
 export const TAVERN_FOLK: ReadonlyArray<FolkSheet> = [
   { anim: 'folk_walk', feet: true, height: 56 },
-  { anim: 'villager_walk', feet: false, height: 58 },
-  { anim: 'merchant_walk', feet: false, height: 58 },
   { anim: 'poacher_walk', feet: true, height: 58 },
+  { anim: 'cit_labourer_walk', feet: true, height: 58 },
+  { anim: 'duelist_walk', feet: true, height: 58 },
 ];
 /**
  * THE TOWN'S OWN PEOPLE (it.99). Five civilians composited from the layered pack -
@@ -56,10 +56,27 @@ export const STREET_FOLK: ReadonlyArray<FolkSheet> = [
   { anim: 'cit_monk_walk', feet: true, height: 58 },
   { anim: 'cit_goodwife_walk', feet: true, height: 56 },
   { anim: 'cit_maid_walk', feet: true, height: 56 },
+  { anim: 'villager_walk', feet: false, height: 58 },
+  { anim: 'merchant_walk', feet: false, height: 58 },
+];
+/**
+ * TWO TOWNS IN ONE STREET (it.114). The owner's complaint: some citizens look
+ * "too high-quality and modern" beside the others. They do - the sheets above
+ * are chunky 34x60 pixel art at four frames, and the labourer, the carter and
+ * the Villager_01 body are smooth ten-to-sixteen-frame renders. Nothing is
+ * deleted; they are SEPARATED. The pixel folk keep the old quarter and the
+ * burnt east; the smooth bodies walk the Market Ward, the taproom and the open
+ * country past the gates, where the pre-rendered trees and steadings are
+ * their own kind.
+ */
+export const MARKET_FOLK: ReadonlyArray<FolkSheet> = [
   // THE LABOURER (it.99): the one genuine eight-direction civilian in the packs -
   // a bare-armed man in a rust tunic, and the same man in a colder blue-grey re-dye.
   { anim: 'cit_labourer_walk', feet: true, height: 58 },
   { anim: 'cit_carter_walk', feet: true, height: 58 },
+  { anim: 'folk_walk', feet: true, height: 56 },
+  { anim: 'duelist_walk', feet: true, height: 58 },
+  { anim: 'halberd_walk', feet: true, height: 60 },
 ];
 /** Coats, aprons and cloaks: a colour per walker, multiplied into the scene's light. */
 const FOLK_COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
@@ -165,7 +182,7 @@ interface Bubble {
   life: number;
 }
 
-const BUBBLE_LIFE = 2.2;
+const BUBBLE_LIFE = 3.4; // 2.2 until it.114: a line should outlast the glance that found it.
 
 function makeBubble(layer: Container, first: number): Bubble {
   const node = new Container();

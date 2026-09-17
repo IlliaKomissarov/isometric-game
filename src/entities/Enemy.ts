@@ -21,8 +21,10 @@
 import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import { difficulty } from '@/core/Difficulty';
 import { assets } from '@/core/AssetManager';
-import { COMBAT_SPEED, PLAYER_SPEED } from '@/core/config';
+import { COMBAT_SPEED, ENEMY_MIN_LIGHT, PLAYER_SPEED } from '@/core/config';
 import { eventBus } from '@/core/EventBus';
+import { tintForLight } from '@/engine/Lighting';
+import { OutlineFilter, outlinePixelScale } from '@/render/Outline';
 import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import { multiplyColors } from '@/utils/color';
 import { idleFrame, type LightDir } from '@/render/animUtil';
@@ -67,7 +69,31 @@ export type EnemyKind =
   | 'mercenary'
   | 'general'
   // ACROSS THE RIVER (it.110): the man holding a party in somebody else's house.
-  | 'chief';
+  | 'chief'
+  // THE NEW FLESH (it.114): twenty-three bodies out of the packs, sorted by band below.
+  | 'redWidow'
+  | 'boneWidow'
+  | 'venomWidow'
+  | 'orcBrute'
+  | 'frostWolf'
+  | 'treant'
+  | 'drake'
+  | 'wyrm'
+  | 'markedGhoul'
+  | 'orcSpearman'
+  | 'orcWarrior'
+  | 'giantMoth'
+  | 'corpse'
+  | 'halberdier'
+  | 'reaper'
+  | 'duelist'
+  | 'apexPredator'
+  | 'apexStalker'
+  | 'krampus'
+  | 'gargoyle'
+  | 'tealSpider'
+  | 'fleshGolem'
+  | 'creeper';
 
 /** THE LOOTERS (it.91): the two human kinds the east quarter's errand counts. */
 export const LOOTER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['bandit', 'brigand']);
@@ -126,6 +152,8 @@ export interface EnemyTypeDef {
     feetAnchor?: number;
     /** Per-animation feet anchors (it.49): packs whose sheets sit at different heights per clip. */
     feetAnchors?: Record<string, number>;
+    /** The darkest light level this kind is ever drawn at (it.114); default ENEMY_MIN_LIGHT. */
+    minLight?: number;
   };
   /** Flat damage reduction at level 1 (it.42; grows +½ per level). */
   armor?: number;
@@ -149,6 +177,20 @@ export interface EnemyTypeDef {
  */
 /** EXTENDED BOSS DEATH (it.43): seven seconds of collapse, pulse and disintegration. */
 export const BOSS_DEATH_TICKS = 420;
+
+/** Smoothstep of a 0..1 parameter (clamped). */
+function smooth01(t: number): number {
+  const x = t <= 0 ? 0 : t >= 1 ? 1 : t;
+  return x * x * (3 - 2 * x);
+}
+
+/** Per-channel max of two 0xRRGGBB colours (it.114: the light floor under a foe). */
+function maxChannels(a: number, b: number): number {
+  const r = Math.max((a >> 16) & 0xff, (b >> 16) & 0xff);
+  const g = Math.max((a >> 8) & 0xff, (b >> 8) & 0xff);
+  const bl = Math.max(a & 0xff, b & 0xff);
+  return (r << 16) | (g << 8) | bl;
+}
 
 /** Blend two 0xRRGGBB colours (it.81: the status tint over the lighting). */
 function mixColors(a: number, b: number, t: number): number {
@@ -988,6 +1030,676 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       ownShadow: true,
     },
   },
+  // =====================================================================
+  // THE NEW FLESH (it.114). Every sheet below is eight-direction, rows
+  // canonical, `linear`. `scale` is 56 / the idle sheet's painted height
+  // and only matters if the manifest ever loses its painted bounds; the rig
+  // normalises from the IDLE sheet, which is why the brute and halberdier
+  // (whose attack sheets paint twice as tall - a club, a polearm overhead)
+  // still stand at mob height. `minLight` 0.22 on the dark bodies so they
+  // never go to black under a dead torch.
+  // =====================================================================
+  // --- The widows (mob10 pack): three colours of the crypt spider, a band each. ---
+  redWidow: {
+    kind: 'redWidow',
+    name: 'Crimson Widow',
+    hp: 44,
+    minDamage: 7,
+    maxDamage: 12,
+    toHit: 0.76,
+    speedMult: 0.9, // Faster than the crypt widow - the first thing that outruns you.
+    windupTicks: 18,
+    recoverTicks: 22,
+    reach: 1.3,
+    hitRecoveryTicks: 8,
+    markerTexture: 'marker_fallen',
+    // No poison in the combat model (hitEffect is 'slow' only) - a plain, fast bite.
+    sprite: {
+      walk: 'widow2_walk',
+      idle: 'widow2_idle',
+      death: 'widow2_death',
+      attack: 'widow2_attack',
+      hitAnim: 'widow2_hit',
+      anchorY: 0.95,
+      scale: 0.544,
+      tint: 0xffffff,
+      stride: 0.26,
+      heightMult: 0.8,
+      minLight: 0.22,
+    },
+  },
+  boneWidow: {
+    kind: 'boneWidow',
+    name: 'Bone Widow',
+    armor: 1,
+    hp: 70,
+    minDamage: 8,
+    maxDamage: 14,
+    toHit: 0.74,
+    speedMult: 0.6, // Slow and armoured in old chitin - a cellar's patient thing.
+    windupTicks: 26,
+    recoverTicks: 28,
+    reach: 1.3,
+    hitRecoveryTicks: 6,
+    markerTexture: 'marker_fallen',
+    sprite: {
+      walk: 'widow3_walk',
+      idle: 'widow3_idle',
+      death: 'widow3_death',
+      attack: 'widow3_attack',
+      hitAnim: 'widow3_hit',
+      anchorY: 0.95,
+      scale: 0.544,
+      tint: 0xffffff,
+      stride: 0.26,
+      heightMult: 0.8,
+      minLight: 0.22,
+    },
+  },
+  venomWidow: {
+    kind: 'venomWidow',
+    name: 'Venom Widow',
+    hp: 48,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.76,
+    speedMult: 0.8,
+    windupTicks: 22,
+    recoverTicks: 24,
+    reach: 1.3,
+    hitRecoveryTicks: 8,
+    markerTexture: 'marker_fallen',
+    hitEffect: 'slow', // The nearest thing the model has to venom: the bite numbs the legs.
+    sprite: {
+      walk: 'widow4_walk',
+      idle: 'widow4_idle',
+      death: 'widow4_death',
+      attack: 'widow4_attack',
+      hitAnim: 'widow4_hit',
+      anchorY: 0.95,
+      scale: 0.554,
+      tint: 0xffffff,
+      stride: 0.26,
+      heightMult: 0.8,
+      minLight: 0.22,
+    },
+  },
+  // --- The orcs of the mines: a brute, a spearman, a blade. ---
+  orcBrute: {
+    kind: 'orcBrute',
+    name: 'Orc Brute',
+    armor: 2,
+    hp: 130,
+    minDamage: 12,
+    maxDamage: 20,
+    toHit: 0.72,
+    speedMult: 0.45,
+    windupTicks: 46, // The club goes all the way up before it comes down.
+    recoverTicks: 40,
+    reach: 1.5,
+    hitRecoveryTicks: 0, // Nothing you carry staggers it.
+    markerTexture: 'marker_zombie',
+    sprite: {
+      walk: 'brute_walk',
+      idle: 'brute_idle',
+      death: 'brute_death',
+      attack: 'brute_attack',
+      hitAnim: 'brute_hit',
+      anchorY: 0.95,
+      scale: 0.523,
+      tint: 0xffffff,
+      stride: 0.4,
+      ownShadow: true,
+      heightMult: 1.4,
+    },
+  },
+  orcSpearman: {
+    kind: 'orcSpearman',
+    name: 'Orc Spearman',
+    armor: 1,
+    hp: 56,
+    minDamage: 7,
+    maxDamage: 12,
+    toHit: 0.72,
+    speedMult: 0.68,
+    windupTicks: 30,
+    recoverTicks: 30,
+    reach: 1.7, // A spear: it lands from a tile you thought was safe.
+    hitRecoveryTicks: 14,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'spearman_walk',
+      idle: 'spearman_idle',
+      death: 'spearman_death',
+      attack: 'spearman_attack',
+      hitAnim: 'spearman_hit',
+      anchorY: 0.95,
+      scale: 0.848,
+      tint: 0xffffff,
+      stride: 0.5,
+      ownShadow: true,
+      heightMult: 1.05,
+    },
+  },
+  orcWarrior: {
+    kind: 'orcWarrior',
+    name: 'Orc Blade',
+    armor: 2,
+    hp: 62,
+    minDamage: 8,
+    maxDamage: 13,
+    toHit: 0.74,
+    speedMult: 0.72,
+    windupTicks: 26,
+    recoverTicks: 28,
+    reach: 1.4,
+    hitRecoveryTicks: 14,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'orcess_walk',
+      idle: 'orcess_idle',
+      death: 'orcess_death',
+      attack: 'orcess_attack',
+      hitAnim: 'orcess_hit',
+      anchorY: 0.95,
+      scale: 0.812,
+      tint: 0xffffff,
+      stride: 0.5,
+      ownShadow: true,
+      heightMult: 1.0,
+    },
+  },
+  // --- The frost band. ---
+  frostWolf: {
+    kind: 'frostWolf',
+    name: 'Frost Howler',
+    hp: 80,
+    minDamage: 10,
+    maxDamage: 16,
+    toHit: 0.74,
+    speedMult: 0.78,
+    windupTicks: 24,
+    recoverTicks: 28,
+    reach: 1.5,
+    hitRecoveryTicks: 10,
+    markerTexture: 'marker_fallen',
+    hitEffect: 'slow', // The axe is rimed; the cut chills.
+    sprite: {
+      walk: 'frostwolf_walk',
+      idle: 'frostwolf_idle',
+      death: 'frostwolf_death',
+      attack: 'frostwolf_attack',
+      hitAnim: 'frostwolf_hit',
+      anchorY: 0.95,
+      scale: 0.622,
+      tint: 0xffffff,
+      stride: 0.48,
+      heightMult: 1.1,
+    },
+  },
+  // --- The woods and the fields. ---
+  treant: {
+    kind: 'treant',
+    name: 'Blighted Treant',
+    armor: 3,
+    hp: 180,
+    minDamage: 11,
+    maxDamage: 19,
+    toHit: 0.7,
+    speedMult: 0.3, // A tree walking: you can outpace it; you cannot outlast it.
+    windupTicks: 50,
+    recoverTicks: 44,
+    reach: 1.6,
+    hitRecoveryTicks: 4,
+    markerTexture: 'marker_zombie',
+    // `treant_awake` (8 frames) is in the atlas but unused here: the engine has no per-kind rise anim.
+    sprite: {
+      walk: 'treant_walk',
+      idle: 'treant_idle',
+      death: 'treant_death',
+      attack: 'treant_attack',
+      hitAnim: 'treant_hit',
+      anchorY: 0.95,
+      scale: 0.767,
+      tint: 0xffffff,
+      stride: 0.3,
+      ownShadow: true,
+      heightMult: 1.4,
+    },
+  },
+  wyrm: {
+    kind: 'wyrm',
+    name: 'Feathered Wyrm',
+    hp: 40,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.74,
+    speedMult: 0.92,
+    windupTicks: 20,
+    recoverTicks: 22,
+    reach: 1.3,
+    hitRecoveryTicks: 12,
+    markerTexture: 'marker_fallen',
+    // THE PACK HAS NO DEATH AND NO HIT SHEET. `death` is a required slot, so it
+    // plays the idle (the body fades out over it - the engine's death fade still
+    // reads); the flinch falls back to the engine's idle-sway. `wyrm_fly` is
+    // atlased and free for a later hover.
+    sprite: {
+      walk: 'wyrm_walk',
+      idle: 'wyrm_idle',
+      death: 'wyrm_idle',
+      attack: 'wyrm_attack',
+      anchorY: 0.95,
+      scale: 0.644,
+      tint: 0xffffff,
+      stride: 0.4,
+      heightMult: 1.0,
+    },
+  },
+  tealSpider: {
+    kind: 'tealSpider',
+    name: 'Verdant Spider',
+    hp: 42,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.76,
+    speedMult: 0.86,
+    windupTicks: 20,
+    recoverTicks: 22,
+    reach: 1.3,
+    hitRecoveryTicks: 8,
+    markerTexture: 'marker_fallen',
+    sprite: {
+      walk: 'spider2_walk',
+      idle: 'spider2_idle',
+      death: 'spider2_death',
+      attack: 'spider2_attack',
+      hitAnim: 'spider2_hit',
+      anchorY: 0.95,
+      scale: 0.737,
+      tint: 0xffffff,
+      stride: 0.26,
+      heightMult: 0.9,
+    },
+  },
+  giantMoth: {
+    kind: 'giantMoth',
+    name: 'Crypt Moth',
+    hp: 22,
+    minDamage: 3,
+    maxDamage: 7,
+    toHit: 0.66,
+    speedMult: 0.85,
+    windupTicks: 18,
+    recoverTicks: 20,
+    reach: 1.2,
+    hitRecoveryTicks: 12,
+    markerTexture: 'marker_fallen',
+    fleeBelowFrac: 0.35, // Erratic: it breaks off early and comes back.
+    // It floats, so it throws no shadow - neither the sheet's nor ours. The
+    // engine has no hover; it walks like anything else.
+    sprite: {
+      walk: 'moth_walk',
+      idle: 'moth_idle',
+      death: 'moth_death',
+      attack: 'moth_attack',
+      hitAnim: 'moth_hit',
+      anchorY: 0.95,
+      scale: 0.337,
+      tint: 0xffffff,
+      stride: 0.2,
+      heightMult: 0.7,
+    },
+  },
+  krampus: {
+    kind: 'krampus',
+    name: 'The Horned One',
+    armor: 3,
+    hp: 210,
+    minDamage: 15,
+    maxDamage: 25,
+    toHit: 0.78,
+    speedMult: 0.66,
+    windupTicks: 34,
+    recoverTicks: 32,
+    reach: 1.6,
+    hitRecoveryTicks: 4,
+    markerTexture: 'marker_zombie',
+    sprite: {
+      walk: 'krampus_walk',
+      idle: 'krampus_idle',
+      death: 'krampus_death',
+      attack: 'krampus_attack',
+      hitAnim: 'krampus_hit',
+      anchorY: 0.95,
+      scale: 0.538,
+      tint: 0xffffff,
+      stride: 0.4,
+      heightMult: 1.3,
+    },
+  },
+  // --- The risen, the second wave. ---
+  markedGhoul: {
+    kind: 'markedGhoul',
+    name: 'Marked Ghoul',
+    hp: 48,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.72,
+    speedMult: 0.7,
+    windupTicks: 26,
+    recoverTicks: 28,
+    reach: 1.3,
+    hitRecoveryTicks: 16,
+    markerTexture: 'marker_zombie',
+    fleeBelowFrac: 0.25,
+    // No hit sheet in the pack (the flinch is the engine's idle-sway); `ghoul2_crawl` is atlased and unused.
+    sprite: {
+      walk: 'ghoul2_walk',
+      idle: 'ghoul2_idle',
+      death: 'ghoul2_death',
+      attack: 'ghoul2_attack',
+      anchorY: 0.95,
+      scale: 0.491,
+      tint: 0xffffff,
+      stride: 0.44,
+      heightMult: 1.0,
+    },
+  },
+  corpse: {
+    kind: 'corpse',
+    name: 'Shambling Corpse',
+    hp: 70,
+    minDamage: 6,
+    maxDamage: 11,
+    toHit: 0.68,
+    speedMult: 0.42,
+    windupTicks: 40,
+    recoverTicks: 36,
+    reach: 1.3,
+    hitRecoveryTicks: 10,
+    markerTexture: 'marker_zombie',
+    // `zomb2_roar` is atlased and unused.
+    sprite: {
+      walk: 'zomb2_walk',
+      idle: 'zomb2_idle',
+      death: 'zomb2_death',
+      attack: 'zomb2_attack',
+      hitAnim: 'zomb2_hit',
+      anchorY: 0.95,
+      scale: 0.491,
+      tint: 0xffffff,
+      stride: 0.45,
+      ownShadow: true,
+      heightMult: 1.0,
+    },
+  },
+  fleshGolem: {
+    kind: 'fleshGolem',
+    name: 'Flayed Golem',
+    armor: 2,
+    hp: 200,
+    minDamage: 14,
+    maxDamage: 22,
+    toHit: 0.72,
+    speedMult: 0.4,
+    windupTicks: 48,
+    recoverTicks: 42,
+    reach: 1.5,
+    hitRecoveryTicks: 0, // Stitched meat does not flinch.
+    markerTexture: 'marker_zombie',
+    // No hit sheet in the pack.
+    sprite: {
+      walk: 'flesh_walk',
+      idle: 'flesh_idle',
+      death: 'flesh_death',
+      attack: 'flesh_attack',
+      anchorY: 0.95,
+      scale: 0.602,
+      tint: 0xffffff,
+      stride: 0.36,
+      ownShadow: true,
+      heightMult: 1.05,
+    },
+  },
+  creeper: {
+    kind: 'creeper',
+    name: 'Hooded Creeper',
+    hp: 56,
+    minDamage: 8,
+    maxDamage: 13,
+    toHit: 0.76,
+    speedMult: 0.82,
+    windupTicks: 22,
+    recoverTicks: 24,
+    reach: 1.3,
+    hitRecoveryTicks: 12,
+    markerTexture: 'marker_zombie',
+    // No hit sheet in the pack.
+    sprite: {
+      walk: 'creeper_walk',
+      idle: 'creeper_idle',
+      death: 'creeper_death',
+      attack: 'creeper_attack',
+      anchorY: 0.95,
+      scale: 0.7,
+      tint: 0xffffff,
+      stride: 0.46,
+      ownShadow: true,
+      heightMult: 1.05,
+      minLight: 0.22,
+    },
+  },
+  gargoyle: {
+    kind: 'gargoyle',
+    name: 'Temple Gargoyle',
+    armor: 4,
+    hp: 90,
+    minDamage: 9,
+    maxDamage: 15,
+    toHit: 0.72,
+    speedMult: 0.3,
+    windupTicks: 40,
+    recoverTicks: 36,
+    reach: 1.4,
+    hitRecoveryTicks: 0, // Stone.
+    markerTexture: 'marker_zombie',
+    // THE STATUE. The pack has idle (1 frame), walk (1 frame) and a 16-frame
+    // wake, and nothing else. The engine's only rise is `beginRise` - a slide up
+    // out of the ground the spawner triggers, not a per-kind animation - and
+    // the aggro radius is a global constant (6.5 tiles), so "stands still until
+    // you are within four tiles" is not expressible here. What it is: a plain
+    // foe on the statue frame that barely moves, whose 'attack' is the wake
+    // sheet (the stone cracking and lunging reads as the blow) and whose death
+    // is the statue frame fading. Swap `attack` to 'gargoyle_idle' if the wake
+    // reads wrong in play.
+    sprite: {
+      walk: 'gargoyle_walk',
+      idle: 'gargoyle_idle',
+      death: 'gargoyle_idle',
+      attack: 'gargoyle_awake',
+      anchorY: 0.95,
+      scale: 0.452,
+      tint: 0xffffff,
+      stride: 0.3,
+      heightMult: 1.4,
+    },
+  },
+  // --- The ember depths and the vault: elites. ---
+  drake: {
+    kind: 'drake',
+    name: 'Ember Drake',
+    armor: 2,
+    hp: 110,
+    minDamage: 11,
+    maxDamage: 18,
+    toHit: 0.76,
+    speedMult: 0.6,
+    windupTicks: 40,
+    recoverTicks: 36,
+    reach: 0,
+    hitRecoveryTicks: 8,
+    markerTexture: 'marker_zombie',
+    // Ranged like the shaman: the breath pose is the attack sheet and the engine's
+    // fire bolt is the breath. `drake_attack` (the bite) is atlased and unused.
+    ranged: { range: 5.0, kiteMin: 2.4 },
+    projectile: 'bolt',
+    sprite: {
+      walk: 'drake_walk',
+      idle: 'drake_idle',
+      death: 'drake_death',
+      attack: 'drake_breath',
+      hitAnim: 'drake_hit',
+      anchorY: 0.95,
+      scale: 0.615,
+      tint: 0xffffff,
+      stride: 0.4,
+      heightMult: 1.2,
+    },
+  },
+  reaper: {
+    kind: 'reaper',
+    name: 'Grave Reaper',
+    armor: 2,
+    hp: 95,
+    minDamage: 13,
+    maxDamage: 22,
+    toHit: 0.8,
+    speedMult: 0.9,
+    windupTicks: 22,
+    recoverTicks: 26,
+    reach: 1.4,
+    hitRecoveryTicks: 10,
+    markerTexture: 'marker_zombie',
+    // `reaper_dash` and `reaper_talk` are atlased and unused.
+    sprite: {
+      walk: 'reaper_walk',
+      idle: 'reaper_idle',
+      death: 'reaper_death',
+      attack: 'reaper_attack',
+      hitAnim: 'reaper_hit',
+      anchorY: 0.95,
+      scale: 0.471,
+      tint: 0xffffff,
+      stride: 0.5,
+      ownShadow: true,
+      heightMult: 1.0,
+      minLight: 0.22,
+    },
+  },
+  apexPredator: {
+    kind: 'apexPredator',
+    name: 'Apex Predator',
+    armor: 3,
+    hp: 190, // Between the hydra (120) and the Tomb Warden (420); it is not in BOSS_KINDS, so mob height x1.1.
+    minDamage: 15,
+    maxDamage: 24,
+    toHit: 0.8,
+    speedMult: 0.8,
+    windupTicks: 30,
+    recoverTicks: 30,
+    reach: 1.6,
+    hitRecoveryTicks: 6,
+    markerTexture: 'marker_zombie',
+    // PVGames rig: three-frame idle/attack/hit, four-frame death. `apex_attack2` is atlased and unused.
+    sprite: {
+      walk: 'apex_walk',
+      idle: 'apex_idle',
+      death: 'apex_death',
+      attack: 'apex_attack',
+      hitAnim: 'apex_hit',
+      anchorY: 0.95,
+      scale: 0.339,
+      tint: 0xffffff,
+      stride: 0.4,
+      heightMult: 1.1,
+    },
+  },
+  apexStalker: {
+    kind: 'apexStalker',
+    name: 'Apex Stalker',
+    armor: 2,
+    hp: 170,
+    minDamage: 14,
+    maxDamage: 22,
+    toHit: 0.82,
+    speedMult: 0.9, // The faster of the pair; the predator hits harder.
+    windupTicks: 26,
+    recoverTicks: 28,
+    reach: 1.5,
+    hitRecoveryTicks: 8,
+    markerTexture: 'marker_zombie',
+    sprite: {
+      walk: 'apex2_walk',
+      idle: 'apex2_idle',
+      death: 'apex2_death',
+      attack: 'apex2_attack',
+      hitAnim: 'apex2_hit',
+      anchorY: 0.95,
+      scale: 0.339,
+      tint: 0xffffff,
+      stride: 0.4,
+      heightMult: 1.1,
+    },
+  },
+  // --- The free company, two more trades. ---
+  halberdier: {
+    kind: 'halberdier',
+    name: 'Free Company Halberdier',
+    armor: 2,
+    hp: 52,
+    minDamage: 8,
+    maxDamage: 14,
+    toHit: 0.72,
+    speedMult: 0.66,
+    windupTicks: 32,
+    recoverTicks: 32,
+    reach: 1.8,
+    hitRecoveryTicks: 14,
+    markerTexture: 'marker_archer',
+    sprite: {
+      walk: 'halberd_walk',
+      idle: 'halberd_idle',
+      death: 'halberd_death',
+      attack: 'halberd_attack',
+      hitAnim: 'halberd_hit',
+      anchorY: 0.95,
+      scale: 0.549,
+      tint: 0xffffff,
+      stride: 0.5,
+      ownShadow: true,
+      heightMult: 1.05,
+    },
+  },
+  duelist: {
+    kind: 'duelist',
+    name: 'Free Company Duelist',
+    armor: 4, // She parries; the armor is the parry.
+    hp: 48,
+    minDamage: 7,
+    maxDamage: 13,
+    toHit: 0.78,
+    speedMult: 0.8,
+    windupTicks: 22,
+    recoverTicks: 24,
+    reach: 1.4,
+    hitRecoveryTicks: 12,
+    markerTexture: 'marker_archer',
+    // `duelist_cast` and `duelist_block` are atlased and unused.
+    sprite: {
+      walk: 'duelist_walk',
+      idle: 'duelist_idle',
+      death: 'duelist_death',
+      attack: 'duelist_attack',
+      hitAnim: 'duelist_hit',
+      anchorY: 0.95,
+      scale: 0.651,
+      tint: 0xffffff,
+      stride: 0.5,
+      ownShadow: true,
+      heightMult: 0.95,
+    },
+  },
 };
 
 /** Dependencies injected by the pool; strike resolution lives in CombatSystem. */
@@ -1144,6 +1856,22 @@ export class Enemy extends Entity {
   private readonly aura: Graphics;
   private flashTicks = 0;
 
+  /**
+   * THE RIM (it.114): a thin line around the silhouette, attached to the body
+   * only while it has something to show. `darkness` is what the last light
+   * tint said about where the foe stands (1 = out of the torch); `darkRim`
+   * eases toward it; `flashRim` is the hit flash; `targeted` breathes.
+   */
+  private outline: OutlineFilter | null = null;
+  private outlineOn = false;
+  private outlineClock = performance.now();
+  private darkness = 0;
+  private darkRim = 0;
+  private flashRim = 0;
+  private targeted = false;
+  /** The kind's light floor as a tint (it.114): the scene tint never sinks under it. */
+  private floorTint = tintForLight(ENEMY_MIN_LIGHT);
+
   private path: Array<{ x: number; y: number }> = [];
   private pathIndex = 0;
   private repathCooldown = 0;
@@ -1256,6 +1984,11 @@ export class Enemy extends Entity {
     this.lastGoalTile.x = -1;
     this.lastGoalTile.y = -1;
     this.flashTicks = 0;
+    this.targeted = false;
+    this.flashRim = 0;
+    this.darkRim = 0;
+    this.darkness = 0;
+    this.detachOutline();
     this.applyRig();
     this.body.tint = 0xffffff;
     this.body.rotation = 0;
@@ -1273,6 +2006,8 @@ export class Enemy extends Entity {
   despawn(): void {
     this.spawned = false;
     this.container.visible = false;
+    this.targeted = false;
+    this.detachOutline();
   }
 
   /**
@@ -1314,6 +2049,7 @@ export class Enemy extends Entity {
 
   private applyRig(): void {
     const sprite = this.usesSprite() ? this.def.sprite! : null;
+    this.floorTint = tintForLight(Math.max(0, Math.min(1, this.def.sprite?.minLight ?? ENEMY_MIN_LIGHT)));
     if (sprite) {
       this.currentAnim = null;
       this.setFrame(sprite.walk, 6, 0);
@@ -1403,6 +2139,7 @@ export class Enemy extends Entity {
   onDamaged(): void {
     this.flashTicks = FLASH_TICKS;
     this.body.tint = 0xff5544;
+    this.flashRim = 1; // The rim flares with the body (it.114).
     this.redrawHealthBar();
   }
 
@@ -1509,11 +2246,81 @@ export class Enemy extends Entity {
    * so an Ember Fallen stays warm and a Bone Archer stays frost-pale while
    * both still sink into the torch falloff.
    */
-  setLightTint(tint: number): void {
+  setLightTint(tint: number, light?: number): void {
+    // THE RIM'S DRIVER (it.114): how dark the foe stands. Given the real light
+    // level, the rim fades in below 0.42 and is full under 0.18. From the tint
+    // alone (main floors the torch at 0.5, whose ramp luma is ≈0.55) the same
+    // reading comes from the luma: full at ≤0.56, gone by 0.74.
+    if (light !== undefined) this.darkness = 1 - smooth01((light - 0.18) / 0.24);
+    else {
+      const lum = (0.299 * ((tint >> 16) & 0xff) + 0.587 * ((tint >> 8) & 0xff) + 0.114 * (tint & 0xff)) / 255;
+      this.darkness = 1 - smooth01((lum - 0.56) / 0.18);
+    }
+    // MIN LIGHT (it.114): per channel, the scene tint never sinks under the kind's floor.
+    tint = maxChannels(tint, this.floorTint);
     if (this.statusTint) tint = mixColors(tint, this.statusTint, 0.4);
     if (this.flashTicks > 0) return;
     const identity = this.usesSprite() ? this.def.sprite!.tint : 0xffffff;
     this.body.tint = identity === 0xffffff ? tint : multiplyColors(tint, identity);
+  }
+
+  /** The player's current target wears a brighter, breathing rim (it.114). main drives this. */
+  setTargeted(on: boolean): void {
+    this.targeted = on;
+  }
+
+  private detachOutline(): void {
+    if (!this.outlineOn) return;
+    this.body.filters = null;
+    this.outlineOn = false;
+  }
+
+  /** The rim's resting colour: the affix's, gold for a boss, dim blood for the rest. */
+  private rimColor(): number {
+    if (this.affix) return AFFIX_COLOR[this.affix];
+    if (this.isBoss()) return 0xe8b84a;
+    return 0xc2583a;
+  }
+
+  /**
+   * THE RIM, per frame (it.114). Three sources, the strongest wins: a faint
+   * cold rim that fades in as the foe leaves the torchlight (a dark spider on
+   * a dark floor is a shape the eye cannot find), a hard flare on a hit, and a
+   * breathing ring on the player's current target. The filter is attached to
+   * the body only while the result is worth drawing and taken off otherwise
+   * (a filter breaks batching), so a foe in full light costs nothing.
+   */
+  private syncOutline(): void {
+    if (!this.container.visible) return;
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(0, (now - this.outlineClock) / 1000));
+    this.outlineClock = now;
+    const alive = this.spawned && this.hp > 0 && this.action !== 'dead' && this.action !== 'transition' && this.riseTicks === 0;
+    const rimAble = alive && !this.def.passive; // Wood needs no rim (it.90).
+    // The dark rim eases both ways so a foe crossing the torch's edge never pops.
+    this.darkRim += ((rimAble ? this.darkness : 0) - this.darkRim) * (1 - Math.exp(-8 * dt));
+    if (this.flashRim > 0) this.flashRim = Math.max(0, this.flashRim - dt * 4.5);
+    const targetOn = rimAble && this.targeted;
+    const darkA = this.darkRim * 0.35;
+    const targetA = targetOn ? 0.5 + 0.22 * Math.sin(now * 0.0055 + this.bobPhase) : 0;
+    const flashA = this.spawned && this.action !== 'transition' ? this.flashRim : 0;
+    const alpha = Math.max(darkA, targetA, flashA);
+    if (alpha <= 0.02) {
+      this.detachOutline();
+      return;
+    }
+    const px = outlinePixelScale();
+    const f = this.outline ?? (this.outline = new OutlineFilter({ thickness: 1.25 * px }));
+    const base = targetOn ? 0xffd070 : this.rimColor();
+    f.color = flashA > 0.05 ? mixColors(base, 0xffeedd, Math.min(1, flashA)) : base;
+    f.alpha = Math.min(1, alpha);
+    f.glow = flashA >= darkA && flashA >= targetA ? 0.6 : targetOn ? 0.35 : 0.15;
+    const thickness = (targetOn ? 1.75 : 1.25) * px;
+    if (f.thickness !== thickness) f.thickness = thickness;
+    if (!this.outlineOn) {
+      this.body.filters = [f];
+      this.outlineOn = true;
+    }
   }
 
   /** Effective attack timings (it.30: each phase form brings its own). */
@@ -1868,6 +2675,7 @@ export class Enemy extends Entity {
 
   override syncRender(alpha: number): void {
     super.syncRender(alpha);
+    this.syncOutline();
     // The bars are only redrawn on a change, so the cutscene flag needs one.
     if (Enemy.platesOff !== this.platesHidden) {
       this.platesHidden = Enemy.platesOff;

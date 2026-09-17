@@ -7,7 +7,8 @@
  * Flow: InputBindings picks a chest → OPEN_CHEST command → MovementSystem
  * walks into reach → `chest:reached` event → `open()` rolls drops through
  * the LootSystem's forced table. Chest state (opened) is simulation state;
- * indicator bob/glint are render-side.
+ * indicator bob/glint are render-side. Every chest spills coins as well
+ * (it.114), and a crypt chest now and then a dish.
  */
 
 import { Sprite } from 'pixi.js';
@@ -194,12 +195,17 @@ export class ChestSystem {
     chest.halo.visible = false;
 
     if (chest.grand) {
-      // THE COLISEUM CHEST (it.53): three rare-or-better trophies and two more rolls.
+      // THE COLISEUM CHEST (it.53): three rare-or-better trophies and two more rolls,
+      // and three purses of coins between them (it.114).
       for (let i = 0; i < 5; i++) {
         const angle = (i / 5) * Math.PI * 2 + this.rand() * 0.5;
         const r = 0.7 + this.rand() * 0.5;
         if (i < 3) this.loot.dropRareAt(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
         else this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+      }
+      for (let i = 0; i < 3; i++) {
+        const angle = ((i + 0.5) / 3) * Math.PI * 2 + this.rand() * 0.4;
+        this.loot.dropChestGold(chest.x + Math.cos(angle) * 1.1, chest.y + Math.sin(angle) * 1.1, true);
       }
     } else {
       const count = DROPS_PER_CHEST_MIN + Math.floor(this.rand() * (DROPS_PER_CHEST_MAX - DROPS_PER_CHEST_MIN + 1));
@@ -208,6 +214,15 @@ export class ChestSystem {
         const r = 0.5 + this.rand() * 0.5;
         if (chest.minor) this.loot.dropMinor(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
         else this.loot.dropForced(chest.x + Math.cos(angle) * r, chest.y + Math.sin(angle) * r);
+      }
+      // EVERY CHEST HOLDS COINS (it.114): a purse beside the spoils; a crypt chest may also hold a dish.
+      {
+        const angle = this.rand() * Math.PI * 2;
+        this.loot.dropChestGold(chest.x + Math.cos(angle) * 0.6, chest.y + Math.sin(angle) * 0.6, false);
+      }
+      if (!chest.minor && this.rand() < 0.35) {
+        const angle = this.rand() * Math.PI * 2;
+        this.loot.dropFood(chest.x + Math.cos(angle) * 0.8, chest.y + Math.sin(angle) * 0.8);
       }
     }
     eventBus.emit('chest:opened', { chestId: id, x: chest.x, y: chest.y });

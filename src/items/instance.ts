@@ -26,7 +26,7 @@
 
 import { AFFIXES, foldAffixes, affixLine, rollAffixes, type AffixKey, type AffixRoll } from './affixes';
 import { ITEMS, RARITY_AFFIX_COUNT, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, type ItemDef, type Rarity, type UniqueEffect } from './catalog';
-import { RAVEN_ITEMS, gearBases } from './registry';
+import { RAVEN_ITEMS, foodsOfTier, gearBases } from './registry';
 import { ENCHANTS, ENCHANT_KEYS, effectAdjective, effectLine, type Effect } from './effects';
 import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 
@@ -140,7 +140,7 @@ function derive(id: string): ItemDef | null {
     if (base.innate2) fx.push(base.innate2);
     return fx.length ? { ...base, effects: fx, affixLines: fx.map(effectLine) } : base;
   }
-  if (base.slot === 'material' || base.slot === 'consumable') {
+  if (base.slot === 'material' || base.slot === 'consumable' || base.slot === 'food') {
     return { ...base, id, base: base.id, count: d.count, name: d.count > 1 ? `${base.name} ×${d.count}` : base.name };
   }
   const power = powerScale(d.ilvl);
@@ -279,13 +279,43 @@ export function rollGear(rand: () => number, ilvl: number, opts: RollOptions & {
   return encodeItemId({ base: base.id, ilvl: lvl, rarity, upgrade: 0, affixes });
 }
 
-/** A TOWN CHEST (it.92): a draught, a scrap, now and then a plain piece - never a trophy. */
+/** A TOWN CHEST (it.92, food since it.114): a draught, a bite, a scrap, now and then a plain piece - never a trophy. */
 export function rollMinorItem(rand: () => number, ilvl: number): string {
   const kind = rand();
-  if (kind < 0.55) return rollDraught(rand, ilvl);
-  if (kind < 0.85) return rollMaterial(rand, ilvl);
+  if (kind < 0.4) return rollDraught(rand, ilvl);
+  if (kind < 0.7) return rollFood(rand, ilvl);
+  if (kind < 0.9) return rollMaterial(rand, ilvl);
   return rollGear(rand, Math.max(1, ilvl - 1), { weights: { common: 70, uncommon: 30, rare: 0, epic: 0, legendary: 0, mythic: 0 } });
 }
+
+/**
+ * FOOD ON THE FLOOR (it.114): snacks mostly, a meal a third of the time, a
+ * feast rarely - and a little more often the deeper the floor.
+ */
+export function rollFood(rand: () => number, ilvl: number): string {
+  const r = rand();
+  const feast = 0.08 + Math.min(0.12, ilvl / 400);
+  const tier = r < feast ? 'feast' : r < feast + 0.32 ? 'meal' : 'snack';
+  const pool = foodsOfTier(tier);
+  return pool[Math.floor(rand() * pool.length)].id;
+}
+
+/**
+ * GOLD (it.114). Coins on the floor from a foe: a few at depth I, a purse at
+ * depth XX. The scoop applies the power curve's half and Fortune (main).
+ */
+export function rollFoeGold(rand: () => number, ilvl: number): number {
+  const base = 3 + ilvl * 0.8;
+  return Math.max(1, Math.round(base * (0.6 + rand() * 0.8)));
+}
+
+/** A chest's coins: three foes' worth, a grand chest's pile five. */
+export function rollChestGold(rand: () => number, ilvl: number, grand = false): number {
+  return Math.round(rollFoeGold(rand, ilvl) * (grand ? 5 : 3) * (0.8 + rand() * 0.4));
+}
+
+/** The chance a slain foe leaves coins. */
+export const FOE_GOLD_CHANCE = 0.35;
 
 /** Materials fall too (it.78): scraps mostly, dust sometimes, an essence rarely. */
 export function rollMaterial(rand: () => number, ilvl: number): string {
@@ -296,10 +326,6 @@ export function rollMaterial(rand: () => number, ilvl: number): string {
   return 'essence#1';
 }
 
-/**
- * A slain foe's drop: nothing 40% of the time; otherwise gear (55%), a
- * draught (30%) or materials (15%). Luck grows with the level.
- */
 /** A draught: healing mostly, mana often, the rarer brews as the depths grow. */
 export function rollDraught(rand: () => number, ilvl: number): string {
   const r = rand();
@@ -315,11 +341,19 @@ export function rollDraught(rand: () => number, ilvl: number): string {
   return 'potion_might';
 }
 
+/**
+ * A slain foe's drop. THE TABLE (it.114, rarer gear): nothing 48% of the
+ * time (was 40%); of the drops, food 12%, a draught 26%, materials 14% and
+ * gear 48% (was 55% of a 60% roll: gear now falls from one kill in four
+ * instead of one in three). Coins are a separate roll (`FOE_GOLD_CHANCE`,
+ * the loot system's `tryDropAt`). Luck grows with the level.
+ */
 export function rollDrop(rand: () => number, ilvl: number, luck?: number): string | null {
-  if (rand() >= 0.6) return null;
+  if (rand() >= 0.52) return null;
   const kind = rand();
-  if (kind < 0.3) return rollDraught(rand, ilvl);
-  if (kind < 0.45) return rollMaterial(rand, ilvl);
+  if (kind < 0.12) return rollFood(rand, ilvl);
+  if (kind < 0.38) return rollDraught(rand, ilvl);
+  if (kind < 0.52) return rollMaterial(rand, ilvl);
   // RECIPE SCROLLS (it.80): one gear drop in twenty-five from depth II on.
   const depth = 1 + Math.floor((ilvl - 1) / 2);
   if (depth >= 2 && rand() < 0.04) {

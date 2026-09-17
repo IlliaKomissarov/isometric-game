@@ -41,9 +41,39 @@ const LORE: Partial<Record<EnemyKind, string>> = {
   spider: 'The Crypt Widow nests in the burial niches and hunts by touch. Quick, quiet, and never alone for long.',
   bandit: 'Looters who came over the east wall the night the quarter burned. Bows, knives, and no cause but the taking.',
   brigand: 'The looters\' hard men: deserters in stolen mail, a polearm each. They hold the streets the fire left.',
+  // THE NEW FLESH (it.114).
+  redWidow: 'A widow gone red on whatever it has been eating. It is faster than the crypt kind, and it does not wait for you to notice.',
+  boneWidow: 'The old ones: pale, slow, and armoured in their own dead skins. They sit under the cellars and let the cellars come to them.',
+  venomWidow: 'Green in the joints and wet at the mouth. The bite is small; the legs stop answering a breath later.',
+  orcBrute: 'An orc grown past the point of thinking. The club comes up slow and down once, and nothing you carry will make it flinch.',
+  frostWolf: 'A ravager that went too deep and came back rimed. The axe it carries is cold enough to burn; the cut stays with you.',
+  treant: 'A tree that was in the blighted ground too long and learned to walk. It is slower than anything alive and harder than most stone.',
+  drake: 'A red drake out of the ember warrens, wings too short to fly and a throat that does not need them. It keeps its distance and breathes.',
+  wyrm: 'A feathered serpent from the old mine shrines, quick and thin-skinned. It comes at you in a rush and dies just as fast.',
+  markedGhoul: 'A ghoul with blue marks cut into it by someone who wanted it kept. It fights until it is hurt, then goes to tell them.',
+  orcSpearman: 'Orc pikemen who hold the mine galleries in ranks. The spear lands a full step before you think you are in reach.',
+  orcWarrior: 'The orc women fight in the front, not behind it. A blade each, mail they took off somebody, and no interest in retreat.',
+  giantMoth: 'A moth the size of a dog, drawn to the torches and to the blood. Weak, quick, and never where it was a moment ago.',
+  corpse: 'The newer dead, still in the clothes they were buried in. Slow and sturdy; it takes a while for a body this fresh to understand it is dead.',
+  halberdier: 'The company\'s polearm men. They hold the line the blades stand behind, and the halberd reaches farther than anything you carry.',
+  reaper: 'A caped killer who works the deep tombs for whoever is paying. Fast, precise, and gone before the body has finished falling.',
+  duelist: 'The company\'s fencer. She parries what she sees coming, and she sees most of it.',
+  apexPredator: 'Something bred, not born: a crystalline hunter loosed in the deepest halls. It is quick for its size and its size is the problem.',
+  apexStalker: 'The predator\'s leaner kin. Faster, lighter, and it watches you for a while before it decides.',
+  krampus: 'The Horned One of the deep woods. The charcoal-burners left it goats; the goats ran out.',
+  gargoyle: 'A temple guardian cut from stone and given something to guard. It stands until it does not, and then it is very close.',
+  tealSpider: 'A forest spider gone green in the canopy. Quick, quiet, and it drops from above where the crypt kind climbs from below.',
+  fleshGolem: 'Flayed and stitched from several people who did not agree to it. Slow, enormous, and it does not stagger.',
+  creeper: 'A hooded thing with claws that hunts the middle depths. It comes low and fast and it does not make a sound until it is on you.',
 };
 
-const CATEGORY = (kind: EnemyKind): string => (kind.startsWith('boss') ? 'WARDEN' : 'CREATURE');
+/** MEN, NOT MONSTERS (it.114): the looters, the company and its officers, the mines' orcs, the hired killer. */
+const MAN_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>([
+  'poacher', 'bandit', 'brigand', 'mercenary', 'general', 'chief',
+  'halberdier', 'duelist', 'orcSpearman', 'orcWarrior', 'reaper',
+]);
+
+const CATEGORY = (kind: EnemyKind): string => (kind.startsWith('boss') ? 'WARDEN' : MAN_KINDS.has(kind) ? 'MAN' : 'CREATURE');
 
 export class BestiaryUI {
   private readonly panel: HTMLElement;
@@ -53,7 +83,11 @@ export class BestiaryUI {
   private readonly offs: Array<() => void> = [];
   private readonly abort = new AbortController();
 
-  constructor(private readonly player: Player) {
+  constructor(
+    private readonly player: Player,
+    /** THE MENAGERIE (it.114): "try this body on" from a creature's page. */
+    private readonly hooks: { tryOut?: (kind: EnemyKind) => void } = {},
+  ) {
     this.panel = document.createElement('div');
     this.panel.id = 'bestiary';
     document.body.appendChild(this.panel);
@@ -176,7 +210,7 @@ export class BestiaryUI {
       const scaled = Math.round(def.hp * levelHpScale(level));
       detail = `
         ${preview}
-        <div class="bs-title"><h4>${known ? def.name : '???'}</h4><span>${known ? `${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}` : 'unseen'}</span></div>
+        <div class="bs-title"><h4>${known ? def.name : '???'}</h4><span>${known ? `${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}` : 'unseen'}</span>${known ? `<small class="bs-ref">kind <b>${sel}</b> · sheets <b>${def.sprite ? def.sprite.walk.replace(/_[a-z]+$/, '') + '_*' : def.single ?? '—'}</b></small>` : ''}${known && this.hooks.tryOut && def.sprite ? `<button class="ds-btn bs-tryout" data-tryout="${sel}">✦ TRY THIS BODY ON</button>` : ''}</div>
         <p class="bs-lore">${known ? (LORE[sel] ?? 'No scholar survived long enough to write of this one.') : 'Something moves down there. Meet it, or switch on the Forbidden Arts, and its page fills in.'}</p>
         <div class="bs-stats">
           ${stat('Vitality', `${def.hp}`, `≈${scaled} at level ${level}`)}
@@ -202,6 +236,14 @@ export class BestiaryUI {
     closeBtn?.addEventListener('click', () => {
       audio.sfx('uiClick');
       this.close();
+    });
+    const tryBtn = this.panel.querySelector<HTMLButtonElement>('[data-tryout]');
+    tryBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+    tryBtn?.addEventListener('click', () => {
+      audio.sfx('uiClick');
+      const kind = tryBtn.dataset.tryout as EnemyKind;
+      this.close();
+      this.hooks.tryOut?.(kind);
     });
     this.panel.querySelectorAll<HTMLButtonElement>('.bs-row[data-kind]').forEach((b) => {
       b.addEventListener('click', () => {

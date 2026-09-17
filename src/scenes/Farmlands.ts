@@ -44,7 +44,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
-import { CLUTTER_KINDS, KIND_DIRT, KIND_FARM_ASH, KIND_GRASS, type FarmLayout, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { claimProp, claims, footprintOf, KIND_DIRT, KIND_FARM_ASH, KIND_GRASS, type FarmLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -136,6 +136,8 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++)
       for (let yy = y - half; yy <= y + half; yy++) if (inside(x, yy)) grid[idx(x, yy)] = TILE_FLOOR;
   };
+  /** THE ROADS (it.114): the city road and the western lane, for the road rule. The cart track is the battle corridor's business. */
+  const road = new Uint8Array(W * H);
   /** A straight run of open ground between two points, `half` tiles either side. */
   const path = (a: { x: number; y: number }, b: { x: number; y: number }, half = 1): void => {
     const steps = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) * 2));
@@ -143,11 +145,16 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
       const cx = Math.round(a.x + ((b.x - a.x) * i) / steps);
       const cy = Math.round(a.y + ((b.y - a.y) * i) / steps);
       for (let y = cy - half; y <= cy + half; y++)
-        for (let x = cx - half; x <= cx + half; x++) if (inside(x, y) && x > 0 && y > 0 && x < W - 1 && y < H - 1) grid[idx(x, y)] = TILE_FLOOR;
+        for (let x = cx - half; x <= cx + half; x++)
+          if (inside(x, y) && x > 0 && y > 0 && x < W - 1 && y < H - 1) {
+            grid[idx(x, y)] = TILE_FLOOR;
+            road[idx(x, y)] = 1;
+          }
     }
   };
   for (let i = 1; i < ROAD.length; i++) path(ROAD[i - 1], ROAD[i]); // down off the corner, in from the city
   lane(1, 9, GATES[0].y); // west, to the barricade and the road that is not cut yet
+  for (let x = 1; x <= 9; x++) for (let yy = GATES[0].y - 1; yy <= GATES[0].y + 1; yy++) if (inside(x, yy)) road[idx(x, yy)] = 1;
 
   // ---- THE PLOUGHING: wavy strips, so no two rows run quite parallel ----
   for (let y = 0; y < H; y++) {
@@ -186,11 +193,9 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
   };
 
   const props: TownProp[] = [];
-  const block = (p: TownProp): void => {
-    props.push(p);
-    if (CLUTTER_KINDS.has(p.kind)) return;
-    for (let y = p.y; y < p.y + (p.h ?? 1); y++) for (let x = p.x; x < p.x + (p.w ?? 1); x++) if (inside(x, y)) grid[idx(x, y)] = TILE_BLOCKED;
-  };
+  const ctx: RoadCtx = { width: W, height: H, grid, road };
+  /** The one placer (it.114): paint is listed, a post keeps off the road, the rest is solid. */
+  const block = (p: TownProp): boolean => claimProp(ctx, props, p) !== null;
   const decal = (p: TownProp): void => {
     props.push(p);
   };
@@ -200,19 +205,27 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     decal({ kind: 'farmcrop', x, y, variant, ox: (rand() - 0.5) * 0.5, oy: (rand() - 0.5) * 0.5 });
   };
   const put = (kind: TownProp['kind'], x: number, y: number, variant?: string): void => {
-    if (!isFloor(x, y) || inCorridor(x, y)) return; // nothing stands in the battle's way (it.105)
-    block({ kind, x, y, variant });
+    // The kind's whole footprint (it.114: a cart is two long, a well and a stall are wider) on open ground, out of the battle's way (it.105).
+    const p: TownProp = { kind, x, y, variant };
+    const f = footprintOf(p);
+    if (inCorridor(x, y, f.w, f.h)) return;
+    for (let yy = y; yy < y + f.h; yy++) for (let xx = x; xx < x + f.w; xx++) if (!isFloor(xx, yy) || road[idx(xx, yy)]) return;
+    block(p);
   };
-  /** A building: only where its whole footprint is open ground, with a door column carved back out. */
+  /**
+   * A building: only where its whole footprint is open ground. IT.114: the
+   * footprint is solid to its wall - the threshold is the tile in FRONT of the
+   * south face, worn to dirt, not a column carved out of the house.
+   */
   const steading = (kind: TownProp['kind'], x: number, y: number, w: number, h: number, variant?: string): boolean => {
     if (inCorridor(x, y, w, h)) return false; // no roof over the fighting (it.105)
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (!isFloor(xx, yy)) return false;
     block({ kind, x, y, w, h, variant });
     const dx = x + Math.floor(w / 2);
-    for (let yy = y + h - 1; yy < y + h + 1; yy++) {
-      if (!inside(dx, yy)) continue;
-      grid[idx(dx, yy)] = TILE_FLOOR;
-      tileKind[idx(dx, yy)] = KIND_DIRT;
+    const dy = y + h;
+    if (inside(dx, dy) && grid[idx(dx, dy)] !== TILE_WALL) {
+      grid[idx(dx, dy)] = TILE_FLOOR;
+      tileKind[idx(dx, dy)] = KIND_DIRT;
     }
     return true;
   };
@@ -322,9 +335,19 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     const BELT = 4;
     const depth = new Int8Array(W * H).fill(-1);
     let frontier: number[] = [];
+    // A TREE NEVER GROWS OUT OF A BARN (it.114, as the field learnt in it.110):
+    // a tile a standing prop claims is not wood, so it seeds the belt like the
+    // floor does. Sixty-odd trees stood on the farmhouses, the barn, the well
+    // and the tower before this.
+    const claimedTile = new Uint8Array(W * H);
+    for (const p of props) {
+      if (!claims(p)) continue;
+      const f = footprintOf(p);
+      for (let yy = p.y; yy < p.y + f.h; yy++) for (let xx = p.x; xx < p.x + f.w; xx++) if (inside(xx, yy)) claimedTile[idx(xx, yy)] = 1;
+    }
     for (let y = 0; y < H; y++)
       for (let x = 0; x < W; x++)
-        if (isFloor(x, y)) {
+        if (isFloor(x, y) || claimedTile[idx(x, y)]) {
           depth[idx(x, y)] = 0;
           frontier.push(idx(x, y));
         }

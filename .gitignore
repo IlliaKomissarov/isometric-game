@@ -2,6 +2,11 @@
 node_modules/
 dist/
 
+# Python bake caches
+scripts/__pycache__/
+public/assets/atlas/manifest.json.lock
+public/assets/atlas/manifest.json.tmp
+
 # OS junk
 Thumbs.db
 .DS_Store
@@ -23,6 +28,9 @@ public/assets/test-models/
 # `scripts/bake-grassland.py` and `scripts/bake-ground.py` read it; only their
 # atlas output is committed.
 public/assets/use now/
+# it.114: the graphics update drop (21 GB, 700k files: raw packs, per-frame
+# renders, source textures). Baked into atlas/ by scripts/; never committed.
+public/assets/graphics update/
 
 # it.89: audio sources that have a shipped MP3 / downmix twin, and archives
 public/assets/audio/Hope is Lost.wav

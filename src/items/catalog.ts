@@ -30,8 +30,11 @@ export const RARITY_AFFIX_COUNT: Record<Rarity, number> = { common: 0, uncommon:
 /** Drop weights (percent). */
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 60, uncommon: 25, rare: 10, epic: 4, legendary: 0.9, mythic: 0.1 };
 
-/** Where an item lives: a paperdoll slot, the consumable pouch, or the crafting pouch (it.78). */
-export type ItemSlot = EquipmentSlot | 'consumable' | 'material';
+/** Where an item lives: a paperdoll slot, the consumable pouch, the crafting pouch (it.78), or the larder (FOOD, it.114). */
+export type ItemSlot = EquipmentSlot | 'consumable' | 'material' | 'food';
+
+/** FOOD (it.114): a snack is a bite, a meal a plate, a feast a board. */
+export type FoodTier = 'snack' | 'meal' | 'feast';
 
 /** Main-hand weapon families — drive attack style, timing, and visuals. */
 export type WeaponKind = 'blade' | 'katana' | 'axe' | 'mace' | 'polearm' | 'bow' | 'wand';
@@ -47,7 +50,23 @@ export interface ItemDef {
   /** Merchant price in gold (derived from level/rarity when omitted). */
   value?: number;
   /** Consumables (it.39; draughts it.80): what using it does. Fractions of max; buffs in ticks; a recipe key. */
-  use?: { heal?: number; resource?: number; portal?: boolean; haste?: number; stone?: number; might?: number; recipe?: string; /** THE QUARRY KEYS (it.85): opens the iron gate with this number. */ key?: number };
+  use?: {
+    heal?: number;
+    resource?: number;
+    portal?: boolean;
+    haste?: number;
+    stone?: number;
+    might?: number;
+    recipe?: string;
+    /** THE QUARRY KEYS (it.85): opens the iron gate with this number. */
+    key?: number;
+    /**
+     * FOOD (it.114): eaten, not quaffed. `heal` is a fraction of max life,
+     * served over three seconds (see systems/Inventory); `hunger` is what the
+     * bite adds to the HUNGER gauge (0..100, 100 = well fed).
+     */
+    food?: { heal: number; hunger: number; tier: FoodTier };
+  };
   /** Weapon damage roll range (classic-ARPG-style min–max, replaces bare fists). */
   minDamage?: number;
   maxDamage?: number;
@@ -63,6 +82,14 @@ export interface ItemDef {
   icon?: string;
   /** Painted 64 px icon under assets/ui/items (it.40) — wins over `icon` in panels. */
   art?: string;
+  /**
+   * THE BAKED ITEM ART (it.114): an atlas SINGLE (`item_food_<slug>`,
+   * `item_potion_<key>`, 64 px, dark rim) drawn in every cell, on the ground
+   * and on the card. Wins over `icon`; `art` still wins over it.
+   */
+  sprite?: string;
+  /** THE TURNTABLE (it.114): a 30-frame one-direction atlas anim (`spin_*`) the inspect view steps. */
+  spin?: string;
   /** Worn bonuses (rings, relics — it.42): fractions for dmg/dodge/regen, flat hp/armor. */
   bonus?: { hp?: number; dmg?: number; armor?: number; dodge?: number; regen?: number };
 
@@ -201,10 +228,11 @@ export const ITEMS: Record<string, ItemDef> = {
   quarry_key_1: { id: 'quarry_key_1', name: 'Quarry Key I', slot: 'consumable', rarity: 'rare', icon: 'key1', value: 0, use: { key: 1 }, color: 0xc8803a, desc: 'Iron, pitted, warm from a dead miner’s hand. It opens the FIRST gate of the quarry. Walk up to the gate with it.' },
   quarry_key_2: { id: 'quarry_key_2', name: 'Quarry Key II', slot: 'consumable', rarity: 'rare', icon: 'key2', value: 0, use: { key: 2 }, color: 0xc8d0d8, desc: 'Steel, cut for a heavier lock. It opens the SECOND gate of the quarry. Walk up to the gate with it.' },
   quarry_key_3: { id: 'quarry_key_3', name: 'Quarry Key III', slot: 'consumable', rarity: 'rare', icon: 'key3', value: 0, use: { key: 3 }, color: 0xffd070, desc: 'Gilded, the foreman’s. It opens the LAST gate before the deep hall. Walk up to the gate with it.' },
-  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', icon: 'raven266', value: 30, use: { heal: 0.5 }, color: 0xc83030, desc: 'Half your life back, on a five-second cooldown shared with every healing draught.' },
-  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', icon: 'raven69', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8, desc: 'Six tenths of your mana or stamina, on a two-second cooldown.' },
-  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'uncommon', icon: 'raven309', value: 80, use: { portal: true }, color: 0xd8c890, desc: 'A rift home and back. The rite on T is free; the scroll is for collectors.' },
-  elixir: { id: 'elixir', name: 'Violet Elixir', slot: 'consumable', rarity: 'uncommon', icon: 'raven61', value: 65, use: { heal: 0.35, resource: 0.5 }, color: 0x9a5ad8, desc: 'A third of your life and half your resource in one swallow. Counts as a healing draught.' },
+  // THE BAKED FLASKS (it.114): the draughts wear the new 64 px bottles and carry a turntable for the inspect view.
+  health_potion: { id: 'health_potion', name: 'Healing Potion', slot: 'consumable', rarity: 'common', icon: 'raven266', sprite: 'item_potion_health', spin: 'spin_potion_health', value: 30, use: { heal: 0.5 }, color: 0xc83030, desc: 'Half your life back, on a five-second cooldown shared with every healing draught.' },
+  mana_potion: { id: 'mana_potion', name: 'Mana Potion', slot: 'consumable', rarity: 'common', icon: 'raven69', sprite: 'item_potion_mana', spin: 'spin_potion_mana', value: 30, use: { resource: 0.6 }, color: 0x4a6ad8, desc: 'Six tenths of your mana or stamina, on a two-second cooldown.' },
+  scroll_town_portal: { id: 'scroll_town_portal', name: 'Scroll of Town Portal', slot: 'consumable', rarity: 'uncommon', icon: 'raven309', spin: 'spin_scroll_a', value: 80, use: { portal: true }, color: 0xd8c890, desc: 'A rift home and back. The rite on T is free; the scroll is for collectors.' },
+  elixir: { id: 'elixir', name: 'Violet Elixir', slot: 'consumable', rarity: 'uncommon', icon: 'raven61', sprite: 'item_potion_elixir', spin: 'spin_potion_elixir', value: 65, use: { heal: 0.35, resource: 0.5 }, color: 0x9a5ad8, desc: 'A third of your life and half your resource in one swallow. Counts as a healing draught.' },
   // ---- Starter kit (it.42): every class leaves town armed and clothed ----
   apprentice_wand: { id: 'apprentice_wand', name: 'Apprentice Wand', slot: 'mainHand', rarity: 'common', weaponKind: 'wand', range: 5, minDamage: 3, maxDamage: 6, color: 0xb08a5a, icon: 'raven1494', desc: 'The first wand. It points; the arcana does the rest.' },
   worn_katana: { id: 'worn_katana', name: 'Worn Katana', slot: 'mainHand', rarity: 'common', weaponKind: 'katana', minDamage: 3, maxDamage: 6, color: 0x9aa0a8, icon: 'raven1511', desc: 'Nicked, quick, and the rogue’s first friend.' },
@@ -233,10 +261,12 @@ export function statLine(def: ItemDef): string {
   }
   if (def.range) parts.push(`Range ${def.range}`);
   if (def.armor) parts.push(`+${fmt1(def.armor)} Armor`);
-  if (def.use?.heal) parts.push(`Restores ${Math.round(def.use.heal * 100)}% Life`);
+  if (def.use?.food) parts.push(`Restores ${Math.round(def.use.food.heal * 100)}% Life over 3 s`, `+${def.use.food.hunger} Hunger`, `A ${def.use.food.tier}`);
+  else if (def.use?.heal) parts.push(`Restores ${Math.round(def.use.heal * 100)}% Life`);
   if (def.use?.resource) parts.push(`Restores ${Math.round(def.use.resource * 100)}% Mana / Stamina`);
   if (def.use?.portal) parts.push('Opens a Town Portal');
   if (def.slot === 'material') parts.push(def.count && def.count > 1 ? `A stack of ${def.count}` : 'Crafting material');
+  if (def.slot === 'food' && def.count && def.count > 1) parts.push(`A stack of ${def.count}`);
   if (def.bonus) {
     if (def.bonus.hp) parts.push(`+${Math.round(def.bonus.hp)} to Max HP`);
     if (def.bonus.dmg) parts.push(`+${Math.round(def.bonus.dmg * 100)}% Damage`);

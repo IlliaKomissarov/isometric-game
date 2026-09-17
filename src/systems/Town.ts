@@ -24,8 +24,15 @@ import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
 import { ilvlForDepth, itemDef, rollGear } from '@/items/instance';
 import { ENCHANTS } from '@/items/effects';
 import type { StashState } from '@/persist/SaveGame';
-import { gearBases } from '@/items/registry';
+import { foodsOfTier, gearBases } from '@/items/registry';
 import { mulberry32 } from '@/utils/rng';
+
+/**
+ * THE TAVERN KEEPER'S COUNTER (it.114): a sixth table. `Vendor` (core/InputQueue)
+ * does not know 'tavern' yet — the integrator adds it there and in the shop's
+ * titles; until then the table exists and `tableFor('tavern')` serves it.
+ */
+export type FoodVendor = Vendor | 'tavern';
 
 export const STASH_CAPACITY = 24;
 /** Merchants pay a quarter of an item's worth. */
@@ -44,9 +51,11 @@ export class TownSystem {
   stockJewel: string[] = [];
   stockScribe: string[] = [];
   stockBowyer: string[] = [];
+  /** THE TAVERN KEEPER (it.114): the larder - bread to a roast, priced by tier. */
+  stockTavern: string[] = [];
 
   /** The table a counter sells from. */
-  tableFor(vendor: Vendor | undefined): string[] {
+  tableFor(vendor: FoodVendor | undefined): string[] {
     switch (vendor) {
       case 'alchemist':
         return this.stockAlch;
@@ -56,6 +65,8 @@ export class TownSystem {
         return this.stockScribe;
       case 'bowyer':
         return this.stockBowyer;
+      case 'tavern':
+        return this.stockTavern;
       default:
         return this.stock;
     }
@@ -129,7 +140,22 @@ export class TownSystem {
       const keys = Object.values(ENCHANTS).filter((r) => r.depth <= deepestFloor).map((r) => r.key);
       if (keys.length) alch.push(`recipe_${keys[Math.floor(rand() * keys.length)]}`);
     }
+    // A BITE AT THE ALCHEMIST'S (it.114): three snacks and a meal beside the flasks.
+    const pick = (tier: 'snack' | 'meal' | 'feast'): string => {
+      const pool = foodsOfTier(tier);
+      return pool[Math.floor(rand() * pool.length)].id;
+    };
+    alch.push(pick('snack'), pick('snack'), pick('snack'), pick('meal'));
     this.stockAlch = alch.filter((id) => id in ITEMS);
+    // THE TAVERN KEEPER'S LARDER (it.114): bread and pretzels always, six snacks,
+    // five meals, and a feast or two once the crypt has been walked a way.
+    const tavern: string[] = ['food_crusty_bread_loaf', 'food_crusty_bread_loaf', 'food_salted_pretzel', 'food_hearty_stew_bowl', 'food_roast_turkey_leg'];
+    for (let i = 0; i < 4; i++) tavern.push(pick('snack'));
+    for (let i = 0; i < 3; i++) tavern.push(pick('meal'));
+    tavern.push(pick('feast'));
+    if (deepestFloor >= 3) tavern.push(pick('feast'));
+    if (deepestFloor >= 6) tavern.push('food_whole_roast_chicken', pick('meal'));
+    this.stockTavern = tavern.filter((id) => id in ITEMS);
     // THE MARKET WARD (it.84). The JEWELER: five rolled rings and amulets, a
     // silver band for the fresh delver. The SCRIBE: recipe scrolls the depth
     // allows (three, distinct) and the brews a scholar keeps. The BOWYER:
@@ -170,7 +196,7 @@ export class TownSystem {
       if (!p) continue;
       switch (cmd.type) {
         case 'BUY': {
-          const table = this.tableFor(cmd.vendor);
+          const table = this.tableFor(cmd.vendor as FoodVendor | undefined);
           const id = table[cmd.index];
           const def = itemDef(id);
           if (!def) break;

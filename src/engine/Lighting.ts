@@ -20,14 +20,47 @@
  * rect covers the player and whose depth sorts in front of them smoothly
  * fade to WALL_FADE_ALPHA so the player is never hidden by architecture.
  *
- * Visibility set recomputation stays event-driven (player:tileChanged);
- * tinting runs per render frame but touches only visible tiles (~150).
+ * THE LIGHT IS TIED TO THE HERO (it.114). The visible set used to be rebuilt
+ * only on the sim's `player:tileChanged`, into a fresh Set, with a full
+ * Bresenham walk per tile through the scene's `isOpaque` closure — ~100k
+ * closure calls on the town's sight 36. Now:
+ *   - the set lives in typed arrays (a generation stamp per tile + a flat
+ *     index list), so a recompute allocates nothing and `isVisible` is one
+ *     array read;
+ *   - the walls are snapshotted into a Uint8Array once per recompute and the
+ *     Bresenham walk reads that, not the closure;
+ *   - `updateRender` recomputes on its own when the RENDER position crosses
+ *     into a tile the last recompute did not start from (the sim event is
+ *     ahead of the render position and normally wins; this fills the gaps —
+ *     a cutscene camera, a remote hero, a sight radius that changed);
+ *   - a RING around the hero's sub-tile position (the bright core of the
+ *     torch, ≤ 7.5 tiles) is lit every frame even where the last LOS pass
+ *     did not reach it, with a per-tile LOS check from the render tile, so
+ *     the lit pool moves continuously instead of by whole tiles;
+ *   - DYNAMIC LIGHTS (a carried lantern, a fireball, a spell) are splatted
+ *     into per-tile scratch maps every frame and composed like the baked
+ *     sources.
+ *
+ * BUDGET (estimated on the town: sight 36, full 5, ~4000 visible tiles, a
+ * 2020-class laptop; not measured on device — no browser in this pass):
+ *   per-frame tint pass   ~4000 × (hypot + ramp + 1–3 Pixi tint writes) ≈ 0.6–0.9 ms
+ *                          (unchanged from before; the tint setter dominates)
+ *   ring pass             ≤ 180 tiles × 2 array reads ≈ 0.01 ms; LOS only for
+ *                          explored-but-unlisted ring tiles (typically 0–10 × ≤ 8 steps)
+ *   dynamic lights        N × (2r+1)² Float32 writes: 4 lights × r 4 ≈ 320 ≈ 0.01 ms
+ *   LOS recompute         ~4000 tiles × ~24 Bresenham steps over a Uint8Array
+ *                          ≈ 100k steps ≈ 0.3–0.5 ms + 5.3k `isOpaque` calls for the
+ *                          snapshot ≈ 0.05 ms; no allocation. Happens on tile
+ *                          crossings only (~4/s at hero speed), never every frame.
+ *   Total steady state    ≈ 0.7–1.0 ms; a crossing frame ≈ 1.2–1.5 ms.
+ * The crypt (sight 9, ~250 tiles) is an order of magnitude under all of this.
  */
 
 import type { Sprite } from 'pixi.js';
 import {
   FOG_RADIUS,
   LIGHT_FULL_RADIUS,
+  LIGHT_RING_MAX_RADIUS,
   LIGHT_SHADOW_RGB,
   LIGHT_WARM_RGB,
   TILE_H,
@@ -36,7 +69,6 @@ import {
 } from '@/core/config';
 import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
-import { hasLineOfSight } from '@/utils/los';
 
 const enum FogState {
   HIDDEN = 0,
@@ -111,6 +143,20 @@ export function tintForLight(light: number, warm?: Rgb, shadow?: Rgb): number {
  */
 const HIDDEN_TINT = 0x000000;
 
+/** A light that moves (it.114): a lantern in a hand, a fireball in flight. */
+interface DynamicLight {
+  x: number;
+  y: number;
+  radius: number;
+  r: number;
+  g: number;
+  b: number;
+  intensity: number;
+}
+
+/** How far the hero's render position may drift from the last LOS origin before the render side recomputes. */
+const LOS_REFRESH_DIST = 0.35;
+
 export class Lighting {
   private width = 0;
   private height = 0;
@@ -119,7 +165,36 @@ export class Lighting {
   private wallSprites: (Sprite | null)[] = [];
   /** Decorative props on a tile (braziers, statues) — tinted like walls. */
   private propSprites = new Map<number, Sprite[]>();
-  private visibleSet = new Set<number>();
+
+  /**
+   * THE VISIBLE SET, without a Set (it.114): `visStamp[idx] === gen` means the
+   * tile is in the player's line of sight right now; `visList[0..visCount)`
+   * lists those tiles for the frame pass. `prevList` is the previous
+   * generation's list, kept so a recompute can settle the tiles that fell out
+   * without a second full scan. Both lists are sized for the whole map once.
+   */
+  private visStamp!: Uint32Array;
+  private gen = 1;
+  private visList!: Int32Array;
+  private visCount = 0;
+  /** The two list buffers `visList` alternates between. */
+  private bufA!: Int32Array;
+  private bufB!: Int32Array;
+  /** Walls as the last recompute saw them: a byte per tile, stamped per refresh. */
+  private opaque!: Uint8Array;
+  private opaqueStamp!: Uint32Array;
+  private opaqueGen = 1;
+  /** Where (tile) and how wide the last LOS recompute was made from. */
+  private losOx = -1;
+  private losOy = -1;
+  private losSight = -1;
+  /** The render tile of the previous frame (the auto-recompute fires on a crossing). */
+  private renderOx = -1;
+  private renderOy = -1;
+  /** Explored tiles the RING lit last frame; reset to the explored tint when they leave it. */
+  private ringList!: Int32Array;
+  private ringCount = 0;
+
   /**
    * THE COLISEUM (it.53): no fog at all - every tile stays in sight.
    *
@@ -134,7 +209,6 @@ export class Lighting {
    * riverside, which use it deliberately and always did.)
    */
   omniscient = false;
-  private allTiles: Set<number> | null = null;
   private isOpaque!: (gx: number, gy: number) => boolean;
 
   /** Baked point sources (for shadow direction queries, it.36). */
@@ -144,6 +218,15 @@ export class Lighting {
   private srcG!: Float32Array;
   private srcB!: Float32Array;
   private sourceFlicker = 1;
+
+  /** Dynamic (moving) light contributions, rebuilt every frame (it.114). */
+  private readonly dynamicLights = new Map<string | number, DynamicLight>();
+  private dynR!: Float32Array;
+  private dynG!: Float32Array;
+  private dynB!: Float32Array;
+  /** Tiles the dynamic splat wrote last frame, cleared before the next. */
+  private dynTouched!: Int32Array;
+  private dynTouchedCount = 0;
 
   /** Player render position + flicker from the latest frame (for getLightAt). */
   private lastPx = 0;
@@ -165,6 +248,8 @@ export class Lighting {
   /** The top and bottom of this floor's own light ramp (it.111). */
   private warm: Rgb = LIGHT_WARM_RGB;
   private shadow: Rgb = LIGHT_SHADOW_RGB;
+  /** The ramp top after `setPlayerLight`'s warmBoost (it.114); equals `warm` at boost 0. */
+  private warmLit: Rgb = LIGHT_WARM_RGB;
 
   build(
     width: number,
@@ -178,18 +263,40 @@ export class Lighting {
     this.sight = opts?.sightRadius ?? FOG_RADIUS;
     this.full = opts?.fullRadius ?? LIGHT_FULL_RADIUS;
     this.warm = opts?.warmRgb ?? LIGHT_WARM_RGB;
+    this.warmLit = this.warm;
     this.shadow = opts?.shadowRgb ?? LIGHT_SHADOW_RGB;
     this.exploredTint = tintForLight(Math.max(0, Math.min(1, opts?.exploredLight ?? 0)), this.warm, this.shadow);
     this.baseSight = this.sight;
     this.baseFull = this.full;
-    this.states = new Uint8Array(width * height).fill(FogState.HIDDEN);
-    this.floorSprites = new Array<Sprite | null>(width * height).fill(null);
-    this.wallSprites = new Array<Sprite | null>(width * height).fill(null);
+    const n = width * height;
+    this.states = new Uint8Array(n).fill(FogState.HIDDEN);
+    this.floorSprites = new Array<Sprite | null>(n).fill(null);
+    this.wallSprites = new Array<Sprite | null>(n).fill(null);
     this.propSprites.clear();
     this.sources.length = 0;
-    this.srcR = new Float32Array(width * height);
-    this.srcG = new Float32Array(width * height);
-    this.srcB = new Float32Array(width * height);
+    this.srcR = new Float32Array(n);
+    this.srcG = new Float32Array(n);
+    this.srcB = new Float32Array(n);
+    this.dynamicLights.clear();
+    this.dynR = new Float32Array(n);
+    this.dynG = new Float32Array(n);
+    this.dynB = new Float32Array(n);
+    this.dynTouched = new Int32Array(n);
+    this.dynTouchedCount = 0;
+    this.visStamp = new Uint32Array(n);
+    this.gen = 1;
+    this.bufA = new Int32Array(n);
+    this.bufB = new Int32Array(n);
+    this.visList = this.bufA;
+    this.visCount = 0;
+    this.opaque = new Uint8Array(n);
+    this.opaqueStamp = new Uint32Array(n);
+    this.opaqueGen = 1;
+    this.ringList = new Int32Array(n);
+    this.ringCount = 0;
+    this.losOx = this.losOy = -1;
+    this.losSight = -1;
+    this.renderOx = this.renderOy = -1;
   }
 
   /**
@@ -214,6 +321,95 @@ export class Lighting {
         this.srcB[idx] += b * atten;
       }
     }
+  }
+
+  // ---- Dynamic lights (it.114) ------------------------------------------------
+
+  /**
+   * A light that moves: added once, moved per frame, removed when it dies.
+   * Contributes to every visible tile's tint like a baked source (quadratic
+   * falloff, summed), but is re-splatted each frame from its current
+   * position. `rgb` is 0..255 per channel; `intensity` scales it.
+   * Render-side only — the sim never reads it.
+   */
+  addDynamicLight(id: string | number, x: number, y: number, radius: number, rgb: Rgb, intensity = 1): void {
+    const l = this.dynamicLights.get(id);
+    if (l) {
+      l.x = x;
+      l.y = y;
+      l.radius = radius;
+      l.r = rgb[0];
+      l.g = rgb[1];
+      l.b = rgb[2];
+      l.intensity = intensity;
+      return;
+    }
+    this.dynamicLights.set(id, { x, y, radius, r: rgb[0], g: rgb[1], b: rgb[2], intensity });
+  }
+
+  moveDynamicLight(id: string | number, x: number, y: number): void {
+    const l = this.dynamicLights.get(id);
+    if (!l) return;
+    l.x = x;
+    l.y = y;
+  }
+
+  /** Change a live light's reach or brightness without re-adding it (a fading ember). */
+  setDynamicLight(id: string | number, radius: number, intensity: number): void {
+    const l = this.dynamicLights.get(id);
+    if (!l) return;
+    l.radius = radius;
+    l.intensity = intensity;
+  }
+
+  removeDynamicLight(id: string | number): void {
+    this.dynamicLights.delete(id);
+  }
+
+  hasDynamicLight(id: string | number): boolean {
+    return this.dynamicLights.has(id);
+  }
+
+  /** Re-splat every dynamic light into the per-tile scratch maps for this frame. */
+  private updateDynamicLights(): void {
+    const dR = this.dynR;
+    const dG = this.dynG;
+    const dB = this.dynB;
+    const touched = this.dynTouched;
+    for (let i = 0; i < this.dynTouchedCount; i++) {
+      const idx = touched[i];
+      dR[idx] = 0;
+      dG[idx] = 0;
+      dB[idx] = 0;
+    }
+    this.dynTouchedCount = 0;
+    if (this.dynamicLights.size === 0) return;
+    const w = this.width;
+    let count = 0;
+    for (const l of this.dynamicLights.values()) {
+      if (l.radius <= 0 || l.intensity <= 0) continue;
+      const minX = Math.max(0, Math.floor(l.x - l.radius));
+      const maxX = Math.min(w - 1, Math.ceil(l.x + l.radius));
+      const minY = Math.max(0, Math.floor(l.y - l.radius));
+      const maxY = Math.min(this.height - 1, Math.ceil(l.y + l.radius));
+      const inv = 1 / l.radius;
+      for (let gy = minY; gy <= maxY; gy++) {
+        const dy = gy + 0.5 - l.y;
+        for (let gx = minX; gx <= maxX; gx++) {
+          const dx = gx + 0.5 - l.x;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d > l.radius) continue;
+          const t = 1 - d * inv;
+          const atten = t * t * l.intensity;
+          const idx = gy * w + gx;
+          if (dR[idx] === 0 && dG[idx] === 0 && dB[idx] === 0) touched[count++] = idx;
+          dR[idx] += l.r * atten;
+          dG[idx] += l.g * atten;
+          dB[idx] += l.b * atten;
+        }
+      }
+    }
+    this.dynTouchedCount = count;
   }
 
   /**
@@ -263,10 +459,27 @@ export class Lighting {
     this.full = on ? Math.max(this.baseFull, 14) : this.baseFull;
   }
 
+  /**
+   * THE HERO'S OWN POOL (it.114): a floor (or a lantern in the hand) may widen
+   * the sight and the full-bright core, and warm the ramp's top. Each field is
+   * optional; what is given becomes the floor's new base, so `setSceneLight`
+   * restores to it. `warmBoost` is a fraction: 0.2 lifts the torch's warm
+   * channels by 20 % (clamped to white). The sight change takes effect on the
+   * next render frame — the visible set is recomputed there.
+   */
+  setPlayerLight(opts: { full?: number; sight?: number; warmBoost?: number }): void {
+    if (opts.sight !== undefined) this.baseSight = this.sight = Math.max(1, opts.sight);
+    if (opts.full !== undefined) this.baseFull = this.full = Math.max(0, opts.full);
+    if (opts.warmBoost !== undefined) {
+      const k = 1 + Math.max(-0.9, opts.warmBoost);
+      this.warmLit = [Math.min(255, this.warm[0] * k), Math.min(255, this.warm[1] * k), Math.min(255, this.warm[2] * k)];
+    }
+  }
+
   /** True when the tile is currently in the player's line of sight. */
   isVisible(gx: number, gy: number): boolean {
     if (gx < 0 || gy < 0 || gx >= this.width || gy >= this.height) return false;
-    return this.visibleSet.has(gy * this.width + gx);
+    return this.visStamp[gy * this.width + gx] === this.gen;
   }
 
   /** Fog state for read-only consumers (minimap). 0 hidden / 1 explored / 2 visible. */
@@ -277,7 +490,7 @@ export class Lighting {
 
   /**
    * Continuous light level [0,1] at a world point — used to scale particle
-   * brightness. Includes static source luminance. Zero outside sight.
+   * brightness. Includes static and dynamic source luminance. Zero outside sight.
    */
   getLightAt(x: number, y: number): number {
     const gx = Math.floor(x);
@@ -285,8 +498,9 @@ export class Lighting {
     if (!this.isVisible(gx, gy)) return 0;
     const idx = gy * this.width + gx;
     const srcLuma = (this.srcR[idx] + this.srcG[idx] + this.srcB[idx]) / (3 * 255);
+    const dynLuma = (this.dynR[idx] + this.dynG[idx] + this.dynB[idx]) / (3 * 255);
     const base = this.falloff(Math.hypot(x - this.lastPx, y - this.lastPy)) * this.lastFlicker;
-    return Math.min(1, base + srcLuma * this.sourceFlicker);
+    return Math.min(1, base + srcLuma * this.sourceFlicker + dynLuma);
   }
 
   /**
@@ -309,8 +523,8 @@ export class Lighting {
   /**
    * DOMINANT LIGHT DIRECTION at a world point (it.36 dynamic shadows):
    * a SCREEN-space unit vector pointing AWAY from the strongest light
-   * (the hero's torch or a nearby baked source) plus a strength 0..1 —
-   * the grounded shadow stretches along it. Render-only.
+   * (the hero's torch, a nearby baked source, or a dynamic light) plus a
+   * strength 0..1 — the grounded shadow stretches along it. Render-only.
    */
   lightDirAt(x: number, y: number): { x: number; y: number; k: number } {
     // The hero's torch: strength by falloff, direction away from them.
@@ -331,6 +545,19 @@ export class Lighting {
         bd = d;
       }
     }
+    for (const s of this.dynamicLights.values()) {
+      const dx = x - s.x;
+      const dy = y - s.y;
+      const d = Math.hypot(dx, dy);
+      if (d > s.radius || d < 0.2) continue;
+      const k = (1 - d / s.radius) * s.intensity;
+      if (k > best) {
+        best = k;
+        bx = dx;
+        by = dy;
+        bd = d;
+      }
+    }
     if (best <= 0.02 || bd < 1e-4) return { x: 0, y: 0, k: 0 };
     // World → screen axes (2:1 diamond), normalized.
     const sx = bx - by;
@@ -339,44 +566,134 @@ export class Lighting {
     return { x: sx / len, y: sy / len, k: Math.min(1, best) };
   }
 
-  /** Recompute the LOS visible set. Call on player:tileChanged only. */
+  // ---- Line of sight over the wall snapshot ---------------------------------
+
+  /** Snapshot `isOpaque` over a tile box into the byte map (stamped by `opaqueGen`). */
+  private snapshotOpaque(minX: number, minY: number, maxX: number, maxY: number): void {
+    const w = this.width;
+    const op = this.opaque;
+    const st = this.opaqueStamp;
+    const g = this.opaqueGen;
+    for (let gy = minY; gy <= maxY; gy++) {
+      let idx = gy * w + minX;
+      for (let gx = minX; gx <= maxX; gx++, idx++) {
+        op[idx] = this.isOpaque(gx, gy) ? 1 : 0;
+        st[idx] = g;
+      }
+    }
+  }
+
+  /** The byte map's answer for one tile, refreshed from the closure if it is stale. */
+  private opaqueAt(gx: number, gy: number): number {
+    const idx = gy * this.width + gx;
+    if (this.opaqueStamp[idx] !== this.opaqueGen) {
+      this.opaque[idx] = this.isOpaque(gx, gy) ? 1 : 0;
+      this.opaqueStamp[idx] = this.opaqueGen;
+    }
+    return this.opaque[idx];
+  }
+
+  /**
+   * Bresenham line of sight, identical in shape to `utils/los.hasLineOfSight`
+   * (the origin never blocks; any opaque tile between blocks; the target may
+   * be opaque - a wall is seen when it is lit), but reading the wall snapshot.
+   * The whole line lies inside the box spanned by its endpoints, so a snapshot
+   * over the sight box covers every step; `opaqueAt` refreshes anything the
+   * ring asks for outside it.
+   */
+  private losSnap(x0: number, y0: number, x1: number, y1: number): boolean {
+    let x = x0;
+    let y = y0;
+    const dx = Math.abs(x1 - x0);
+    const dy = -Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      if (x === x1 && y === y1) return true;
+      if ((x !== x0 || y !== y0) && this.opaqueAt(x, y) === 1) return false;
+      const e2 = 2 * err;
+      if (e2 >= dy) {
+        err += dy;
+        x += sx;
+      }
+      if (e2 <= dx) {
+        err += dx;
+        y += sy;
+      }
+    }
+  }
+
+  /**
+   * Recompute the LOS visible set from a tile. Called on `player:tileChanged`
+   * and by every scene event that changes the walls or the sight; the render
+   * pass also calls it when the render position crosses into a tile no call
+   * started from (it.114). Allocation-free: the set is a generation stamp
+   * per tile plus a flat list, and the previous list is kept to settle the
+   * tiles that fell out of sight.
+   */
   updateVisibility(originX: number, originY: number): void {
-    let newVisible = new Set<number>();
-    const r = this.sight;
-    const r2 = r * r;
+    const w = this.width;
+    const h = this.height;
+    const n = w * h;
+    const gen = ++this.gen;
+    const stamp = this.visStamp;
+    // The two list buffers alternate: the old current becomes the previous.
+    const prev = this.visList;
+    const cur = prev === this.bufA ? this.bufB : this.bufA;
+    const prevCount = this.visCount;
+    let count = 0;
 
     if (this.omniscient) {
-      if (!this.allTiles || this.allTiles.size !== this.width * this.height) {
-        this.allTiles = new Set<number>();
-        for (let i = 0; i < this.width * this.height; i++) this.allTiles.add(i);
+      for (let i = 0; i < n; i++) {
+        stamp[i] = gen;
+        cur[count++] = i;
       }
-      newVisible = this.allTiles;
-    } else
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (dx * dx + dy * dy > r2) continue;
-        const gx = originX + dx;
-        const gy = originY + dy;
-        if (gx < 0 || gy < 0 || gx >= this.width || gy >= this.height) continue;
-        if (hasLineOfSight(originX, originY, gx, gy, this.isOpaque)) {
-          newVisible.add(gy * this.width + gx);
+    } else {
+      const ox = Math.max(0, Math.min(w - 1, originX | 0));
+      const oy = Math.max(0, Math.min(h - 1, originY | 0));
+      const sight = this.sight;
+      const r = Math.floor(sight);
+      const r2 = sight * sight;
+      const minX = Math.max(0, ox - r);
+      const maxX = Math.min(w - 1, ox + r);
+      const minY = Math.max(0, oy - r);
+      const maxY = Math.min(h - 1, oy + r);
+      this.opaqueGen++;
+      this.snapshotOpaque(minX, minY, maxX, maxY);
+      for (let gy = minY; gy <= maxY; gy++) {
+        const dy = gy - oy;
+        for (let gx = minX; gx <= maxX; gx++) {
+          const dx = gx - ox;
+          if (dx * dx + dy * dy > r2) continue;
+          if (this.losSnap(ox, oy, gx, gy)) {
+            const idx = gy * w + gx;
+            stamp[idx] = gen;
+            cur[count++] = idx;
+          }
         }
       }
+      this.losOx = ox;
+      this.losOy = oy;
     }
+    this.losSight = this.sight;
+    this.visList = cur;
+    this.visCount = count;
 
     // Tiles that fell out of sight settle into the static explored shadow.
-    for (const idx of this.visibleSet) {
-      if (!newVisible.has(idx)) {
-        this.states[idx] = FogState.EXPLORED;
-        const floor = this.floorSprites[idx];
-        if (floor) floor.tint = this.exploredTint;
-        const wall = this.wallSprites[idx];
-        if (wall) wall.tint = this.exploredTint;
-        const props = this.propSprites.get(idx);
-        if (props) for (const p of props) p.tint = this.exploredTint;
-      }
+    for (let i = 0; i < prevCount; i++) {
+      const idx = prev[i];
+      if (stamp[idx] === gen) continue;
+      this.states[idx] = FogState.EXPLORED;
+      const floor = this.floorSprites[idx];
+      if (floor) floor.tint = this.exploredTint;
+      const wall = this.wallSprites[idx];
+      if (wall) wall.tint = this.exploredTint;
+      const props = this.propSprites.get(idx);
+      if (props) for (const p of props) p.tint = shadeTint(this.exploredTint, (p as ShadedSprite).shade);
     }
-    for (const idx of newVisible) {
+    for (let i = 0; i < count; i++) {
+      const idx = cur[i];
       if (this.states[idx] === FogState.HIDDEN) {
         // First reveal: start rendering the tile (tint comes from the frame pass).
         const floor = this.floorSprites[idx];
@@ -388,7 +705,6 @@ export class Lighting {
       }
       this.states[idx] = FogState.VISIBLE;
     }
-    this.visibleSet = newVisible;
   }
 
   /**
@@ -407,11 +723,38 @@ export class Lighting {
     this.sourceFlicker = 0.88 + 0.07 * Math.sin(time * 6.1) + 0.05 * Math.sin(time * 17.3 + 0.8);
 
     const w = this.width;
-    for (const idx of this.visibleSet) {
+    const h = this.height;
+    const ox = Math.max(0, Math.min(w - 1, Math.floor(px)));
+    const oy = Math.max(0, Math.min(h - 1, Math.floor(py)));
+
+    // THE RENDER SIDE KEEPS THE SET CURRENT (it.114). The sim's tileChanged
+    // event normally lands first and from the same tile, in which case this
+    // is a no-op; it fires only when the render position has crossed into a
+    // tile no call started from and has genuinely moved (not a boundary
+    // jitter), or when the sight radius changed under the set.
+    if (!this.omniscient) {
+      const crossed = ox !== this.renderOx || oy !== this.renderOy;
+      this.renderOx = ox;
+      this.renderOy = oy;
+      const stale = (ox !== this.losOx || oy !== this.losOy) && Math.hypot(px - (this.losOx + 0.5), py - (this.losOy + 0.5)) > 0.5 + LOS_REFRESH_DIST;
+      if ((crossed && stale) || this.losSight !== this.sight) this.updateVisibility(ox, oy);
+    } else if (this.losSight !== this.sight || this.visCount !== w * h) {
+      this.updateVisibility(ox, oy);
+    }
+
+    this.updateDynamicLights();
+
+    const gen = this.gen;
+    const stamp = this.visStamp;
+    const list = this.visList;
+    const count = this.visCount;
+    const flicker = this.lastFlicker;
+    for (let i = 0; i < count; i++) {
+      const idx = list[i];
       const gx = idx % w;
       const gy = (idx / w) | 0;
       const d = Math.hypot(gx + 0.5 - px, gy + 0.5 - py);
-      const base = this.falloff(d) * this.lastFlicker;
+      const base = this.falloff(d) * flicker;
       const tint = this.composeTint(base, idx);
       const floor = this.floorSprites[idx];
       if (floor) floor.tint = tint;
@@ -427,16 +770,16 @@ export class Lighting {
         let bestBase = base;
         let bestIdx = idx;
         const south = idx + w;
-        if (gy + 1 < this.height && this.visibleSet.has(south)) {
-          const b = this.falloff(Math.hypot(gx + 0.5 - px, gy + 1.5 - py)) * this.lastFlicker;
+        if (gy + 1 < h && stamp[south] === gen) {
+          const b = this.falloff(Math.hypot(gx + 0.5 - px, gy + 1.5 - py)) * flicker;
           if (b > bestBase) {
             bestBase = b;
             bestIdx = south;
           }
         }
         const east = idx + 1;
-        if (gx + 1 < w && this.visibleSet.has(east)) {
-          const b = this.falloff(Math.hypot(gx + 1.5 - px, gy + 0.5 - py)) * this.lastFlicker;
+        if (gx + 1 < w && stamp[east] === gen) {
+          const b = this.falloff(Math.hypot(gx + 1.5 - px, gy + 0.5 - py)) * flicker;
           if (b > bestBase) {
             bestBase = b;
             bestIdx = east;
@@ -446,16 +789,75 @@ export class Lighting {
       }
     }
 
+    if (!this.omniscient) this.updateRing(px, py, ox, oy);
     this.updateWallCutaway(px, py, dt);
   }
 
-  /** Torch ramp + baked colored sources → final tint for one tile. */
+  /**
+   * THE RING (it.114): the torch's bright core follows the hero's sub-tile
+   * position every frame, even across tiles the last LOS pass (made from a
+   * tile the hero has since left, or from the sim's tile a frame ahead) did
+   * not list. Explored tiles within the core radius get a LOS check from the
+   * render tile and, if they pass, this frame's falloff tint; tiles that
+   * leave the ring go back to the explored shadow. HIDDEN tiles are never
+   * touched here — revealing is the LOS pass's job, and a black tile that
+   * lit up for one frame would read as a flash.
+   */
+  private updateRing(px: number, py: number, ox: number, oy: number): void {
+    const w = this.width;
+    const h = this.height;
+    const gen = this.gen;
+    const stamp = this.visStamp;
+    const ring = this.ringList;
+    // Settle last frame's ring tiles that the LOS pass has not since claimed.
+    for (let i = 0; i < this.ringCount; i++) {
+      const idx = ring[i];
+      if (stamp[idx] === gen) continue;
+      const floor = this.floorSprites[idx];
+      if (floor) floor.tint = this.exploredTint;
+      const wall = this.wallSprites[idx];
+      if (wall) wall.tint = this.exploredTint;
+      const props = this.propSprites.get(idx);
+      if (props) for (const p of props) p.tint = shadeTint(this.exploredTint, (p as ShadedSprite).shade);
+    }
+    let count = 0;
+    const radius = Math.min(this.full, LIGHT_RING_MAX_RADIUS) + 1.5;
+    const r = Math.ceil(radius);
+    const r2 = radius * radius;
+    const minX = Math.max(0, ox - r);
+    const maxX = Math.min(w - 1, ox + r);
+    const minY = Math.max(0, oy - r);
+    const maxY = Math.min(h - 1, oy + r);
+    const flicker = this.lastFlicker;
+    for (let gy = minY; gy <= maxY; gy++) {
+      const dy = gy + 0.5 - py;
+      for (let gx = minX; gx <= maxX; gx++) {
+        const idx = gy * w + gx;
+        if (stamp[idx] === gen || this.states[idx] !== FogState.EXPLORED) continue;
+        const dx = gx + 0.5 - px;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > r2) continue;
+        if (!this.losSnap(ox, oy, gx, gy)) continue;
+        const tint = this.composeTint(this.falloff(Math.sqrt(d2)) * flicker, idx);
+        const floor = this.floorSprites[idx];
+        if (floor) floor.tint = tint;
+        const wall = this.wallSprites[idx];
+        if (wall) wall.tint = tint;
+        const props = this.propSprites.get(idx);
+        if (props) for (const p of props) p.tint = shadeTint(tint, (p as ShadedSprite).shade);
+        ring[count++] = idx;
+      }
+    }
+    this.ringCount = count;
+  }
+
+  /** Torch ramp + baked colored sources + dynamic lights → final tint for one tile. */
   private composeTint(baseLight: number, idx: number): number {
-    const [br, bg, bb] = rampChannels(baseLight, this.warm, this.shadow);
+    const [br, bg, bb] = rampChannels(baseLight, this.warmLit, this.shadow);
     const f = this.sourceFlicker;
-    const r = Math.min(255, Math.round(br + this.srcR[idx] * f));
-    const g = Math.min(255, Math.round(bg + this.srcG[idx] * f));
-    const b = Math.min(255, Math.round(bb + this.srcB[idx] * f));
+    const r = Math.min(255, Math.round(br + this.srcR[idx] * f + this.dynR[idx]));
+    const g = Math.min(255, Math.round(bg + this.srcG[idx] * f + this.dynG[idx]));
+    const b = Math.min(255, Math.round(bb + this.srcB[idx] * f + this.dynB[idx]));
     return (r << 16) | (g << 8) | b;
   }
 
@@ -547,8 +949,24 @@ export class Lighting {
         if (!wall) continue;
         const held = this.fadingWalls.has(idx);
         const depthMargin = held ? 10 : -2; // Enter strictly in front; release well behind.
-        if (depthKey(gx + 1, gy + 1) - 4 <= playerDepth - depthMargin) continue;
         const pad = held ? 14 : 0;
+        // THE TILESET PIECES (it.114). A crypt wall is no longer a 32-px cube on
+        // its tile but a 128x256 run covering two tiles, seated by its bottom-
+        // left and sorted by its own key. Such a piece is tested by ITS rect
+        // (its painted face fills the lower half of the canvas) and its own
+        // zIndex, not the cube's box and the cube's key.
+        const tall = wall.height > TILE_H + WALL_Z + 8;
+        if (tall) {
+          if (wall.zIndex <= playerDepth - depthMargin) continue;
+          const left = wall.x;
+          const right = wall.x + wall.width;
+          const top = wall.y + wall.height * 0.5;
+          const bottom = wall.y + wall.height;
+          const overlaps = right + pad > psx - 16 && left - pad < psx + 16 && bottom + pad > psy - 50 && top - pad < psy + 4;
+          if (overlaps) targets.add(idx);
+          continue;
+        }
+        if (depthKey(gx + 1, gy + 1) - 4 <= playerDepth - depthMargin) continue;
         const s = worldToScreen(gx, gy, this.scratch);
         // Wall sprite rect vs player body rect (screen space).
         const overlaps =

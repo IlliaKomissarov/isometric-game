@@ -3085,6 +3085,14 @@ async function boot(): Promise<void> {
         player.container.renderable = true;
       }
       if (w.coliseum?.menagerie) menagerieUI.close();
+      // A SCENE DIES WITH ITS FLOOR (it.114b): a jump out from under a running
+      // cutscene (the harness, the sheet) left its bars and its speech box on
+      // the next floor, waiting for a Space the scene could no longer take.
+      if (reclaim) {
+        reclaim.destroy();
+        reclaim = null;
+        cineSpeak.clear();
+      }
       w.town?.villagers.destroy();
       w.town?.villagers2.destroy();
       w.town?.villagers3?.destroy();

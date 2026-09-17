@@ -885,7 +885,7 @@ export interface TownLayout {
   gatekeeper?: { x: number; y: number };
   /** THE TRAINING GROUND (it.90): the sign at the yard, and the mark the party is placed on. */
   /** The yard (it.90): the sign, the mark the party stands on, and LORD MILK's post (it.115). */
-  training?: { post: { x: number; y: number }; mark: { x: number; y: number }; milk?: { x: number; y: number } };
+  training?: { post: { x: number; y: number }; mark: { x: number; y: number }; milk?: { x: number; y: number }; milkDummy?: { x: number; y: number } };
   /** The ward's folk wander here. */
   wander2: Room;
   /** The ward gate's sentries. */
@@ -1357,7 +1357,8 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   for (const [x, y] of [[22, 64], [40, 64], [22, 76], [40, 76]] as const) placeLamp('lamp', x, y);
   for (const [x, y] of [[28, 79], [34, 79], [28, 84], [34, 84], [44, 69], [47, 74], [18, 68]] as const) placeLamp('lamp', x, y);
   // THE TRAINING YARD (west): barricades, dummies, a rack, kegs.
-  block({ kind: 'barricade', x: 13, y: 70, variant: 'barricade_a' });
+  // The stakes stand clear of Lord Milk's post (it.116: at 13,70 they grew out of her back).
+  tryBlock({ kind: 'barricade', x: 11, y: 69, variant: 'barricade_a' }, KIND_DIRT);
   block({ kind: 'barricade', x: 19, y: 69, variant: 'barricade_b' });
   // THE TRAINING GROUND (it.90): the dummies are BODIES now (main spawns a
   // passive foe on each tile; the prop keeps the tile solid and draws nothing),
@@ -1368,12 +1369,23 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   // LORD MILK (it.115) holds the yard from its north-west edge, between the
   // barricade and the dummies, facing them - off the lane in from the plaza,
   // so nobody walks through her, and in sight of the mark the party lands on.
-  const training: { post: { x: number; y: number }; mark: { x: number; y: number }; milk?: { x: number; y: number } } = { post: { x: 16, y: 70 }, mark: { x: 16, y: 72 } };
+  const training: { post: { x: number; y: number }; mark: { x: number; y: number }; milk?: { x: number; y: number }; milkDummy?: { x: number; y: number } } = { post: { x: 16, y: 70 }, mark: { x: 16, y: 72 } };
   if (!tryBlock({ kind: 'trainpost', x: training.post.x, y: training.post.y }, KIND_DIRT)) decal({ kind: 'trainpost', x: training.post.x, y: training.post.y });
   for (const at of [{ x: 14, y: 71 }, { x: 13, y: 72 }, { x: 18, y: 71 }]) {
     if (tryBlock({ kind: 'lordmilk', x: at.x, y: at.y }, KIND_DIRT)) {
       training.milk = at;
       break;
+    }
+  }
+  // HER OWN DUMMY (it.116): Lord Milk shows every lesson on a dummy of her own,
+  // beside her post and apart from the three the player practises on.
+  if (training.milk) {
+    const m = training.milk;
+    for (const at of [{ x: m.x - 2, y: m.y }, { x: m.x, y: m.y - 2 }, { x: m.x - 2, y: m.y + 1 }]) {
+      if (tryBlock({ kind: 'dummy', x: at.x, y: at.y, variant: 'dummy_milk' }, KIND_DIRT)) {
+        training.milkDummy = at;
+        break;
+      }
     }
   }
   block({ kind: 'rack', x: 16, y: 69 });

@@ -1287,9 +1287,15 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         await fadeClear();
       }
       const dummies: Array<{ id: number; hp: number; hpMax: number; pos: { x: number; y: number }; def: { kind: string; passive?: boolean }; action: string }> = [];
+      // LORD MILK'S OWN (it.116) stands apart: the player's three are the rest.
+      const hers = g.town.layout.training?.milkDummy as { x: number; y: number } | undefined;
+      let herDummy = 0;
       g.enemies.forEachActive((e: (typeof dummies)[number]) => {
-        if (e.def.passive) dummies.push(e);
+        if (!e.def.passive) return;
+        if (hers && Math.floor(e.pos.x) === hers.x && Math.floor(e.pos.y) === hers.y) herDummy++;
+        else dummies.push(e);
       });
+      check('Lord Milk has a dummy of her own', herDummy === 1, String(herDummy));
       check('three dummies stand in the yard', dummies.length === 3 && dummies.every((d) => !g.scene.isWalkable(Math.floor(d.pos.x), Math.floor(d.pos.y))), String(dummies.length));
       check('the yard has its sign', g.town.interactables.some((i: { kind: string }) => i.kind === 'training') && !!g.town.layout.training);
       const d0 = dummies[0];
@@ -1323,6 +1329,11 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(1000);
       T.update(0.016);
       check('walking four tiles advances the tutorial', T.stepId === 'strike', T.stepId);
+      // Her lesson plays first (it.116): nothing is pointed at until it is over.
+      for (let i = 0; i < 60 && !document.getElementById('tut-spot')?.classList.contains('on'); i++) {
+        await wait(100);
+        T.update(0.016);
+      }
       check('the strike step frames a dummy', !!document.getElementById('tut-spot')?.classList.contains('on') && !!document.getElementById('tut-arrow')?.classList.contains('on'));
       for (let i = 0; i < 3; i++) {
         g.combat.dealDamage({ sourceId: g.player.id, targetId: d0.id, amount: 6 });
@@ -1332,7 +1343,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(1000);
       T.update(0.016);
       check('three blows on a dummy advance the tutorial', T.stepId === 'damage', T.stepId);
-      check('the damage step reads the blows', /last blow 6/.test(document.querySelector('#tut-card .tut-progress')?.textContent ?? ''));
+      check('the damage step reads the blows', /last hit 6/.test(document.querySelector('#tut-card .tut-progress')?.textContent ?? ''));
       T.next(); // skill
       g.queue.enqueue({ type: 'SKILL', playerId: 0, slot: 0 });
       g.loop.step(2);
@@ -1366,6 +1377,10 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       T.update(0.016);
       check('an interaction advances the tutorial', T.stepId === 'portal', T.stepId);
       T.next();
+      // EVERY CONTROL ON ONE CARD (it.116): both key sets for moving, the second attack key.
+      const grid = document.querySelector('#tut-card .tut-grid')?.textContent ?? '';
+      check('the controls card lists every scheme', T.stepId === 'controls' && ((/W.*A.*S.*D/.test(grid) && /↑/.test(grid) && /Space/.test(grid) && /F/.test(grid)) || (/stick/.test(grid) && /swords/.test(grid) && /flasks/.test(grid))), grid.slice(0, 60));
+      T.next();
       check('the last step points at the crypt gate', T.stepId === 'gate' && !!document.getElementById('tut-spot')?.classList.contains('on'));
       T.next();
       check('the tutorial ends and is remembered', !T.isRunning && !layer?.classList.contains('show') && localStorage.getItem('iso-arpg-tutorial-done') === '1');
@@ -1385,7 +1400,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       };
       const forestWas = g.quests.forest;
       g.quests.forest = 'active'; // the city has not asked for a sword yet
-      check('E at the sign offers the training', /TRAINING GROUND|LORD MILK/.test(await pressE())); // Lord Milk holds the yard (it.115).
+      check('E at the sign offers the training', /TRAINING GROUND|LORD MILK/i.test(await pressE())); // Lord Milk holds the yard (it.115).
       document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
       await wait(60);
       g.quests.forest = forestWas; // ...and once it has, the officer holds the post
@@ -1402,7 +1417,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         const farmWas = g.quests.farm;
         g.quests.farm = 'done';
         const word = await pressE();
-        check('once the fields are won the post is the training sign again', /TRAINING GROUND|LORD MILK/.test(word) && !/ORDWAY/.test(word), word.slice(0, 40));
+        check('once the fields are won the post is the training sign again', /TRAINING GROUND|LORD MILK/i.test(word) && !/ORDWAY/.test(word), word.slice(0, 40));
         document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
         await wait(60);
         T.start();
@@ -1413,7 +1428,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       }
       document.querySelector<HTMLElement>('#dialogue-panel [data-choice=stay]')?.click();
       await wait(40);
-      // THE TUTORIAL ON EVERY PHONE (it.90): all sixteen cards inside eleven simulated boxes, thumb-sized buttons.
+      // THE TUTORIAL ON EVERY PHONE (it.90): all seventeen cards inside eleven simulated boxes, thumb-sized buttons.
       const L = W.__layout.layout;
       const devices: Array<[number, number]> = [[915, 412], [412, 915], [932, 430], [430, 932], [640, 360], [360, 640], [240, 320], [320, 240], [1024, 768], [768, 1024], [1280, 800]];
       for (const [w, h] of devices) {
@@ -1422,7 +1437,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         T.start();
         g.loop.step(1);
         const bad: string[] = [];
-        for (let i = 0; i < 16; i++) {
+        for (let i = 0; i < 17; i++) {
           if (i) T.next();
           W.__layout.fit.refresh(); // A panel that opened on this step is scaled now, not next frame.
           T.update(0.016);

@@ -7180,25 +7180,6 @@
     "right": 81
    }
   },
-  "spin_food_pancake_stack": {
-   "file": "spin_food_pancake_stack.png",
-   "cellW": 68,
-   "cellH": 59,
-   "frameCount": 30,
-   "dirCount": 1,
-   "nearest": false,
-   "origW": 96,
-   "origH": 96,
-   "trimX": 14,
-   "trimY": 22,
-   "scale": 1,
-   "painted": {
-    "top": 22,
-    "bottom": 80,
-    "left": 14,
-    "right": 81
-   }
-  },
   "spin_food_pepperoni_pizza_slice": {
    "file": "spin_food_pepperoni_pizza_slice.png",
    "cellW": 92,
@@ -20481,6 +20462,25 @@
     "left": 3,
     "right": 60
    }
+  },
+  "spin_food_cakepancakes": {
+   "file": "spin_food_cakepancakes.png",
+   "cellW": 68,
+   "cellH": 59,
+   "frameCount": 30,
+   "dirCount": 1,
+   "nearest": false,
+   "origW": 96,
+   "origH": 96,
+   "trimX": 14,
+   "trimY": 22,
+   "scale": 1,
+   "painted": {
+    "top": 22,
+    "bottom": 80,
+    "left": 14,
+    "right": 81
+   }
   }
  },
  "singles": {
@@ -25154,12 +25154,6 @@
   },
   "item_food_noodle_soup_bowl": {
    "file": "single_item_food_noodle_soup_bowl.png",
-   "w": 64,
-   "h": 64,
-   "nearest": false
-  },
-  "item_food_pancake_stack": {
-   "file": "single_item_food_pancake_stack.png",
    "w": 64,
    "h": 64,
    "nearest": false
@@ -30832,6 +30826,12 @@
    "file": "single_lily_c.png",
    "w": 28,
    "h": 14,
+   "nearest": false
+  },
+  "item_food_cakepancakes": {
+   "file": "single_item_food_cakepancakes.png",
+   "w": 64,
+   "h": 64,
    "nearest": false
   }
  }

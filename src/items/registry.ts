@@ -451,7 +451,7 @@ export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r, i) => {
 
 /**
  * THE ALES (it.115): ten of the 105 baked polyy drinks (`item_drink_<key>`
- * + `spin_drink_<key>`), poured at the tavern and kept by the alchemist. A
+ * + `spin_drink_<key>`), poured by Coleslaw at the Gilded Stag and nowhere else (it.116). A
  * short brew - MIGHT or HASTE for six seconds - on the brews' one-second
  * cooldown, cheap, and they turn in the cell like every other bottle.
  */
@@ -530,7 +530,6 @@ export const FOODS: ItemDef[] = [
   food('pumpkin_soup_bowl', 'Pumpkin Soup', 'meal', 'Autumn in a bowl, thick and orange, with a curl of cream.'),
   food('stuffed_cabbage_rolls', 'Cabbage Rolls', 'meal', 'Cabbage leaves wrapped round spiced meat and barley, stewed soft.'),
   food('shepherds_pie', 'Shepherd’s Pie', 'meal', 'Minced lamb under a roof of potato, browned at the ridges.'),
-  food('pancake_stack', 'Pancake Stack', 'meal', 'Four pancakes, honey between them, butter melting off the top.'),
   food('loaded_baked_potato', 'Baked Potato', 'meal', 'A potato from the coals split and loaded with butter and cheese.'),
   // Feasts: a board for the table.
   food('whole_roast_chicken', 'Whole Roast Chicken', 'feast', 'A whole bird, roasted golden. Enough to bring a hero back from the edge.'),
@@ -538,6 +537,8 @@ export const FOODS: ItemDef[] = [
   food('grilled_steak_board', 'Steak Board', 'feast', 'A slab of beef seared on the iron, rested and sliced on the board.'),
   food('roasted_quail_board', 'Roasted Quail', 'feast', 'A brace of quail roasted with herbs, the lord’s table brought underground.'),
   food('pot_roast_board', 'Pot Roast', 'feast', 'Beef braised all day with carrots and onion, falling apart under the knife.'),
+  // THE BANQUET (it.116): the one dish above every other.
+  food('cakepancakes', 'Cakepancakes', 'banquet', 'A tower of pancakes baked into a cake, honey and butter through every layer. Everything back at once, and a minute of being more than you are.'),
   // THE REST OF THE LARDER (it.115): every dish of the bake is on the table now - the market ward's
   // stalls, the sweetshop and the harbour cooks' fare beside the tavern's.
   food('caramel_flan', 'Caramel Custard', 'snack', 'A trembling custard under burnt sugar, from the sweetshop by the fountain.'),

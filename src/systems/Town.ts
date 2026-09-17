@@ -24,7 +24,7 @@ import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
 import { ilvlForDepth, itemDef, rollGear } from '@/items/instance';
 import { ENCHANTS } from '@/items/effects';
 import type { StashState } from '@/persist/SaveGame';
-import { CURIO_DRINKS, CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS, foodsOfTier, gearBases } from '@/items/registry';
+import { ALES, CURIO_DRINKS, CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS, foodsOfTier, gearBases } from '@/items/registry';
 import { mulberry32 } from '@/utils/rng';
 
 /**
@@ -160,8 +160,13 @@ export class TownSystem {
     tavern.push(pick('feast'));
     if (deepestFloor >= 3) tavern.push(pick('feast'));
     if (deepestFloor >= 6) tavern.push('food_whole_roast_chicken', pick('meal'));
-    // THE TAPS (it.115): four of the bake's bottles and tins behind the bar.
-    for (let i = 0; i < 4; i++) tavern.push(CURIO_DRINKS[Math.floor(rand() * CURIO_DRINKS.length)].id);
+    // THE TAPS (it.116): the city's only drink. Every one of the ten ales is on,
+    // and eight of the bake's other bottles and tins; the banquet once the crypt
+    // has been walked to its first warden.
+    for (const ale of ALES) tavern.push(ale.id);
+    const bottles = [...CURIO_DRINKS];
+    for (let i = 0; i < 8 && bottles.length; i++) tavern.push(bottles.splice(Math.floor(rand() * bottles.length), 1)[0].id);
+    if (deepestFloor >= 5) tavern.push('food_cakepancakes');
     this.stockTavern = tavern.filter((id) => id in ITEMS);
     // THE MARKET WARD (it.84). The JEWELER: five rolled rings and amulets, a
     // silver band for the fresh delver. The SCRIBE: recipe scrolls the depth
@@ -190,8 +195,16 @@ export class TownSystem {
     eventBus.emit('town:changed', {});
   }
 
-  buyPrice(def: ItemDef): number {
-    return itemValue(def);
+  /**
+   * COLESLAW'S DISCOUNT (it.116): a share off everything at the Gilded Stag
+   * once the eastern quarter is his again (main sets it from the ledger, on
+   * every peer alike).
+   */
+  tavernDiscount = 0;
+
+  buyPrice(def: ItemDef, vendor?: string): number {
+    const full = itemValue(def);
+    return vendor === 'tavern' && this.tavernDiscount > 0 ? Math.max(1, Math.round(full * (1 - this.tavernDiscount))) : full;
   }
 
   sellPrice(def: ItemDef): number {
@@ -209,7 +222,7 @@ export class TownSystem {
           const id = table[cmd.index];
           const def = itemDef(id);
           if (!def) break;
-          const price = this.buyPrice(def);
+          const price = this.buyPrice(def, cmd.vendor);
           if (p.gold < price) {
             eventBus.emit('town:refused', { reason: 'gold' });
             break;

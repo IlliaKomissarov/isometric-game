@@ -34,7 +34,7 @@ export const RARITY_WEIGHT: Record<Rarity, number> = { common: 60, uncommon: 25,
 export type ItemSlot = EquipmentSlot | 'consumable' | 'material' | 'food';
 
 /** FOOD (it.114): a snack is a bite, a meal a plate, a feast a board. */
-export type FoodTier = 'snack' | 'meal' | 'feast';
+export type FoodTier = 'snack' | 'meal' | 'feast' | 'banquet';
 
 /**
  * WHAT A DISH DOES (it.115: hunger is gone; food heals and buffs). The
@@ -46,10 +46,32 @@ export type FoodTier = 'snack' | 'meal' | 'feast';
  * One table, read by the registry (prices, rarity), the sim (the bite) and
  * the codex (the words).
  */
-export const FOOD_TIER: Record<FoodTier, { heal: number; might?: number; stone?: number; haste?: number; value: number; rarity: Rarity; color: number }> = {
+export interface FoodEffect {
+  heal: number;
+  might?: number;
+  stone?: number;
+  haste?: number;
+  /** A share of the resource poured back at once (the banquet, it.116). */
+  restore?: number;
+  /** Stronger brews than a draught's (the banquet): damage, damage turned, speed. */
+  mightMult?: number;
+  stoneFrac?: number;
+  hasteMult?: number;
+  value: number;
+  rarity: Rarity;
+  color: number;
+}
+/**
+ * THE BANQUET (it.116): one dish, CAKEPANCAKES - the whole life back, the
+ * whole resource back, and all three brews at once and stronger than any
+ * draught pours them (half again the damage, half of every blow turned,
+ * forty percent faster) for a minute.
+ */
+export const FOOD_TIER: Record<FoodTier, FoodEffect> = {
   snack: { heal: 0.08, value: 12, rarity: 'common', color: 0xd8a85c },
   meal: { heal: 0.15, might: 20 * 60, value: 28, rarity: 'uncommon', color: 0xe0803a },
   feast: { heal: 0.3, stone: 30 * 60, haste: 20 * 60, value: 70, rarity: 'rare', color: 0xffb347 },
+  banquet: { heal: 1, restore: 1, might: 60 * 60, stone: 60 * 60, haste: 60 * 60, mightMult: 1.5, stoneFrac: 0.5, hasteMult: 1.4, value: 450, rarity: 'legendary', color: 0xffd36a },
 };
 
 /**
@@ -370,6 +392,7 @@ export function statLine(def: ItemDef): string {
     if (t.might) parts.push(`Might for ${Math.round(t.might / 60)} s`);
     if (t.stone) parts.push(`Stone skin for ${Math.round(t.stone / 60)} s`);
     if (t.haste) parts.push(`Haste for ${Math.round(t.haste / 60)} s`);
+    if (t.restore) parts.push(`Restores ${Math.round(t.restore * 100)}% resource`);
     parts.push(`A ${def.use.food.tier}`);
   } else if (def.use?.heal) parts.push(`Restores ${Math.round(def.use.heal * 100)}% Life`);
   if (def.use?.resource) parts.push(`Restores ${Math.round(def.use.resource * 100)}% Mana / Stamina`);

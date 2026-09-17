@@ -5302,6 +5302,22 @@
       #tut-layer.show { display: block; }
       #tut-spot { position: fixed; left: 0; top: 0; width: 0; height: 0; border-radius: 10px; opacity: 0; border: 2px solid rgba(255, 208, 112, 0.95); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.55), 0 0 26px rgba(255, 208, 112, 0.55), inset 0 0 18px rgba(255, 208, 112, 0.18); transition: left 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), top 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), width 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), height 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.3s ease; animation: tut-pulse 1.6s ease-in-out infinite; }
       #tut-spot.on { opacity: 1; }
+      /* IT.116: a place in the world is lit by a square, softer than a panel's box. */
+      #tut-spot.world { border-radius: 4px; border-color: rgba(255, 208, 112, 0.7); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.35), 0 0 34px rgba(255, 208, 112, 0.45), inset 0 0 24px rgba(255, 208, 112, 0.2); }
+      /* THE BARS (it.116): while Lord Milk shows a lesson and on the long shots, the yard is framed like a scene. */
+      #tut-layer .tut-bar { position: fixed; left: 0; right: 0; height: 0; background: #000; pointer-events: none; transition: height 0.5s cubic-bezier(0.22, 0.9, 0.3, 1); z-index: 0; }
+      #tut-layer .tut-bar-top { top: 0; }
+      #tut-layer .tut-bar-bottom { bottom: 0; }
+      #tut-layer.tut-bars .tut-bar { height: 9vh; }
+      body.tut-cine #hud-tl, body.tut-cine #hud-tr, body.tut-cine #skill-bar, body.tut-cine #toast-stack { opacity: 0.25; transition: opacity 0.4s ease; }
+      #shop-panel .tp-discount { color: #9fe89a; font-weight: 700; }
+      #tut-card .tut-or { font: italic 13px 'Crimson Pro', 'Georgia', serif; color: #8a7e68; align-self: center; }
+      #tut-card .tut-demo { flex-wrap: wrap; }
+      #tut-card .tut-grid { display: grid; grid-template-columns: minmax(84px, 36%) 1fr; gap: 5px 12px; width: 100%; font: 13px/1.35 'Crimson Pro', 'Georgia', serif; color: var(--ink, #e8dfc8); text-align: left; }
+      #tut-card .tut-grid b { font: 700 10px/1.5 'Cinzel', 'Georgia', serif; letter-spacing: 0.06em; color: #ffd98a; padding-top: 2px; }
+      #tut-card .tut-grid span { line-height: 1.7; }
+      #tut-card .tut-grid kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; margin: 0 1px; box-sizing: border-box; font: 700 10px 'Cinzel', 'Georgia', serif; color: #ffd070; background: #1a1520; border: 1px solid #5a4a2e; border-bottom-width: 2px; border-radius: 3px; }
+      #tut-card.tut-short .tut-grid { font-size: 11.5px; gap: 2px 8px; }
       #tut-spot.jump { transition-duration: 0s, 0s, 0s, 0s, 0.3s; }
       @keyframes tut-pulse { 0%, 100% { border-color: rgba(255, 208, 112, 0.95); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.55), 0 0 22px rgba(255, 208, 112, 0.45), inset 0 0 14px rgba(255, 208, 112, 0.14); } 50% { border-color: rgba(255, 236, 190, 1); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.55), 0 0 40px rgba(255, 208, 112, 0.85), inset 0 0 26px rgba(255, 208, 112, 0.28); } }
       #tut-arrow { position: fixed; width: 40px; height: 40px; opacity: 0; transform: rotate(var(--rot, 0deg)); filter: drop-shadow(0 0 8px rgba(255, 208, 112, 0.8)); transition: left 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), top 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.3s ease; }
@@ -5321,7 +5337,8 @@
       /* LORD MILK runs the yard (it.115): her face and title head every card. */
       #tut-card .tut-mentor { display: flex; align-items: center; gap: 10px; margin: -2px 0 8px; }
       #tut-card .tut-mentor[hidden] { display: none; }
-      #tut-card { overflow-y: auto; overscroll-behavior: contain; }
+      #tut-card { overflow-y: auto; overscroll-behavior: contain; z-index: 2; }
+      #tut-spot, #tut-arrow { z-index: 1; }
       #tut-card.tut-short { padding-top: 8px; padding-bottom: 8px; }
       #tut-card.tut-short .tut-mentor { margin: 0 0 4px; gap: 7px; }
       #tut-card.tut-short .tut-face { width: 26px; height: 26px; }

@@ -176,7 +176,7 @@ FOOD_TIER = {
     'grilled_steak_board': 'feast', 'hearty_stew_bowl': 'meal', 'layer_cake_slice': 'snack',
     'loaded_baked_potato': 'meal', 'loaded_burrito': 'meal', 'loaded_nachos': 'meal',
     'lobster_roll': 'meal', 'meat_skewer': 'snack', 'meatball_sub': 'meal',
-    'noodle_soup_bowl': 'meal', 'pancake_stack': 'meal', 'pepperoni_pizza_slice': 'snack',
+    'noodle_soup_bowl': 'meal', 'cakepancakes': 'banquet', 'pepperoni_pizza_slice': 'snack',
     'pot_roast_board': 'feast', 'pumpkin_soup_bowl': 'meal', 'red_curry_rice_bowl': 'meal',
     'roast_turkey_leg': 'meal', 'roasted_quail_board': 'feast', 'salted_pretzel': 'snack',
     'seafood_paella_bowl': 'feast', 'shepherds_pie': 'meal', 'shrimp_po_boy': 'meal',
@@ -421,6 +421,10 @@ def spin_sheet(spins, path, cell=48):
 # ---------------------------------------------------------------------------
 
 
+# THE OWNER'S DISH (it.116): the pack's Pancake_Stack ships as `cakepancakes`, the banquet tier.
+FOOD_RENAME = {'pancake_stack': 'cakepancakes'}
+
+
 def bake_food(preview):
     names = []
     icons, spins = [], []
@@ -428,7 +432,7 @@ def bake_food(preview):
     assert len(files) == 50, 'expected 50 dishes, found %d' % len(files)
     for f in files:
         item = os.path.basename(f)[:-len('_nopalette.png')]
-        s = slug(item)
+        s = FOOD_RENAME.get(slug(item), slug(item))
         assert s in FOOD_TIER, 'no nutrition tier for %s' % s
         icon, spin = bake_turntable('item_food_' + s, 'spin_food_' + s,
                                     turntable(FOOD, item, ICON_SIZE), turntable(FOOD, item, SPIN_SIZE), preview)

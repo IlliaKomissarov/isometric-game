@@ -66,11 +66,7 @@ export const FEED_TICKS = 180;
 export const FEED_SLICES = 6;
 
 /** What each tier does when eaten (the catalog's table, here so the UI needs no registry import). */
-export const FOOD_EFFECT: Record<FoodTier, { heal: number; might?: number; stone?: number; haste?: number }> = {
-  snack: { heal: FOOD_TIER.snack.heal, might: FOOD_TIER.snack.might, stone: FOOD_TIER.snack.stone, haste: FOOD_TIER.snack.haste },
-  meal: { heal: FOOD_TIER.meal.heal, might: FOOD_TIER.meal.might, stone: FOOD_TIER.meal.stone, haste: FOOD_TIER.meal.haste },
-  feast: { heal: FOOD_TIER.feast.heal, might: FOOD_TIER.feast.might, stone: FOOD_TIER.feast.stone, haste: FOOD_TIER.feast.haste },
-};
+export const FOOD_EFFECT: Record<FoodTier, { heal: number; might?: number; stone?: number; haste?: number }> = FOOD_TIER;
 
 /** Every live system by its hero: the HUD reads the bite in progress through this, never through the player. */
 const BY_PLAYER = new WeakMap<Player, InventorySystem>();
@@ -154,23 +150,23 @@ export class InventorySystem {
    * in ticks. Each refreshes to the longer of what is running and what was
    * poured; the HUD's `buff` cue fires for each.
    */
-  private applyBrews(use: { haste?: number; stone?: number; might?: number }): void {
+  private applyBrews(use: { haste?: number; stone?: number; might?: number; hasteMult?: number; stoneFrac?: number; mightMult?: number }): void {
     const p = this.player;
     if (use.haste) {
       p.hasteTicks = Math.max(p.hasteTicks, use.haste);
-      p.hasteMult = Math.max(p.hasteMult, 1.3);
+      p.hasteMult = Math.max(p.hasteMult, use.hasteMult ?? 1.3);
       p.buffMax.haste = Math.max(p.buffMax.haste, use.haste);
       this.hooks.buff?.('haste', use.haste);
     }
     if (use.stone) {
       p.drTicks = Math.max(p.drTicks, use.stone);
-      p.drFrac = Math.max(p.drFrac, 0.4);
+      p.drFrac = Math.max(p.drFrac, use.stoneFrac ?? 0.4);
       p.buffMax.dr = Math.max(p.buffMax.dr, use.stone);
       this.hooks.buff?.('stone', use.stone);
     }
     if (use.might) {
       p.dmgBuffTicks = Math.max(p.dmgBuffTicks, use.might);
-      p.dmgBuffMult = Math.max(p.dmgBuffMult, 1.25);
+      p.dmgBuffMult = Math.max(p.dmgBuffMult, use.mightMult ?? 1.25);
       p.buffMax.dmg = Math.max(p.buffMax.dmg, use.might);
       this.hooks.buff?.('might', use.might);
     }
@@ -187,7 +183,9 @@ export class InventorySystem {
     this.feedFraction = (owed + food.heal) / FEED_SLICES;
     this.feedLeft = FEED_SLICES;
     this.feedClock = 0;
-    this.applyBrews(FOOD_TIER[food.tier]);
+    const tier = FOOD_TIER[food.tier];
+    this.applyBrews(tier);
+    if (tier.restore) this.hooks.restore(tier.restore); // The banquet fills the resource too (it.116).
     this.hooks.eat?.(def, food.tier);
   }
 

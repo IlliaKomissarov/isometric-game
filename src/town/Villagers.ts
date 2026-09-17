@@ -12,7 +12,7 @@
 
 import { Container, Graphics, Sprite, Text } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
-import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
+import { dirIndexFromFacing, spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
 import type { Room } from '@/scenes/DungeonGenerator';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
@@ -264,6 +264,11 @@ export interface StandingFigure {
   tint?: number;
   /** Idle frames per second. */
   fps?: number;
+  /**
+   * PLAY THE IDLE THERE AND BACK (it.116): a fencer's ten-frame guard loop
+   * snaps back to its first frame; ping-ponged slowly it reads as breathing.
+   */
+  pingPong?: boolean;
   /** A bank of words over the head now and then (none: silent). */
   words?: string[];
 }
@@ -396,6 +401,10 @@ interface Figure {
   x: number;
   y: number;
   bubble: Bubble;
+  /** The facing now (the spec's until a lesson turns her, it.116). */
+  dir: number;
+  /** A clip played once (it.116), then back to the idle. */
+  clip: { anim: AnimName; dir: number; fc: number; fps: number; clock: number; lx: number; ly: number } | null;
 }
 
 /** A hero's feet, as the walkers see them (it.115). */
@@ -598,7 +607,7 @@ export class Villagers {
       root.position.set(s.x, s.y);
       root.zIndex = depthKey(x, y);
       layer.addChild(root);
-      this.figures.push({ root, body, spec, scale, clock: Math.random() * 2, x, y, bubble: makeBubble(layer, 5 + Math.random() * 8) });
+      this.figures.push({ root, body, spec, scale, clock: Math.random() * 2, x, y, bubble: makeBubble(layer, 5 + Math.random() * 8), dir: spec.dir, clip: null });
       this.fixed.push({ x, y });
     }
     for (const f of this.fixed) this.fixedTiles.add(Math.floor(f.y) * DEST_W + Math.floor(f.x));
@@ -622,6 +631,42 @@ export class Villagers {
       }
     }
     return null;
+  }
+
+  /**
+   * A LESSON (it.116): the standing body `anim` turns to `face` (a world
+   * point; null keeps her facing) and plays `clip` once at `fps`, then settles
+   * back to her idle and her post's facing. Returns the clip's length in
+   * seconds (0 when the body or the sheet is not here).
+   */
+  figurePerform(anim: AnimName, clip: AnimName, face: { x: number; y: number } | null, fps = 14, lunge = 0): number {
+    const f = this.figures.find((g) => g.spec.anim === anim);
+    if (!f || !spriteLib.hasAnim(clip)) return 0;
+    const dir = face ? dirIndexFromFacing(face.x - f.x, face.y - f.y) : f.dir;
+    const fc = spriteLib.anim(clip).frameCount;
+    // A LUNGE (it.116): she closes to `lunge` tiles short of the target for the
+    // middle of the clip and steps back to her post after it.
+    let lx = 0;
+    let ly = 0;
+    if (face && lunge > 0) {
+      const d = Math.hypot(face.x - f.x, face.y - f.y);
+      if (d > lunge) {
+        const k = (d - lunge) / d;
+        lx = (face.x - f.x) * k;
+        ly = (face.y - f.y) * k;
+      }
+    }
+    f.clip = { anim: clip, dir, fc, fps, clock: 0, lx, ly };
+    const fa = spriteLib.footAnchor(clip);
+    f.body.anchor.set(fa.x, fa.y);
+    f.body.texture = spriteLib.frame(clip, dir, 0);
+    return fc / fps;
+  }
+
+  /** Where a standing body's head is, for a word or an effect over it (it.116). */
+  figureHead(anim: AnimName): { x: number; y: number; height: number } | null {
+    const f = this.figures.find((g) => g.spec.anim === anim);
+    return f ? { x: f.x, y: f.y, height: f.spec.height } : null;
   }
 
   /** A named standing body's feet (it.115), for the interaction and the harness. */
@@ -1132,8 +1177,33 @@ export class Villagers {
     }
     for (const f of this.figures) {
       f.clock += dt;
-      const fc = spriteLib.anim(f.spec.anim).frameCount;
-      f.body.texture = spriteLib.frame(f.spec.anim, f.spec.dir, Math.floor(f.clock * (f.spec.fps ?? 8)) % fc);
+      const c = f.clip;
+      if (c) {
+        c.clock += dt;
+        const i = Math.floor(c.clock * c.fps);
+        const u = Math.min(1, (c.clock * c.fps) / c.fc);
+        const k = u < 0.28 ? u / 0.28 : u > 0.72 ? (1 - u) / 0.28 : 1;
+        const e = k * k * (3 - 2 * k);
+        const s = worldToScreen(f.x + c.lx * e, f.y + c.ly * e, this.scratch);
+        f.root.position.set(s.x, s.y);
+        f.root.zIndex = depthKey(f.x + c.lx * e, f.y + c.ly * e);
+        if (i < c.fc) f.body.texture = spriteLib.frame(c.anim, c.dir, i);
+        else {
+          // The lesson is over: back to her post's facing, on her idle's own feet.
+          f.clip = null;
+          const fa = spriteLib.footAnchor(f.spec.anim);
+          f.body.anchor.set(fa.x, fa.y);
+        }
+      }
+      if (!f.clip) {
+        const fc = spriteLib.anim(f.spec.anim).frameCount;
+        const step = Math.floor(f.clock * (f.spec.fps ?? 8));
+        const cycle = Math.max(1, fc * 2 - 2);
+        const i = f.spec.pingPong && fc > 1 ? (step % cycle < fc ? step % cycle : cycle - (step % cycle)) : step % fc;
+        f.body.texture = spriteLib.frame(f.spec.anim, f.dir, i);
+        // A slow breath on top of the loop, so the stance never reads as a still.
+        f.body.scale.set(f.scale, f.scale * (1 + Math.sin(f.clock * 1.6) * 0.012));
+      }
       f.body.tint = mulTint(tint(f.x, f.y), f.spec.tint ?? 0xffffff);
       tickBubble(f.bubble, dt, f.spec.words, f.root.position.x, f.root.position.y - f.spec.height - 10, f.root.zIndex);
     }

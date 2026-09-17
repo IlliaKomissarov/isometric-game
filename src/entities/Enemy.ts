@@ -2400,6 +2400,10 @@ export class Enemy extends Entity {
     }
 
     if (this.def.passive) {
+      // A dummy's flash fades too (it.116): this branch used to return before
+      // the clocks below, so a struck dummy stayed red for good.
+      this.elapsed += dt;
+      if (this.flashTicks > 0 && --this.flashTicks === 0) this.body.tint = 0xffffff;
       this.updateDummy();
       return;
     }

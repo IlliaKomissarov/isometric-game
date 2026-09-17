@@ -507,13 +507,13 @@ export class CodexUI {
     const secs = (ticks: number | undefined): number => Math.round((ticks ?? 0) / 60);
     const brews = (t: { might?: number; stone?: number; haste?: number }): string =>
       [t.might ? `Might ${secs(t.might)} s` : '', t.stone ? `Stone skin ${secs(t.stone)} s` : '', t.haste ? `Haste ${secs(t.haste)} s` : ''].filter(Boolean).join(' · ') || '—';
-    const tiers = (['snack', 'meal', 'feast'] as const)
+    const tiers = (['snack', 'meal', 'feast', 'banquet'] as const)
       .map((tier) => {
         const t = FOOD_TIER[tier];
         const rows = foodsOfTier(tier)
           .map((d) => `<tr data-find="${esc(`${d.name} ${tier} food`.toLowerCase())}"><td>${itemIconHtml(d, 'cx-food-icon')} <b style="color:${hex(d.color)}">${d.name}</b></td><td>${pct(t.heal)} life over ${FEED_TICKS / 60} s</td><td>${brews(t)}</td><td>${d.value} gold</td><td><i>${d.desc ?? ''}</i></td></tr>`)
           .join('');
-        return `<div class="cx-group"><h5 class="cx-fam">${tier === 'snack' ? 'Snacks' : tier === 'meal' ? 'Meals' : 'Feasts'} <small>${pct(t.heal)} of max life · ${brews(t)} · ${t.value} gold</small></h5><table class="cx-table cx-food"><thead><tr><th>Dish</th><th>Heals</th><th>Buffs</th><th>Worth</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        return `<div class="cx-group"><h5 class="cx-fam">${tier === 'snack' ? 'Snacks' : tier === 'meal' ? 'Meals' : tier === 'feast' ? 'Feasts' : 'The banquet'} <small>${pct(t.heal)} of max life · ${brews(t)} · ${t.value} gold</small></h5><table class="cx-table cx-food"><thead><tr><th>Dish</th><th>Heals</th><th>Buffs</th><th>Worth</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
       })
       .join('');
     const ales = ALES.map(
@@ -523,12 +523,12 @@ export class CodexUI {
       <section><h4>FOOD &amp; DRINK</h4>
       <p><b>Food</b> is the other way to heal. A dish is eaten from the pack (click it, tap it) or off the belt (Q or R, like a draught; the ▾ lists every dish you carry). It heals <b>less than a potion</b> — a snack ${pct(FOOD_TIER.snack.heal)}, a meal ${pct(FOOD_TIER.meal.heal)}, a feast ${pct(FOOD_TIER.feast.heal)} of your life — and unlike a potion the healing is <b>served over ${FEED_TICKS / 60} seconds</b>, in six slices, on a short cooldown of its own (${(QUAFF_COOLDOWN.food / 60).toFixed(1)} s, shared with no draught). Carry a stack and you can eat your way back to full: the slices of one bite join the next.</p>
       <h5>What a dish pours</h5>
-      <p>A snack only heals. A <b>meal</b> also pours <b>MIGHT</b> (a quarter more damage) for ${secs(FOOD_TIER.meal.might)} seconds; a <b>feast</b> pours <b>STONE SKIN</b> (four tenths of every blow turned) for ${secs(FOOD_TIER.feast.stone)} seconds and <b>HASTE</b> (three tenths faster) for ${secs(FOOD_TIER.feast.haste)}. They are the very brews the draughts pour: a running one is refreshed to the longer timer, never stacked. There is no hunger — eat when you want the life or the edge.</p>
+      <p>A snack only heals. A <b>meal</b> also pours <b>MIGHT</b> (a quarter more damage) for ${secs(FOOD_TIER.meal.might)} seconds; a <b>feast</b> pours <b>STONE SKIN</b> (four tenths of every blow turned) for ${secs(FOOD_TIER.feast.stone)} seconds and <b>HASTE</b> (three tenths faster) for ${secs(FOOD_TIER.feast.haste)}. <b>Cakepancakes</b>, the one banquet, gives back all your life and resource and pours all three at once, stronger than any draught, for ${secs(FOOD_TIER.banquet.might)} seconds. They are the very brews the draughts pour: a running one is refreshed to the longer timer, never stacked. There is no hunger — eat when you want the life or the edge.</p>
       <h5>Ales</h5>
-      <p>A short brew in a bottle: Might or Haste for six seconds, on the brews' ${QUAFF_COOLDOWN.buff / 60}-second cooldown. They heal nothing.</p>
+      <p>Poured by Coleslaw at the Gilded Stag, and nowhere else. A short brew in a bottle: Might or Haste for six seconds, on the brews' ${QUAFF_COOLDOWN.buff / 60}-second cooldown. They heal nothing.</p>
       <table class="cx-table cx-food"><thead><tr><th>Ale</th><th>Heals</th><th>Buffs</th><th>Worth</th><th></th></tr></thead><tbody>${ales}</tbody></table>
       <h5>Where food comes from</h5>
-      <p>The <b>tavern keeper</b> sells the larder (bread and pretzels always, a spread of snacks and meals, a feast or two once you have walked the crypt a way) and the <b>alchemist</b> keeps a few bites beside the flasks — priced by tier. On the floor, food is about one drop in eight from a slain foe (snacks mostly, a meal a third of the time, a feast rarely and a little more often the deeper you go; now and then an ale instead), a third of crypt chests hold a dish, and a town chest holds one three times in ten.</p>
+      <p><b>Coleslaw</b>, the Gilded Stag's keeper, sells the larder and every ale and bottle in the city (bread and pretzels always, a spread of snacks and meals, a feast or two once you have walked the crypt a way) and the <b>alchemist</b> keeps a few bites beside the flasks — priced by tier. On the floor, food is about one drop in eight from a slain foe (snacks mostly, a meal a third of the time, a feast rarely and a little more often the deeper you go; very rarely Cakepancakes), a third of crypt chests hold a dish, and a town chest holds one three times in ten.</p>
       <h5>Gold on the floor</h5>
       <p>Coins lie in the world now, not only in the crypt's piles: <b>${pct(FOE_GOLD_CHANCE)} of slain foes</b> leave a purse that grows with the floor's level, and <b>every chest</b> spills one (a grand chest three). Walk over them and they are yours — the same reach as a pile — with the +N over your head.</p>
       ${tiers}

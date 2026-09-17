@@ -38,7 +38,7 @@ function clock(ticks: number): string {
 
 /** THE COUNTERS' SIGNS (it.84). */
 const VENDOR_TITLE: Record<Vendor, string> = { armorer: 'THE ARMORER', alchemist: 'THE ALCHEMIST', jeweler: 'THE JEWELER', scribe: 'THE SCRIBE', bowyer: 'THE BOWYER', tavern: 'THE GILDED STAG' };
-const VENDOR_SUB: Record<Vendor, string> = { armorer: 'arms · armor · materials', alchemist: 'draughts · scrolls · a bite to eat', jeweler: 'rings · amulets · the Market Ward', scribe: 'recipe scrolls · brews · the Market Ward', bowyer: 'bows · wands · staves · polearms · the Market Ward', tavern: 'bread · stews · roasts' };
+const VENDOR_SUB: Record<Vendor, string> = { armorer: 'arms · armor · materials', alchemist: 'draughts · scrolls · a bite to eat', jeweler: 'rings · amulets · the Market Ward', scribe: 'recipe scrolls · brews · the Market Ward', bowyer: 'bows · wands · staves · polearms · the Market Ward', tavern: 'ales · bottles · bread · stews · roasts' };
 
 export class ShopUI {
   private readonly panel: HTMLElement;
@@ -144,7 +144,7 @@ export class ShopUI {
     const sale = orderIndexes(tableDefs, this.filterBuy)
       .map((i) => {
         const def = tableDefs[i]!;
-        const price = this.town.buyPrice(def);
+        const price = this.town.buyPrice(def, vendor);
         return this.row(def, 'data-buy', i, `${price}◆`, p.gold < price);
       })
       .join('');
@@ -163,7 +163,7 @@ export class ShopUI {
     const left = this.tab === 'sale' ? sale || '<span class="tp-empty">Sold out — the counter restocks on the clock</span>' : buyback || '<span class="tp-empty">Nothing sold yet</span>';
     const restock = this.town.ticksToRestock(this.tickNow());
     this.panel.innerHTML = `
-      <div class="tp-head drag-handle"><h3>${VENDOR_TITLE[vendor]}</h3><span class="tp-vendor">${VENDOR_SUB[vendor]} · <i data-restock>${restock > 0 ? `restock in ${clock(restock)}` : 'restocking…'}</i></span><span class="tp-purse">◆ ${p.gold} gold</span><button class="ds-btn tp-journal" type="button" data-journal="merchants" title="The Journal (H)">JOURNAL</button><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
+      <div class="tp-head drag-handle"><h3>${VENDOR_TITLE[vendor]}</h3><span class="tp-vendor">${VENDOR_SUB[vendor]}${vendor === 'tavern' && this.town.tavernDiscount > 0 ? ` · <b class="tp-discount">${Math.round(this.town.tavernDiscount * 100)}% off for you</b>` : ''} · <i data-restock>${restock > 0 ? `restock in ${clock(restock)}` : 'restocking…'}</i></span><span class="tp-purse">◆ ${p.gold} gold</span><button class="ds-btn tp-journal" type="button" data-journal="merchants" title="The Journal (H)">JOURNAL</button><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="tp-cols">
         <div class="tp-col">
           <div class="tp-tabs" role="tablist">
@@ -207,7 +207,7 @@ export class ShopUI {
       b.addEventListener('click', () => this.queue.enqueue({ type: 'SELL', playerId: 0, backpackIndex: Number(b.dataset.sell) }));
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
     });
-    wireItemTips(this.panel, (id) => itemDef(id), (def) => `Buy ${this.town.buyPrice(def)} · sells for ${this.town.sellPrice(def)} gold`, (def) => wornFor(this.player, def));
+    wireItemTips(this.panel, (id) => itemDef(id), (def) => `Buy ${this.town.buyPrice(def, this.vendor)} · sells for ${this.town.sellPrice(def)} gold`, (def) => wornFor(this.player, def));
   }
 
   destroy(): void {

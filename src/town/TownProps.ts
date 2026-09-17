@@ -1390,8 +1390,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break; // A body now (it.90): main spawns a passive foe on the tile; the prop only keeps it solid.
       case 'lordmilk': {
         // LORD MILK (it.115): drawn by Villagers on her own idle; E at her offers the yard.
-        interactables.push({ id: nextId++, kind: 'training', x: p.x + 0.5, y: p.y + 0.5, label: 'E · LORD MILK · TRAINING', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x + 1, y: p.y - 1 }] });
-        plate(p.x, p.y, 'LORD MILK', 92);
+        interactables.push({ id: nextId++, kind: 'training', x: p.x + 0.5, y: p.y + 0.5, label: 'E · THE TRAINING GROUND', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, 'Lord Milk', 92);
         break;
       }
       case 'trainpost': {

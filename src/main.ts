@@ -16,7 +16,7 @@
  */
 
 import { installTouchGuards } from '@/core/touchGuards';
-import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter, type Texture } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, ColorMatrixFilter, Texture } from 'pixi.js';
 import { assets, WATER_PERIOD, WATER_PHASES } from '@/core/AssetManager';
 import { MAP_H, MAP_W, MAX_DEPTH, PALETTE, TILE_W } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
@@ -70,7 +70,7 @@ import { CampCraftingUI } from '@/ui/CampCrafting';
 import { CodexUI } from '@/ui/Codex';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
-import { dirIndexFromFacing, spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
+import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
 import { ChestSystem } from '@/systems/Chests';
 import { CheatMenuUI } from '@/ui/CheatMenu';
 import { MenagerieUI } from '@/ui/Menagerie';
@@ -107,7 +107,7 @@ import { CineDialogue } from '@/ui/CineDialogue'; // THE CORNER WORD (it.102).
 import { Squad, SQUAD_ANIMS } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
 import { VFX_ANIMS, VfxSystem, type VfxHandle } from '@/render/Vfx';
-import { fxAlert, fxBossDeath, fxBuff, fxCatapultImpact, fxCrit, fxDeathBurst, fxHit, fxLevelUp, fxPickupGold, fxPickupRare, fxWarp } from '@/render/effects';
+import { fxAlert, fxBossDeath, fxBuff, fxCatapultImpact, fxCrit, fxDeathBurst, fxHeal, fxHit, fxLevelUp, fxPickupGold, fxPickupRare, fxWarp } from '@/render/effects';
 import { SkillTreeUI } from '@/ui/SkillTree';
 import { CharacterSheetUI } from '@/ui/CharacterSheet';
 import { BestiaryUI, MAN_KINDS } from '@/ui/Bestiary';
@@ -306,6 +306,8 @@ const FIELD_MAX_LEVEL = 12;
  * stand on posts the layout picked, the way the eastern quarter's looters do,
  * so the field is the same field on every peer without a spawner in it.
  */
+/** Lord Milk's post facing (it.116): south-east, square to the camera - the one row where her guard reads as standing. */
+const MILK_DIR = 7;
 const FIELD_POOL: EnemyKind[] = ['bandit', 'brigand', 'poacher', 'halberdier', 'duelist']; // The company's polearms and its fencer (it.114).
 /**
  * HOW MANY STRAGGLERS THE FIELD HAS LEFT (it.112). Once the fourteen scavengers
@@ -2675,10 +2677,13 @@ async function boot(): Promise<void> {
           layout.gate, layout.arenaGate, ...layout.gateways, ...layout.houses.map((h) => h.door ?? { x: h.x + Math.floor(h.w / 2), y: h.y + h.h }),
           ...(layout.east ? [layout.east.door] : []), ...(layout.training ? [layout.training.post] : []),
         ];
-        // LORD MILK (it.115): the fencer on her post at the yard, on her own idle, facing the dummies.
+        // LORD MILK (it.115): the fencer on her post at the yard, on her own idle.
+        // IT.116: the pack has no relaxed stance - every clip is a guard - so she
+        // keeps the one facing where it reads as STANDING, square to the camera
+        // with both feet planted (south-east), and breathes it slowly there and back.
         const milkAt = isHub ? layout.training?.milk : undefined;
         const yardFigures: StandingFigure[] = milkAt && layout.training
-          ? [{ x: milkAt.x, y: milkAt.y, anim: 'duelist_idle', height: 62, dir: dirIndexFromFacing(layout.training.mark.x - milkAt.x - 0.5, layout.training.mark.y + 2 - milkAt.y), fps: 8, words: MILK_WORDS }]
+          ? [{ x: milkAt.x, y: milkAt.y, anim: 'duelist_idle', height: 60, dir: MILK_DIR, fps: 4, pingPong: true, words: MILK_WORDS }]
           : [];
         const villagers = isForest
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined, sheets: MARKET_FOLK }) // A cleared forest keeps folk and sentries (it.87).
@@ -5167,6 +5172,15 @@ async function boot(): Promise<void> {
     const innkeeperTalk = async (): Promise<void> => {
       const st = quests.east ?? 'new';
       const who = { speaker: 'COLESLAW', role: 'innkeeper of the Gilded Stag', portrait: innPortrait() };
+      /**
+       * THE TAPS (it.116): every ale and bottle in the city is poured here and
+       * nowhere else. A word with the keeper can end at his counter; once the
+       * quarter is his again it is a quarter off (`Town.tavernDiscount`).
+       */
+      const TAPS = { label: 'SHOW ME THE TAPS', sub: quests.east === 'done' ? 'ales, bottles and the larder - a quarter off for you' : 'ales, bottles and the larder', value: 'taps' };
+      const openTaps = (v: string): void => {
+        if (v === 'taps') shopUI.open('tavern');
+      };
       if (st === 'new') {
         const first = await dialogue.open({
           speaker: 'A REFUGEE',
@@ -5218,42 +5232,47 @@ async function boot(): Promise<void> {
         const v = await dialogue.open({
           ...who,
           lines: [
-            'Sit down, you\'ve earned a drink. On the house.',
-            'Ah. That\'s the trouble - every bottle I have is down in the cellar, and I have not been down there since the looters left. Something else went down after them. I can hear it through the boards at night.',
+            'Sit down. From now on anything behind this bar is a quarter off for you - it is the least I can do.',
+            'Though that\'s the trouble - every bottle I have is down in the cellar, and I have not been down there since the looters left. Something else went down after them. I can hear it through the boards at night.',
             'I gave you the bow and the sword. Go down and see what it is, and bring my stock back up. The cellar door is in the west wall, past the tables, down by the south corner. I\'m not proud about it - I am frightened of that stair.',
           ],
           choices: [
             { label: 'I\'LL GO DOWN', sub: 'he unbolts the back door', value: 'go' },
+            TAPS,
             { label: 'NOT NOW', value: 'stay' },
           ],
         });
         if (v === 'go') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'cellar', step: 'accept' });
+        else openTaps(v);
         return;
       }
       if (cel === 'active') {
-        await dialogue.open({
+        const v = await dialogue.open({
           ...who,
           lines: ['The back door\'s open - west wall, down by the south corner. Mind the dark down there - I never got round to lighting it properly.'],
-          choices: [{ label: 'UNDERSTOOD', value: 'ok' }],
+          choices: [TAPS, { label: 'UNDERSTOOD', value: 'ok' }],
         });
+        openTaps(v);
         return;
       }
       if (cel === 'done') {
-        await dialogue.open({
+        const v = await dialogue.open({
           ...who,
           lines: [
             'You brought Sarah up with you. She works my tables - three years now - and I had her down as gone with the rest of them.',
-            'I do not know what to say except thank you. Twice now. The room is yours, the chest is yours, and you will never pay for a drink in here again.',
+            'I do not know what to say except thank you. Twice now. The room is yours, the chest is yours, and the quarter off everything at this bar stands for as long as I keep it.',
           ],
-          choices: [{ label: 'THANKS', value: 'ok' }],
+          choices: [TAPS, { label: 'THANKS', value: 'ok' }],
         });
+        openTaps(v);
         return;
       }
-      await dialogue.open({
+      const v = await dialogue.open({
         ...who,
-        lines: ['Rest whenever you like. The room\'s yours, and the warded chest with it.'],
-        choices: [{ label: 'THANKS', value: 'ok' }],
+        lines: ['Rest whenever you like. The room\'s yours, and the warded chest with it. Thirsty?'],
+        choices: [TAPS, { label: 'THANKS', value: 'ok' }],
       });
+      openTaps(v);
     };
     /** The last looter falls: the letterboxed reclaiming, then the town rebuilt with the carts gone and the folk home. */
     let reclaim: ProcessionScene | null = null;
@@ -5850,8 +5869,8 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.2, x: milk.x, y: milk.y, text: 'NEW BLOOD. I AM LORD MILK, AND THIS YARD IS MINE. THE DUMMIES DO NOT HIT BACK - I DO.', speaker: 'LORD MILK', role: 'master of the training ground', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
-          { t: 2.6, x: milk.x, y: milk.y, text: 'COME AND TALK TO ME WHEN YOU WANT THE YARD. THE CRYPT GATE IS UP IN THE OLD QUARTER, AND IT WAITS.', speaker: 'LORD MILK', role: 'master of the training ground', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
+          { t: 1.2, x: milk.x, y: milk.y, text: 'New here? The dummies are for practice - they will not hit back.', speaker: 'Lord Milk', role: 'trainer', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
+          { t: 2.6, x: milk.x, y: milk.y, text: 'Talk to me when you want to learn the basics. The crypt gate is at the top of the old quarter.', speaker: 'Lord Milk', role: 'trainer', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
         ],
         hold: 3.5,
         ...cineFocusHooks,
@@ -5860,7 +5879,7 @@ async function boot(): Promise<void> {
           reclaim?.destroy();
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-          toast.show({ kind: 'lore', title: 'LORD MILK · THE TRAINING GROUND', sub: 'Walk up to Lord Milk and press E to learn the yard. It pays a hundred gold.', ms: 9000 });
+          toast.show({ kind: 'lore', title: 'THE TRAINING GROUND', sub: 'Walk up to Lord Milk and press E for a short lesson - any time you like. The first one you finish pays 100 gold.', ms: 9000 });
         },
       });
     };
@@ -7427,6 +7446,7 @@ async function boot(): Promise<void> {
         for (const inv of inventories) inv?.apply(commands);
         for (const inv of inventories) inv?.tick(); // A dish heals in slices (it.114).
         for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
+        town.tavernDiscount = quests.east === 'done' ? 0.25 : 0; // Coleslaw's quarter off (it.116).
         town.apply(commands); // Buy / sell / stash (it.39).
         crafting.apply(commands); // The camp forge (it.78).
         if (world.mines) tickMines(); // THE IRON GATES (it.85): a key at a gate opens it.
@@ -8335,13 +8355,191 @@ async function boot(): Promise<void> {
       }
     };
     const pageScratch = vec2();
+    /**
+     * THE YARD'S DIRECTOR (it.116). The tutorial asks for a framing, a ring on
+     * the ground and a lesson; these do them on the live world. The framing
+     * borrows the cutscene camera (`cineFocus`, `setCineZoom`) and gives both
+     * back on null; the ring lives on the floor it was drawn on.
+     */
+    const MILK_SHEET: AnimName = 'duelist_idle';
+    let tutorFramed = false;
+    let tutorZoom: number | null = null;
+    let tutorRing: { g: Graphics; world: typeof world } | null = null;
+    const tutorFrame = (focus: { x: number; y: number } | null, zoom: number | null): void => {
+      if (reclaim) return;
+      if (focus) {
+        if (!cineFocus) {
+          cineCur.x = cameraFocus.x;
+          cineCur.y = cameraFocus.y;
+        }
+        cineFocus = { x: focus.x, y: focus.y };
+        tutorFramed = true;
+      } else if (tutorFramed) {
+        tutorFramed = false;
+        cineFocus = null;
+        cineFogTile = -1;
+        world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+      }
+      if (zoom !== tutorZoom) {
+        tutorZoom = zoom;
+        world.camera.setCineZoom(zoom, zoom === null ? 0.7 : 0.9);
+      }
+    };
+    const tutorMark = (at: { x: number; y: number } | null): void => {
+      if (tutorRing && (tutorRing.world !== world || tutorRing.g.destroyed)) {
+        if (!tutorRing.g.destroyed) tutorRing.g.destroy();
+        tutorRing = null;
+      }
+      if (!at) {
+        if (tutorRing) tutorRing.g.visible = false;
+        return;
+      }
+      if (!tutorRing) {
+        const g = new Graphics();
+        // THE TILE ITSELF (it.116): a square on the ground - the floor's own diamond, never a circle.
+        const sq = (r: number): number[] => [0, -16 * r, 32 * r, 0, 0, 16 * r, -32 * r, 0];
+        g.poly(sq(1)).fill({ color: 0xffc050, alpha: 0.14 });
+        g.poly(sq(1)).stroke({ color: 0xffd070, width: 2.5, alpha: 0.95 });
+        g.poly(sq(0.72)).stroke({ color: 0xfff0c0, width: 1.2, alpha: 0.6 });
+        g.blendMode = 'add';
+        g.zIndex = 1e6;
+        world.viewport.groundLayer.addChild(g);
+        tutorRing = { g, world };
+      }
+      const s = worldToScreen(at.x, at.y, pageScratch);
+      const t = performance.now() / 1000;
+      tutorRing.g.visible = true;
+      tutorRing.g.position.set(s.x, s.y);
+      tutorRing.g.scale.set(1 + Math.sin(t * 4) * 0.05);
+      tutorRing.g.alpha = 0.75 + Math.sin(t * 4) * 0.2;
+    };
+    /** The dummy standing nearest a point, as a body (for its flash). */
+    const dummyAt = (x: number, y: number): Enemy | null => {
+      let best: Enemy | null = null;
+      let bd = 1.2;
+      world.enemies.forEachActive((e) => {
+        const d = Math.hypot(e.pos.x - x, e.pos.y - y);
+        if (e.def.passive && d < bd) {
+          bd = d;
+          best = e;
+        }
+      });
+      return best;
+    };
+    /**
+     * LORD MILK SHOWS HOW (it.116): a lunge and a cut, a spell thrown from the
+     * hand, a draught raised and drunk. Nothing here touches the simulation:
+     * the numbers, the flashes and the sounds are all show, so the dummies'
+     * count of the PLAYER'S hits is never fed by hers.
+     */
+    const milkLesson = (kind: 'strike' | 'skill' | 'quaff', on: { x: number; y: number }): number => {
+      const v = world.town?.villagers;
+      const head = v?.figureHead(MILK_SHEET);
+      if (!v || !head) return 0;
+      const here = world;
+      const still = (): boolean => alive && world === here;
+      if (kind === 'strike') {
+        // Two cuts, the second a crit: what a held attack key keeps doing.
+        const cut = (crit: boolean): number => {
+          const secs = v.figurePerform(MILK_SHEET, 'duelist_attack', on, 15, 1.05);
+          if (secs <= 0) return 0;
+          audio.sfx('swing');
+          later(() => {
+            if (!still()) return;
+            dummyAt(on.x, on.y)?.onDamaged();
+            fxHit(world.vfx, on.x, on.y, on.x - head.x, on.y - head.y, true);
+            if (crit) fxCrit(world.vfx, on.x, on.y);
+            world.dmgText.show(on.x, on.y - 1, String(crit ? 37 + Math.floor(Math.random() * 6) : 18 + Math.floor(Math.random() * 7)), crit ? 'crit' : 'enemy');
+            audio.sfx(crit ? 'crit' : 'hit');
+            world.camera.addShake(crit ? 0.22 : 0.12);
+          }, secs * 480);
+          return secs;
+        };
+        const secs = cut(false);
+        if (secs <= 0) return 0;
+        later(() => {
+          if (still()) cut(true);
+        }, secs * 1000 + 120);
+        return secs * 2 + 0.12;
+      }
+      if (kind === 'skill') {
+        const secs = v.figurePerform(MILK_SHEET, 'duelist_cast', on, 12);
+        if (secs <= 0) return 0;
+        world.vfx.play('fx_fire_cast', head.x, head.y, { scale: 0.9, lift: 30, overlay: true });
+        audio.sfx('skillFire');
+        const flight = 0.4;
+        later(() => {
+          if (!still()) return;
+          const ball = world.vfx.play('fx_fireball_a', head.x, head.y, { loop: true, scale: 0.8, lift: 34, overlay: true });
+          const steps = 10;
+          for (let i = 1; i <= steps; i++) {
+            later(() => {
+              if (!still()) return;
+              const k = i / steps;
+              ball.moveTo(head.x + (on.x - head.x) * k, head.y + (on.y - head.y) * k);
+              if (i < steps) return;
+              ball.stop();
+              world.vfx.play('fx_fire_burst', on.x, on.y, { scale: 1, lift: 18, overlay: true });
+              fxCrit(world.vfx, on.x, on.y);
+              dummyAt(on.x, on.y)?.onDamaged();
+              world.dmgText.show(on.x, on.y - 1.1, String(41 + Math.floor(Math.random() * 9)), 'crit');
+              audio.sfx('crit');
+              world.camera.addShake(0.2);
+            }, (flight * 1000 * i) / steps);
+          }
+        }, secs * 450);
+        return secs + flight;
+      }
+      // THE DRAUGHT: the flask rises from her belt to her lips, and the swirl climbs her.
+      const secs = v.figurePerform(MILK_SHEET, 'duelist_block', null, 4.5);
+      if (secs <= 0) return 0;
+      // The flask's own painting; drawn empty for the moment it takes to fetch, never as a stand-in blob.
+      const flask = new Sprite(spriteLib.hasSingle('item_potion_health') ? spriteLib.single('item_potion_health') : Texture.EMPTY);
+      if (!spriteLib.hasSingle('item_potion_health')) {
+        void spriteLib.singleNow('item_potion_health').then((t) => {
+          if (t && !flask.destroyed) flask.texture = t;
+        });
+      }
+      flask.anchor.set(0.5);
+      flask.scale.set(0.42);
+      const base = worldToScreen(head.x, head.y, vec2());
+      flask.position.set(base.x + 10, base.y - 20);
+      flask.zIndex = 1e7;
+      world.viewport.ambienceLayer.addChild(flask);
+      const dur = secs * 1000;
+      const t0 = performance.now();
+      const rise = (): void => {
+        if (flask.destroyed) return;
+        if (!still()) {
+          flask.destroy();
+          return;
+        }
+        const u = Math.min(1, (performance.now() - t0) / dur);
+        flask.position.set(base.x + 10 - u * 8, base.y - 20 - u * 36);
+        flask.alpha = u < 0.75 ? 1 : 1 - (u - 0.75) / 0.25;
+        if (u < 1) requestAnimationFrame(rise);
+        else flask.destroy();
+      };
+      requestAnimationFrame(rise);
+      later(() => {
+        if (!still()) return;
+        audio.sfx('potion');
+        fxHeal(world.vfx, head.x, head.y);
+        world.ambience.burst(head.x, head.y, 0xff5060, 12);
+        world.dmgText.show(head.x, head.y - 1.2, '+60', 'miss');
+      }, dur * 0.7);
+      return secs;
+    };
     const tutor = new TutorialSystem({
       touch: () => screenLayout.state.touch,
       hero: () => ({ x: player.pos.x, y: player.pos.y, hp: player.hp, hpMax: player.hpMax }),
       dummies: () => {
         const out: Array<{ id: number; x: number; y: number; hp: number; hpMax: number }> = [];
+        const hers = world.town?.layout.training?.milkDummy;
         world.enemies.forEachActive((e) => {
-          if (e.def.passive) out.push({ id: e.id, x: e.pos.x, y: e.pos.y, hp: e.hp, hpMax: e.hpMax });
+          if (!e.def.passive) return;
+          if (hers && Math.floor(e.pos.x) === hers.x && Math.floor(e.pos.y) === hers.y) return; // Lord Milk's own (it.116).
+          out.push({ id: e.id, x: e.pos.x, y: e.pos.y, hp: e.hp, hpMax: e.hpMax });
         });
         return out;
       },
@@ -8370,7 +8568,16 @@ async function boot(): Promise<void> {
         return { x: g.x + 0.5, y: g.y + 0.5 };
       },
       heroFrames: () => (spriteLib.loaded ? classPreviewFrames(chosenClass) : null),
-      mentor: () => ({ name: 'LORD MILK', role: 'master of the training ground', portrait: milkPortrait() }), // She runs the yard (it.115).
+      mentor: () => ({ name: 'Lord Milk', role: 'trainer', portrait: milkPortrait() }), // She runs the yard (it.115).
+      milk: () => world.town?.villagers.figureHead(MILK_SHEET) ?? null,
+      milkDummy: () => {
+        const d = world.town?.layout.training?.milkDummy;
+        return d ? { x: d.x + 0.5, y: d.y + 0.5 } : null;
+      },
+      frame: tutorFrame,
+      bars: (on) => document.body.classList.toggle('tut-cine', on),
+      mark: tutorMark,
+      lesson: milkLesson,
       className: () => chosenClass,
       viewport: () => ({ w: screenLayout.state.w, h: screenLayout.state.h }),
       onFinish: () => {
@@ -8393,13 +8600,15 @@ async function boot(): Promise<void> {
     const offerTraining = async (): Promise<void> => {
       if (tutor.isRunning) return;
       const v = await dialogue.open({
-        speaker: 'LORD MILK',
-        role: 'master of the training ground',
+        speaker: 'Lord Milk',
+        role: 'trainer',
         portrait: milkPortrait(),
-        lines: ['My yard. Moving, fighting, skills, potions, the pack, the forge - I will walk you through the lot. It takes a couple of minutes, and the first time through pays a hundred gold.'],
+        lines: [quests.tutorial === 'done'
+          ? 'Back for another round? The yard is always open - go through it as often as you like.'
+          : 'Want a quick lesson? Moving, fighting, skills, potions and your gear. A few minutes, and a hundred gold the first time you finish.'],
         choices: [
-          { label: 'START TRAINING', sub: 'the yard walks you through it', value: 'go' },
-          { label: 'NOT NOW', value: 'stay' },
+          { label: 'Start the lesson', sub: 'about five minutes', value: 'go' },
+          { label: 'Not now', value: 'stay' },
         ],
       });
       if (v === 'go') tutor.start();
@@ -8578,7 +8787,11 @@ async function boot(): Promise<void> {
         // card. After the errand the post is the sign; during the tutorial E at
         // it is the tutorial's, and opens no conversation at all.
         if (tutor.isRunning) return;
-        if (farmOffered() && quests.farm !== 'done' && (quests.rally === 'seen' || quests.farm !== undefined)) void officerTalk();
+        // THE YARD IS ALWAYS OPEN (it.116): E at Lord Milk is the lesson, whatever
+        // the city is asking; the officer keeps the post at the sign.
+        const milk = world.town?.layout.training?.milk;
+        const atMilk = !!milk && Math.floor(it.x) === milk.x && Math.floor(it.y) === milk.y;
+        if (!atMilk && farmOffered() && quests.farm !== 'done' && (quests.rally === 'seen' || quests.farm !== undefined)) void officerTalk();
         else void offerTraining();
       }
       else stashUI.open();
@@ -9088,7 +9301,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
   // THE MUSTER (it.101): the standing crowd on the training yard rides the coliseum's spectator sheets.
-  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'duelist_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS, ...COIN_ANIMS];
+  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'duelist_idle', 'duelist_attack', 'duelist_cast', 'duelist_block', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS, ...COIN_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
   if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS, ...COIN_ANIMS];
   // THE FARMLANDS (it.100): the company, the city's guards, the fires and the folk who come back.

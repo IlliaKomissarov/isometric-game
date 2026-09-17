@@ -479,6 +479,24 @@ export class SpriteLibrary {
     });
   }
 
+  /**
+   * One single on demand (it.116): resident at once when it already is, else
+   * fetched now (an item painting that has not streamed in yet). Null when
+   * the manifest does not know it or the fetch fails.
+   */
+  async singleNow(name: string): Promise<Texture | null> {
+    const have = this.singles.get(name);
+    if (have) return have;
+    const e = this.manifest?.singles[name];
+    if (!e) return null;
+    try {
+      await this.loadSingles([[name, e]]);
+    } catch {
+      return null;
+    }
+    return this.singles.get(name) ?? null;
+  }
+
   /** True when the manifest lists the single, resident or not (it.115: DOM users read it by URL). */
   knowsSingle(name: string): boolean {
     return !!this.manifest?.singles[name];

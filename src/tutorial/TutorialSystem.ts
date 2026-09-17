@@ -44,6 +44,35 @@ export interface TutorialHooks {
    * sit at the head of every card, and the cards are in her voice.
    */
   mentor?: () => { name: string; role: string; portrait: HTMLCanvasElement | null };
+  /** Where Lord Milk stands (it.116), for the shots and the marks. */
+  milk?: () => { x: number; y: number } | null;
+  /** Her own dummy (it.116): every lesson is shown on it, never on the player's. */
+  milkDummy?: () => { x: number; y: number } | null;
+  /**
+   * THE YARD'S CAMERA (it.116): each frame, the point the camera should look
+   * at and the zoom to hold (null, null: give the camera back to the player).
+   * Main eases both.
+   */
+  frame?: (focus: { x: number; y: number } | null, zoom: number | null) => void;
+  /** Cinema bars in or out (it.116). */
+  bars?: (on: boolean) => void;
+  /** A ring on the ground under what the card is about (it.116); null clears it. */
+  mark?: (at: { x: number; y: number } | null) => void;
+  /**
+   * LORD MILK SHOWS HOW (it.116): she performs the lesson on the dummy at
+   * `on` - a swing, a spell, a draught - and the call answers how long it
+   * takes, in seconds (0: she could not).
+   */
+  lesson?: (kind: Lesson, on: { x: number; y: number }) => number;
+}
+
+export type Lesson = 'strike' | 'skill' | 'quaff';
+
+/** A step's framing: the points to keep in view, the zoom, and whether the bars come down. */
+export interface Shot {
+  at: Array<{ x: number; y: number }>;
+  zoom: number;
+  bars?: boolean;
 }
 
 interface StepCtx {
@@ -73,6 +102,12 @@ export interface TutorialStep {
   /** Met by doing: the step advances itself. Absent = a NEXT button. */
   done?: (c: StepCtx) => boolean;
   progress?: (c: StepCtx) => string;
+  /** The camera for this step (it.116); absent, the player's own. */
+  shot?: (c: StepCtx) => Shot;
+  /** The ground ring (it.116). */
+  mark?: (c: StepCtx) => { x: number; y: number } | null;
+  /** Lord Milk demonstrates first (it.116). */
+  lesson?: Lesson;
 }
 
 export const TUTORIAL_DONE_KEY = 'iso-arpg-tutorial-done';
@@ -93,63 +128,109 @@ const keys = (...caps: string[]): string => `<span class="tut-keys">${caps.map((
 const stick = (): string => '<span class="tut-stick"><i></i></span>';
 const tap = (label: string): string => `<span class="tut-tap"><i></i><b>${label}</b></span>`;
 const mouse = (): string => '<span class="tut-mouse"><i></i></span>';
+const or = '<span class="tut-or">or</span>';
 
-/** The steps: three chapters, sixteen beats, each a line or two. */
+/**
+ * EVERY CONTROL AT ONCE (it.116): the reference card near the end. One row a
+ * verb, every way to do it - the mouse, both key sets, the touch buttons.
+ */
+function controlsGrid(touch: boolean): string {
+  const k = (...c: string[]): string => c.map((x) => `<kbd>${x}</kbd>`).join('');
+  const rows: Array<[string, string]> = touch
+    ? [
+        ['Move', 'drag the stick on the left · tap the ground'],
+        ['Attack', 'hold the swords button · tap an enemy'],
+        ['Skills', 'the four buttons on the arc'],
+        ['Potions', 'the two flasks above the stick'],
+        ['Talk, open, loot', 'the hand button · tap the thing'],
+        ['Town portal', 'the portal button'],
+        ['Windows', 'the icon bar under the map'],
+      ]
+    : [
+        ['Move', `click the ground · ${k('W', 'A', 'S', 'D')} · ${k('↑', '←', '↓', '→')}`],
+        ['Attack', `click an enemy · hold ${k('Space')} or ${k('F')}`],
+        ['Skills', `${k('1', '2', '3', '4')} · click the slot`],
+        ['Potions', `${k('Q')} heal · ${k('R')} mana or stamina · click the flask`],
+        ['Talk, open, loot', `${k('E')} · click it`],
+        ['Town portal', `${k('T')} · the portal button`],
+        ['Inventory · character · talents', k('I', 'C', 'K')],
+        ['Journal · map · bestiary', k('H', 'M', 'B')],
+        ['Depths · settings · pause', `${k('L', 'O')} ${k('Esc')}`],
+        ['Zoom', 'mouse wheel'],
+        ['Next card', k('Enter')],
+      ];
+  return `<div class="tut-grid">${rows.map(([a, b]) => `<b>${a}</b><span>${b}</span>`).join('')}</div>`;
+}
+
+/** The steps: three chapters, seventeen beats, each a sentence or two. */
 export const tutorialSteps: TutorialStep[] = [
   {
     id: 'welcome',
-    chapter: 'I · THE YARD',
-    title: 'THE TRAINING GROUND',
-    text: (c) => `Three dummies, my yard, nobody watching. I will teach you the crypt's ways before it teaches you, ${c.hooks.className().toLowerCase()}. Two minutes.`,
+    chapter: 'I · The yard',
+    title: 'The training ground',
+    text: (c) => `A few minutes here and you will know how to move, fight, heal and find your way around, ${c.hooks.className().toLowerCase()}. Do what each card asks and it moves on by itself.`,
     demo: () => '<div class="tut-hero" data-hero></div>',
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: 2.1, bars: true }),
+    mark: (c) => milkAt(c),
   },
   {
     id: 'move',
-    title: 'MOVE',
-    text: (c) => (c.touch ? 'Feet first. Press anywhere on the left and drag - the stick comes up under your thumb.' : 'Feet first. Click where you want to stand, or hold W A S D - you will path round whatever is in the way.'),
-    demo: (c) => (c.touch ? stick() : `${mouse()}${keys('W', 'A', 'S', 'D')}`),
+    title: 'Moving',
+    text: (c) => (c.touch ? 'Drag on the left side of the screen to bring up the stick, or tap the ground to walk there. Walk a few steps.' : 'Click the ground to walk there, or steer with W A S D or the arrow keys. You walk around anything in the way. Walk a few steps.'),
+    demo: (c) => (c.touch ? `${stick()}${or}${tap('tap')}` : `${mouse()}${or}${keys('W', 'A', 'S', 'D')}${or}${keys('↑', '←', '↓', '→')}`),
+    shot: (c) => ({ at: [c.hooks.hero()], zoom: 1.7 }),
     done: (c) => c.moved >= 4,
     progress: (c) => `walked ${Math.min(4, Math.floor(c.moved))} / 4 tiles`,
   },
   {
     id: 'strike',
-    title: 'TARGET AND STRIKE',
-    text: (c) => (c.touch ? 'Now the blade. Walk to a dummy and hold the blades - you turn to the nearest foe and swing.' : 'Now the blade. Click a dummy, or stand beside it and hold SPACE - you turn to the nearest foe and swing.'),
+    title: 'Attacking',
+    text: (c) => (c.touch ? 'Watch the swing first. Then walk up to a dummy and hold the swords button - you attack whatever is nearest.' : 'Watch the swing first. Then click a dummy, or stand next to it and hold Space or F - you keep attacking the nearest enemy while the key is down.'),
     target: (c) => nearestDummy(c),
-    demo: (c) => (c.touch ? tap('ATTACK') : keys('SPACE')),
+    mark: (c) => nearestDummy(c)?.world ?? null,
+    demo: (c) => (c.touch ? tap('⚔') : `${mouse()}${or}${keys('Space')}${or}${keys('F')}`),
+    lesson: 'strike',
+    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: 1.85 }),
     done: (c) => c.hits >= 3,
-    progress: (c) => `landed ${Math.min(3, c.hits)} / 3 blows`,
+    progress: (c) => `landed ${Math.min(3, c.hits)} / 3 hits`,
   },
   {
     id: 'damage',
-    title: 'DAMAGE',
-    text: () => 'Every blow rolls to hit, then for damage, and armor turns a share. The number over the dummy is what landed. Gold means you found the gap.',
+    title: 'Damage',
+    text: () => 'The number over the target is the damage that landed. Gold numbers are critical hits. Armor soaks part of every hit, so tough enemies show smaller numbers.',
     target: (c) => nearestDummy(c),
-    progress: (c) => (c.lastHit > 0 ? `last blow ${c.lastHit} · best ${c.bestHit}` : ''),
+    mark: (c) => nearestDummy(c)?.world ?? null,
+    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: 1.85 }),
+    progress: (c) => (c.lastHit > 0 ? `last hit ${c.lastHit} · best ${c.bestHit}` : ''),
   },
   {
     id: 'skill',
-    title: 'SKILLS',
-    text: (c) => (c.touch ? 'Skills. The arc on the right holds four. Tap the first at a dummy - it costs resource and the slot sweeps while it cools.' : 'Skills sit on 1 2 3 4. Press 1 at a dummy - it costs resource, and the slot sweeps while it cools.'),
+    title: 'Skills',
+    text: (c) => (c.touch ? 'Watch the spell, then tap the first skill button on the right. Skills cost mana or stamina, and the button darkens until the skill is ready again.' : 'Watch the spell, then press 1 (or click the first slot) with the cursor on the dummy. Skills sit on 1 to 4, cost mana or stamina, and the slot darkens until they are ready again.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-skill-0' : '#skill-bar .skill-slot:not(.belt-slot)' }),
-    demo: (c) => (c.touch ? tap('1') : keys('1')),
+    mark: (c) => nearestDummy(c)?.world ?? null,
+    demo: (c) => (c.touch ? tap('1') : `${keys('1', '2', '3', '4')}${or}${mouse()}`),
+    lesson: 'skill',
+    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: 1.75 }),
     done: (c) => c.casts >= 1,
     progress: (c) => `cast ${Math.min(1, c.casts)} / 1`,
   },
   {
     id: 'quaff',
-    title: 'DRAUGHTS',
-    text: (c) => (c.touch ? 'Drink before you need to. The flasks above the stick: red heals, blue restores, each on its own cooldown. Your belt decides what fills them.' : 'Drink before you need to. Q heals, R restores, each on its own cooldown, and your belt decides what fills them. Quaff one now.'),
+    title: 'Potions',
+    text: (c) => (c.touch ? 'Watch, then tap a flask above the stick: red heals, blue restores mana or stamina. Each has its own cooldown. Drink one now.' : 'Watch, then press Q for a healing potion or R for mana or stamina - or click the flask on the bar. Each has its own cooldown. Drink one now.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-potion' : '#skill-bar .belt-slot' }),
-    demo: (c) => (c.touch ? tap('Q') : keys('Q', 'R')),
+    demo: (c) => (c.touch ? tap('Q') : `${keys('Q', 'R')}${or}${mouse()}`),
+    lesson: 'quaff',
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: 1.85 }),
     done: (c) => c.quaffs >= 1,
-    progress: (c) => `quaffed ${Math.min(1, c.quaffs)} / 1`,
+    progress: (c) => `drank ${Math.min(1, c.quaffs)} / 1`,
   },
   {
     id: 'inventory',
-    chapter: 'II · THE PACK',
-    title: 'THE PACK',
-    text: (c) => (c.touch ? 'Your pack and the doll that wears it. Tap a piece to equip it; hold one for its card - its numbers beside yours, green better, red worse.' : 'Your pack and the doll that wears it. Click a piece to equip it; hover for its card - its numbers beside yours, green better, red worse.'),
+    chapter: 'II · Your gear',
+    title: 'Inventory',
+    text: (c) => (c.touch ? 'Tap an item to equip or use it; hold it to compare with what you wear - green is better, red is worse.' : 'I opens it. Click an item to equip or use it; hover it to compare with what you wear - green is better, red is worse.'),
     target: () => ({ selector: '#inv-panel', pad: 6 }),
     demo: (c) => (c.touch ? '' : keys('I')),
     enter: (c) => c.hooks.panels.open('inventory'),
@@ -157,8 +238,8 @@ export const tutorialSteps: TutorialStep[] = [
   },
   {
     id: 'character',
-    title: 'THE HERO',
-    text: () => 'Your numbers: damage, armor, crit, dodge, and where every point of Strength, Agility or Intellect goes.',
+    title: 'Character',
+    text: () => 'Damage, armor, critical chance, dodge, and what each point of Strength, Agility and Intellect gives you.',
     target: () => ({ selector: '#char-sheet', pad: 6 }),
     demo: (c) => (c.touch ? '' : keys('C')),
     enter: (c) => c.hooks.panels.open('character'),
@@ -166,8 +247,8 @@ export const tutorialSteps: TutorialStep[] = [
   },
   {
     id: 'talents',
-    title: 'TALENTS AND HOTKEYS',
-    text: () => 'A point a level buys skills and passives. Put any learned skill on slots 1 to 4 here - that is how you rebind them.',
+    title: 'Talents',
+    text: () => 'Every level gives a point for skills and passives. This is also where you choose which learned skills sit on slots 1 to 4.',
     target: () => ({ selector: '#skill-tree', pad: 6 }),
     demo: (c) => (c.touch ? '' : keys('K')),
     enter: (c) => c.hooks.panels.open('talents'),
@@ -175,16 +256,16 @@ export const tutorialSteps: TutorialStep[] = [
   },
   {
     id: 'crafting',
-    title: 'THE CAMP FORGE',
-    text: () => 'Salvage what you will not wear, forge from blueprints, reinforce to +15, lay an enchantment. The rack by the campfire opens this.',
+    title: 'The forge',
+    text: () => 'At the rack by the campfire: break down gear for materials, craft from blueprints, upgrade up to +15 and add enchantments.',
     target: () => ({ selector: '#craft-panel', pad: 6 }),
     enter: (c) => c.hooks.panels.open('crafting'),
     exit: (c) => c.hooks.panels.close('crafting'),
   },
   {
     id: 'journal',
-    title: 'THE JOURNAL',
-    text: (c) => (c.touch ? 'Every rule in one book: items, statuses, recipes, combat, the dark\'s measure. The book on the bar opens it anywhere.' : 'Every rule in one book: items, statuses, recipes, combat, the dark\'s measure. H opens it anywhere.'),
+    title: 'Journal',
+    text: (c) => (c.touch ? 'Every item, status effect, recipe and combat rule, explained. The book on the icon bar opens it.' : 'Every item, status effect, recipe and combat rule, explained. H opens it anywhere.'),
     target: () => ({ selector: '#codex', pad: 6 }),
     demo: (c) => (c.touch ? '' : keys('H')),
     enter: (c) => c.hooks.panels.open('journal'),
@@ -192,41 +273,69 @@ export const tutorialSteps: TutorialStep[] = [
   },
   {
     id: 'plate',
-    chapter: 'III · THE ROAD',
-    title: 'THE PLATE',
-    text: () => 'Life, resource and experience, your level and your gold. Buffs and wards line up beneath it with their clocks.',
+    chapter: 'III · The road',
+    title: 'Your status',
+    text: () => 'Health, mana or stamina, experience, level and gold. Active buffs line up underneath with their timers.',
     target: () => ({ selector: '#status-frame', pad: 8 }),
   },
   {
     id: 'chart',
-    title: 'THE CHART AND THE BAR',
-    text: (c) => (c.touch ? 'The chart remembers where you have been; tap it to enlarge. The bar under it opens every window.' : 'The chart remembers where you have been; M enlarges it. The bar under it opens every window.'),
+    title: 'Map and windows',
+    text: (c) => (c.touch ? 'The map remembers where you have been - tap it to enlarge. The icons under it open every window.' : 'The map remembers where you have been - M enlarges it. The icons under it open every window.'),
     target: () => ({ selector: '#hud-tr', pad: 8 }),
     demo: (c) => (c.touch ? '' : keys('M')),
   },
   {
     id: 'interact',
-    title: 'INTERACT',
-    text: (c) => (c.touch ? 'The open hand talks, loots and opens - chests, doors, merchants, me. Walk up to me and try it.' : 'E talks, loots and opens - chests, doors, merchants, me. Walk up to me and press it.'),
-    target: (c) => ({ selector: c.touch ? '#touch-controls .tc-interact' : undefined, world: c.touch ? undefined : yardPost(c) }),
-    demo: (c) => (c.touch ? tap('E') : keys('E')),
+    title: 'Talking and looting',
+    text: (c) => (c.touch ? 'The hand button talks to people, opens doors and chests, and picks up loot - or just tap the thing. Walk over to me and try it.' : 'E talks to people, opens doors and chests, and picks up loot - or just click the thing. Walk over to me and press E.'),
+    target: (c) => ({ selector: c.touch ? '#touch-controls .tc-interact' : undefined, world: c.touch ? undefined : milkAt(c) }),
+    mark: (c) => milkAt(c),
+    demo: (c) => (c.touch ? tap('✋') : `${keys('E')}${or}${mouse()}`),
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: 1.85 }),
     done: (c) => c.interacts >= 1,
     progress: (c) => `used ${Math.min(1, c.interacts)} / 1`,
   },
   {
     id: 'portal',
-    title: 'THE WAY HOME',
-    text: (c) => (c.touch ? 'The rift on the right casts the way home from any depth, on a twelve-second breath. Free.' : 'T casts the way home from any depth, on a twelve-second breath. Free.'),
+    title: 'Town portal',
+    text: (c) => (c.touch ? 'The portal button brings you back to town from anywhere, free, every twelve seconds.' : 'T, or the portal button, brings you back to town from anywhere - free, every twelve seconds.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-portal' : '#tp-button' }),
     demo: (c) => (c.touch ? '' : keys('T')),
   },
   {
+    id: 'controls',
+    title: 'All controls',
+    text: () => 'Everything in one place, in case you forget.',
+    demo: (c) => controlsGrid(c.touch),
+  },
+  {
     id: 'gate',
-    title: 'THE CRYPT GATE',
-    text: () => 'Twenty depths, a warden every fifth, one crown of ash. The gate is at the top of the old quarter. You are ready enough. Go.',
+    title: 'The crypt gate',
+    text: () => 'At the top of the old quarter. Twenty levels deep, a boss on every fifth. That is everything - go.',
     target: (c) => ({ world: c.hooks.gate(), pad: 30 }),
+    mark: (c) => c.hooks.gate(),
+    shot: (c) => ({ at: [c.hooks.gate()], zoom: 1.3, bars: true }),
   },
 ];
+
+function milkAt(c: StepCtx): { x: number; y: number } {
+  return c.hooks.milk?.() ?? TutorialSystem.yardPost;
+}
+
+/** The dummy closest to a point (Lord Milk's lessons use the one beside her, it.116). */
+function dummyNear(c: StepCtx, p: { x: number; y: number }): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  let bd = Infinity;
+  for (const d of c.hooks.dummies()) {
+    const dist = Math.hypot(d.x - p.x, d.y - p.y);
+    if (dist < bd) {
+      bd = dist;
+      best = { x: d.x, y: d.y };
+    }
+  }
+  return best;
+}
 
 function nearestDummy(c: StepCtx): { world: { x: number; y: number }; pad: number } | null {
   const h = c.hooks.hero();
@@ -242,15 +351,10 @@ function nearestDummy(c: StepCtx): { world: { x: number; y: number }; pad: numbe
   return best ? { world: best, pad: 26 } : null;
 }
 
-function yardPost(c: StepCtx): { x: number; y: number } {
-  void c;
-  return TutorialSystem.yardPost;
-}
-
 const CHAPTER_MS = 1500;
 
 export class TutorialSystem {
-  /** Where the INTERACT card points: Lord Milk's post (it.115), the sign without her (set by main from the layout). */
+  /** Lord Milk's post (it.115), the sign without her: the fallback when `hooks.milk` is absent (set by main from the layout). */
   static yardPost = { x: 16.5, y: 70.5 };
 
   private readonly layer: HTMLElement;
@@ -268,6 +372,16 @@ export class TutorialSystem {
   private chapterUntil = 0;
   private heroTimer = 0;
   private dummyIds = new Set<number>();
+  /**
+   * LORD MILK'S TURN (it.116). While `watchUntil` has not passed she is
+   * showing the step's lesson and the camera is on her and the dummy, bars
+   * down; `lessonAgain` is when she shows it again if the player has not
+   * done it yet (no bars the second time).
+   */
+  private watchUntil = 0;
+  private watchBars = false;
+  private lessonAgain = 0;
+  private barsOn = false;
 
   constructor(private readonly hooks: TutorialHooks) {
     this.ctx = { touch: hooks.touch(), moved: 0, hits: 0, bestHit: 0, lastHit: 0, casts: 0, quaffs: 0, interacts: 0, hooks };
@@ -281,9 +395,10 @@ export class TutorialSystem {
         <div class="tut-mentor" hidden><span class="tut-face"></span><span class="tut-who"><b></b><i></i></span></div>
         <div class="tut-text"></div>
         <div class="tut-demo"></div>
-        <div class="tut-foot"><span class="tut-progress"></span><span class="tut-buttons"><button class="menu-btn tut-btn" type="button" data-tut="back">BACK</button><button class="menu-btn tut-btn tut-next" type="button" data-tut="next">NEXT</button></span></div>
+        <div class="tut-foot"><span class="tut-progress"></span><span class="tut-buttons"><button class="menu-btn tut-btn" type="button" data-tut="back">Back</button><button class="menu-btn tut-btn tut-next" type="button" data-tut="next">Next</button></span></div>
       </div>
-      <div id="tut-chapter"><b></b></div>`;
+      <div id="tut-chapter"><b></b></div>
+      <div class="tut-bar tut-bar-top"></div><div class="tut-bar tut-bar-bottom"></div>`;
     document.body.appendChild(this.layer);
     this.spot = this.layer.querySelector('#tut-spot')!;
     this.arrow = this.layer.querySelector('#tut-arrow')!;
@@ -345,6 +460,10 @@ export class TutorialSystem {
     const cur = this.steps[this.index];
     cur?.exit?.(this.ctx);
     this.running = false;
+    // The camera, the bars and the ring go back to the player (it.116).
+    this.hooks.frame?.(null, null);
+    this.setBars(false);
+    this.hooks.mark?.(null);
     this.index = -1;
     this.layer.classList.remove('show');
     document.body.classList.remove('tutorial-on');
@@ -397,6 +516,7 @@ export class TutorialSystem {
     this.lastHero = { x: h.x, y: h.y };
     const step = this.steps[this.index];
     if (!step) return;
+    this.direct(step);
     this.place(step);
     const prog = this.card.querySelector<HTMLElement>('.tut-progress');
     if (prog && step.progress) {
@@ -470,12 +590,64 @@ export class TutorialSystem {
     q('.tut-progress').textContent = step.progress?.(this.ctx) ?? '';
     q<HTMLButtonElement>('[data-tut=back]').hidden = i === 0;
     const nextBtn = q<HTMLButtonElement>('[data-tut=next]');
-    nextBtn.textContent = i === this.steps.length - 1 ? 'INTO THE CRYPT' : step.done ? 'SKIP STEP' : 'NEXT';
+    nextBtn.textContent = i === this.steps.length - 1 ? 'Finish' : step.done ? 'Skip' : 'Next';
     this.card.classList.remove('tut-done', 'tut-in');
     void this.card.offsetWidth; // Restart the entrance animation.
     this.card.classList.add('tut-in');
     this.heroTimer = 0;
+    this.watchUntil = 0;
+    this.lessonAgain = 0;
+    if (step.lesson) this.showLesson(step, true);
+    this.direct(step);
     this.place(step, true);
+  }
+
+  /** Lord Milk performs the step's lesson on the nearest dummy (it.116). */
+  private showLesson(step: TutorialStep, first: boolean): void {
+    if (!step.lesson || !this.hooks.lesson) return;
+    const on = this.hooks.milkDummy?.() ?? dummyNear(this.ctx, milkAt(this.ctx)) ?? this.hooks.hero();
+    const secs = this.hooks.lesson(step.lesson, on);
+    if (secs <= 0) return;
+    const now = performance.now();
+    this.watchUntil = now + secs * 1000 + (first ? 1400 : 300); // A beat after it lands, to see what happened.
+    this.watchBars = first;
+    this.lessonAgain = this.watchUntil + 8000;
+  }
+
+  /**
+   * THE DIRECTOR (it.116), every frame: the step's shot (or, while she shows
+   * the lesson, a close two-shot of her and the dummy), the bars, the ring.
+   * Panel steps give the camera back.
+   */
+  private direct(step: TutorialStep): void {
+    const now = performance.now();
+    const met = step.done?.(this.ctx) ?? false;
+    if (step.lesson && !met && this.lessonAgain > 0 && now > this.lessonAgain) this.showLesson(step, false);
+    let shot: Shot | null = step.shot?.(this.ctx) ?? null;
+    if (now < this.watchUntil) {
+      const milk = this.hooks.milk?.();
+      const dummy = this.hooks.milkDummy?.() ?? dummyNear(this.ctx, milk ?? milkAt(this.ctx));
+      const at = [milk, step.lesson === 'quaff' ? null : dummy].filter((p): p is { x: number; y: number } => !!p);
+      if (at.length) shot = { at, zoom: 2.25, bars: this.watchBars };
+    }
+    if (shot && shot.at.length) {
+      let x = 0;
+      let y = 0;
+      for (const p of shot.at) {
+        x += p.x;
+        y += p.y;
+      }
+      this.hooks.frame?.({ x: x / shot.at.length, y: y / shot.at.length }, shot.zoom);
+    } else this.hooks.frame?.(null, null);
+    this.setBars(!!shot?.bars);
+    this.hooks.mark?.(step.mark?.(this.ctx) ?? null);
+  }
+
+  private setBars(on: boolean): void {
+    if (on === this.barsOn) return;
+    this.barsOn = on;
+    this.layer.classList.toggle('tut-bars', on);
+    this.hooks.bars?.(on);
   }
 
   /** LORD MILK at the head of the card (it.115): her face once, her name and title. */
@@ -501,6 +673,7 @@ export class TutorialSystem {
     const t = step.target?.(this.ctx) ?? null;
     const { w: vw, h: vh } = this.hooks.viewport();
     let rect: { left: number; top: number; width: number; height: number } | null = null;
+    this.spot.classList.remove('world');
     if (t?.selector) {
       const el = document.querySelector<HTMLElement>(t.selector);
       if (el && el.getClientRects().length) {
@@ -509,6 +682,7 @@ export class TutorialSystem {
         rect = { left: r.left - pad, top: r.top - pad, width: r.width + pad * 2, height: r.height + pad * 2 };
       }
     } else if (t?.world) {
+      this.spot.classList.add('world'); // A round light on a place, a box round a panel (it.116).
       const p = this.hooks.worldToPage(t.world.x, t.world.y);
       const pad = t.pad ?? 26;
       // Off the screen (the crypt gate seen from the yard): the mark sits at the
@@ -516,9 +690,13 @@ export class TutorialSystem {
       const m = pad + 8;
       const px = Math.max(m, Math.min(vw - m, p.x));
       const py = Math.max(m + pad, Math.min(vh - m, p.y));
-      rect = { left: px - pad, top: py - pad * 2.2, width: pad * 2, height: pad * 2.8 };
+      const side = pad * 2.6; // A square round the body (it.116), feet at its lower edge.
+      rect = { left: px - side / 2, top: py - side * 0.8, width: side, height: side };
     }
     this.spot.classList.toggle('jump', jump);
+    // WHILE SHE SHOWS IT (it.116) nothing is pointed at: the scene is the lesson.
+    const watching = performance.now() < this.watchUntil;
+    if (watching) rect = null;
     if (rect) {
       this.spot.classList.add('on');
       this.spot.style.left = `${Math.round(rect.left)}px`;
@@ -529,7 +707,7 @@ export class TutorialSystem {
       this.spot.classList.remove('on');
     }
     // The card: below the target when there is room, else above, else beside; centred when there is no target.
-    const cw = Math.min(380, vw - 24);
+    const cw = Math.min(step.id === 'controls' ? 460 : 380, vw - 24);
     // A SHORT SCREEN (it.115): Lord Milk's face line made the card taller than a
     // phone held sideways. Under 460 px it is drawn compact, and never taller
     // than the viewport - whatever is left over scrolls inside the card.
@@ -562,6 +740,17 @@ export class TutorialSystem {
         cy = Math.max(12, vh - ch - 14);
       }
       if (side === 'bottom' || side === 'top') cx = Math.max(12, Math.min(vw - cw - 12, rect.left + rect.width / 2 - cw / 2));
+    }
+    // A SHOT WITH NOTHING TO POINT AT (it.116): the card steps to the lower
+    // left, clear of the bars, so the scene it describes stays in view.
+    if (!rect && step.shot) {
+      cx = 12;
+      cy = vh - ch - Math.max(14, vh * 0.1);
+    }
+    // ...and during her lesson the card waits at the right edge, off the two-shot.
+    if (watching) {
+      cx = vw - cw - 12;
+      cy = Math.max(12, vh * 0.1 + 6);
     }
     // Whatever the target did, the card stays inside the viewport.
     cx = Math.max(12, Math.min(vw - cw - 12, cx));

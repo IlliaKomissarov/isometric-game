@@ -1,5 +1,36 @@
 # Development Log
 
+## 2026-09-17 (iteration 116) - Lord Milk teaches, Coleslaw pours, Cakepancakes
+
+### The training ground
+- Lord Milk's lines are plain sentence case and she no longer introduces
+  herself; the card header carries her face and name once.
+- The pack has no relaxed stance, so she keeps the south-east facing (square
+  to the camera, both feet planted) and breathes her guard slowly there and
+  back (`StandingFigure.pingPong`). The stakes behind her moved away.
+- `Villagers.figurePerform` plays a clip once with a lunge; the tutorial's new
+  `lesson` hook has her cut her own dummy twice, throw a fireball at it and
+  drink a flask, each before the player is asked to. Her dummy
+  (`training.milkDummy`) is apart from the player's three and never counts.
+- The director: every step has a `shot` (points to keep in view and a zoom,
+  eased through the cutscene camera), cinema bars on the welcome, the gate and
+  her first showing of each lesson, a square marker on the ground under what
+  the card is about, and a square spotlight. The card moves off the shot.
+- Every control scheme on the cards (click, WASD and the arrows; Space and F;
+  1-4 and the slot; Q/R and the flask) and a new "All controls" card.
+- E at Lord Milk always offers the lesson (the officer keeps the sign); the
+  first completion pays 100 gold, replays pay nothing. Notices wait until the
+  tutorial ends. A struck dummy's flash now fades (it never did).
+
+### Food and drink
+- `Pancake_Stack` ships as `cakepancakes`: the one BANQUET dish - all life and
+  resource back and might x1.5, half of every blow turned and haste x1.4 for a
+  minute. One food find in 150; on Coleslaw's counter past depth V.
+- Ales and bottles no longer drop anywhere. Coleslaw pours all ten ales and
+  eight other bottles ("Show me the taps"), and once the quarter is his again
+  everything at his bar is a quarter off (`Town.tavernDiscount`); the free
+  drinks are gone from his lines.
+
 ## 2026-09-17 (iteration 115) - The owner's list: everything it.114 got wrong
 
 The owner played it.114 and sent back a long list. This iteration answers it

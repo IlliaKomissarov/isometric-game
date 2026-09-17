@@ -26,7 +26,7 @@
 
 import { AFFIXES, foldAffixes, affixLine, rollAffixes, type AffixKey, type AffixRoll } from './affixes';
 import { ITEMS, RARITY_AFFIX_COUNT, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, turntableFor, type ItemDef, type Rarity, type UniqueEffect } from './catalog';
-import { ALES, CURIO_DRINKS, CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS, RAVEN_ITEMS, foodsOfTier, gearBases } from './registry';
+import { CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS, RAVEN_ITEMS, foodsOfTier, gearBases } from './registry';
 import { ENCHANTS, ENCHANT_KEYS, effectAdjective, effectLine, type Effect } from './effects';
 import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 
@@ -293,15 +293,13 @@ export function rollMinorItem(rand: () => number, ilvl: number): string {
 
 /**
  * FOOD ON THE FLOOR (it.114): snacks mostly, a meal a third of the time, a
- * feast rarely - and a little more often the deeper the floor. One find in
- * five is a DRINK instead (it.115): an ale, or any of the 95 other bottles
- * and tins of the bake, so every one of them turns up in the crypt.
+ * feast rarely - and a little more often the deeper the floor. NO BOTTLES
+ * (it.116): ales and the bake's other drinks are poured by Coleslaw at the
+ * Gilded Stag and turn up nowhere else. One find in a hundred and fifty is
+ * the banquet, Cakepancakes.
  */
 export function rollFood(rand: () => number, ilvl: number): string {
-  if (rand() < 0.2) {
-    if (rand() < 0.3) return ALES[Math.floor(rand() * ALES.length)].id;
-    return CURIO_DRINKS[Math.floor(rand() * CURIO_DRINKS.length)].id;
-  }
+  if (rand() < 1 / 150) return 'food_cakepancakes';
   const r = rand();
   const feast = 0.08 + Math.min(0.12, ilvl / 400);
   const tier = r < feast ? 'feast' : r < feast + 0.32 ? 'meal' : 'snack';

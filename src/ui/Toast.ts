@@ -175,7 +175,8 @@ const FLUSH_POLL_MS = 300;
  */
 function floorTaken(): boolean {
   const b = document.body.classList;
-  return b.contains(DIALOGUE_OPEN_CLASS) || b.contains('cine') || !!document.querySelector('#cine-speak.show');
+  // ...and the training ground's cards (it.116), which a notice would land on top of.
+  return b.contains(DIALOGUE_OPEN_CLASS) || b.contains('cine') || b.contains('tutorial-on') || !!document.querySelector('#cine-speak.show');
 }
 
 export class ToastUI {

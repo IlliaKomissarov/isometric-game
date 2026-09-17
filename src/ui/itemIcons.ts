@@ -29,11 +29,25 @@ export function singleUrl(name: string): string {
  * residency needed, the way the bestiary animates a creature). Null when the
  * item has no turntable or the manifest does not know it.
  */
-export function itemSpin(def: ItemDef): { url: string; cellW: number; cellH: number; frames: number } | null {
+export interface ItemSpin {
+  url: string;
+  cellW: number;
+  cellH: number;
+  frames: number;
+  /** The original frame and the cell's place in it (it.115: the cells step it in percent). */
+  origW: number;
+  origH: number;
+  trimX: number;
+  trimY: number;
+  /** Pixel art (the Arsenal): drawn without smoothing. */
+  nearest: boolean;
+}
+
+export function itemSpin(def: ItemDef): ItemSpin | null {
   if (!def.spin) return null;
   const e = spriteLib.entry(def.spin);
-  if (!e) return null;
-  return { url: atlasUrl(e.file), cellW: e.cellW, cellH: e.cellH, frames: e.frameCount };
+  if (!e || e.dirCount !== 1 || e.scale !== 1) return null;
+  return { url: atlasUrl(e.file), cellW: e.cellW, cellH: e.cellH, frames: e.frameCount, origW: e.origW, origH: e.origH, trimX: e.trimX, trimY: e.trimY, nearest: e.nearest };
 }
 
 const cache = new Map<string, string>();
@@ -334,25 +348,91 @@ function drawIconCanvas(def: ItemDef, scale: number): HTMLCanvasElement {
 }
 
 /**
+ * THE TURNING CELL (it.115). A turntable is drawn as an `<img>` - so every
+ * panel's existing img sizing (the 40 px cell, the 36 px shop row, the 22 px
+ * pouch chip, `fitItemIcons`) applies unchanged - whose `src` is a clear SVG
+ * of the frame's ORIGINAL size (every item strip has a square original:
+ * 96 px polyy, 64 px Arsenal and ores) and whose BACKGROUND is the strip,
+ * sized and placed in percent of the box so it scales with whatever box the
+ * panel gives it. The strip's cells are trimmed (cellW x cellH at trimX,
+ * trimY inside the original), so for frame k the background offset is
+ * `(trimX - k*cellW) * s` with s = box / origW; as a background-position
+ * percentage that is `(trimX - k*cellW) / (origW - F*cellW)` - linear in k,
+ * so one CSS `steps(F)` animation from `--sx0` to `--sx1` walks the frames
+ * (index.html, `.inv-spin`). Nothing runs in JS.
+ *
+ * THE NEIGHBOURS ARE CLIPPED. The strip's cells are packed edge to edge, so
+ * the box around cell k also covers the right of cell k-1 and the left of
+ * cell k+1 (a 12 px longbow cell in a 64 px frame shows five bows at once).
+ * A `clip-path: inset()` in percent of the box cuts it to exactly the cell's
+ * rectangle - the union of every frame's paint, so nothing of the item is
+ * lost. Checked at 22, 36, 40 and 42 px boxes: the offset of frame k is
+ * `(trimX - k*cellW) * box/origW`, the same fraction of the box at any size.
+ *
+ * THE PACE: a polyy turntable (30 frames, a real 3D turn) at 12 fps is a
+ * 2.5 s revolution; a flat Arsenal / ore turntable (16 squash frames) runs
+ * at 6.4 fps so a coin-flip does not flicker.
+ */
+function spinStyle(spin: ItemSpin): string {
+  const pct = (v: number): string => `${(v * 100).toFixed(4)}%`;
+  const spanX = spin.origW - spin.frames * spin.cellW;
+  const x0 = spanX !== 0 ? spin.trimX / spanX : 0;
+  const step = spanX !== 0 ? -spin.cellW / spanX : 0;
+  const spanY = spin.origH - spin.cellH;
+  const y = spanY !== 0 ? spin.trimY / spanY : 0;
+  const top = spin.trimY / spin.origH;
+  const left = spin.trimX / spin.origW;
+  const right = Math.max(0, spin.origW - spin.trimX - spin.cellW) / spin.origW;
+  const bottom = Math.max(0, spin.origH - spin.trimY - spin.cellH) / spin.origH;
+  const secs = spin.frames >= 24 ? spin.frames / 12 : 2.5;
+  return [
+    `background-image:url(${spin.url})`,
+    `background-size:${pct((spin.frames * spin.cellW) / spin.origW)} ${pct(spin.cellH / spin.origH)}`,
+    `clip-path:inset(${pct(top)} ${pct(right)} ${pct(bottom)} ${pct(left)})`,
+    `--sx0:${pct(x0)}`,
+    `--sx1:${pct(x0 + step * spin.frames)}`,
+    `--sy:${pct(y)}`,
+    `--frames:${spin.frames}`,
+    `--spin-dur:${secs.toFixed(2)}s`,
+  ].join(';');
+}
+
+const clearSvg = (w: number, h: number): string => `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'/%3E`;
+
+/**
  * The one icon resolver every panel uses (it.40): painted art from the
- * Ultimate Fantasy pack when the item has `art`, the oubliette weapon icon
- * when it has `icon`, else the generated pixel icon. `base` is the class
- * every variant carries; `px` is added only to the pixel fallback.
+ * Ultimate Fantasy pack when the item has `art`; THE TURNING CELL (it.115,
+ * above) when it has a `spin` the manifest knows; the baked single when it
+ * has a `sprite` the atlas holds; the Raven / oubliette icon when it has
+ * `icon`; else the generated pixel icon. The last two have no art in the
+ * drop (armour, jewellery, keys) and turn by a CSS transform instead
+ * (`.inv-turn`), so nothing in a cell stands still. `base` is the class
+ * every variant carries; `px` is added only to the pixel fallback. Every
+ * panel (inventory, belt, shop, stash, forge, codex, the hotbar) comes
+ * through here, so they all turn.
  */
 export function itemIconHtml(def: ItemDef, base = '', px = 'px'): string {
   const cls = (extra: string): string => [base, extra].filter(Boolean).join(' ');
   if (def.art) return `<img class="${cls('art')}" src="${uiAssetUrl(`items/${def.art}.png`)}" alt="${def.name}" draggable="false">`;
-  // THE BAKED SINGLES (it.114): food and flasks - 64 px art with a dark rim, contain-fit like painted art.
-  if (def.sprite) return `<img class="${cls('art baked')}" src="${singleUrl(def.sprite)}" alt="${def.name}" draggable="false">`;
-  if (def.icon) return `<img class="${cls('')}" src="${weaponIconUrl(def.icon)}" alt="${def.name}" draggable="false">`;
-  return `<img class="${cls(px)}" src="${itemIconDataUrl(def)}" alt="${def.name}" draggable="false">`;
+  const spin = itemSpin(def);
+  if (spin) {
+    return `<img class="${cls(spin.nearest ? 'art baked inv-spin pixel' : 'art baked inv-spin')}" src="${clearSvg(spin.origW, spin.origH)}" style="${spinStyle(spin)}" alt="${def.name}" draggable="false">`;
+  }
+  // THE BAKED SINGLES (it.114, every item it.115): 64 px art, contain-fit like painted art; the Arsenal is pixel art and stays crisp.
+  if (def.sprite && spriteLib.knowsSingle(def.sprite)) {
+    return `<img class="${cls(def.sprite.startsWith('arsenal_') ? 'art baked pixel inv-turn' : 'art baked inv-turn')}" src="${singleUrl(def.sprite)}" alt="${def.name}" draggable="false">`;
+  }
+  if (def.icon) return `<img class="${cls('inv-turn')}" src="${weaponIconUrl(def.icon)}" alt="${def.name}" draggable="false">`;
+  return `<img class="${cls(`${px} inv-turn`)}" src="${itemIconDataUrl(def)}" alt="${def.name}" draggable="false">`;
 }
 
 /**
  * SLOT FITTING (it.51): every icon inside a cell is scaled to
  * `min(slotW / w, slotH / h) * 0.85` of its natural size, so a long blade
  * or a wide cuirass never overflows its box. Images still loading are
- * fitted when they arrive.
+ * fitted when they arrive. A turning cell (it.115) is an img too - its
+ * natural size is the strip's original frame, and its background follows
+ * the box because it is sized in percent.
  */
 export function fitItemIcons(root: HTMLElement, margin = 0.85): void {
   root.querySelectorAll<HTMLImageElement>('.inv-cell img').forEach((img) => {

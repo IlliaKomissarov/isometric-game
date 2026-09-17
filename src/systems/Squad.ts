@@ -351,7 +351,9 @@ export class Squad {
       }
       const kit = s.officer ? SQUAD_OFFICER : bag.pop()!;
       if (!spriteLib.hasAnim(kit.anim)) continue;
-      const painted = spriteLib.paintedHeight(kit.anim) || 90;
+      // It.115: the BODY height (paint top to the calibrated feet) - a halberd
+      // held overhead is not the man.
+      const painted = spriteLib.bodyHeight(kit.anim) || 90;
       const scale = kit.height / painted;
       const root = new Container();
       root.scale.set(0.8);
@@ -907,7 +909,10 @@ export class Squad {
       const want = m.swing > 0 ? m.attack : moving ? m.anim : m.idle;
       if (want !== m.shown) {
         m.shown = want;
-        const painted = spriteLib.paintedHeight(want) || 90;
+        // IT.115: one scale for the man, from his WALK sheet's body height. The
+        // swing sheet's painted height counts the weapon over his head, so it
+        // shrank him mid-blow; its feet row is calibrated per clip.
+        const painted = spriteLib.bodyHeight(m.anim) || 90;
         const foot = spriteLib.footAnchor(want);
         m.body.anchor.set(foot.x, foot.y);
         m.body.scale.set(m.height / painted / 0.8);

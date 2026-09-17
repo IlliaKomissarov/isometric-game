@@ -8,8 +8,9 @@
  *
  * MODULAR BY DESIGN: the steps are data (`tutorialSteps`), the engine knows
  * nothing about the game beyond `TutorialHooks`, and `shouldAutoStart()` is
- * the one switch a mandatory first-time onboarding needs (off for now; the
- * sign at the yard starts it, `__game.tutor.start()` for QA).
+ * the one switch a mandatory first-time onboarding needs (off for now; LORD
+ * MILK at the yard starts it - it.115 - or the sign beside her, and
+ * `__game.tutor.start()` for QA).
  *
  * RENDER-SIDE ONLY: the system reads the simulation (positions, hp, the
  * commands the local hero issued) and never writes it. Opening a panel is
@@ -38,6 +39,11 @@ export interface TutorialHooks {
   /** The layout viewport (the simulated phone box in QA, the window otherwise): the card and the spot stay inside it. */
   viewport: () => { w: number; h: number };
   onFinish?: () => void;
+  /**
+   * WHO RUNS THE YARD (it.115): LORD MILK. Her name, her title and her face
+   * sit at the head of every card, and the cards are in her voice.
+   */
+  mentor?: () => { name: string; role: string; portrait: HTMLCanvasElement | null };
 }
 
 interface StepCtx {
@@ -94,13 +100,13 @@ export const tutorialSteps: TutorialStep[] = [
     id: 'welcome',
     chapter: 'I · THE YARD',
     title: 'THE TRAINING GROUND',
-    text: (c) => `Three dummies, a yard, no one watching. Learn the crypt's ways here, ${c.hooks.className().toLowerCase()} - it takes two minutes.`,
+    text: (c) => `Three dummies, my yard, nobody watching. I will teach you the crypt's ways before it teaches you, ${c.hooks.className().toLowerCase()}. Two minutes.`,
     demo: () => '<div class="tut-hero" data-hero></div>',
   },
   {
     id: 'move',
     title: 'MOVE',
-    text: (c) => (c.touch ? 'Press anywhere on the left and drag: the stick spawns under your thumb.' : 'Click where you want to stand, or hold W A S D. The hero paths around what blocks the way.'),
+    text: (c) => (c.touch ? 'Feet first. Press anywhere on the left and drag - the stick comes up under your thumb.' : 'Feet first. Click where you want to stand, or hold W A S D - you will path round whatever is in the way.'),
     demo: (c) => (c.touch ? stick() : `${mouse()}${keys('W', 'A', 'S', 'D')}`),
     done: (c) => c.moved >= 4,
     progress: (c) => `walked ${Math.min(4, Math.floor(c.moved))} / 4 tiles`,
@@ -108,7 +114,7 @@ export const tutorialSteps: TutorialStep[] = [
   {
     id: 'strike',
     title: 'TARGET AND STRIKE',
-    text: (c) => (c.touch ? 'Walk to a dummy and hold the blades: the hero turns to the nearest foe and swings.' : 'Click a dummy, or stand beside it and hold SPACE: the hero turns to the nearest foe and swings.'),
+    text: (c) => (c.touch ? 'Now the blade. Walk to a dummy and hold the blades - you turn to the nearest foe and swing.' : 'Now the blade. Click a dummy, or stand beside it and hold SPACE - you turn to the nearest foe and swing.'),
     target: (c) => nearestDummy(c),
     demo: (c) => (c.touch ? tap('ATTACK') : keys('SPACE')),
     done: (c) => c.hits >= 3,
@@ -117,14 +123,14 @@ export const tutorialSteps: TutorialStep[] = [
   {
     id: 'damage',
     title: 'DAMAGE',
-    text: () => 'Every blow rolls to hit, then for damage; armor turns a share. The number over the dummy is what landed - crits read gold.',
+    text: () => 'Every blow rolls to hit, then for damage, and armor turns a share. The number over the dummy is what landed. Gold means you found the gap.',
     target: (c) => nearestDummy(c),
     progress: (c) => (c.lastHit > 0 ? `last blow ${c.lastHit} · best ${c.bestHit}` : ''),
   },
   {
     id: 'skill',
     title: 'SKILLS',
-    text: (c) => (c.touch ? 'The arc on the right holds four skills. Tap the first at a dummy: it costs resource and starts a cooldown.' : 'Skills sit on 1 2 3 4. Press 1 near a dummy: it costs resource and starts a cooldown sweep on the slot.'),
+    text: (c) => (c.touch ? 'Skills. The arc on the right holds four. Tap the first at a dummy - it costs resource and the slot sweeps while it cools.' : 'Skills sit on 1 2 3 4. Press 1 at a dummy - it costs resource, and the slot sweeps while it cools.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-skill-0' : '#skill-bar .skill-slot:not(.belt-slot)' }),
     demo: (c) => (c.touch ? tap('1') : keys('1')),
     done: (c) => c.casts >= 1,
@@ -133,7 +139,7 @@ export const tutorialSteps: TutorialStep[] = [
   {
     id: 'quaff',
     title: 'DRAUGHTS',
-    text: (c) => (c.touch ? 'The flasks above the stick: the red heals, the blue restores. Each has its own cooldown; the belt in your pack decides what fills them.' : 'Q heals, R restores. Each has its own cooldown; the belt in your pack decides what fills them. Quaff one now.'),
+    text: (c) => (c.touch ? 'Drink before you need to. The flasks above the stick: red heals, blue restores, each on its own cooldown. Your belt decides what fills them.' : 'Drink before you need to. Q heals, R restores, each on its own cooldown, and your belt decides what fills them. Quaff one now.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-potion' : '#skill-bar .belt-slot' }),
     demo: (c) => (c.touch ? tap('Q') : keys('Q', 'R')),
     done: (c) => c.quaffs >= 1,
@@ -201,7 +207,7 @@ export const tutorialSteps: TutorialStep[] = [
   {
     id: 'interact',
     title: 'INTERACT',
-    text: (c) => (c.touch ? 'The open hand talks, loots and opens - chests, keys, merchants, the gatekeeper. Try it on the sign.' : 'E talks, loots and opens - chests, keys, merchants, the gatekeeper. Press it at the sign.'),
+    text: (c) => (c.touch ? 'The open hand talks, loots and opens - chests, doors, merchants, me. Walk up to me and try it.' : 'E talks, loots and opens - chests, doors, merchants, me. Walk up to me and press it.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-interact' : undefined, world: c.touch ? undefined : yardPost(c) }),
     demo: (c) => (c.touch ? tap('E') : keys('E')),
     done: (c) => c.interacts >= 1,
@@ -217,7 +223,7 @@ export const tutorialSteps: TutorialStep[] = [
   {
     id: 'gate',
     title: 'THE CRYPT GATE',
-    text: () => 'Twenty depths, a warden every fifth, one crown of ash. The gate is at the top of the old quarter. Go.',
+    text: () => 'Twenty depths, a warden every fifth, one crown of ash. The gate is at the top of the old quarter. You are ready enough. Go.',
     target: (c) => ({ world: c.hooks.gate(), pad: 30 }),
   },
 ];
@@ -244,7 +250,7 @@ function yardPost(c: StepCtx): { x: number; y: number } {
 const CHAPTER_MS = 1500;
 
 export class TutorialSystem {
-  /** The sign's world point (set by main from the layout). */
+  /** Where the INTERACT card points: Lord Milk's post (it.115), the sign without her (set by main from the layout). */
   static yardPost = { x: 16.5, y: 70.5 };
 
   private readonly layer: HTMLElement;
@@ -272,6 +278,7 @@ export class TutorialSystem {
       <div id="tut-arrow"><svg viewBox="0 0 40 40" width="40" height="40"><path d="M20 4 L36 24 L26 24 L26 36 L14 36 L14 24 L4 24 Z" fill="#ffd070" stroke="#3a2a10" stroke-width="2" stroke-linejoin="round"/></svg></div>
       <div id="tut-card">
         <div class="tut-head"><span class="tut-step"></span><span class="tut-title"></span><button class="tut-x" type="button" data-tut="end" title="End the tutorial"><i></i></button></div>
+        <div class="tut-mentor" hidden><span class="tut-face"></span><span class="tut-who"><b></b><i></i></span></div>
         <div class="tut-text"></div>
         <div class="tut-demo"></div>
         <div class="tut-foot"><span class="tut-progress"></span><span class="tut-buttons"><button class="menu-btn tut-btn" type="button" data-tut="back">BACK</button><button class="menu-btn tut-btn tut-next" type="button" data-tut="next">NEXT</button></span></div>
@@ -452,6 +459,7 @@ export class TutorialSystem {
     }
     step.enter?.(this.ctx);
     const q = <T extends HTMLElement>(sel: string): T => this.card.querySelector<T>(sel)!;
+    this.showMentor(q);
     q('.tut-step').textContent = `${i + 1} / ${this.steps.length}`;
     q('.tut-title').textContent = step.title;
     q('.tut-text').innerHTML = step.text(this.ctx);
@@ -468,6 +476,24 @@ export class TutorialSystem {
     this.card.classList.add('tut-in');
     this.heroTimer = 0;
     this.place(step, true);
+  }
+
+  /** LORD MILK at the head of the card (it.115): her face once, her name and title. */
+  private showMentor(q: <T extends HTMLElement>(sel: string) => T): void {
+    const m = this.hooks.mentor?.();
+    const row = q('.tut-mentor');
+    row.hidden = !m;
+    if (!m) return;
+    q('.tut-who b').textContent = m.name;
+    q('.tut-who i').textContent = m.role;
+    const face = q('.tut-face');
+    if (m.portrait && !face.firstElementChild) {
+      const c = document.createElement('canvas');
+      c.width = m.portrait.width;
+      c.height = m.portrait.height;
+      c.getContext('2d')?.drawImage(m.portrait, 0, 0);
+      face.appendChild(c);
+    }
   }
 
   /** Frame the target, aim the arrow, seat the card beside it. */
@@ -504,6 +530,11 @@ export class TutorialSystem {
     }
     // The card: below the target when there is room, else above, else beside; centred when there is no target.
     const cw = Math.min(380, vw - 24);
+    // A SHORT SCREEN (it.115): Lord Milk's face line made the card taller than a
+    // phone held sideways. Under 460 px it is drawn compact, and never taller
+    // than the viewport - whatever is left over scrolls inside the card.
+    this.card.classList.toggle('tut-short', vh < 460);
+    this.card.style.maxHeight = `${Math.max(120, vh - 24)}px`;
     const ch = this.card.offsetHeight || 200;
     let cx = (vw - cw) / 2;
     let cy = (vh - ch) / 2;

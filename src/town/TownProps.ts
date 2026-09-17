@@ -11,7 +11,7 @@
  * and an `update(dt)` for the render-side fog drift at the gate.
  */
 
-import { Container, Graphics, Sprite, Text } from 'pixi.js';
+import { Container, Graphics, Rectangle, Sprite, Text, Texture } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
 import type { Ambience } from '@/engine/Ambience';
 import type { Lighting } from '@/engine/Lighting';
@@ -21,7 +21,7 @@ import { TILE_H, TILE_W } from '@/core/config';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
 import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
-import type { TownLayout, TownProp } from './TownMap';
+import { STAG_CELLAR, STAG_DOOR, STAG_SOLID, type TownLayout, type TownProp } from './TownMap';
 
 /**
  * WHERE THE BAKED BRIDGE PIECES SIT (it.111). `scripts/bake-bridge.py` composes
@@ -68,6 +68,17 @@ export interface Occluder {
    * when the body point misses the sprite's inset rect. Trees only.
    */
   canopy?: { x: number; y: number; w: number; h: number };
+  /**
+   * A SLICED BUILDING (it.115). `sprite` is then an undrawn proxy that only
+   * carries the building's screen rect and its alpha; `parts` are the strips
+   * actually drawn (each sorted by its own column), and `frontAt(sx)` is the
+   * depth sum (x + y) of the building's front face at screen column `sx`: a
+   * body whose own x + y is below it stands BEHIND the building there.
+   */
+  parts?: Sprite[];
+  frontAt?: (sx: number) => number;
+  /** The screen column the cutaway last centred on (written by the cutaway pass). */
+  ghostX?: number;
 }
 
 /**
@@ -109,12 +120,49 @@ const FIT: Partial<Record<TownProp['kind'], { max: number; fill?: boolean }>> = 
  * leave blocked tiles drawn as open ground. Singles not listed fit by their
  * texture width.
  */
+/**
+ * WHERE A BAKED BUILDING STANDS (it.115): `scripts/bake-buildings.py` measures
+ * each polyy / cottage single's base - the south corner of its wall foot, as a
+ * fraction of the image - and a building seated on the generic (0.5, 0.96)
+ * floated up to a dozen pixels off its footprint (the windmill's corner is at
+ * 0.425 across). `standing()` uses these whenever the single is listed.
+ */
+const BAKED_ANCHOR: Readonly<Record<string, readonly [number, number]>> = {
+  bld_thatched_cottage_a: [0.482, 0.979], bld_thatched_cottage_b: [0.521, 1.0], bld_timber_frame_house_a: [0.498, 0.986],
+  bld_timber_frame_house_b: [0.502, 0.991], bld_blacksmith_forge_a: [0.5, 1.0], bld_blacksmith_forge_b: [0.5, 1.0], bld_tavern_inn_a: [0.493, 0.995],
+  bld_tavern_inn_b: [0.529, 0.995], bld_watermill_a: [0.463, 0.979], bld_watermill_b: [0.52, 0.955], bld_windmill_a: [0.425, 0.997],
+  bld_windmill_b: [0.575, 0.997], bld_stone_chapel_a: [0.49, 0.979], bld_stone_chapel_b: [0.51, 0.979], bld_stone_well_a: [0.496, 1.0],
+  bld_stone_well_b: [0.504, 1.0], bld_bakery_a: [0.39, 0.987], bld_bakery_b: [0.492, 0.98], bld_stable_a: [0.509, 0.955],
+  bld_stable_b: [0.488, 0.948], bld_granary_staddle_a: [0.499, 1.0], bld_granary_staddle_b: [0.499, 0.995], bld_gatehouse_a: [0.5, 0.948],
+  bld_gatehouse_b: [0.5, 0.947], bld_watchtower_a: [0.518, 0.996], bld_watchtower_b: [0.482, 0.996], bld_apothecary_a: [0.414, 0.981],
+  bld_apothecary_b: [0.586, 0.975], bld_fisherman_hut_a: [0.476, 1.0], bld_fisherman_hut_b: [0.52, 0.994], bld_round_cottage_a: [0.47, 0.993],
+  bld_round_cottage_b: [0.523, 1.0], bld_wizard_tower_a: [0.511, 0.997], bld_wizard_tower_b: [0.489, 0.997], bld_witch_hut_a: [0.553, 0.991],
+  bld_witch_hut_b: [0.48, 0.991], bld_dovecote_a: [0.519, 0.993], bld_dovecote_b: [0.481, 0.993], bld_lumber_shed_a: [0.496, 0.882],
+  bld_lumber_shed_b: [0.5, 0.889], bld_village_hall_a: [0.5, 0.974], bld_village_hall_b: [0.5, 0.974], bld_longhouse_a: [0.5, 0.947],
+  bld_longhouse_b: [0.5, 0.947], bld_wayside_shrine_a: [0.492, 1.0], bld_wayside_shrine_b: [0.508, 1.0], bld_farmhouse_barn_a: [0.489, 0.944],
+  bld_farmhouse_barn_b: [0.482, 0.943], bld_market_stall_a: [0.527, 1.0], bld_market_stall_b: [0.492, 1.0], bld_manor_a: [0.508, 0.971],
+  bld_manor_b: [0.562, 0.988], cot_a: [0.59, 0.981], cot_b: [0.534, 1.0], cot_c: [0.459, 1.0],
+};
+
 const PAINTED_BASE: Readonly<Record<string, number>> = {
   house_a: 262, house_b: 248, house_c: 271, house_d: 249, house_e: 207, house_f: 212, house_g: 222, house_h: 316,
   guildhall: 310, tavern_a: 273, tavern_east: 389, smithy: 229, barracks: 327, 'barracks@3x3': 253 /* the farm's great barn */, watchtower: 104,
   stall_a: 163, stall_b: 163, stall_c: 163, stall_d: 163, well_b: 130, cart: 69, bench_a: 77, bench_b: 84, statue_a: 85, inn_bed: 84,
   tent_a: 239, tent_b: 202, tent_c: 186, tent_d: 134, tent_e: 101,
   ruin_a: 127, ruin_b: 103, ruin_c: 153, ruin_d: 132, ruin_e: 126, ruin_f: 136, ruin_g: 98, ruin_h: 137, ruin_i: 110, ruin_j: 182, ruin_k: 129, ruin_l: 181, gl_wreck_tower: 223,
+};
+
+/**
+ * THE POLYY VILLAGE'S SOUTH CORNERS (it.115), from `scripts/bake-buildings.py`'s
+ * report: where each single's base diamond meets the ground at its front.
+ */
+const BLD_ANCHOR: Readonly<Record<string, { x: number; y: number }>> = {
+  bld_timber_frame_house_a: { x: 0.498, y: 0.986 },
+  bld_timber_frame_house_b: { x: 0.502, y: 0.991 },
+  bld_thatched_cottage_a: { x: 0.482, y: 0.979 },
+  bld_bakery_b: { x: 0.492, y: 0.98 },
+  bld_apothecary_a: { x: 0.414, y: 0.981 },
+  bld_blacksmith_forge_a: { x: 0.5, y: 1.0 },
 };
 
 export interface Interactable {
@@ -133,6 +181,8 @@ export interface Interactable {
   note?: string;
   /** Where an open gateway leads (it.85). */
   dest?: 'forest' | 'farm' | 'river';
+  /** A siege engine's kind (it.115): what `workEngine` looses and how it lands. */
+  machine?: 'catapult' | 'ballista';
   x: number;
   y: number;
   label: string;
@@ -163,6 +213,12 @@ export interface TownDressing {
    * if that engine is already in the middle of a throw.
    */
   fireSiege: (id: number, tx: number, ty: number, onImpact: (x: number, y: number) => void) => boolean;
+  /**
+   * THE BOLT SLIDES BACK WHERE YOU STAND (it.115): the taproom's cellar door
+   * opens in place - its leaf, its word, its light and its mat - so the keeper's
+   * "yes" needs no fade and no rebuilt room. False when this floor has no such door.
+   */
+  unbolt: () => boolean;
   /** Render-frame update: gate fog drift, brazier flicker. */
   update: (dt: number) => void;
   destroy: () => void;
@@ -198,8 +254,16 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     fire: number;
     /** Drawn from the baked `catapult_*` clips rather than the plank rig (it.114). */
     real: boolean;
+    /**
+     * WHICH MACHINE (it.115). A `ballista` looses a bolt, flat and fast, off its
+     * own nine-frame shot, and its crew winds the string back over `reload`
+     * seconds by running those frames backwards.
+     */
+    machine: 'catapult' | 'ballista';
     /** How long its throw takes: the baked clip's eight frames, or the plank's swing. */
     swing: number;
+    /** How long the crew takes to make it ready again. */
+    reload: number;
     t: number;
     /**
      * The stone in flight: screen-space arc, and the tile it is going to.
@@ -224,6 +288,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       ember: number;
       /** The baked stone's frame count, or 0 for the old single (it.114). */
       stoneFrames: number;
+      /** Seconds from the machine to the mark, and the height of the arc in screen px. */
+      dur: number;
+      lift: number;
+      /** A ballista's bolt (it.115): turned along its path, with no burning payload. */
+      bolt: boolean;
       hit: (x: number, y: number) => void;
     } | null;
   }
@@ -231,6 +300,18 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   /** How long the arm takes to come round, and how long the stone is up. */
   const SWING = 0.42;
   const FLIGHT = 0.85;
+  /**
+   * THE BALLISTA'S TIMING (it.115): the string is let go in a quarter second,
+   * the bolt crosses the field in under half of one on a shallow arc, and the
+   * crew needs three seconds to crank it back - its nine baked frames, reversed.
+   */
+  const BOLT_SWING = 0.26;
+  const BOLT_RELOAD = 3;
+  const BOLT_FLIGHT = 0.42;
+  const BOLT_LIFT = 22;
+  /** The ballista's ground centre in its 115 px cell (`scripts/bake-siege.py` prints it). */
+  const BALLISTA_ANCHOR_X = 0.496;
+  const BALLISTA_ANCHOR_Y = 0.748;
   let stashSprite: Sprite | null = null;
   let cellarGirl: { sprite: Sprite | null; id: number } | null = null;
   const gates = new Map<string, Sprite>();
@@ -264,7 +345,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     const w = p.w ?? 1;
     const h = p.h ?? 1;
     const spr = new Sprite(spriteLib.single(single));
-    spr.anchor.set(anchorX, anchorY);
+    const baked = BAKED_ANCHOR[single];
+    spr.anchor.set(baked ? baked[0] : anchorX, baked ? baked[1] : anchorY);
     const cx = p.x + w / 2;
     const cy = p.y + h / 2;
     // Footprint diamond's south corner sits at (x + w, y + h); a 1×1 prop
@@ -282,6 +364,111 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     (layer === 'ground' ? viewport.groundLayer : viewport.objectLayer).addChild(spr);
     lighting.registerProp(Math.min(layout.map.width - 1, Math.floor(cx)), Math.min(layout.map.height - 1, Math.floor(cy)), spr);
     return spr;
+  };
+  /**
+   * THE WAY IN IS MARKED (it.115). "Places like that need clear entry
+   * markers": every door, stair and road out of a floor wears a lit mat on its
+   * threshold tile - a worn-gold diamond that breathes, and two chevrons that
+   * point the way through when the way has a direction. It lies on the ground
+   * under every body, so it never covers anyone standing on it.
+   */
+  const mats: Array<{ g: Graphics; phase: number }> = [];
+  /** The taproom's bolted back door (it.115), for `unbolt`. */
+  let cellarLeaf: Sprite | null = null;
+  let cellarShut: { x: number; y: number; it: Interactable; glow: Sprite } | null = null;
+  const threshold = (x: number, y: number, _label: string, color = 0xffc070, into?: { x: number; y: number }): void => {
+    const g = new Graphics();
+    const c = worldToScreen(x + 0.5, y + 0.5, vec2());
+    const P = (dx: number, dy: number): [number, number] => [(dx - dy) * (TILE_W / 2), (dx + dy) * (TILE_H / 2)];
+    const r = 0.42;
+    const ring = [...P(-r, -r), ...P(r, -r), ...P(r, r), ...P(-r, r)]; // the tile's own diamond, inset
+    g.poly(ring).fill({ color, alpha: 0.2 });
+    g.poly(ring).stroke({ color, width: 1.5, alpha: 0.9 });
+    const r2 = 0.3;
+    g.poly([...P(-r2, -r2), ...P(r2, -r2), ...P(r2, r2), ...P(-r2, r2)]).stroke({ color: 0xfff0c0, width: 1, alpha: 0.55 });
+    if (into && (into.x || into.y)) {
+      const n = Math.hypot(into.x, into.y);
+      const fx = into.x / n;
+      const fy = into.y / n;
+      for (const k of [-0.12, 0.1]) {
+        const tip = P(fx * (k + 0.16), fy * (k + 0.16));
+        const a = P(fx * k - fy * 0.14, fy * k + fx * 0.14);
+        const b = P(fx * k + fy * 0.14, fy * k - fx * 0.14);
+        g.moveTo(a[0], a[1]).lineTo(tip[0], tip[1]).lineTo(b[0], b[1]).stroke({ color: 0xfff0c0, width: 2, alpha: 0.95 });
+      }
+    }
+    g.position.set(c.x, c.y);
+    g.zIndex = 1e6;
+    g.blendMode = 'add';
+    viewport.groundLayer.addChild(g);
+    mats.push({ g, phase: (x * 7 + y * 3) % 6.28 });
+  };
+
+  /**
+   * A BUILDING SORTS BY ITS OWN GROUND (it.115). One sprite has one depth, and
+   * a building six tiles long cannot be both behind the hero on its porch and
+   * in front of the hero at its back corner - so the Gilded Stag was drawn over
+   * whoever walked its front and ghosted to glass to make up for it. The
+   * single is cut into vertical strips a quarter-tile wide; each strip sorts at
+   * the depth of the building's FRONT FACE in its own screen column, taken
+   * from the solid tiles it stands on (extended past the corners along the
+   * face, so an eave that overhangs still sorts with the wall under it). A body
+   * in front of that face at that column is drawn over the strip; a body
+   * behind it is drawn under. The returned proxy is never drawn: it carries
+   * the rect and the alpha for the cutaway pass, which copies it to `parts`.
+   */
+  const STRIP = 16;
+  const sliced = (
+    single: string,
+    anchor: { x: number; y: number },
+    at: { x: number; y: number },
+    solid: ReadonlyArray<{ x: number; y: number }>,
+    lightAt: { x: number; y: number },
+  ): { proxy: Sprite; parts: Sprite[]; frontAt: (sx: number) => number } | null => {
+    if (!has(single) || !solid.length) return null;
+    const tex = spriteLib.single(single);
+    const proxy = new Sprite(tex);
+    proxy.anchor.set(anchor.x, anchor.y);
+    const o = worldToScreen(at.x, at.y, vec2());
+    proxy.position.set(o.x, o.y);
+    proxy.visible = false;
+    const half = TILE_W / 2;
+    const frontAt = (sx: number): number => {
+      const c = sx / half;
+      let best = -Infinity;
+      for (const t of solid) {
+        const v = t.x + t.y + 2 - Math.abs(c - (t.x - t.y));
+        if (v > best) best = v;
+      }
+      return best;
+    };
+    const fw = tex.frame.width;
+    const fh = tex.frame.height;
+    const left = o.x - anchor.x * fw;
+    const top = o.y - anchor.y * fh;
+    const parts: Sprite[] = [];
+    const gx = Math.min(layout.map.width - 1, Math.max(0, Math.floor(lightAt.x)));
+    const gy = Math.min(layout.map.height - 1, Math.max(0, Math.floor(lightAt.y)));
+    for (let sx = 0; sx < fw; sx += STRIP) {
+      const sw = Math.min(STRIP, fw - sx);
+      const part = new Sprite(new Texture({ source: tex.source, frame: new Rectangle(tex.frame.x + sx, tex.frame.y, sw, fh) }));
+      part.position.set(left + sx, top);
+      // Just under a body standing ON the face line, so the body wins the tie.
+      part.zIndex = frontAt(left + sx + sw / 2) * (TILE_H / 2) - 0.5;
+      viewport.objectLayer.addChild(part);
+      lighting.registerProp(gx, gy, part);
+      parts.push(part);
+    }
+    return { proxy, parts, frontAt };
+  };
+
+  /** Move a 1x1 piece by its layout offset (world tiles), keeping it sorted where it now stands (it.115). */
+  const nudge = (spr: Sprite, p: TownProp): void => {
+    const ox = p.ox ?? 0;
+    const oy = p.oy ?? 0;
+    spr.position.x += (ox - oy) * (TILE_W / 2);
+    spr.position.y += (ox + oy) * (TILE_H / 2);
+    spr.zIndex = depthKey(p.x + 0.5 + ox, p.y + 0.5 + oy);
   };
   /**
    * How far a sprite's crown reaches past its tile, in tiles, from its drawn
@@ -446,7 +633,22 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   for (const p of layout.props) {
     switch (p.kind) {
       case 'house': {
-        const spr = standing(p, p.variant ?? 'house_a', 0.96);
+        // THE VILLAGE BUILDINGS (it.115): the polyy renders were baked to fill a
+        // w x w base exactly, their south corner at the recorded anchor - so
+        // they stand at scale 1 on it, and sort by strips like the taverns.
+        const ba = p.variant ? BLD_ANCHOR[p.variant] : undefined;
+        if (ba) {
+          const w = p.w ?? 3;
+          const h = p.h ?? 3;
+          const solid: Array<{ x: number; y: number }> = [];
+          for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) solid.push({ x, y });
+          const b = sliced(p.variant!, ba, { x: p.x + w, y: p.y + h }, solid, { x: p.x + w / 2, y: p.y + h / 2 });
+          if (b) {
+            if (!p.bare) occluders.push({ sprite: b.proxy, depth: depthKey(p.x + w, p.y + h), tiles: { x: p.x, y: p.y, w, h }, parts: b.parts, frontAt: b.frontAt });
+            break;
+          }
+        }
+        const spr = standing(p, ba ? 'house_a' : (p.variant ?? 'house_a'), 0.96);
         occlude(spr, p);
         break;
       }
@@ -527,19 +729,38 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         if (spr) spr.zIndex = depthKey(p.x + (p.w ?? 1), p.y + 0.5) + 2;
         gateFog(p);
         plate(layout.gate.x, layout.gate.y, 'THE DUNGEON GATE', 150);
+        threshold(layout.gate.x, layout.gate.y, 'THE DUNGEON GATE', 0x9fb4ff, { x: -1, y: 0 }); // Cold, and pointing in (it.115).
         break;
       }
       case 'tavern': {
-        const spr = standing(p, p.variant ?? 'tavern_a', 0.95);
+        if (p.variant === 'tav_b') {
+          // THE OLD QUARTER'S ALEHOUSE (it.115): Bleed's model from the south-west,
+          // its long wall's south corner at (0.403, 0.994) of the single, sorted by strips.
+          const w = p.w ?? 3;
+          const h = p.h ?? 5;
+          const at = { x: p.x + w, y: p.y + 4 };
+          const solid: Array<{ x: number; y: number }> = [];
+          for (let y = p.y; y < p.y + h; y++) for (let x = p.x; x < p.x + w; x++) if (!p.open?.some((t) => t.x === x && t.y === y)) solid.push({ x, y });
+          const b = sliced('tav_b', { x: 0.403, y: 0.994 }, at, solid, { x: p.x + 1.5, y: p.y + 2.5 });
+          if (b) {
+            if (!p.bare) occluders.push({ sprite: b.proxy, depth: depthKey(at.x, at.y), tiles: { x: p.x, y: p.y, w, h }, parts: b.parts, frontAt: b.frontAt });
+            break;
+          }
+        }
+        const spr = standing(p, p.variant === 'tav_b' ? 'tavern_a' : (p.variant ?? 'tavern_a'), 0.95);
         occlude(spr, p);
         break;
       }
       case 'well':
         standing(p, p.variant ?? 'well_b', 0.9);
         break;
-      case 'rock':
-        standing(p, p.variant ?? 'rock_a', 0.9);
+      case 'rock': {
+        // A SMALL PIECE KEEPS ITS NUDGE (it.115): tufts, stones and fungus carry
+        // an offset inside their tile, so a field of them is not a lattice.
+        const spr = standing(p, p.variant ?? 'rock_a', 0.9);
+        if (spr && (p.ox || p.oy)) nudge(spr, p);
         break;
+      }
       case 'watchtower': {
         const spr = standing(p, 'watchtower', 0.97);
         occlude(spr, p);
@@ -651,9 +872,26 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       case 'bench':
         standing(p, p.variant ?? 'bench_a', 0.9);
         break;
-      case 'cart':
+      case 'cart': {
+        // BLEED'S HANDCARTS (it.115): the render that goes with the taverns. The
+        // bake's anchors sit on the lowest wheel, not the bed, so the cart is
+        // seated by the middle of its bed on the middle of its two tiles.
+        if (p.variant?.startsWith('cart_') && has(p.variant)) {
+          const spr = new Sprite(spriteLib.single(p.variant));
+          spr.anchor.set(0.5, 0.7);
+          const cx = p.x + (p.w ?? 2) / 2;
+          const cy = p.y + (p.h ?? 1) / 2;
+          const c = worldToScreen(cx, cy, scratch);
+          spr.position.set(c.x, c.y);
+          spr.scale.set(1.15);
+          spr.zIndex = depthKey(cx, cy);
+          viewport.objectLayer.addChild(spr);
+          lighting.registerProp(Math.floor(cx), Math.floor(cy), spr);
+          break;
+        }
         standing(p, 'cart', 0.92);
         break;
+      }
       case 'barricade':
         standing(p, p.variant ?? 'barricade_a', 0.9);
         break;
@@ -687,9 +925,11 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         standing(p, p.variant ?? 'ruinwall_a', 0.94);
         break;
       case 'rubble':
-      case 'debris':
-        standing(p, p.variant ?? 'rubble_a', 0.72, 'ground');
+      case 'debris': {
+        const spr = standing(p, p.variant ?? 'rubble_a', 0.72, 'ground');
+        if (spr && (p.ox || p.oy)) nudge(spr, p);
         break;
+      }
       case 'slab':
         standing(p, p.variant ?? 'slab_a', 0.8, 'ground');
         break;
@@ -755,17 +995,27 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         break;
       }
       case 'tavern2': {
-        // THE GILDED STAG: the inn with its own floor inside (it.92). The door
-        // tile is the way in; the building stays solid.
-        const spr = standing(p, 'tavern_east', 0.975, 'object', 0.5);
-        occlude(spr, p);
+        // THE GILDED STAG: the inn with its own floor inside (it.92).
+        // IT.115: Bleed's tavern, the view with its stair on the street, cut
+        // into strips that sort by the fitted ground (see `sliced`). The box's
+        // origin is the gabled hall's south corner; the door is the stair's foot.
         const east = layout.east;
-        const dx = east ? east.door.x + 0.5 : p.x + 2.5;
-        const dy = east ? east.door.y + 1.5 : p.y + 5.5;
-        lighting.addSource(dx, dy, 3.6, 255, 190, 110, 0.5);
-        glowAt(Math.floor(dx), Math.floor(dy) - 1, 0xffb060, 0.22, 1.2, 40);
-        if (east) interactables.push({ id: nextId++, kind: 'inn', x: east.door.x + 0.5, y: east.door.y + 0.5, label: 'E · THE GILDED STAG', tiles: [{ x: east.door.x, y: east.door.y }, { x: east.door.x, y: east.door.y + 1 }, { x: east.door.x - 1, y: east.door.y + 1 }, { x: east.door.x + 1, y: east.door.y + 1 }] });
-        plate(p.x + 2, p.y + 2, 'THE GILDED STAG', 250);
+        const at = { x: p.x + 3, y: p.y + 6 };
+        const door = east ? east.door : { x: at.x + STAG_DOOR.x, y: at.y + STAG_DOOR.y };
+        const solid = STAG_SOLID.map(([x, y]) => ({ x: at.x + x, y: at.y + y }));
+        const b = sliced('tav_stag', { x: 0.326, y: 0.8935 }, at, solid, { x: at.x - 1.5, y: at.y - 1.5 });
+        if (b && !p.bare) occluders.push({ sprite: b.proxy, depth: depthKey(at.x, at.y), tiles: { x: p.x, y: p.y, w: p.w ?? 8, h: p.h ?? 6 }, parts: b.parts, frontAt: b.frontAt });
+        else if (!b) occlude(standing(p, 'tavern_east', 0.975, 'object', 0.5), p);
+        // The lamp over the stair and a warm spill down it: the door reads from across the square.
+        lighting.addSource(door.x + 0.5, door.y + 0.2, 3.8, 255, 190, 110, 0.6);
+        glowAt(door.x, door.y - 1, 0xffb060, 0.26, 1.2, 46);
+        // The cellar door at the gable's foot is drawn shut; a cold glint says it is a door.
+        glowAt(at.x + STAG_CELLAR.x, at.y + STAG_CELLAR.y - 1, 0x9fb4d8, 0.1, 0.6, 18);
+        if (east) {
+          interactables.push({ id: nextId++, kind: 'inn', x: door.x + 0.5, y: door.y + 0.5, label: 'E · ENTER THE GILDED STAG', tiles: [{ x: door.x, y: door.y }, { x: door.x, y: door.y + 1 }, { x: door.x - 1, y: door.y }, { x: door.x + 1, y: door.y }, { x: door.x - 1, y: door.y + 1 }, { x: door.x + 1, y: door.y + 1 }] });
+          threshold(door.x, door.y, 'THE GILDED STAG', 0xffc070, { x: 0, y: -1 });
+        }
+        plate(at.x - 1, at.y - 3, 'THE GILDED STAG', 250);
         break;
       }
       // ---- THE GILDED STAG (it.96): the inn built of tileset pieces ----
@@ -775,6 +1025,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // bounding-box bottom-left. `w === 2` runs along +x, `h === 2` along +y.
         if (!has(p.variant ?? '')) break;
         const spr = new Sprite(spriteLib.single(p.variant!));
+        if (p.variant === 'inn_door_w_shut') cellarLeaf = spr; // The back door's leaf (it.115): `unbolt` swings it.
         const alongX = (p.w ?? 1) === 2;
         const bx = alongX ? p.x : p.x - 1;
         const by = alongX ? p.y - 1 : p.y;
@@ -795,6 +1046,44 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         //    with it, so lighting it by itself lit a sliding three-tile window
         //    and left the rest of the run dark - the flicker along the wall.
         spr.zIndex = depthKey(p.x, p.y + 1) + 4;
+        if (p.near) {
+          // THE NEAR WALLS ARE CUT AWAY (it.115). The taproom used to have no
+          // south or east wall at all - the room simply ended in the dark - and
+          // its door was in the FAR wall, on the side opposite the street door.
+          // A near wall is drawn now: at wainscot height, cut along its dark
+          // rail so nothing inside is ever hidden, and sorted in front of
+          // everyone in the room along its run. The doorway in it stands full
+          // height (and ghosts when someone is behind it), so the way out is
+          // the one tall thing on that side of the room.
+          const lit2 = litTile(p.x, p.y); // A near piece stands on the room's own last row or column.
+          spr.zIndex = (alongX ? depthKey(p.x + 2, p.y + 1) : depthKey(p.x + 1, p.y + 2)) + 20;
+          if (/arch|door/.test(p.variant ?? '')) {
+            viewport.objectLayer.addChild(spr);
+            lighting.registerProp(lit2.x, lit2.y, spr);
+            occluders.push({ sprite: spr, depth: spr.zIndex, tiles: { x: p.x, y: p.y, w: 0, h: 0 } });
+            break;
+          }
+          const box = new Container();
+          box.position.copyFrom(spr.position);
+          box.zIndex = spr.zIndex;
+          spr.position.set(0, 0);
+          const b1 = worldToScreen(alongX ? p.x : p.x + 1, alongX ? p.y + 1 : p.y, vec2());
+          const b2 = worldToScreen(alongX ? p.x + 2 : p.x + 1, alongX ? p.y + 1 : p.y + 2, vec2());
+          const RAIL = 31; // px from the wall's foot to the top of its dark rail
+          const m = new Graphics();
+          const lx = (v: number): number => v - box.position.x;
+          const ly = (v: number): number => v - box.position.y;
+          const l = Math.min(b1.x, b2.x) - 3;
+          const r = Math.max(b1.x, b2.x) + 3;
+          const yl = b1.x < b2.x ? b1.y : b2.y;
+          const yr = b1.x < b2.x ? b2.y : b1.y;
+          m.poly([lx(l), ly(yl - RAIL), lx(r), ly(yr - RAIL), lx(r), ly(yr + 6), lx(l), ly(yl + 6)]).fill(0xffffff);
+          box.addChild(spr, m);
+          spr.mask = m;
+          viewport.objectLayer.addChild(box);
+          lighting.registerProp(lit2.x, lit2.y, spr);
+          break;
+        }
         const lit = litTile(alongX ? p.x : p.x + 1, alongX ? p.y + 1 : p.y);
         viewport.objectLayer.addChild(spr);
         lighting.registerProp(lit.x, lit.y, spr);
@@ -953,7 +1242,13 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
          * He is not a `Villager`: villagers wander, path and shoulder each
          * other, and an angler who wanders off his own bank is not an angler.
          */
-        const anim: AnimName = (p.x + p.y) % 2 === 0 ? 'cit_labourer_walk' : 'cit_carter_walk';
+        // ONE STYLE PER VIEW (it.115): the farm's own bank is Oscar's household,
+        // who are the pixel citizens, so an angler out of sight of the bridge
+        // watch (smooth) is one of them; one within sight of the watch is smooth.
+        const nearWatch = layout.guards.some((g) => Math.hypot(g.x - p.x, g.y - p.y) < 14);
+        const anim: AnimName = nearWatch
+          ? (p.x + p.y) % 2 === 0 ? 'cit_labourer_walk' : 'cit_carter_walk'
+          : (p.x + p.y) % 2 === 0 ? 'cit_farmer_walk' : 'cit_porter_walk';
         if (!spriteLib.loaded || !spriteLib.hasAnim(anim)) break;
         const root = new Container();
         const body = new Sprite(spriteLib.frame(anim, 2, 0));
@@ -1001,10 +1296,14 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // The taproom's back door. The leaf itself is part of the wall run the
         // dresser lays; this is the prompt under it and the lamp over the stair.
         const shut = p.variant === 'shut';
-        glowAt(p.x, p.y, shut ? 0x6a7a92 : 0xffb060, shut ? 0.16 : 0.38, 1.2, 30, litTile(p.x, p.y));
+        const cg = glowAt(p.x, p.y, shut ? 0x6a7a92 : 0xffb060, shut ? 0.16 : 0.38, 1.2, 30, litTile(p.x, p.y));
         if (!shut) lighting.addSource(p.x + 0.5, p.y + 0.5, 3.8, 255, 180, 110, 0.5);
-        interactables.push({ id: nextId++, kind: 'cellardoor', x: p.x + 0.5, y: p.y + 0.5, label: shut ? 'E · THE CELLAR DOOR · LOCKED' : 'E · DOWN TO THE CELLAR', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x + 1, y: p.y + 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        const it = { id: nextId++, kind: 'cellardoor' as const, x: p.x + 0.5, y: p.y + 0.5, label: shut ? 'E · THE CELLAR DOOR · LOCKED' : 'E · DOWN TO THE CELLAR', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x + 1, y: p.y + 1 }, { x: p.x + 1, y: p.y - 1 }, { x: p.x + 2, y: p.y }] };
+        interactables.push(it);
         plate(p.x, p.y, shut ? 'THE CELLAR · LOCKED' : 'THE CELLAR', 78);
+        // The mat lies on the floor tile before the leaf; its chevrons point through the west wall.
+        if (!shut) threshold(p.x + 1, p.y, 'THE CELLAR', 0xffc070, { x: -1, y: 0 });
+        else cellarShut = { x: p.x, y: p.y, it, glow: cg };
         break;
       }
       case 'cellarup': {
@@ -1089,6 +1388,12 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'dummy':
         break; // A body now (it.90): main spawns a passive foe on the tile; the prop only keeps it solid.
+      case 'lordmilk': {
+        // LORD MILK (it.115): drawn by Villagers on her own idle; E at her offers the yard.
+        interactables.push({ id: nextId++, kind: 'training', x: p.x + 0.5, y: p.y + 0.5, label: 'E · LORD MILK · TRAINING', tiles: [{ x: p.x, y: p.y }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y + 1 }, { x: p.x - 1, y: p.y + 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, 'LORD MILK', 92);
+        break;
+      }
       case 'trainpost': {
         // THE TRAINING GROUND (it.90): the sign that offers the tutorial.
         standing(p, 'signpost', 0.95);
@@ -1423,8 +1728,16 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
          * break, with the arm IN the frames - so when those sheets are resident
          * the plank rig below is not built, and the throw is the artist's.
          */
-        const real = spriteLib.loaded && spriteLib.hasAnim('catapult_idle') && spriteLib.hasAnim('catapult_throw') && spriteLib.hasAnim('catapult_load') && spriteLib.hasAnim('catapult_wreck');
-        const sheet = real ? (wrecked ? 'catapult_wreck' : 'catapult_idle') : wrecked ? 'siege_wreck' : 'siege_engine';
+        /**
+         * A BALLISTA (it.115), beside the catapults. Bleed's crossbow on a post,
+         * baked by `scripts/bake-siege.py` into eight facings of its loaded rest
+         * and of its nine-frame shot; it stands on a 2x2 like the catapult and is
+         * worked with the same crank.
+         */
+        const ballista = p.variant === 'ballista';
+        if (ballista && !(spriteLib.loaded && spriteLib.hasAnim('ballista_idle') && spriteLib.hasAnim('ballista_shoot'))) break;
+        const real = ballista || (spriteLib.loaded && spriteLib.hasAnim('catapult_idle') && spriteLib.hasAnim('catapult_throw') && spriteLib.hasAnim('catapult_load') && spriteLib.hasAnim('catapult_wreck'));
+        const sheet = ballista ? 'ballista_idle' : real ? (wrecked ? 'catapult_wreck' : 'catapult_idle') : wrecked ? 'siege_wreck' : 'siege_engine';
         if (!spriteLib.loaded || !spriteLib.hasAnim(sheet)) break;
         const w = p.w ?? 1;
         const h = p.h ?? 1;
@@ -1445,7 +1758,8 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         // The real bake's ground centre is (0.487, 0.747) of its 148x135 cell,
         // for every facing and every clip (the pack is a turntable about the
         // frame's centre); its widest facing is 127 px, a 2x2 footprint at 1.0.
-        if (real) body.anchor.set(0.487, 0.747);
+        if (ballista) body.anchor.set(BALLISTA_ANCHOR_X, BALLISTA_ANCHOR_Y);
+        else if (real) body.anchor.set(0.487, 0.747);
         else body.anchor.set(0.5, wrecked ? SIEGE_WRECK_ANCHOR_Y : SIEGE_ANCHOR_Y);
         body.scale.set(real ? 1 : SIEGE_SCALE);
         root.addChild(body);
@@ -1501,9 +1815,9 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
         if (!p.bare) occluders.push({ sprite: body, depth: root.zIndex, tiles: footprint(p) });
         if (wrecked || (!real && (!arm || !shot))) break;
         const id = nextId++;
-        engines.push({ id, root, body, dir, wx: p.x + w / 2, wy: p.y + h / 2, arm, shot, rest, fire, real, swing: real ? 0.62 : SWING, t: -1, flight: null });
-        interactables.push({ id, kind: 'catapult', x: p.x + 0.5, y: p.y + 0.5, label: 'E · WORK THE ENGINE', tiles: [{ x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }, { x: p.x + 2, y: p.y }, { x: p.x + 2, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
-        plate(p.x, p.y, 'A SIEGE ENGINE', 108);
+        engines.push({ id, root, body, dir, wx: p.x + w / 2, wy: p.y + h / 2, arm, shot, rest, fire, real, machine: ballista ? 'ballista' : 'catapult', swing: ballista ? BOLT_SWING : real ? 0.62 : SWING, reload: ballista ? BOLT_RELOAD : 4, t: -1, flight: null });
+        interactables.push({ id, kind: 'catapult', machine: ballista ? 'ballista' : 'catapult', x: p.x + 0.5, y: p.y + 0.5, label: ballista ? 'E · WORK THE BALLISTA' : 'E · WORK THE ENGINE', tiles: [{ x: p.x - 1, y: p.y }, { x: p.x - 1, y: p.y + 1 }, { x: p.x, y: p.y + 2 }, { x: p.x + 1, y: p.y + 2 }, { x: p.x + 2, y: p.y }, { x: p.x + 2, y: p.y + 1 }, { x: p.x, y: p.y - 1 }, { x: p.x + 1, y: p.y - 1 }] });
+        plate(p.x, p.y, ballista ? 'A BALLISTA' : 'A SIEGE ENGINE', ballista ? 96 : 108);
         break;
       }
       case 'tent': {
@@ -1621,55 +1935,38 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       }
       case 'citygate': {
         /**
-         * THE EASTERN ROAD (it.110; made a gateway it.112).
+         * THE EASTERN ROAD (it.110; a gateway it.112; a GATE IN A WALL it.115).
          *
-         * it.110 stood the dungeon pack's `iron_cage` on the road's end tile at
-         * one and a half scale. That piece is a CAGE - a square stone box with a
-         * barred window in one face - and it sat square-on across the lane, its
-         * base half a tile off the road it was supposed to be closing. It read
-         * as a lump of masonry somebody had left there, not as the way out.
+         * it.112 stood a lone portal on the field's east rim, and the field went
+         * on round it: the hero could walk past the "barred" way on either side,
+         * and the road ran out beyond it into bare ground with nothing closing
+         * the edge. The layout now ends the field at a stone wall along its
+         * north-east edge (the wall kit's far pieces, which face the camera), and
+         * this tile is the opening in the wall's one ARCH, the road running on
+         * through it into the wood. What bars it is the barricade line the layout
+         * lays across the mouth; what this draws is the cold light in the arch,
+         * the name, and the word at the barricade.
          *
-         * It is the same thing the town's own unopened roads are now: the ruin
-         * ARCHWAY astride the road, on the road's own centre line, with the cold
-         * standing light of a gateway in its opening and the road running under
-         * it. That is the vocabulary the game already uses for "a place that is
-         * not built yet" (it.84), so a player who has seen the town's gateways
-         * knows what this is on sight.
-         *
-         * It is still shut, and the note still says why; what has changed is
-         * that it now LOOKS like the road on, rather than like a wall.
+         * `p` is the opening; the hero reads the prompt two tiles out, in front
+         * of the barricades.
          */
         const label = p.variant ?? 'THE EASTERN ROAD';
-        /**
-         * THE PORTAL ITSELF is `gl_portal` - a stone gateway with a lit way
-         * through it, cut out of the `use now` drop's grassland sheet, which is
-         * rendered at this game's own isometric angle. It is depth-sorted as a
-         * wall on the line x = p.x, so the hero walking up to it passes in
-         * FRONT of it rather than behind, and it is never an occluder: an arch
-         * is a hole in a wall and there is nothing behind it to reveal (the
-         * it.110b rule the river bridge's gate learned).
-         */
-        const arch = standing(p, has('gl_portal') ? 'gl_portal' : 'ruin_gate', 0.98, 'object', 0.5);
-        if (arch) {
-          arch.scale.set(has('gl_portal') ? 1.55 : 1.08);
-          arch.tint = 0xc8cbd4;
-          arch.zIndex = depthKey(p.x, p.y + 0.5) + 2;
-        }
-        const lit = { x: p.x - 1, y: p.y };
-        // The standing light in the opening, one tile west - ON the road, which
-        // is where the hero is when they read the prompt. Violet, to agree with
-        // the portal's own surface rather than fighting it with the town
-        // gateways' blue.
-        const veil = animated(lit.x, lit.y, 'gateway', 12, 0.96, 1.0, 10);
-        if (veil) {
-          veil.blendMode = 'add';
-          veil.alpha = 0.5;
-          veil.tint = 0xc09cff;
-        }
-        glowAt(lit.x, lit.y, 0x9c6cff, 0.5, 2.0, 40);
-        lighting.addSource(lit.x + 0.5, lit.y + 0.5, 5.2, 168, 124, 255, 0.8);
-        interactables.push({ id: nextId++, kind: 'citygate', x: lit.x + 0.5, y: lit.y + 0.5, label: `E · ${label} (BARRED)`, tiles: [{ x: p.x, y: p.y }, { x: lit.x, y: lit.y }, { x: lit.x, y: lit.y - 1 }, { x: lit.x, y: lit.y + 1 }, { x: p.x - 2, y: p.y }, { x: p.x - 2, y: p.y - 1 }, { x: p.x - 2, y: p.y + 1 }], note: 'The road runs on under the arch and the city at the end of it has its gate down. Nothing is coming through this week, and nothing is going out.' });
-        plate(p.x, p.y, `${label} · BARRED`, 128);
+        const lit = { x: p.x, y: p.y + 2 };
+        // The dark road beyond, lit cold enough to read through the arch.
+        glowAt(p.x, p.y, 0x6f86c8, 0.34, 1.7, 46);
+        lighting.addSource(p.x + 0.5, p.y + 0.5, 3.4, 120, 140, 210, 0.55);
+        // A warm lamp on the field side, where the watch would have stood.
+        lighting.addSource(lit.x + 0.5, lit.y + 0.5, 4.6, 255, 180, 110, 0.6);
+        interactables.push({
+          id: nextId++,
+          kind: 'citygate',
+          x: lit.x + 0.5,
+          y: lit.y + 0.5,
+          label: `E · ${label} (BARRED)`,
+          tiles: [{ x: lit.x, y: lit.y }, { x: lit.x - 1, y: lit.y }, { x: lit.x + 1, y: lit.y }, { x: lit.x, y: lit.y + 1 }, { x: lit.x - 1, y: lit.y - 1 }, { x: lit.x + 1, y: lit.y - 1 }],
+          note: 'The road runs on under the arch and the city at the end of it has its gate down. Nothing is coming through this week, and nothing is going out.',
+        });
+        plate(p.x, p.y, `${label} · BARRED`, 150);
         break;
       }
       case 'fieldroad': {
@@ -1743,6 +2040,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
   };
   const update = (dt: number): void => {
     clock += dt;
+    for (const m of mats) m.g.alpha = 0.62 + Math.sin(clock * 2.4 + m.phase) * 0.3; // The mats breathe (it.115).
     /**
      * THE ANGLERS (it.107, made to hold still it.109): each breathes and dips his
      * rod on his own slow cycle, seeded off his tile, so three men on one bank
@@ -1776,7 +2074,21 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const e of engines) {
       if (e.t >= 0) {
         e.t += dt;
-        if (e.real) {
+        if (e.machine === 'ballista') {
+          // THE BALLISTA (it.115): the shot's nine frames over the swing - the
+          // string runs up the rail and the bolt is gone - then the same frames
+          // backwards while the crew cranks it home, then the loaded rest.
+          const n = spriteLib.anim('ballista_shoot').frameCount;
+          if (e.t <= e.swing) {
+            e.body.texture = spriteLib.frame('ballista_shoot', e.dir, Math.min(n - 1, Math.floor((e.t / e.swing) * n)));
+          } else if (e.t <= e.swing + e.reload) {
+            const back = Math.min(n - 1, Math.floor(((e.t - e.swing) / e.reload) * n));
+            e.body.texture = spriteLib.frame('ballista_shoot', e.dir, n - 1 - back);
+          } else {
+            e.body.texture = spriteLib.frame('ballista_idle', e.dir, 0);
+            e.t = -1;
+          }
+        } else if (e.real) {
           // THE REAL MACHINE (it.114): eight frames of the throw over the swing,
           // eight of the crew winding it back over the four seconds after, then
           // the loaded rest frame.
@@ -1815,9 +2127,30 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
       const fl = e.flight;
       if (!fl) continue;
       fl.t += dt;
-      const k3 = Math.min(1, fl.t / FLIGHT);
+      const k3 = Math.max(0, Math.min(1, fl.t / fl.dur));
       const fx = fl.ax + (fl.bx - fl.ax) * k3;
-      const fy = fl.ay + (fl.by - fl.ay) * k3 - Math.sin(k3 * Math.PI) * 130;
+      const fy = fl.ay + (fl.by - fl.ay) * k3 - Math.sin(k3 * Math.PI) * fl.lift;
+      if (fl.bolt) {
+        // A BOLT IN FLIGHT (it.115): nocked and hidden until the string goes,
+        // then turned along its own path, a pale streak dragged behind it.
+        const dxs = fl.bx - fl.ax;
+        const dys = fl.by - fl.ay - Math.cos(k3 * Math.PI) * Math.PI * fl.lift;
+        const ang = Math.atan2(dys, dxs);
+        fl.spr.visible = fl.t > 0;
+        fl.spr.position.set(fx, fy);
+        fl.spr.rotation = ang;
+        fl.spr.zIndex = 1e5;
+        fl.fireGlow.position.set(fx - Math.cos(ang) * 16, fy - Math.sin(ang) * 16);
+        fl.fireGlow.rotation = ang;
+        fl.fireGlow.zIndex = 1e5 - 1;
+        fl.fireGlow.alpha = fl.t > 0 ? 0.55 : 0;
+        if (fl.t < fl.dur) continue;
+        fl.spr.destroy();
+        fl.fireGlow.destroy();
+        e.flight = null;
+        fl.hit(fl.tx, fl.ty);
+        continue;
+      }
       fl.spr.position.set(fx, fy);
       // The baked stone tumbles through its own sixteen frames (it.114); the old single spins.
       if (fl.stoneFrames) fl.spr.texture = spriteLib.frame('catapult_stone', 0, Math.floor(Math.max(0, fl.t) * 18) % fl.stoneFrames);
@@ -1871,6 +2204,29 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     if (!e || e.t >= 0 || e.flight) return false;
     e.t = 0;
     const tip = worldToScreen(0, 0, vec2()); // scratch is in use by the caller's loop
+    if (e.machine === 'ballista') {
+      // THE BOLT (it.115) leaves the head of the rail - out along the aim and
+      // up at the height the bow is carried - and flies nearly flat at the mark.
+      const mark = worldToScreen(tx + 0.5, ty + 0.5, vec2());
+      const ang = Math.atan2(mark.y - e.root.position.y, mark.x - e.root.position.x);
+      tip.x = e.root.position.x + Math.cos(ang) * 30;
+      tip.y = e.root.position.y + Math.sin(ang) * 15 - 34;
+      const spr = new Sprite(has('ballista_bolt') ? spriteLib.single('ballista_bolt') : assets.get('glow'));
+      spr.anchor.set(0.75, 0.5);
+      spr.scale.set(1.25);
+      spr.visible = false;
+      spr.position.set(tip.x, tip.y);
+      const streak = new Sprite(assets.get('glow'));
+      streak.anchor.set(0.5);
+      streak.blendMode = 'add';
+      streak.tint = 0xd8e4ff;
+      streak.alpha = 0;
+      streak.scale.set(2.2, 0.28);
+      streak.position.set(tip.x, tip.y);
+      viewport.ambienceLayer.addChild(streak, spr);
+      e.flight = { spr, fireGlow: streak, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y - 20, wax: e.wx, way: e.wy, t: -e.swing * 0.35, tx, ty, ember: 0, stoneFrames: 0, dur: BOLT_FLIGHT, lift: BOLT_LIFT, bolt: true, hit: onImpact };
+      return true;
+    }
     if (e.arm) {
       const armX = e.root.position.x + e.arm.position.x;
       const armY = e.root.position.y + e.arm.position.y;
@@ -1900,7 +2256,7 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     fireGlow.position.set(tip.x, tip.y);
     viewport.ambienceLayer.addChild(fireGlow, spr);
     // The stone leaves mid-swing: past the top of the old arc, at frame three of the baked throw.
-    e.flight = { spr, fireGlow, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, wax: e.wx, way: e.wy, t: -e.swing * (e.real ? 0.42 : 0.55), tx, ty, ember: 0, stoneFrames, hit: onImpact };
+    e.flight = { spr, fireGlow, ax: tip.x, ay: tip.y, bx: mark.x, by: mark.y, wax: e.wx, way: e.wy, t: -e.swing * (e.real ? 0.42 : 0.55), tx, ty, ember: 0, stoneFrames, dur: FLIGHT, lift: 130, bolt: false, hit: onImpact };
     return true;
   };
 
@@ -1918,5 +2274,27 @@ export function placeTownProps(layout: TownLayout, viewport: Viewport, lighting:
     for (const pl of plates) pl.node.destroy({ children: true });
     plates.length = 0;
   };
-  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate, setPlatesHidden, fireSiege };
+  // EVERY WAY THROUGH WEARS A MAT (it.115): the doors, stairs, gates and road
+  // signs that take the party to another floor. The inn's street door and the
+  // cellar door lay their own (with their chevrons); a gateway not yet open
+  // gets none - it is not a way through.
+  const PASSAGES: ReadonlySet<Interactable['kind']> = new Set<Interactable['kind']>(['inndoor', 'cellarup', 'quarry', 'townroad', 'gateway', 'arena', 'manordoor', 'manorout', 'manordown', 'vaultup', 'farmroad', 'riverroad', 'fieldroad']);
+  for (const it of interactables) {
+    if (!PASSAGES.has(it.kind) || (it.kind === 'gateway' && !it.dest)) continue;
+    threshold(Math.floor(it.x), Math.floor(it.y), it.label, 0xffc070, it.kind === 'inndoor' ? { x: 0, y: 1 } : undefined);
+  }
+  const unbolt = (): boolean => {
+    const c = cellarShut;
+    if (!c) return false;
+    cellarShut = null;
+    if (cellarLeaf && has('inn_door_w_open')) cellarLeaf.texture = spriteLib.single('inn_door_w_open');
+    c.it.label = 'E · DOWN TO THE CELLAR';
+    setPlate(c.x, c.y, 'THE CELLAR');
+    c.glow.tint = 0xffb060;
+    c.glow.alpha = 0.38;
+    lighting.addSource(c.x + 0.5, c.y + 0.5, 3.8, 255, 180, 110, 0.5);
+    threshold(c.x + 1, c.y, 'THE CELLAR', 0xffc070, { x: -1, y: 0 });
+    return true;
+  };
+  return { occluders, interactables, stashSprite, cellarGirl, gates, update, destroy, setPromptAt, setPlate, setPlatesHidden, fireSiege, unbolt };
 }

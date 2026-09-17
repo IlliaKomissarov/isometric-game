@@ -45,10 +45,46 @@ export function planHearths(map: DungeonMap): Array<{ x: number; y: number }> {
     const c = corners[Math.floor(rand() * corners.length)];
     const idx = c.y * map.width + c.x;
     if (map.grid[idx] !== TILE_FLOOR) continue;
+    // NOT IN THE WAY IN (it.115): a corner hearth sits one step in from two
+    // walls, which is exactly where a corridor that enters along the wall
+    // arrives. A corner whose neighbour is a doorway of this room is skipped.
+    if (nextToDoorway(map, room, c.x, c.y) || nextToDoorway(map, room, c.x, c.y, true)) continue;
     map.grid[idx] = TILE_BLOCKED;
     hearths.push(c);
   }
   return hearths;
+}
+
+/** True when an orthogonal neighbour of (x, y) - or (x, y) itself, with `self` - is a tile of `room` with open ground outside the room beside it. */
+function nextToDoorway(map: DungeonMap, room: Room, x: number, y: number, self = false): boolean {
+  const { width, height, grid } = map;
+  const openAt = (tx: number, ty: number): boolean => tx >= 0 && ty >= 0 && tx < width && ty < height && grid[ty * width + tx] !== TILE_WALL;
+  const inRoom = (tx: number, ty: number): boolean => tx >= room.x && ty >= room.y && tx < room.x + room.w && ty < room.y + room.h;
+  const steps = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const [dx, dy] of self ? [[0, 0]] : steps) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (!inRoom(nx, ny)) continue;
+    for (const [ex, ey] of steps) if (!inRoom(nx + ex, ny + ey) && openAt(nx + ex, ny + ey)) return true;
+  }
+  return false;
+}
+
+/**
+ * THE WAYS IN (it.115): every room tile that is a doorway (open ground outside
+ * the room beside it) or orthogonally next to one. A solid prop - a hearth, a
+ * chest - is never placed on these, so no way into a room is ever narrowed.
+ */
+export function doorwayApproaches(map: DungeonMap): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  for (const room of map.rooms) {
+    for (let y = room.y; y < room.y + room.h; y++) {
+      for (let x = room.x; x < room.x + room.w; x++) {
+        if (nextToDoorway(map, room, x, y) || nextToDoorway(map, room, x, y, true)) out.push({ x, y });
+      }
+    }
+  }
+  return out;
 }
 
 export interface Room {
@@ -112,10 +148,26 @@ export interface WallPiece {
   room: boolean;
 }
 
+/**
+ * A NEAR-WALL STUB (it.115): one tile of low wall on a room's south (`s`) or
+ * east (`e`) edge. `(x, y)` is the FLOOR tile it closes; the wall tile is
+ * (x, y + 1) for `s` and (x + 1, y) for `e`. `shift` slides a corner filler
+ * along its run by the wall's thickness (-1 back, +1 forward) so the run's
+ * end cap closes the notch where two runs meet; 0 for an ordinary stub.
+ */
+export interface WallStub {
+  side: 's' | 'e';
+  x: number;
+  y: number;
+  shift: -1 | 0 | 1;
+}
+
 export interface WallPlan {
   pieces: WallPiece[];
   /** Free-standing wall tiles (three or four open sides): a 1x1 pillar each. */
   pillars: Array<{ x: number; y: number }>;
+  /** The low near walls on every south and east floor edge (it.115). */
+  stubs: WallStub[];
 }
 
 const FACE = 1;
@@ -127,8 +179,8 @@ const MOUTH = 2;
  *
  * THE RULE: a floor (or gate, or hearth) tile whose NORTH neighbour is wall
  * needs a north face; whose WEST neighbour is wall, a west face. South and
- * east faces are never drawn - the far side is dark void, as in the inn and
- * the cellar. Faces are grouped into runs: along +x for north faces sharing a
+ * east edges take the low near-wall STUBS instead (it.115, see `WallStub`) -
+ * a tall face there would hide the room. Faces are grouped into runs: along +x for north faces sharing a
  * row, along +y for west faces sharing a column. A piece covers TWO tiles of
  * run and goes at run offsets 0, 2, 4...; an ODD run puts its last piece at
  * L-2, overlapping the previous by one tile of identical art, so nothing ever
@@ -230,7 +282,7 @@ export function planWallPieces(map: DungeonMap): WallPlan {
     scanLine(
       width,
       (x) => open(x, fy) && solid(x, fy - 1),
-      (x) => open(x, fy) && open(x, fy - 1),
+      (x) => open(x, fy) && open(x, fy - 1) && solid(x - 1, fy - 1) && solid(x + 1, fy - 1), // One wide (it.115): not a room's open corner.
       (x) => solid(x, fy - 1),
       (kind, x) => {
         const gate = kind === 'arch' && at(x, fy - 1) === TILE_DOOR;
@@ -243,7 +295,7 @@ export function planWallPieces(map: DungeonMap): WallPlan {
     scanLine(
       height,
       (y) => open(fx, y) && solid(fx - 1, y),
-      (y) => open(fx, y) && open(fx - 1, y),
+      (y) => open(fx, y) && open(fx - 1, y) && solid(fx - 1, y - 1) && solid(fx - 1, y + 1),
       (y) => solid(fx - 1, y),
       (kind, y) => {
         const gate = kind === 'arch' && at(fx - 1, y) === TILE_DOOR;
@@ -266,7 +318,26 @@ export function planWallPieces(map: DungeonMap): WallPlan {
     p.kind = 'corner';
     dead.add(j);
   }
-  return { pieces: pieces.filter((_, i) => !dead.has(i)), pillars };
+
+  // THE NEAR WALLS (it.115). The rule above never drew a south or east face, so
+  // every room ended in open void on the two edges nearest the camera. Each
+  // open tile with real wall to its south (or east) now takes a one-tile LOW
+  // stub there. Where a south run meets the east edge (or the west wall) the
+  // two runs leave a notch the wall's thickness wide; a second stub slid along
+  // the run by that thickness closes it with its own end cap.
+  const stubs: WallStub[] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!open(x, y)) continue;
+      if (solid(x, y + 1)) {
+        stubs.push({ side: 's', x, y, shift: 0 });
+        if (solid(x + 1, y) && solid(x + 1, y + 1)) stubs.push({ side: 's', x, y, shift: 1 });
+        if (solid(x - 1, y) && solid(x - 1, y + 1)) stubs.push({ side: 's', x, y, shift: -1 });
+      }
+      if (solid(x + 1, y)) stubs.push({ side: 'e', x, y, shift: 0 });
+    }
+  }
+  return { pieces: pieces.filter((_, i) => !dead.has(i)), pillars, stubs };
 }
 
 /**

@@ -36,6 +36,9 @@ export type SfxName =
   | 'enemyDie'
   | 'bossDie'
   | 'bossHorn'
+  // MEN SOUND LIKE MEN (it.115): the horn and the fall of a MAN who holds a boss bar - no beast roar under either.
+  | 'warHorn'
+  | 'bossDieMan'
   | 'summon'
   | 'gore'
   | 'gateOpen'
@@ -262,6 +265,7 @@ const HORROR = `${AUDIO_BASE}/Horror SFX Free`;
 const HG = `${HORROR}/Monsters & Ghosts`;
 const HA = `${HORROR}/Ambient`;
 const HS = `${HORROR}/Stingers and Spooky Triggers`;
+const VOICES = `${AUDIO_BASE}/voices`; // it.115: the human voices baked from the horror pack's human takes.
 const HORROR_BANKS: Record<string, string[]> = {
   hScream: [`${HA}/Scream.wav`, `${HG}/Ghost_scream_3.wav`, `${HA}/Distant Yell_Echo and Reverb_2.wav`],
   hZombie: [`${HG}/Zombie.wav`, `${HG}/Zombie_6.wav`, `${HG}/Zombie_8.wav`],
@@ -274,6 +278,25 @@ const HORROR_BANKS: Record<string, string[]> = {
   hMoan: [`${HG}/Ghost_moan_2.wav`, `${HG}/Tone_Moaning.wav`],
   hStinger: [`${HS}/Piano_stinger_dissonent.wav`, `${HS}/Piano_stinger_dissonent_2.wav`, `${HS}/Stinger.wav`, `${HS}/Metal_resonance.wav`, `${HA}/Bell_low.wav`],
   hAmbience: [`${HA}/Creepy_ambience_3.wav`, `${HA}/Creepy_ambience_5.wav`, `${HS}/Spooky Ambience.wav`, `${HA}/Drone_doom.wav`, `${HG}/Ghost chior.wav`, `${HA}/Old House_creeky metal and wood_ambiance_7.wav`],
+  // MEN SOUND LIKE MEN (it.115): the company, the looters and the city watch
+  // were grunting through `Monster_grunt` and dying through the ghost scream.
+  // No human voice pack exists in any drop, so these are baked by hand
+  // (22 kHz mono) out of the pack's HUMAN takes only - Injured, the two
+  // Character gasps, the Scream and the Distant Yell - pitched down for the
+  // men with the formants held (they read as a man, not a slowed-down thing),
+  // left at their own pitch for the women. Hurt = pain, Cry = the battle yell
+  // (aggro, the combat heartbeat, the swing), Die = the death cry.
+  vManHurt: [1, 2, 3, 4, 5].map((n) => `${VOICES}/man_hurt_${n}.wav`),
+  vManCry: [`${VOICES}/man_cry_1.wav`, `${VOICES}/man_cry_2.wav`, `${VOICES}/man_cry_3.wav`, `${VOICES}/man_hurt_5.wav`],
+  vManDie: [1, 2, 3].map((n) => `${VOICES}/man_die_${n}.wav`),
+  vWomanHurt: [1, 2, 3, 4, 5].map((n) => `${VOICES}/woman_hurt_${n}.wav`),
+  vWomanCry: [`${VOICES}/woman_cry_1.wav`, `${VOICES}/woman_cry_2.wav`, `${VOICES}/woman_hurt_5.wav`],
+  vWomanDie: [1, 2, 3].map((n) => `${VOICES}/woman_die_${n}.wav`),
+};
+/** The human voice families (it.115): the bank a species names -> its hurt / cry / death banks. */
+const HUMAN_VOICES: Record<string, { hurt: string; cry: string; die: string }> = {
+  vMan: { hurt: 'vManHurt', cry: 'vManCry', die: 'vManDie' },
+  vWoman: { hurt: 'vWomanHurt', cry: 'vWomanCry', die: 'vWomanDie' },
 };
 
 const STORAGE_KEY = 'iso-arpg-audio';
@@ -706,16 +729,30 @@ export class AudioManager {
    */
   /**
    * @param bank The species' HORROR voice bank ('hZombie' | 'hGrowl' |
-   *             'hHiss' | 'hScream' | 'hGrunt' | 'hRoar' | 'hMoan').
+   *             'hHiss' | 'hScream' | 'hGrunt' | 'hRoar' | 'hMoan'), or a
+   *             human family ('vMan' | 'vWoman', it.115).
    * Priority: user voice-pack pool → horror bank → beast slice fallback.
    */
   enemyVoice(state: 'idle' | 'hurt' | 'die' | 'attack', pitch: number, bank = 'hGrunt'): void {
-    if (!this.ctx || this.settings.muted) return;
+    if (!this.ctx || this.settings.muted || bank === 'silent') return; // 'silent': the straw dummies (it.115).
     const now = performance.now();
     if (now - this.lastVoiceAt < 70) return; // Anti-chorus (it.27: denser).
     this.lastVoiceAt = now;
     // Discovered voice-pack pools take priority (randomized takes).
     if (this.playPool(state, pitch, state === 'die' ? 0.65 : 0.5)) return;
+    // MEN SOUND LIKE MEN (it.115): a human family never falls through to the
+    // ghost scream or the beast recording. Pain is pain, the swing is an effort
+    // (half the time - a man does not yell on every cut), noticing you is a
+    // battle yell, dying is a death cry. The pitch stays near the voice's own.
+    const human = HUMAN_VOICES[bank];
+    if (human) {
+      const rate = Math.max(0.85, Math.min(1.15, pitch));
+      if (state === 'die') this.playVariant(human.die, 0.7, rate, 0.05);
+      else if (state === 'hurt') this.playVariant(human.hurt, 0.55, rate, 0.07);
+      else if (state === 'idle') this.playVariant(human.cry, 0.5, rate, 0.05);
+      else if (Math.random() < 0.5) this.playVariant(human.hurt, 0.4, rate * 1.04, 0.07);
+      return;
+    }
     // HORROR mapping (it.25): deaths scream, everything else speaks its bank.
     const dieBank = bank === 'hZombie' || bank === 'hRoar' ? bank : 'hScream';
     if (state === 'die') {
@@ -828,6 +865,18 @@ export class AudioManager {
         this.playBuffer('magic6', 0.9);
         this.playVariant('hRoar', 0.8, 0.8, 0.05, 0.15); // The dying roar.
         this.blip('sawtooth', 90, 26, 1.1, 0.5);
+        break;
+      case 'bossDieMan':
+        // A general or a chief falls (it.115): the same weight, a man's death cry for the roar.
+        this.playSlice('doom', 0, 4.5, 1.0, 0.9, 0);
+        this.playVariant('vManDie', 0.85, 0.9, 0.03, 0.1);
+        this.blip('sawtooth', 90, 26, 1.1, 0.4);
+        break;
+      case 'warHorn':
+        // The company's horn (it.115): bossHorn's brass, answered by men yelling, not a keeper roaring.
+        if (!this.playSlice('horn', 0, 6, 1.0, 0.8, 0)) this.blip('sawtooth', 140, 130, 1.2, 0.5);
+        this.playVariant('vManCry', 0.6, 0.97, 0.05, 0.8);
+        this.playVariant('vManCry', 0.45, 1.06, 0.05, 1.05);
         break;
       case 'introHorn': {
         // THE OPENING (it.62): a deep horn swell under a slow bronze bell.
@@ -998,7 +1047,8 @@ export class AudioManager {
         this.playVariant('swordAttack', 0.35, 1.3, 0.08, 0.05);
         break;
       case 'skillShout':
-        this.playVariant('hRoar', 0.7, 1.25, 0.08);
+        // The warrior's War Cry is a man's yell, not a beast's roar (it.115).
+        this.playVariant('vManCry', 0.75, 1.0, 0.04);
         this.playBuffer('chant', 0.4);
         break;
       case 'skillBuff':

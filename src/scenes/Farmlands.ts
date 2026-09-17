@@ -46,7 +46,7 @@
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
 import { claimProp, claims, footprintOf, KIND_DIRT, KIND_FARM_ASH, KIND_GRASS, type FarmLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
-import { bareLayout } from './Forest';
+import { bareLayout, carriageVariant, groundPainter, KIND_OW_FLOWERS, KIND_OW_FOREST, KIND_OW_GRAVEL, KIND_OW_MEADOW, KIND_OW_MOSS, KIND_OW_MUD, KIND_OW_POPPIES, mushroomVariant, rocksVariant, smallPiece, tileHash, tuftVariant } from './Forest';
 
 export const FARM_W = 64;
 export const FARM_H = 48;
@@ -315,6 +315,8 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
   put('stall', 43, 34, 'stall_d');
   for (const [x, y] of [[6, 30], [21, 30], [38, 28], [44, 4], [26, 38], [54, 34]] as const) put('barrel', x, y, 'barrel_b');
   for (const [x, y] of [[19, 30], [35, 33], [46, 39], [11, 32], [58, 21]] as const) decal({ kind: 'rock', x, y, variant: 'rock_c' });
+  // THE WAGONS (it.115): a hay cart left in each yard and one abandoned by the western barricade.
+  for (const [x, y] of [[59, 33], [40, 36], [21, 38], [6, 10], [48, 36]] as const) put('barricade', x, y, carriageVariant(x, y));
 
   // ---- THE HEDGE -------------------------------------------------------
   // Every tile on the field's border carries a tree, so the map is outlined in
@@ -392,6 +394,95 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
         decal({ kind: v.startsWith('bigtree') ? 'bigtree' : v.startsWith('pine') ? 'pine' : 'tree', x, y, variant: v, bare: d > 1, ox: (((x * 5 + y * 3) % 7) - 3) * 0.06, oy: (((x * 3 + y * 11) % 7) - 3) * 0.06 });
       }
     }
+  }
+
+  /**
+   * ---- THE GROUND (it.115) ---------------------------------------------
+   * The field was grass and ploughland and nothing else. Now, by geometry:
+   *
+   *   GRAVEL  the city road off the corner and the western lane - both were
+   *           carved as open ground and never given a surface of their own
+   *   LITTER  leaf-fall along the foot of the hedge
+   *   MOSS    the headlands' shady corners, behind the hedge-foot
+   *   MUD     the yards round the wells and barn doors, and the wet ruts where
+   *           the cart track crosses the lowest ground
+   *
+   * Only GRASS (and the track's dirt, for the ruts) is repainted: the ploughed
+   * strips, the stubble and the ash keep their it.101 tiles.
+   */
+  {
+    const grass = groundPainter(W, H, tileKind, (x, y) => grid[idx(x, y)] !== TILE_WALL && tileKind[idx(x, y)] === KIND_GRASS);
+    const anyOpen = groundPainter(W, H, tileKind, (x, y) => grid[idx(x, y)] !== TILE_WALL && tileKind[idx(x, y)] !== KIND_FARM_ASH);
+    const ruts = groundPainter(W, H, tileKind, (x, y) => grid[idx(x, y)] !== TILE_WALL && offTrack(x, y) <= 1);
+    // The roads: gravel over whatever the lobes and the plough left there.
+    const roadGround = groundPainter(W, H, tileKind, (x, y) => !!road[idx(x, y)]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (road[idx(x, y)]) roadGround.tile(x, y, KIND_OW_GRAVEL);
+    // The hedge-foot, then a shaded band behind it where the wave says so.
+    const hedgeDist = (x: number, y: number): number => {
+      for (let r = 1; r <= 2; r++)
+        for (let oy = -r; oy <= r; oy++)
+          for (let ox = -r; ox <= r; ox++) {
+            if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+            if (!inside(x + ox, y + oy) || grid[idx(x + ox, y + oy)] === TILE_WALL) return r;
+          }
+      return 9;
+    };
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        if (grid[idx(x, y)] === TILE_WALL || road[idx(x, y)]) continue;
+        const d = hedgeDist(x, y);
+        if (d === 1) grass.tile(x, y, KIND_OW_FOREST);
+        else if (d === 2 && Math.sin(x * 0.41 + y * 0.23) + Math.cos(y * 0.36 - x * 0.15) > 0.3) grass.tile(x, y, KIND_OW_MOSS);
+      }
+    /**
+     * THE HEADLANDS GROW (it.115): long grass in slow drifts wherever the plough
+     * never went, and - once the farm is its own again - wildflowers and a few
+     * pockets of poppies in them. Grass only, so the ploughland keeps its rows.
+     */
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        if (grid[idx(x, y)] === TILE_WALL || road[idx(x, y)] || offTrack(x, y) <= 2) continue;
+        const drift = Math.sin(x * 0.19 + y * 0.15 + 0.9) + Math.cos(y * 0.25 - x * 0.11 + 0.2);
+        const bloom = Math.sin(x * 0.23 - y * 0.19 + 1.4) + Math.cos(x * 0.13 + y * 0.29 - 0.8);
+        if (won && bloom > 1.45) grass.tile(x, y, KIND_OW_FLOWERS);
+        else if (drift > 1.0) grass.tile(x, y, KIND_OW_MEADOW);
+      }
+    if (won) for (const [cx, cy, rx, ry] of [[12, 12, 1.8, 1.2], [30, 8, 1.6, 1.2], [56, 12, 1.7, 1.2], [18, 44, 1.6, 1.1]] as const) grass.patch(cx, cy, rx, ry, KIND_OW_POPPIES);
+    // The headlands' own damp corners.
+    for (const [cx, cy, rx, ry] of [[8, 8, 3.4, 2.6], [22, 6, 3, 2.2], [44, 22, 2.6, 2], [60, 38, 2.6, 2], [26, 40, 3, 2.2], [40, 5, 2.6, 2]] as const)
+      grass.patch(cx, cy, rx, ry, KIND_OW_MOSS);
+    // The yards: mud round each well and barn door.
+    anyOpen.patch(51.5, 24.5, 3.2, 2.2, KIND_OW_MUD); // the home farm's well
+    anyOpen.patch(48.5, 32.5, 2.6, 1.8, KIND_OW_MUD); // the great barn's door
+    anyOpen.patch(35.5, 36, 3, 1.8, KIND_OW_MUD); // the south farm's yard
+    if (won) anyOpen.patch(15, 37.5, 3, 1.8, KIND_OW_MUD); // the western steading's, once it is not ash
+    // The ruts: the track's lowest crossings stand in water.
+    for (const x of [14, 29, 42, 55]) ruts.patch(x, trackY(x), 2.2, 1.3, KIND_OW_MUD);
+
+    // THE SMALL THINGS: tufts at the field margins and the hedge-foot, stones on the roads' shoulders, fungus under the hedge.
+    const taken = new Set<number>();
+    for (const p of props) taken.add(idx(p.x, p.y));
+    for (const c of [{ x: 51, y: 15 }, { x: 44, y: 6 }, { x: 37, y: 26 }, { x: 33, y: 14 }, { x: 25, y: 34 }, { x: 14, y: 27 }, { x: 20, y: 37 }, { x: 7, y: 15 }]) taken.add(idx(c.x, c.y));
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        const i = idx(x, y);
+        if (taken.has(i) || grid[i] !== TILE_FLOOR) continue;
+        const k = tileKind[i];
+        const battle = offTrack(x, y) <= 2; // the fighting's own line stays bare (it.105)
+        if (k === KIND_OW_GRAVEL) {
+          let shoulder = false;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) if (!road[idx(x + dx, y + dy)]) shoulder = true;
+          if (shoulder && tileHash(x, y, 21) < 0.2) decal(smallPiece(x, y, rocksVariant(x, y)));
+        } else if (k === KIND_OW_FOREST) {
+          if (tileHash(x, y, 22) < 0.1) decal(smallPiece(x, y, mushroomVariant(x, y)));
+          else if (tileHash(x, y, 23) < 0.2) decal(smallPiece(x, y, tuftVariant(x, y)));
+        } else if ((k === KIND_GRASS || k === KIND_OW_MOSS || k === KIND_OW_MEADOW) && !battle) {
+          // A field margin: grass beside the plough.
+          let margin = false;
+          for (const [dx, dy] of [[0, 1], [0, -1]] as const) if (tileKind[idx(x + dx, y + dy)] === KIND_DIRT) margin = true;
+          if (tileHash(x, y, 24) < (margin ? 0.22 : 0.05)) decal(smallPiece(x, y, tuftVariant(x, y)));
+        } else if (k === KIND_OW_MUD && !battle && tileHash(x, y, 25) < 0.08) decal(smallPiece(x, y, rocksVariant(x, y)));
+      }
   }
 
   // ---- THE WAY ON AND THE WAY HOME --------------------------------------

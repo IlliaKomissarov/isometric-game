@@ -75,6 +75,12 @@ export interface CheatHooks {
   foes: () => CheatFoeInfo[];
   /** Spawn `count` of a kind beside the hero at `level` (it.114). */
   spawnFoe: (kind: string, count: number, level: number) => void;
+  /**
+   * Start streaming a kind's sheets before the click (it.115): a creature's
+   * first summons waited on five atlases with nothing on screen, which read as
+   * "the spawn does nothing". Hovering a foe now fetches them.
+   */
+  prewarmFoe?: (kind: string) => void;
   /** The quest ledger and the states each key may take (it.114). */
   quests: () => { defs: CheatQuest[]; state: Record<string, string> };
   setQuest: (key: string, value: string | null) => void;
@@ -328,7 +334,10 @@ export class CheatMenuUI {
     `;
 
     this.panel.querySelectorAll<HTMLButtonElement>('button').forEach((btn) => {
-      btn.addEventListener('mouseenter', () => audio.sfx('uiHover'));
+      btn.addEventListener('mouseenter', () => {
+        audio.sfx('uiHover');
+        if (btn.dataset.spawn) this.hooks.prewarmFoe?.(btn.dataset.spawn);
+      });
       btn.addEventListener('click', () => {
         audio.sfx('uiClick');
         if ('close' in btn.dataset) {

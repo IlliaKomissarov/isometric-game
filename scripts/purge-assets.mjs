@@ -113,6 +113,12 @@ const AUDIO_KEEP = new Set([
   `${HA}/Drone_doom.wav`,
   `${HG}/Ghost chior.wav`,
   `${HA}/Old House_creeky metal and wood_ambiance_7.wav`,
+  // MEN SOUND LIKE MEN (it.115): the human voices baked out of the pack's human takes.
+  ...['man', 'woman'].flatMap((g) => [
+    ...[1, 2, 3, 4, 5].map((n) => `voices/${g}_hurt_${n}.wav`),
+    ...[1, 2, 3].map((n) => `voices/${g}_die_${n}.wav`),
+    ...(g === 'man' ? [1, 2, 3] : [1, 2]).map((n) => `voices/${g}_cry_${n}.wav`),
+  ]),
 ]);
 
 let moved = 0;

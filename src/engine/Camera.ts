@@ -23,6 +23,10 @@
  * the total offset is capped. Everything is gated on `visuals.shake`.
  * The base position is kept apart from the offsets, so the shake never
  * feeds back into the follow lerp.
+ *
+ * THE SCENE'S ZOOM (it.115): `setCineZoom(level)` eases the wheel target to a
+ * cutscene's level over ~0.6 s and `setCineZoom(null)` eases it back to the
+ * zoom the player had; the wheel keeps working on the remembered value.
  */
 
 import { visuals } from '@/core/VisualSettings';
@@ -73,10 +77,29 @@ export class Camera {
   private punchNow = 0;
   /** The roll applied this frame (radians), for picking. */
   private roll = 0;
+  /**
+   * THE SCENE'S ZOOM (it.115). A cutscene may borrow the zoom to look a speaker
+   * in the face; the player's own wheel setting is remembered in `ownZoom` and
+   * given back when the scene lets go. `cineLevel` is what the scene asked for
+   * (null: nothing borrowed); the tween eases `targetZoom` toward `cineTo`
+   * over `cineDur` seconds, in both directions, independent of the wheel.
+   */
+  private cineLevel: number | null = null;
+  private ownZoom = DEFAULT_ZOOM;
+  private cineFrom = DEFAULT_ZOOM;
+  private cineTo = DEFAULT_ZOOM;
+  private cineT = 0;
+  private cineDur = 0;
 
   private readonly onWheel = (e: WheelEvent): void => {
     e.preventDefault();
     const dir = Math.sign(e.deltaY);
+    // While a scene holds the zoom the wheel moves the REMEMBERED setting, so
+    // the player's wish is honoured the moment the bars lift - not fought over.
+    if (this.cineLevel !== null) {
+      this.ownZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.ownZoom - dir * ZOOM_STEP));
+      return;
+    }
     this.targetZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.targetZoom - dir * ZOOM_STEP));
   };
 
@@ -103,6 +126,16 @@ export class Camera {
    */
   follow(worldPos: Vec2, dt: number): void {
     worldToScreen(worldPos.x, worldPos.y, this.focusScreen);
+
+    // A scene's zoom tween (it.115): a smoothstep from where the target was to
+    // where the scene wants it, or back to the player's own once released.
+    if (this.cineDur > 0) {
+      this.cineT = Math.min(this.cineDur, this.cineT + dt);
+      const k = this.cineT / this.cineDur;
+      const e = k * k * (3 - 2 * k);
+      this.targetZoom = this.cineFrom + (this.cineTo - this.cineFrom) * e;
+      if (this.cineT >= this.cineDur) this.cineDur = 0;
+    }
 
     // Smooth zoom toward the wheel target.
     this.zoom += (this.targetZoom - this.zoom) * damp(10, dt);
@@ -192,6 +225,39 @@ export class Camera {
   /** The screen's own zoom bias; see `LayoutState.stageZoom`. */
   setLayoutZoom(z: number): void {
     this.layoutZoom = z > 0 ? z : 1;
+  }
+
+  /**
+   * THE SCENE LOOKS CLOSER (it.115). `level` eases the zoom to that value over
+   * ~0.6 s (a cutscene may go a little past the wheel's ceiling, to 3.2, so a
+   * face fills the frame); `null` eases it back to the zoom the player had
+   * before the first call. Repeated calls re-aim the tween from wherever it
+   * is. A scene that never zoomed can release freely: nothing happens.
+   */
+  setCineZoom(level: number | null, seconds = 0.6): void {
+    if (level === null) {
+      if (this.cineLevel === null) return;
+      this.cineLevel = null;
+      this.startZoomTween(this.ownZoom, seconds);
+      return;
+    }
+    if (this.cineLevel === null) this.ownZoom = this.cineDur > 0 ? this.cineTo : this.targetZoom;
+    const to = Math.min(Math.max(ZOOM_MAX, 3.2), Math.max(ZOOM_MIN, level));
+    if (this.cineLevel === to && this.cineDur === 0) return;
+    this.cineLevel = to;
+    this.startZoomTween(to, seconds);
+  }
+
+  /** True while a scene holds the zoom (it.115). */
+  get cineZoomed(): boolean {
+    return this.cineLevel !== null;
+  }
+
+  private startZoomTween(to: number, seconds: number): void {
+    this.cineFrom = this.targetZoom;
+    this.cineTo = to;
+    this.cineT = 0;
+    this.cineDur = Math.max(0.016, seconds);
   }
 
   /** DIRECTIONAL KICK (it.48): the view recoils along the blow's screen direction. */

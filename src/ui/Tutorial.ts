@@ -67,6 +67,11 @@ export class TutorialUI {
       }
     }
 
+    // THE WORD HAS THE FLOOR (it.115). While a quest dialogue is up the banner is
+    // hidden by the stylesheet; the clocks stop here so a hint that was showing
+    // is not eaten by the conversation, and the next one waits its turn.
+    if (document.body.classList.contains('dialogue-open')) return;
+
     if (this.showTimer > 0) {
       this.showTimer -= dt;
       if (this.showTimer <= 0) {

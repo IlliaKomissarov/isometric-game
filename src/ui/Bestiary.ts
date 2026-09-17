@@ -14,7 +14,7 @@ import { eventBus } from '@/core/EventBus';
 import { audio } from '@/engine/AudioManager';
 import { ENEMY_TYPES, levelHpScale, type EnemyKind } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
-import { atlasUrl, rowForDir, spriteLib } from '@/render/SpriteLibrary';
+import { animatePreviews, previewHtml } from '@/ui/sheetPreview';
 
 const LORE: Partial<Record<EnemyKind, string>> = {
   fallen: 'Runts of the crypt: what is left of the tomb-diggers who broke the first seal. They swarm, and they run when the swarm thins.',
@@ -68,7 +68,7 @@ const LORE: Partial<Record<EnemyKind, string>> = {
 };
 
 /** MEN, NOT MONSTERS (it.114): the looters, the company and its officers, the mines' orcs, the hired killer. */
-const MAN_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>([
+export const MAN_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>([
   'poacher', 'bandit', 'brigand', 'mercenary', 'general', 'chief',
   'halberdier', 'duelist', 'orcSpearman', 'orcWarrior', 'reaper',
 ]);
@@ -157,19 +157,16 @@ export class BestiaryUI {
     }
   }
 
-  /** CSS sprite from the atlas strip: south-facing idle (or walk) row, scaled to `height` px. */
-  private spriteCss(kind: EnemyKind, height: number): { style: string; frames: number; cellW: number; row: number; file: string; scale: number } | null {
+  /**
+   * THE LIVING PORTRAIT (it.115): the kind's idle, facing the camera, feet on
+   * the stage's ground line, at its size relative to the other kinds (x1.7 of
+   * the world size, so a brute stands over a ghast here as on the sand).
+   */
+  private preview(kind: EnemyKind, look: string): string {
     const sp = ENEMY_TYPES[kind].sprite;
-    if (!sp) return null;
-    const anim = sp.idle ?? sp.walk;
-    const e = spriteLib.entry(anim);
-    if (!e) return null;
-    const painted = e.painted;
-    const paintedH = painted ? painted.bottom - painted.top + 1 : e.origH;
-    const scale = height / (paintedH * e.scale);
-    const row = e.dirCount === 8 ? rowForDir(anim, 6) : 0;
-    const style = `width:${e.cellW}px;height:${e.cellH}px;background-image:url(${atlasUrl(e.file)});background-position:0px ${-row * e.cellH}px;transform:scale(${scale.toFixed(3)});`;
-    return { style, frames: e.frameCount, cellW: e.cellW, row, file: e.file, scale };
+    if (!sp) return '';
+    const base = kind.startsWith('boss') ? 128 : 56;
+    return previewHtml({ anim: sp.idle ?? sp.walk, idle: sp.idle, walk: sp.walk, attack: sp.attack, height: base * (sp.heightMult ?? 1) * 1.7 }, 300, 190, 14, look);
   }
 
   private render(): void {
@@ -199,18 +196,18 @@ export class BestiaryUI {
       const def = ENEMY_TYPES[sel];
       const known = isKnown(sel);
       const rec = p.bestiary.get(sel) ?? { seen: 0, killed: 0 };
-      const css = this.spriteCss(sel, sel.startsWith('boss') ? 150 : 96);
+      const pv = this.preview(sel, '');
       // UNKNOWN (it.43): a solid black silhouette — the fog-of-war shadow of a thing not yet met.
       const look = known ? 'filter:drop-shadow(0 6px 6px rgba(0,0,0,.8)) sepia(0.15);' : 'filter:brightness(0) drop-shadow(0 0 6px rgba(0,0,0,.9));opacity:0.9;';
-      const preview = css
-        ? `<div class="bs-stage${known ? '' : ' unknown'}"><div class="bs-sprite" data-anim style="${css.style}${look}"></div></div>`
+      const preview = pv
+        ? `<div class="bs-stage${known ? '' : ' unknown'}"><div style="position:relative;width:300px;height:190px;flex:none">${this.preview(sel, look)}</div></div>`
         : `<div class="bs-stage"><div class="bs-nosprite">${known ? def.name : '???'}</div></div>`;
       const stat = (k: string, v: string, note = ''): string => `<div class="bs-stat"><span>${k}</span><b>${known ? v : '???'}</b>${known && note ? `<i>${note}</i>` : ''}</div>`;
       const level = Math.max(1, p.level);
       const scaled = Math.round(def.hp * levelHpScale(level));
       detail = `
         ${preview}
-        <div class="bs-title"><h4>${known ? def.name : '???'}</h4><span>${known ? `${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}` : 'unseen'}</span>${known ? `<small class="bs-ref">kind <b>${sel}</b> · sheets <b>${def.sprite ? def.sprite.walk.replace(/_[a-z]+$/, '') + '_*' : def.single ?? '—'}</b></small>` : ''}${known && this.hooks.tryOut && def.sprite ? `<button class="ds-btn bs-tryout" data-tryout="${sel}">✦ TRY THIS BODY ON</button>` : ''}</div>
+        <div class="bs-title"><h4>${known ? def.name : '???'}</h4><span>${known ? `${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}` : 'unseen'}</span>${known ? `<small class="bs-ref">kind <b>${sel}</b> · sheets <b>${def.sprite ? def.sprite.walk.replace(/_[a-z]+$/, '') + '_*' : def.single ?? '—'}</b></small>` : ''}${known && this.hooks.tryOut && def.sprite ? `<button class="ds-btn bs-tryout" data-tryout="${sel}">✦ SHOW ON THE SAND</button>` : ''}</div>
         <p class="bs-lore">${known ? (LORE[sel] ?? 'No scholar survived long enough to write of this one.') : 'Something moves down there. Meet it, or switch on the Forbidden Arts, and its page fills in.'}</p>
         <div class="bs-stats">
           ${stat('Vitality', `${def.hp}`, `≈${scaled} at level ${level}`)}
@@ -253,18 +250,8 @@ export class BestiaryUI {
       });
       b.addEventListener('mouseenter', () => audio.sfx('uiHover'));
     });
-    // Breathe: step the strip's frames on a slow cadence.
-    const spriteEl = this.panel.querySelector<HTMLElement>('.bs-sprite[data-anim]');
-    if (spriteEl && sel) {
-      const css = this.spriteCss(sel, 1);
-      if (css && css.frames > 1) {
-        let f = 0;
-        this.timer = window.setInterval(() => {
-          f = (f + 1) % css.frames;
-          spriteEl.style.backgroundPosition = `${-f * css.cellW}px ${-css.row * (parseFloat(spriteEl.style.height) || 0)}px`;
-        }, 140);
-      }
-    }
+    // Breathe (it.115): the shared preview ticker - a calm idle, not a twitch.
+    animatePreviews(this.panel);
   }
 
   destroy(): void {

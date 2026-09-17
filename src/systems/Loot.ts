@@ -18,6 +18,14 @@
  *
  * FOOD ON THE GROUND (it.114): a dish lies as its baked 64 px single at half
  * size; when its turntable atlas happens to be resident it turns slowly.
+ *
+ * ONE SIZE ON THE FLOOR, AND EVERYTHING TURNS (it.115). Every ground glyph
+ * is fitted so its PAINTED extent (the manifest's union box for a strip, the
+ * texture for anything else) spans `GROUND_BOX` screen pixels - a dagger and
+ * a feast no longer lie at different sizes. An item whose turntable is not
+ * resident yet lies as its single and asks `spriteLib.ensure` for the strip;
+ * when it arrives the glyph starts turning. The prompt that names what E
+ * would take is `ui/LootNote.lootPromptHtml` over `findNearest`.
  */
 
 import { Container, Sprite, type Texture } from 'pixi.js';
@@ -56,6 +64,8 @@ interface GroundItemView extends GroundItem {
   beacon?: Container;
   /** A dish's turntable frames when resident (it.114): the glyph steps them. */
   spin?: Texture[];
+  /** The key beacon's silhouette (it.115: re-fitted when the strip arrives). */
+  ghost?: Sprite;
 }
 
 interface GroundCoinView extends GroundCoin {
@@ -74,6 +84,18 @@ export const COIN_SCOOP_RADIUS = 0.75;
 const COIN_FPS = 10;
 /** The coin atlases (`spriteLib.ensure` these with a floor's roster). */
 export const COIN_ANIMS: readonly string[] = ['coin_small', 'coin_medium', 'coin_large'];
+
+/** THE GROUND BOX (it.115): the painted extent, in world pixels, of every item lying on the floor. */
+export const GROUND_BOX = 24;
+/** A turntable's pace on the floor (frames per second). */
+const GROUND_SPIN_FPS = 12;
+
+/** The painted extent (original px) of a one-row strip: the larger side of its union box. */
+function paintedExtent(anim: string): number {
+  const e = spriteLib.entry(anim);
+  if (!e) return 0;
+  return Math.max(e.painted.right - e.painted.left + 1, e.painted.bottom - e.painted.top + 1);
+}
 
 /** Which coin sprite an amount earns. */
 export function coinSizeFor(amount: number): 'small' | 'medium' | 'large' {
@@ -247,40 +269,37 @@ export class LootSystem {
     glow.position.y = -6;
     root.addChild(glow);
 
-    // Weapons show their REAL pixel icon on the ground; other gear keeps
-    // the item-colored paperdoll glyph.
+    // THE GLYPH (it.115): the turntable when resident, else the single (and the strip is fetched),
+    // else the Raven icon, else the generated pixel icon - every one fitted to GROUND_BOX.
     let glyph: Sprite;
     let spin: Texture[] | undefined;
+    let fit = 1;
+    const spinKnown = !!def.spin && spriteLib.knows(def.spin);
     if (def.spin && spriteLib.hasAnim(def.spin)) {
-      // THE TURNTABLE ON THE FLOOR (it.114): a dish (or a flask) turns when its atlas is already here.
-      const anim = spriteLib.anim(def.spin as AnimName);
-      spin = anim.frames[0];
+      spin = spriteLib.anim(def.spin as AnimName).frames[0];
       glyph = new Sprite(spin[0]);
-      glyph.anchor.set(0.5, 0.5);
-      glyph.scale.set(0.4);
-      glyph.position.y = -8;
+      fit = GROUND_BOX / Math.max(1, paintedExtent(def.spin));
     } else if (def.sprite && spriteLib.loaded && spriteLib.hasSingle(def.sprite)) {
-      // THE BAKED SINGLE (it.114): 64 px art at half size, a readable dish or flask.
-      glyph = new Sprite(spriteLib.single(def.sprite));
-      glyph.anchor.set(0.5, 0.5);
-      glyph.scale.set(0.5);
-      glyph.position.y = -8;
+      const tex = spriteLib.single(def.sprite);
+      glyph = new Sprite(tex);
+      // The single is the strip's first frame at 64 px: scale the strip's painted box to it when known.
+      const e = def.spin ? spriteLib.entry(def.spin) : null;
+      const extent = e ? paintedExtent(def.spin!) * (tex.width / Math.max(1, e.origW)) : Math.max(tex.width, tex.height) * 0.8;
+      fit = GROUND_BOX / Math.max(1, extent);
     } else if (def.icon && spriteLib.loaded && spriteLib.hasSingle(`wicon_${def.icon}`)) {
-      // COMPACT DROPS (it.37): ground icons stay ≤ 32 px so a boss loot
-      // burst never carpets the floor.
-      glyph = new Sprite(spriteLib.single(`wicon_${def.icon}`));
-      glyph.anchor.set(0.5, 0.5);
-      // The Raven icons are 64 px paintings (it.78): a third of that on the ground.
-      // A quarry key (it.87) is a quarter: it lies on the floor, it does not tower over it.
-      glyph.scale.set(def.use?.key ? 0.3 : def.icon.startsWith('raven') ? 0.42 : 1.0);
-      glyph.position.y = def.use?.key ? -4 : -7;
+      const tex = spriteLib.single(`wicon_${def.icon}`);
+      glyph = new Sprite(tex);
+      // The Raven icons are full-frame 64 px paintings; the older oubliette icons are small.
+      fit = GROUND_BOX / Math.max(1, Math.max(tex.width, tex.height) * (def.icon.startsWith('raven') ? 0.85 : 1));
     } else {
-      // Non-pack gear drops as its crisp generated pixel icon (40 px source → 28 px).
-      glyph = new Sprite(itemIconTexture(def));
-      glyph.anchor.set(0.5, 0.5);
-      glyph.scale.set(0.7);
-      glyph.position.y = -7;
+      // Non-pack gear drops as its crisp generated pixel icon (40 px source).
+      const tex = itemIconTexture(def);
+      glyph = new Sprite(tex);
+      fit = GROUND_BOX / Math.max(1, Math.max(tex.width, tex.height) * 0.9);
     }
+    glyph.anchor.set(0.5, 0.5);
+    glyph.scale.set(fit);
+    glyph.position.y = -8;
     root.addChild(glyph);
 
     const s = worldToScreen(x, y, this.scratch);
@@ -289,6 +308,17 @@ export class LootSystem {
     this.viewport.objectLayer.addChild(root);
 
     const view: GroundItemView = { uid, itemId: def.id, x, y, root, glyph, spin };
+    if (!spin && spinKnown && def.spin) {
+      // THE STRIP ON ITS WAY (it.115): the single lies still until the turntable is resident.
+      const name = def.spin;
+      void spriteLib.ensure([name]).then(() => {
+        if (this.items.get(uid) !== view || view.root.destroyed || !spriteLib.hasAnim(name)) return;
+        view.spin = spriteLib.anim(name as AnimName).frames[0];
+        view.glyph.texture = view.spin[0];
+        view.glyph.scale.set(GROUND_BOX / Math.max(1, paintedExtent(name)));
+        if (view.ghost) view.ghost.scale.set(view.glyph.scale.x * 0.9);
+      });
+    }
     if (def.use?.key) {
       // THE BEACON (it.87): the key drawn again in the top layer - a soft
       // light column and its own silhouette, additive, so a wall in front of
@@ -303,7 +333,7 @@ export class LootSystem {
       beacon.addChild(column);
       const ghost = new Sprite(glyph.texture);
       ghost.anchor.set(0.5, 0.5);
-      ghost.scale.set(0.3);
+      ghost.scale.set(fit * 0.9);
       ghost.blendMode = 'add';
       ghost.tint = 0xffe8a0;
       ghost.alpha = 0.55;
@@ -313,6 +343,7 @@ export class LootSystem {
       beacon.visible = false;
       this.viewport.ambienceLayer.addChild(beacon);
       view.beacon = beacon;
+      view.ghost = ghost;
     }
     this.items.set(uid, view);
     if (!quiet) eventBus.emit('item:dropped', { uid, itemId: def.id, x, y });
@@ -439,7 +470,7 @@ export class LootSystem {
       item.root.visible = visible;
       if (!visible) continue;
       item.glyph.position.y = -4 + Math.sin(time * 2.4 + item.uid * 1.7) * 2.5;
-      if (item.spin) item.glyph.texture = item.spin[Math.floor(time * 12 + item.uid) % item.spin.length];
+      if (item.spin) item.glyph.texture = item.spin[Math.floor(time * GROUND_SPIN_FPS + item.uid) % item.spin.length];
       // All ground glyphs are pre-colored art now (pack icons or generated
       // pixel icons) — the scene light is the only tint applied.
       const light = lighting.getTintAt(item.x, item.y, 0.35);

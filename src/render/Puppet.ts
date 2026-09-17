@@ -1,157 +1,223 @@
 /**
  * @module render/Puppet
- * A COSTUME ON THE HERO (it.114, the menagerie).
+ * A BODY ON A PLINTH (it.115, the menagerie).
  *
- * The try-out arena lets the owner walk the sand as any creature. The
- * simulation does not change for that - the hero is still the hero: the same
- * collider, the same movement, the same actions - only the BODY drawn over
- * the hero's position is another creature's sheets. That is what a puppet is:
- * a render-side rig that reads the hero's state every frame (interpolated
- * position, facing, action, action progress, distance walked) and picks a
- * costume's anim and frame from it. Nothing in the sim reads it.
+ * It.114 put a creature's sheets OVER the hero - the owner: "the mob models
+ * attach right onto my hero skin and overlap each other, it's terrible". The
+ * hero stays the hero now. A picked body is a DISPLAY MODEL: its own sprite on
+ * its own marked spot on the sand, standing still, facing the camera, and
+ * playing whichever clip it is told to - idle and walk loop, the attack and
+ * the flinch play once and settle, a death plays, lies a breath on the sand
+ * and climbs back up. Nothing in the simulation knows about it.
  *
- * Rig scale is normalised the way `Enemy.applyRig` does it: the costume's
- * idle sheet is scaled so its painted height is `HERO_HEIGHT * heightMult`,
- * and the feet anchor comes from the manifest's painted bounds (`footAnchor`),
- * so a body from any pack stands on its tile.
+ * Every frame stands on the clip's CALIBRATED feet (`spriteLib.footAnchor`,
+ * per frame for a fall), and the rig is normalised the way `Enemy.applyRig`
+ * does it (`rigHeight` x the kind's standard), so what the owner judges here
+ * is exactly what walks in the crypt.
  */
 
-import { Container, Sprite, Texture } from 'pixi.js';
+import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { assets } from '@/core/AssetManager';
-import { spriteLib, stableDir, type AnimName } from '@/render/SpriteLibrary';
+import { spriteLib, type AnimName } from '@/render/SpriteLibrary';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { vec2 } from '@/utils/Vec2';
 import type { Costume } from './costumes';
 
 /** The hero standard: the same number `Player.ts` and `Enemy.ts` normalise to. */
-const PUPPET_HEIGHT = 56;
+const HERO_HEIGHT = 56;
 
-export interface PuppetSource {
-  pos: { x: number; y: number };
-  prevPos: { x: number; y: number };
-  facing: { x: number; y: number };
-  action: 'idle' | 'attack' | 'hit' | 'dead' | 'transition';
-  actionTicks: number;
-  /** Ticks a full swing takes (windup + recovery); attack frames run over it. */
-  attackTicks: number;
+/** What a model can be told to do (or the name of one of its extras). */
+export type ModelAct = 'idle' | 'walk' | 'attack' | 'hit' | 'death';
+
+/** Seconds a dead model lies on the sand before it climbs back up. */
+const LIE_SECONDS = 1.6;
+/** Seconds the climb back up takes (the death clip in reverse). */
+const RISE_SECONDS = 0.7;
+
+/** Multiply two 0xRRGGBB colours. */
+function mulColor(a: number, b: number): number {
+  const r = (((a >> 16) & 255) * ((b >> 16) & 255)) / 255;
+  const g = (((a >> 8) & 255) * ((b >> 8) & 255)) / 255;
+  const bl = ((a & 255) * (b & 255)) / 255;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl);
 }
 
 export class Puppet {
   readonly container = new Container();
   private readonly body = new Sprite(Texture.EMPTY);
   private readonly shadow: Sprite;
-  private lastDir = 6;
-  private walkPhase = 0;
-  private lastX = 0;
-  private lastY = 0;
+  private readonly spot = new Graphics();
+  private readonly label: Text;
+  /** Facing, 0..7 = [E, NE, N, NW, W, SW, S, SE]; 6 faces the camera. */
+  dir = 6;
   private rigScale = 1;
-  private idleClock = 0;
-  private deathClock = 0;
-  private hitClock = 0;
-  private prevAction: PuppetSource['action'] = 'idle';
+  /** Painted width on screen (px) - the layout spaces models by it. */
+  readonly widthPx: number;
+  /** Body height on screen (px) - the layout spaces rows by it. */
+  readonly heightPx: number;
+  private mode: ModelAct | 'extra' = 'idle';
+  private anim: string;
+  private clock = 0;
+  private idleClock = Math.random() * 3;
+  private focused = false;
   private readonly scratch = vec2();
-  /** A one-shot extra (roar, breath, cast): its anim and progress in seconds. */
-  private extra: { anim: string; t: number; seconds: number } | null = null;
 
-  constructor(readonly costume: Costume) {
+  constructor(
+    readonly costume: Costume,
+    public x: number,
+    public y: number,
+  ) {
     this.shadow = new Sprite(assets.get('shadow'));
     this.shadow.anchor.set(0.5, 0.5);
-    this.shadow.alpha = 0.55;
-    this.shadow.visible = costume.ownShadow !== false;
-    this.body.anchor.set(0.5, 1);
-    this.container.addChild(this.shadow, this.body);
-    const painted = spriteLib.paintedHeight(costume.idle);
-    const target = PUPPET_HEIGHT * (costume.heightMult ?? 1);
-    this.rigScale = painted > 0 ? target / painted : 1;
+    this.shadow.alpha = costume.ownShadow ? 0.25 : 0.55;
+    const ref = spriteLib.rigHeight(costume.idle, costume.walk, costume.attack);
+    const target = (costume.baseHeight ?? HERO_HEIGHT) * (costume.heightMult ?? 1);
+    this.rigScale = ref > 0 ? target / ref : 1;
     this.body.scale.set(this.rigScale);
+    const e = spriteLib.entry(costume.idle);
+    this.widthPx = e ? (e.painted.right - e.painted.left + 1) * this.rigScale : 48;
+    this.heightPx = target;
+    this.label = new Text({
+      text: costume.label,
+      style: { fontFamily: 'Cinzel, Georgia, serif', fontWeight: '700', fontSize: 9, letterSpacing: 1, fill: 0xe8dcc0, stroke: { color: 0x0a0806, width: 3 } },
+      resolution: 3,
+    });
+    this.label.anchor.set(0.5, 0);
+    this.label.position.set(0, 13);
+    this.label.visible = false; // Only the picked body is named on the sand; the dock names them all.
+    this.container.addChild(this.spot, this.shadow, this.body, this.label);
+    this.drawSpot();
+    this.anim = costume.idle;
+    this.place(x, y);
   }
 
-  /** Fire a named one-shot from the costume's extras (or any anim name). */
-  play(name: string, seconds = 1.2): void {
-    const anim = this.costume.extras?.[name] ?? name;
-    if (!spriteLib.hasAnim(anim)) return;
-    this.extra = { anim, t: 0, seconds };
+  /** Stand on a new spot (the layout re-deals the rows when a body joins or leaves). */
+  place(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    const s = worldToScreen(x, y, this.scratch);
+    this.container.position.set(s.x, s.y);
+    this.container.zIndex = depthKey(x, y);
   }
 
+  /** The named one-shots the costume offers (roar, breath, cast...). */
   get extras(): string[] {
     return Object.keys(this.costume.extras ?? {});
   }
 
-  private frameOf(anim: string, k: number): Texture {
-    const a = spriteLib.anim(anim as AnimName);
-    const fc = a.frameCount;
-    const dirs = a.frames.length;
-    const f = Math.max(0, Math.min(fc - 1, Math.floor(k * fc)));
-    return spriteLib.frame(anim as AnimName, dirs === 8 ? this.lastDir : 0, f);
-  }
-
-  private loopFrame(anim: string, phase: number): Texture {
-    const a = spriteLib.anim(anim as AnimName);
-    const fc = a.frameCount;
-    const dirs = a.frames.length;
-    const f = ((Math.floor(phase * fc) % fc) + fc) % fc;
-    return spriteLib.frame(anim as AnimName, dirs === 8 ? this.lastDir : 0, f);
-  }
-
-  /** Once per render frame. `alpha` is the sim interpolation factor. */
-  update(src: PuppetSource, alpha: number, dt: number, tint = 0xffffff): void {
-    const ix = src.prevPos.x + (src.pos.x - src.prevPos.x) * alpha;
-    const iy = src.prevPos.y + (src.pos.y - src.prevPos.y) * alpha;
-    const s = worldToScreen(ix, iy, this.scratch);
-    this.container.position.set(s.x, s.y);
-    this.container.zIndex = depthKey(ix, iy) + 1;
-
-    const moved = Math.hypot(ix - this.lastX, iy - this.lastY);
-    const moving = moved > 0.002;
-    this.lastX = ix;
-    this.lastY = iy;
-    this.walkPhase += moved * (this.costume.stride ?? 0.45) * 2;
-    this.lastDir = stableDir(src.facing.x, src.facing.y, this.lastDir);
-
-    if (src.action !== this.prevAction) {
-      if (src.action === 'hit') this.hitClock = 0;
-      if (src.action === 'dead') this.deathClock = 0;
-      this.prevAction = src.action;
-    }
-
+  /** Which of the standard clips this body has. */
+  has(act: ModelAct): boolean {
     const c = this.costume;
-    let anim: string;
-    let tex: Texture;
-    if (this.extra) {
-      this.extra.t += dt;
-      const k = this.extra.t / this.extra.seconds;
-      anim = this.extra.anim;
-      tex = this.frameOf(anim, Math.min(0.999, k));
-      if (k >= 1) this.extra = null;
-    } else if (src.action === 'dead' && c.death) {
-      this.deathClock += dt;
-      anim = c.death;
-      tex = this.frameOf(anim, Math.min(0.999, this.deathClock / 1.1));
-    } else if (src.action === 'attack' && c.attack) {
-      anim = c.attack;
-      tex = this.frameOf(anim, Math.min(0.999, src.actionTicks / Math.max(1, src.attackTicks)));
-    } else if (src.action === 'hit' && c.hit) {
-      this.hitClock += dt;
-      anim = c.hit;
-      tex = this.frameOf(anim, Math.min(0.999, this.hitClock / 0.35));
-    } else if (moving) {
-      anim = c.walk;
-      tex = this.loopFrame(anim, this.walkPhase);
+    const name = act === 'idle' ? c.idle : act === 'walk' ? c.walk : act === 'attack' ? c.attack : act === 'hit' ? c.hit : c.death;
+    return !!name && spriteLib.hasAnim(name) && (act !== 'walk' || c.walk !== c.idle || spriteLib.anim(c.walk as AnimName).frameCount > 1);
+  }
+
+  /** The marked spot: a tile-shaped plate the width of the body. */
+  private drawSpot(): void {
+    const hw = Math.max(26, Math.min(96, this.widthPx * 0.55));
+    const hh = hw / 2;
+    const g = this.spot;
+    g.clear();
+    g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).fill({ color: this.focused ? 0x3a2c14 : 0x1a1410, alpha: this.focused ? 0.55 : 0.35 });
+    g.poly([0, -hh, hw, 0, 0, hh, -hw, 0]).stroke({ width: this.focused ? 2 : 1, color: this.focused ? 0xffd070 : 0xa08a5a, alpha: this.focused ? 0.95 : 0.55 });
+    this.label.position.set(0, hh + 3);
+    this.label.visible = this.focused;
+  }
+
+  setFocus(on: boolean): void {
+    if (this.focused === on) return;
+    this.focused = on;
+    this.drawSpot();
+  }
+
+  /** Turn by `step` eighths (positive = clockwise on screen). */
+  rotate(step: number): void {
+    this.dir = (((this.dir - step) % 8) + 8) % 8;
+  }
+
+  faceCamera(): void {
+    this.dir = 6;
+  }
+
+  /** Play a standard clip or a named extra. Unknown clips are ignored. */
+  play(act: ModelAct | string): void {
+    const c = this.costume;
+    let name: string | undefined;
+    if (act === 'idle') name = c.idle;
+    else if (act === 'walk') name = c.walk;
+    else if (act === 'attack') name = c.attack;
+    else if (act === 'hit') name = c.hit;
+    else if (act === 'death') name = c.death;
+    else name = c.extras?.[act];
+    if (!name || !spriteLib.hasAnim(name)) return;
+    this.mode = act === 'idle' || act === 'walk' || act === 'attack' || act === 'hit' || act === 'death' ? act : 'extra';
+    this.anim = name;
+    this.clock = 0;
+  }
+
+  /** Seconds a one-shot takes: 12 fps, never under a readable minimum. */
+  private oneShotSeconds(frames: number): number {
+    if (this.mode === 'death') return Math.max(1.0, frames / 10);
+    if (this.mode === 'hit') return Math.max(0.35, frames / 12);
+    return Math.max(0.55, frames / 12);
+  }
+
+  /** Once per render frame. */
+  update(dt: number, lightTint = 0xffffff, zoom = 1): void {
+    // The name holds its screen size whatever the zoom.
+    if (this.label.visible) this.label.scale.set(1.15 / Math.max(0.3, zoom));
+    const c = this.costume;
+    this.clock += dt;
+    this.idleClock += dt;
+    const a = spriteLib.hasAnim(this.anim) ? spriteLib.anim(this.anim as AnimName) : null;
+    if (!a) return;
+    const fc = a.frameCount;
+    let frame = 0;
+    let breathe = false;
+    if (this.mode === 'idle') {
+      if (c.idle === c.walk) {
+        frame = 0; // A walk sheet standing in for an idle holds its first frame and breathes.
+        breathe = true;
+      } else {
+        // A CALM IDLE (it.115): 6 fps for a long loop, a slow ping-pong for a short one.
+        if (fc <= 6) {
+          const cycle = fc * 2 - 2;
+          const i = Math.floor(this.idleClock * 3) % Math.max(1, cycle);
+          frame = i < fc ? i : cycle - i;
+        } else frame = Math.floor(this.idleClock * 6) % fc;
+      }
+    } else if (this.mode === 'walk') {
+      // A stride in place: one cycle a second, never faster than 14 fps.
+      frame = Math.floor(this.clock * Math.min(14, Math.max(8, fc))) % fc;
+    } else if (this.mode === 'death') {
+      const t = this.oneShotSeconds(fc);
+      if (this.clock < t) frame = Math.min(fc - 1, Math.floor((this.clock / t) * fc));
+      else if (this.clock < t + LIE_SECONDS) frame = fc - 1;
+      else if (this.clock < t + LIE_SECONDS + RISE_SECONDS) frame = Math.max(0, Math.min(fc - 1, Math.floor((1 - (this.clock - t - LIE_SECONDS) / RISE_SECONDS) * fc)));
+      else {
+        this.play('idle');
+        return this.update(0, lightTint, zoom);
+      }
     } else {
-      this.idleClock += dt;
-      anim = c.idle;
-      // A walk sheet standing in for an idle holds its first frame and breathes.
-      tex = c.idle === c.walk ? this.loopFrame(anim, 0) : this.loopFrame(anim, this.idleClock * 0.9);
+      const t = this.oneShotSeconds(fc);
+      if (this.clock >= t) {
+        this.play('idle');
+        return this.update(0, lightTint, zoom);
+      }
+      frame = Math.min(fc - 1, Math.floor((this.clock / t) * fc));
     }
+    const d = a.dirCount === 8 ? this.dir : 0;
+    const tex = spriteLib.frame(this.anim as AnimName, d, frame);
     if (this.body.texture !== tex) this.body.texture = tex;
-    const fa = spriteLib.footAnchor(anim);
+    const fa = spriteLib.footAnchor(this.anim, frame);
     this.body.anchor.set(fa.x, fa.y);
-    this.body.position.y = -(c.hover ?? 0) - (c.hover ? Math.sin(this.idleClock * 3 + this.walkPhase * 4) * 3 : 0);
-    if (c.idle === c.walk && !moving) this.body.scale.y = this.rigScale * (1 + Math.sin(this.idleClock * 2.4) * 0.014);
-    else if (this.body.scale.y !== this.rigScale) this.body.scale.y = this.rigScale;
-    this.body.tint = tint;
-    this.shadow.tint = tint;
-    this.shadow.scale.set(this.rigScale * 1.4 * (c.heightMult ?? 1), this.rigScale * 1.4 * (c.heightMult ?? 1));
+    const hover = c.hover ?? 0;
+    this.body.position.y = -hover - (hover ? Math.sin(this.idleClock * 3) * 3 : 0);
+    this.body.scale.set(this.rigScale, breathe ? this.rigScale * (1 + Math.sin(this.idleClock * 2.4) * 0.014) : this.rigScale);
+    this.body.tint = c.tint && c.tint !== 0xffffff ? mulColor(lightTint, c.tint) : lightTint;
+    this.shadow.tint = lightTint;
+    const k = Math.max(0.6, Math.min(2.4, this.widthPx / 40));
+    this.shadow.scale.set(k, k * 0.8);
   }
 
   destroy(): void {

@@ -176,6 +176,15 @@ GRADES = {
 }
 
 
+#: THE EMBER STONE (it.115). The ember band's brick (Ancient wall_6) came out of
+#: the shared ember grade a bright, flat terracotta - in the torch it read as a
+#: toy wall against the dark basalt floor. The walls take their own grade: less
+#: colour, less light, the red kept in the mortar and the recesses.
+GRADES['ember_wall'] = dict(desat=0.50, mul=(1.00, 0.74, 0.64), gain=0.60, lift=0, shadow=(34, 8, 0), highlight=None)
+#: Theme -> the grade its WALLS use (floors and props keep the theme's own).
+WALL_GRADE = {'ember': 'ember_wall'}
+
+
 def grade(im, theme):
     p = GRADES[theme]
     a = np.asarray(im.convert('RGBA')).astype(np.float32)
@@ -384,7 +393,7 @@ def wall_piece(parts, face, theme, leaf=None):
         lf = anc('doors', 'door_1', 'door_n.png')
         im = im.copy()
         im.alpha_composite(lf, leaf)
-    return grade(scaled(im, 0.5), theme)
+    return grade(scaled(im, 0.5), WALL_GRADE.get(theme, theme))
 
 
 def bake_walls():
@@ -406,11 +415,111 @@ def bake_walls():
         for k, im in got.items():
             assert im is not None, (theme, k)
             single('dun_%s_%s' % (theme, k), im, 'wall')
-        pil = grade(trimmed(scaled(anc(*s['pillar']), 0.5)), theme)
+        pil = grade(trimmed(scaled(anc(*s['pillar']), 0.5)), WALL_GRADE.get(theme, theme))
         single('dun_%s_pillar' % theme, pil, 'standing')
         got['pillar'] = pil
         pieces[theme] = got
     return pieces
+
+
+#: The stub's height at the middle of its face, in px (it.115): face plus the cap.
+#: The tall face is ~92 px; the old procedural cube stood WALL_Z = 40 over its tile.
+LOW_H = 34
+#: Rows above a column's painted bottom that keep the TALL piece's own foot (its
+#: shadowed base line); everything above comes from the lowered copy.
+LOW_FOOT = 5
+
+
+def low_piece(tall, side):
+    """
+    THE NEAR WALLS (it.115). The crypt drew only the faces that look at the
+    camera's side of a room (north and west), so every room ended in open void on
+    its south and east edges and read as a floor floating in the dark - the
+    owner's "the walls are missing". Those edges now take a LOW run, the way the
+    classic isometric crypts cut their near walls down: the same stone, a cap and
+    a hand's width of face, low enough never to hide the hero.
+
+    Made from the baked tall piece, per column: the whole piece is moved DOWN by
+    (its height - LOW_H) and clipped at the column's own painted bottom, so the
+    cap keeps its slant and the face keeps its courses; the bottom LOW_FOOT rows
+    are the tall piece's own foot. Then ONE TILE is kept - the first tile of the
+    run (columns 0-31 of an `_n`, 96-127 of a `_w`) - and the run's end cap
+    (columns 64+ of an `_n`, below 64 of a `_w`) is carried along the base line
+    onto that tile's far end (a shift of one tile: 32 px across, 16 up). The
+    result keeps the 128x256 canvas and the tall piece's seating exactly.
+    """
+    a = np.asarray(tall.convert('RGBA')).copy()
+    alpha = a[..., 3]
+    H, W = alpha.shape
+    bottom = np.full(W, -1, dtype=np.int32)
+    top = np.full(W, -1, dtype=np.int32)
+    for x in range(W):
+        ys = np.nonzero(alpha[:, x] > 8)[0]
+        if len(ys):
+            bottom[x] = ys.max()
+            top[x] = ys.min()
+    mid = 32 if side == 'n' else 96
+    shift = int((bottom[mid] - top[mid]) - LOW_H)
+    low = np.zeros_like(a)
+    low[shift:, :] = a[:H - shift, :]
+    rows = np.arange(H)[:, None]
+    keep = (bottom[None, :] >= 0) & (rows <= bottom[None, :])
+    low[~keep] = 0
+    foot = (bottom[None, :] >= 0) & (rows > bottom[None, :] - LOW_FOOT) & (rows <= bottom[None, :])
+    low[foot] = a[foot]
+    out = np.zeros_like(a)
+    if side == 'n':
+        out[:, 0:32] = low[:, 0:32]
+        cap = low[:, 64:96]
+        dst = out[:H - 16, 32:64]
+        src = cap[16:, :]
+    else:
+        out[:, 96:128] = low[:, 96:128]
+        cap = low[:, 32:64]
+        dst = out[:H - 16, 64:96]
+        src = cap[16:, :]
+    m = src[..., 3] > 0
+    dst[m] = src[m]
+    return Image.fromarray(out, 'RGBA')
+
+
+def bake_low_walls():
+    """The near-wall stubs for every theme, from the tall pieces already in the atlas."""
+    for theme in THEMES:
+        for side in ('n', 'w'):
+            tall = Image.open(os.path.join(ATLAS, 'single_dun_%s_wall_%s.png' % (theme, side))).convert('RGBA')
+            single('dun_%s_low_%s' % (theme, side), low_piece(tall, side), 'wall')
+
+
+def preview_low(path):
+    """A 5x4 room: tall north/west, low south/east, seated as the game seats them."""
+    im = Image.new('RGBA', (1400, 380), (12, 12, 16, 255))
+    for k, theme in enumerate(THEMES):
+        ox, oy = 150 + k * 340, 70
+        fl = [Image.open(os.path.join(ATLAS, 'single_dun_%s_%d.png' % (theme, i))).convert('RGBA') for i in range(4)]
+        P = lambda n: Image.open(os.path.join(ATLAS, 'single_dun_%s_%s.png' % (theme, n))).convert('RGBA')
+        objs = []
+        X0, X1, Y0, Y1 = 0, 3, 0, 2
+        for y in range(Y0, Y1 + 1):
+            for x in range(X0, X1 + 1):
+                sx, sy = w2s(x, y)
+                im.alpha_composite(fl[(x * 5 + y * 11) % 4], (int(ox + sx - 32), int(oy + sy)))
+        t = 0.7  # the stub's back edge on the floor's edge (see SceneManager.LOW_INSET)
+        for x in range(X0, X1 + 1, 2):
+            sx, sy = w2s(x, Y0 - 2)
+            objs.append((0, P('wall_n'), ox + sx - 64, oy + sy + 64 - 256))
+        for y in range(Y0, Y1 + 1, 2):
+            sx, sy = w2s(X0 - 2, y)
+            objs.append((0, P('wall_w'), ox + sx - 64, oy + sy + 64 - 256))
+        for x in range(X0, X1 + 1):
+            sx, sy = w2s(x, Y1 - t)
+            objs.append((1, P('low_n'), ox + sx - 64, oy + sy + 64 - 256))
+        for y in range(Y0, Y1 + 1):
+            sx, sy = w2s(X1 + 1 - 1 - t, y)
+            objs.append((1, P('low_w'), ox + sx - 64, oy + sy + 64 - 256))
+        for z, spr, px, py in sorted(objs, key=lambda o: o[0]):
+            im.alpha_composite(spr, (int(px), int(py)))
+    im.save(path)
 
 
 # ---------------------------------------------------------------------------
@@ -679,6 +788,20 @@ def preview_props(path):
 
 if __name__ == '__main__':
     os.makedirs(PREVIEW, exist_ok=True)
+    if sys.argv[1:] == ['walls']:
+        # THE WALLS ONLY (it.115): the tall pieces, pillars and near-wall stubs.
+        bake_walls()
+        bake_low_walls()
+        preview_low(os.path.join(PREVIEW, 'out_low.png'))
+        print('registered %d pieces; preview in %s' % (len(MADE), PREVIEW))
+        sys.exit(0)
+    if sys.argv[1:] == ['low']:
+        # THE NEAR WALLS ONLY (it.115): made from the tall pieces already in the
+        # atlas, so this needs no drop and touches only the `dun_*_low_*` keys.
+        bake_low_walls()
+        preview_low(os.path.join(PREVIEW, 'out_low.png'))
+        print('registered %d pieces; preview in %s' % (len(MADE), PREVIEW))
+        sys.exit(0)
     floors = bake_floors()
     floors['blood'] = [Image.open(os.path.join(ATLAS, 'single_dun_blood_%d.png' % i)).convert('RGBA') for i in range(4)]
     floors['pent'] = [Image.open(os.path.join(ATLAS, 'single_dun_pent_%d.png' % i)).convert('RGBA') for i in range(4)]
@@ -686,6 +809,7 @@ if __name__ == '__main__':
     stairs = bake_stairs()
     anims = bake_lights()
     bake_props()
+    bake_low_walls()  # The near walls (it.115), from the tall pieces just written.
     floors['entrance'] = [Image.open(os.path.join(ATLAS, 'single_temple_entrance.png')).convert('RGBA')]
     preview_floors(floors, os.path.join(PREVIEW, 'out_floors.png'))
     preview_anims(anims, os.path.join(PREVIEW, 'out_anims.png'))

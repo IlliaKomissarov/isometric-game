@@ -8,6 +8,22 @@
 
 import { audio } from '@/engine/AudioManager';
 
+/**
+ * THE WORD HAS THE FLOOR (it.115). While the panel is open the page wears
+ * `body.dialogue-open`: the notices, the reward line, the tutorial banner and
+ * the level-up flash are hidden by the stylesheet, and `ui/Toast` holds its
+ * queue. When it closes this DOM event goes out on `document` (the typed
+ * `eventBus` cannot carry a UI-only event without a change to its map), and
+ * whatever was held is shown then.
+ */
+export const DIALOGUE_OPEN_CLASS = 'dialogue-open';
+export const DIALOGUE_CLOSED_EVENT = 'dialogue:closed';
+
+/** True while any quest dialogue panel is up (it.115). */
+export function isDialogueOpen(): boolean {
+  return document.body.classList.contains(DIALOGUE_OPEN_CLASS);
+}
+
 export interface DialogueChoice {
   label: string;
   /** A small note under the label. */
@@ -86,6 +102,7 @@ export class DialogueUI {
     if (this.resolve) this.resolve(this.lastValue());
     this.visible = true;
     this.panel.classList.add('open');
+    document.body.classList.add(DIALOGUE_OPEN_CLASS);
     audio.sfx('dialogueOpen');
     const lines = spec.lines.map((l) => `<p>${l}</p>`).join('');
     const choices = spec.choices.map((c, i) => `<button class="menu-btn dl-choice" type="button" data-choice="${c.value}"><span class="dl-num">${i + 1}</span>${c.label}${c.sub ? `<span class="mm-sub">${c.sub}</span>` : ''}</button>`).join('');
@@ -126,6 +143,14 @@ export class DialogueUI {
     this.abort.abort();
     if (this.resolve) this.resolve(this.lastValue());
     this.panel.remove();
+    this.releaseFloor();
+  }
+
+  /** The page no longer wears the class; the held notices may come (it.115). */
+  private releaseFloor(): void {
+    if (!document.body.classList.contains(DIALOGUE_OPEN_CLASS)) return;
+    document.body.classList.remove(DIALOGUE_OPEN_CLASS);
+    document.dispatchEvent(new CustomEvent(DIALOGUE_CLOSED_EVENT));
   }
 
   /** Which choice the keys have lit (it.94). */
@@ -144,6 +169,9 @@ export class DialogueUI {
     audio.sfx('dialogueClose');
     const r = this.resolve;
     this.resolve = null;
+    // The choice is delivered FIRST: a quest that turns over on it may raise a
+    // notice, and that notice must find the floor already free (it.115).
     r?.(value);
+    this.releaseFloor();
   }
 }

@@ -159,5 +159,5 @@ export function fxSpawnShadow(vfx: VfxSystem, x: number, y: number): void {
 
 /** The "!" over a foe's head when it notices the hero. */
 export function fxAlert(vfx: VfxSystem, x: number, y: number, lift = 54): void {
-  vfx.play('fx_alert', x, y, { scale: 0.7, lift, overlay: true });
+  vfx.play('fx_alert', x, y, { scale: 0.38, lift: lift - 10, overlay: true }); // Half the it.114 size: a mark over the head, not a banner (it.115).
 }

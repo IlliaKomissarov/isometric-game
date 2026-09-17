@@ -9,9 +9,7 @@
  * piece worn in that slot (see `ui/itemTip`); hovering a worn piece shows
  * its own. A long press does the same on touch.
  *
- * THE REWORK (it.114):
- *  - HUNGER at the head of the window: the same gauge as the HUD's, with
- *    the state word (WELL FED / HUNGRY / STARVING) and a flash on a bite.
+ * THE REWORK (it.114; the hunger gauge it carried is gone, it.115):
  *  - FOOD in the pack and on the belt: a dish cell wears a fork mark, a
  *    click eats it, the belt chooser lists dishes beside draughts.
  *  - INSPECT (`#inspect-panel`): a rune-framed stage that turns the item's
@@ -24,6 +22,9 @@
  *    has no turntable.
  *  - Every cell lifts on hover and glows in its rarity; equipping and eating
  *    pulse the cell.
+ *
+ * EVERY CELL TURNS (it.115): the icons come from `itemIconHtml`, which draws
+ * the item's turntable strip as a CSS-stepped background (see ui/itemIcons).
  */
 
 import { eventBus } from '@/core/EventBus';
@@ -31,9 +32,9 @@ import type { InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
-import { RARITY_COLOR, itemValue, type ItemDef } from '@/items/catalog';
+import { RARITY_COLOR, itemValue, kindWord, type ItemDef } from '@/items/catalog';
 import { decodeItemId, itemDef } from '@/items/instance';
-import { HUNGER_MAX, HUNGER_WORD, InventorySystem, QUAFF_COOLDOWN, beltable, hungerStateOf, quaffCategory } from '@/systems/Inventory';
+import { QUAFF_COOLDOWN, beltable, quaffCategory } from '@/systems/Inventory';
 import { MATERIAL_ORDER } from '@/items/registry';
 import type { EquipmentSlot } from '@/network/Serialization';
 
@@ -166,15 +167,12 @@ export class InventoryUI {
       this.beltPick = null;
       this.render();
     });
-    // A BITE OR A DRAUGHT WENT DOWN (it.114): the sound, the pulse on the cell, the belly's flash.
+    // A BITE OR A DRAUGHT WENT DOWN (it.114): the sound and the pulse on the cell.
     // (`audio.sfx('eat')` is the cue this wants; the manager has no such cue yet, so the flask's stands in.)
     this.offUsed = eventBus.on('item:used', ({ itemId }) => {
       const def = itemDef(itemId);
       if (!def) return;
-      if (def.slot === 'food') {
-        audio.sfx('potion');
-        this.flashHunger();
-      }
+      if (def.slot === 'food') audio.sfx('potion');
       this.pulse(def.id);
     });
     this.render();
@@ -229,18 +227,6 @@ export class InventoryUI {
   /** Repaint without losing where the player had scrolled (it.79). */
   private render(): void {
     keepScroll(this.panel, () => this.paint());
-  }
-
-  /** THE BELLY LINE (it.114): the gauge and its word, at the head of the window. */
-  private hungerHtml(): string {
-    const inv = InventorySystem.of(this.player);
-    const hunger = inv ? inv.hunger : HUNGER_MAX;
-    const state = hungerStateOf(hunger);
-    const pct = Math.min(100, Math.max(0, (hunger / HUNGER_MAX) * 100)).toFixed(1);
-    return `<div class="inv-hunger ${state}${inv?.feeding ? ' feeding' : ''}" data-hunger title="Hunger empties on dungeon floors; eat to fill it. Starving stops regeneration and costs a tenth of every blow.">
-      <span class="inv-hunger-glyph">&#936;</span><span class="inv-hunger-label">HUNGER</span>
-      <i class="inv-hunger-bar"><b style="width:${pct}%"></b></i>
-      <em class="inv-hunger-word">${HUNGER_WORD[state]} · ${Math.round(hunger)}</em></div>`;
   }
 
   private paint(): void {
@@ -322,7 +308,6 @@ export class InventoryUI {
     }).join('');
     this.panel.innerHTML = `
       <h3 class="drag-handle">INVENTORY<span class="inv-head-tools"><button class="ds-btn inv-journal" type="button" data-journal title="The Journal: items, effects, recipes (H)">JOURNAL</button><button class="tp-close" data-close title="Close (I or ESC)"><i></i></button></span></h3>
-      ${this.hungerHtml()}
       <div class="inv-tabs" role="tablist">
         <button class="ds-btn" type="button" role="tab" data-tab="gear" aria-selected="${this.tab === 'gear'}">GEAR</button>
         <button class="ds-btn" type="button" role="tab" data-tab="pack" aria-selected="${this.tab === 'pack'}">PACK</button>
@@ -431,10 +416,6 @@ export class InventoryUI {
       e.stopPropagation();
       eventBus.emit('journal:open', { chapter: 'items' });
     });
-    this.panel.querySelector<HTMLElement>('[data-hunger]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      eventBus.emit('journal:open', { chapter: 'food' });
-    });
     this.panel.querySelector<HTMLButtonElement>('[data-tidy]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       audio.sfx('uiConfirm');
@@ -497,36 +478,13 @@ export class InventoryUI {
     }
   }
 
-  /** The belly took a bite: the header gauge flashes gold. */
-  private flashHunger(): void {
-    const h = this.panel.querySelector<HTMLElement>('.inv-hunger');
-    if (!h) return;
-    h.classList.remove('bite');
-    void h.offsetWidth;
-    h.classList.add('bite');
-    h.addEventListener('animationend', () => h.classList.remove('bite'), { once: true });
-  }
-
-  /** The belt's cooldown veils (it.80): the remaining share of each category's cooldown; and the belly line, live (it.114). */
+  /** The belt's cooldown veils (it.80): the remaining share of each category's cooldown. */
   private tickBelt(): void {
     for (const veil of this.panel.querySelectorAll<HTMLElement>('.inv-cd[data-cd]')) {
       const cat = veil.dataset.cd as keyof typeof QUAFF_COOLDOWN | '';
       const left = cat ? (this.player.quaffCd.get(cat) ?? 0) : 0;
       const h = cat && left > 0 ? `${Math.round((left / QUAFF_COOLDOWN[cat]) * 100)}%` : '0%';
       if (veil.style.height !== h) veil.style.height = h;
-    }
-    const inv = InventorySystem.of(this.player);
-    const line = this.panel.querySelector<HTMLElement>('.inv-hunger');
-    if (inv && line) {
-      const state = hungerStateOf(inv.hunger);
-      const bar = line.querySelector<HTMLElement>('.inv-hunger-bar b');
-      const word = line.querySelector<HTMLElement>('.inv-hunger-word');
-      const pct = `${Math.min(100, Math.max(0, (inv.hunger / HUNGER_MAX) * 100)).toFixed(1)}%`;
-      if (bar && bar.style.width !== pct) bar.style.width = pct;
-      const text = `${HUNGER_WORD[state]} · ${Math.round(inv.hunger)}`;
-      if (word && word.textContent !== text) word.textContent = text;
-      for (const s of ['fed', 'hungry', 'starving']) line.classList.toggle(s, s === state);
-      line.classList.toggle('feeding', inv.feeding);
     }
   }
 
@@ -596,11 +554,11 @@ export class InventoryUI {
     let stage: string;
     if (spin) {
       const scale = Math.min(3, (stageW - 24) / spin.cellW, (stageH - 20) / spin.cellH);
-      stage = `<div class="insp-turn" data-turn style="width:${spin.cellW}px;height:${spin.cellH}px;background-image:url(${spin.url});background-position:0 0;transform:scale(${scale.toFixed(3)})"></div>`;
+      stage = `<div class="insp-turn${spin.nearest ? ' pixel' : ''}" data-turn style="width:${spin.cellW}px;height:${spin.cellH}px;background-image:url(${spin.url});background-position:0 0;transform:scale(${scale.toFixed(3)})"></div>`;
     } else {
       stage = `<div class="insp-static-wrap">${itemIconHtml(def, 'insp-static')}</div>`;
     }
-    const verb = ctx.use !== undefined ? (def.slot === 'food' ? 'EAT IT' : def.use?.recipe ? 'READ IT' : 'DRINK IT') : ctx.equip !== undefined ? 'EQUIP IT' : ctx.unequip ? 'TAKE IT OFF' : '';
+    const verb = ctx.use !== undefined ? (def.slot === 'food' ? 'EAT IT' : def.use?.smelt ? 'SMELT IT' : def.use?.recipe || /^(scroll|tome)$/.test(kindWord(def)) ? 'READ IT' : 'DRINK IT') : ctx.equip !== undefined ? 'EQUIP IT' : ctx.unequip ? 'TAKE IT OFF' : '';
     const self = ctx.unequip !== undefined;
     const goldLine = `worth ${itemValue(def)} gold`;
     const card = self ? itemCardHtml(def, { goldLine, self: true }) : itemCardHtml(def, { goldLine, worn: usable(def) ? undefined : wornFor(this.player, def) });

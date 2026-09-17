@@ -18,8 +18,9 @@
  * add affixes and an enchantment.
  */
 
-import type { FoodTier, ItemDef, WeaponKind } from './catalog';
+import { FOOD_TIER, type FoodTier, type ItemDef, type WeaponKind } from './catalog';
 import { ENCHANTS, type Effect } from './effects';
+import { CURIOS } from './curios';
 import type { EquipmentSlot } from '@/network/Serialization';
 
 type Band = [number, number];
@@ -101,45 +102,95 @@ export const SHAPES: Shape[] = [
 ];
 
 /**
- * THE TURNTABLES (it.114): the 25 baked weapon spins (`spin_weapon_<slug>`,
- * 30 frames, one direction) mapped onto the shapes they resemble, so the
- * inspect view can turn a blade in the light. A shape without one shows its
- * icon; nothing is procedural.
+ * THE ARSENAL (it.115): every shape wears one of the 80 hand-drawn 64 px
+ * Adventurer's Arsenal icons (`arsenal_<id>`, see docs/arsenal-items.csv)
+ * per tier - steel, gilded, crystal. The csv suggests no rarity of its own,
+ * so the "higher" icon of a family (a ceremonial or rune sword, a double
+ * axe, a lance, a heavy crossbow, a crystal wand) goes to the higher tiers
+ * where the family has one; a family with one icon keeps it through all
+ * three, and the tier colour on the cell frame tells them apart.
  */
-const SHAPE_SPIN: Record<string, string> = {
-  shortsword: 'elven_leaf_blade',
-  blade: 'knight_s_longsword',
-  longsword: 'knight_s_longsword',
-  saber: 'pirate_cutlass',
-  claymore: 'highland_claymore',
-  greatsword: 'crystal_greatsword',
-  rapier: 'duelist_s_rapier',
-  falchion: 'falchion',
-  dirk: 'rogue_s_dagger',
-  kris: 'jeweled_dagger',
-  katana: 'katana',
-  scimitar: 'pirate_cutlass',
-  twinblade: 'elven_leaf_blade',
-  hatchet: 'dwarven_war_axe',
-  cleaver: 'orcish_cleaver',
-  axe: 'dwarven_war_axe',
-  broadaxe: 'twin_moon_battle_axe',
-  battleaxe: 'twin_moon_battle_axe',
-  greataxe: 'twin_moon_battle_axe',
-  hammer: 'warhammer',
-  maul: 'giant_s_maul',
-  flail: 'spiked_mace',
-  morningstar: 'morning_star',
-  warpick: 'war_pick',
-  spear: 'hunting_spear',
-  pike: 'halberd',
-  glaive: 'halberd',
-  sickle: 'reaper_s_scythe',
-  wand: 'wizard_s_staff',
-  scepter: 'paladin_s_mace',
-  rod: 'wizard_s_staff',
-  orbrod: 'wizard_s_staff',
+const SHAPE_ART: Record<string, [string, string, string]> = {
+  shortsword: ['shortsword', 'arming_sword', 'rune_sword'],
+  blade: ['arming_sword', 'ceremonial_sword', 'rune_sword'],
+  longsword: ['longsword', 'longsword', 'ceremonial_sword'],
+  saber: ['saber', 'saber', 'saber'],
+  claymore: ['longsword', 'greatsword', 'greatsword'],
+  greatsword: ['greatsword', 'greatsword', 'rune_sword'],
+  rapier: ['rapier', 'rapier', 'rapier'],
+  falchion: ['falchion', 'falchion', 'cleaver_sword'],
+  dirk: ['iron_dagger', 'curved_dagger', 'ritual_dagger'],
+  kris: ['curved_dagger', 'ritual_dagger', 'ritual_dagger'],
+  katana: ['saber', 'saber', 'ceremonial_sword'],
+  scimitar: ['scimitar', 'scimitar', 'scimitar'],
+  twinblade: ['twinblade', 'twinblade', 'twinblade'],
+  hatchet: ['hand_axe', 'hand_axe', 'hand_axe'],
+  cleaver: ['cleaver_sword', 'cleaver_sword', 'cleaver_sword'],
+  axe: ['hand_axe', 'battleaxe', 'battleaxe'],
+  broadaxe: ['battleaxe', 'double_axe', 'double_axe'],
+  battleaxe: ['battleaxe', 'battleaxe', 'double_axe'],
+  greataxe: ['double_axe', 'double_axe', 'double_axe'],
+  hammer: ['warhammer', 'warhammer', 'warhammer'],
+  maul: ['maul', 'maul', 'maul'],
+  flail: ['morningstar', 'morningstar', 'morningstar'],
+  morningstar: ['flanged_mace', 'morningstar', 'morningstar'],
+  warpick: ['war_pick', 'war_pick', 'war_pick'],
+  spear: ['hunting_spear', 'war_spear', 'war_spear'],
+  pike: ['pike', 'pike', 'lance'],
+  glaive: ['glaive', 'halberd', 'halberd'],
+  sickle: ['scythe', 'scythe', 'scythe'],
+  shortbow: ['shortbow', 'shortbow', 'shortbow'],
+  longbow: ['longbow', 'longbow', 'longbow'],
+  warbow: ['longbow', 'composite_bow', 'composite_bow'],
+  crossbow: ['light_crossbow', 'light_crossbow', 'heavy_crossbow'],
+  recurve: ['recurved_bow', 'recurved_bow', 'recurved_bow'],
+  wand: ['simple_wand', 'crooked_wand', 'crystal_wand'],
+  scepter: ['crooked_wand', 'crystal_wand', 'crystal_wand'],
+  rod: ['fire_staff', 'fire_staff', 'fire_staff'],
+  orbrod: ['frost_staff', 'frost_staff', 'frost_staff'],
 };
+
+/**
+ * THE TURNTABLES (it.114, re-cast it.115): the 25 baked polyy weapons
+ * (`item_weapon_<slug>` single + `spin_weapon_<slug>`, 30 frames) now belong
+ * to the NAMED steel - the uniques - by closest shape, so a legendary drop
+ * turns in its cell while the common arms hold still. The four unique bows
+ * take Arsenal bows (the polyy pack has none).
+ */
+const UNIQUE_ART: Record<string, string> = {
+  sunsplitter: 'knight_s_longsword',
+  nightfang: 'rogue_s_dagger',
+  emberflail: 'morning_star',
+  moonscepter: 'paladin_s_mace',
+  tidecutter: 'elven_leaf_blade',
+  gravebiter: 'orcish_cleaver',
+  hollow_reach: 'halberd',
+  kingsedge: 'highland_claymore',
+  voidorb_staff: 'wizard_s_staff',
+  dawnbreaker: 'dwarven_war_axe',
+  whisper: 'katana',
+  judgment: 'giant_s_maul',
+  serpent_fang: 'jeweled_dagger',
+  frost_reaver: 'twin_moon_battle_axe',
+  crescent_of_sorrow: 'reaper_s_scythe',
+  doomcaller: 'bone_club',
+  ironheart_spear: 'tidal_trident',
+  cinderbrand: 'falchion',
+};
+const UNIQUE_ARSENAL: Record<string, string> = {
+  stormbow: 'composite_bow',
+  ashen_bow: 'longbow',
+  duskwind_bow: 'recurved_bow',
+  widows_bow: 'heavy_crossbow',
+};
+
+/** The art fields for a unique: the polyy turntable, or an Arsenal bow. */
+function uniqueArt(id: string): Partial<ItemDef> {
+  const polyy = UNIQUE_ART[id];
+  if (polyy) return { sprite: `item_weapon_${polyy}`, spin: `spin_weapon_${polyy}` };
+  const a = UNIQUE_ARSENAL[id];
+  return a ? { sprite: `arsenal_${a}` } : {};
+}
 
 const weapon = (id: string, name: string, kind: WeaponKind, icon: number, band: Band, dmg: [number, number], color: number, extra: Partial<ItemDef> = {}): ItemDef => ({
   id,
@@ -169,22 +220,43 @@ for (let t = 0; t < TIERS.length; t++) {
         critBonus: s.crit,
         reachBonus: s.reach,
         innate,
-        spin: SHAPE_SPIN[s.key] ? `spin_weapon_${SHAPE_SPIN[s.key]}` : undefined,
+        sprite: `arsenal_${SHAPE_ART[s.key][t]}`,
         desc: `${s.desc} ${tier.name} tier: iLvl ${tier.band[0]}–${tier.band[1]}.`,
       }),
     );
   }
 }
-// Staves (1801–1808): the mage's reach in three tiers.
+// Staves (1801–1808): the mage's reach in three tiers - the Arsenal staves, and the polyy wizard's staff turning at the top.
 WEAPONS.push(
-  weapon('ashwood_staff', 'Ashwood Staff', 'wand', 1801, [1, 38], [4, 7], 0xb08a5a, { reachBonus: 0.5, innate: trait('manaOnHit', 0.6), spin: 'spin_weapon_wizard_s_staff' }),
-  weapon('gilded_staff', 'Gilded Staff', 'wand', 1802, [25, 70], [5, 8], 0xe8b84c, { reachBonus: 0.5, innate: trait('manaOnHit'), spin: 'spin_weapon_wizard_s_staff' }),
-  weapon('crystal_staff', 'Crystal Staff', 'wand', 1803, [55, 100], [6, 9], 0x7fc8ff, { reachBonus: 0.5, innate: proc('chill', 0.35, 1.2), spin: 'spin_weapon_wizard_s_staff' }),
+  weapon('ashwood_staff', 'Ashwood Staff', 'wand', 1801, [1, 38], [4, 7], 0xb08a5a, { reachBonus: 0.5, innate: trait('manaOnHit', 0.6), sprite: 'arsenal_quarterstaff' }),
+  weapon('gilded_staff', 'Gilded Staff', 'wand', 1802, [25, 70], [5, 8], 0xe8b84c, { reachBonus: 0.5, innate: trait('manaOnHit'), sprite: 'arsenal_battle_staff' }),
+  weapon('crystal_staff', 'Crystal Staff', 'wand', 1803, [55, 100], [6, 9], 0x7fc8ff, { reachBonus: 0.5, innate: proc('chill', 0.35, 1.2), sprite: 'item_weapon_wizard_s_staff', spin: 'spin_weapon_wizard_s_staff' }),
 );
 
-/** UNIQUES (1681–1800): legendary and mythic rolls only. Named steel with two innates. */
+/**
+ * THE REST OF THE ARSENAL (it.115): the icons no shape wore - a club, the
+ * throwing arms, a bone staff, a trident, the hand crossbow and the sling -
+ * as plain bases of their own family, each on its Arsenal turntable.
+ */
+WEAPONS.push(
+  weapon('knotted_club', 'Knotted Club', 'mace', 1470, [1, 30], [4, 8], 0x8a6f4d, { sprite: 'arsenal_club' }),
+  weapon('throwing_knife', 'Throwing Knife', 'blade', 1442, [1, 40], [3, 6], 0xb8c0cc, { sprite: 'arsenal_throwing_knife', speedMult: 1.1 }),
+  weapon('throwing_axe', 'Throwing Axe', 'axe', 1462, [5, 45], [5, 9], 0x9a8874, { sprite: 'arsenal_throwing_axe' }),
+  weapon('war_chakram', 'War Chakram', 'blade', 1450, [20, 70], [5, 9], 0xd8cfa0, { sprite: 'arsenal_chakram', critBonus: 0.04 }),
+  weapon('iron_javelin', 'Iron Javelin', 'polearm', 1479, [10, 55], [6, 10], 0xa8b0c0, { sprite: 'arsenal_javelin' }),
+  weapon('sea_trident', 'Sea Trident', 'polearm', 1480, [35, 90], [8, 13], 0x5fc8d8, { sprite: 'arsenal_trident', reachBonus: 0.3 }),
+  weapon('hand_crossbow', 'Hand Crossbow', 'bow', 1483, [15, 60], [5, 9], 0x6f5a48, { sprite: 'arsenal_hand_crossbow', range: 5.5 }),
+  weapon('shepherds_sling', "Shepherd's Sling", 'bow', 1484, [1, 35], [3, 7], 0x8a6a48, { sprite: 'arsenal_sling', range: 5.5 }),
+  weapon('bone_staff', 'Bone Staff', 'wand', 1801, [30, 85], [5, 9], 0xe8dcc0, { sprite: 'arsenal_bone_staff', reachBonus: 0.5 }),
+  weapon('iron_mace', 'Iron Mace', 'mace', 1472, [5, 50], [5, 10], 0x8a8a94, { sprite: 'arsenal_mace' }),
+  // Three more polyy turntables on plain steel of their own.
+  weapon('boar_spear', 'Boar Spear', 'polearm', 1479, [15, 70], [7, 12], 0x9a8874, { sprite: 'item_weapon_hunting_spear', spin: 'spin_weapon_hunting_spear' }),
+  weapon('miners_pick', "Miner's War Pick", 'axe', 1467, [20, 75], [7, 13], 0x8a8a94, { sprite: 'item_weapon_war_pick', spin: 'spin_weapon_war_pick' }),
+);
+
+/** UNIQUES (1681–1800): legendary and mythic rolls only. Named steel with two innates, on the polyy turntables (it.115). */
 const unique = (id: string, name: string, kind: WeaponKind, icon: number, dmg: [number, number], color: number, innate: Effect, second: Effect, extra: Partial<ItemDef> = {}): ItemDef =>
-  weapon(id, name, kind, icon, [1, 100], dmg, color, { uniqueOnly: true, innate, innate2: second, ...extra });
+  weapon(id, name, kind, icon, [1, 100], dmg, color, { uniqueOnly: true, innate, innate2: second, ...uniqueArt(id), ...extra });
 
 const UNIQUES: ItemDef[] = [
   unique('sunsplitter', 'Sunsplitter', 'blade', 1681, [5, 9], 0xffb347, proc('burn', 0.4, 1.3), trait('precise')),
@@ -268,17 +340,32 @@ const ARMOR: ItemDef[] = [
   armor('riding_boots', 'Riding Boots', 'legs', 1941, [30, 70], 1.3, 0xe8b84c, { bonus: { dodge: 0.02 } }),
   armor('ember_greaves', 'Ember Greaves', 'legs', 2170, [45, 90], 1.5, 0xe0803a),
   armor('crystal_greaves', 'Crystal Greaves', 'legs', 2161, [55, 100], 1.6, 0x7fc8ff),
-  // Off hand.
-  armor('round_shield', 'Round Shield', 'offHand', 2113, [1, 35], 2, 0x8a6f4d),
-  armor('red_buckler', 'Red Buckler', 'offHand', 2117, [5, 40], 2.2, 0xc83030),
-  armor('amber_orb', 'Amber Orb', 'offHand', 1809, [1, 45], 1.2, 0xe0803a, { bonus: { dmg: 0.05 } }),
-  armor('sapphire_orb', 'Sapphire Orb', 'offHand', 1810, [20, 70], 1.4, 0x5f7fdf, { bonus: { dmg: 0.06, regen: 0.1 } }),
-  armor('kite_shield', 'Kite Shield', 'offHand', 2121, [15, 55], 2.6, 0x6f8fd0),
-  armor('steel_targe', 'Steel Targe', 'offHand', 2131, [25, 65], 2.8, 0xb8c0cc),
-  armor('gilded_shield', 'Gilded Shield', 'offHand', 2137, [40, 80], 3.2, 0xe8b84c),
-  armor('crystal_ward', 'Crystal Ward', 'offHand', 2145, [55, 100], 3.6, 0x7fc8ff),
-  armor('crystal_aegis', 'Crystal Aegis', 'offHand', 2149, [65, 100], 3.8, 0x9fd8ff, { bonus: { hp: 15 } }),
-  armor('frost_shard', 'Frost Shard', 'offHand', 2153, [50, 100], 1.8, 0x9fd8ff, { bonus: { dmg: 0.08 } }),
+  // Off hand: the Arsenal's shields and focus orbs (it.115); armour and jewellery keep the Raven icons (no art in the drop).
+  armor('round_shield', 'Round Shield', 'offHand', 2113, [1, 35], 2, 0x8a6f4d, { sprite: 'arsenal_wooden_round_shield' }),
+  armor('red_buckler', 'Red Buckler', 'offHand', 2117, [5, 40], 2.2, 0xc83030, { sprite: 'arsenal_iron_buckler' }),
+  armor('amber_orb', 'Amber Orb', 'offHand', 1809, [1, 45], 1.2, 0xe0803a, { bonus: { dmg: 0.05 }, sprite: 'arsenal_offhand_focus_orb' }),
+  armor('sapphire_orb', 'Sapphire Orb', 'offHand', 1810, [20, 70], 1.4, 0x5f7fdf, { bonus: { dmg: 0.06, regen: 0.1 }, sprite: 'arsenal_arcane_focus_orb' }),
+  armor('kite_shield', 'Kite Shield', 'offHand', 2121, [15, 55], 2.6, 0x6f8fd0, { sprite: 'arsenal_kite_shield' }),
+  armor('steel_targe', 'Steel Targe', 'offHand', 2131, [25, 65], 2.8, 0xb8c0cc, { sprite: 'arsenal_targe' }),
+  armor('gilded_shield', 'Gilded Shield', 'offHand', 2137, [40, 80], 3.2, 0xe8b84c, { sprite: 'arsenal_ornate_shield' }),
+  armor('crystal_ward', 'Crystal Ward', 'offHand', 2145, [55, 100], 3.6, 0x7fc8ff, { sprite: 'arsenal_ward_shield' }),
+  armor('crystal_aegis', 'Crystal Aegis', 'offHand', 2149, [65, 100], 3.8, 0x9fd8ff, { bonus: { hp: 15 }, sprite: 'arsenal_rune_shield' }),
+  armor('frost_shard', 'Frost Shard', 'offHand', 2153, [50, 100], 1.8, 0x9fd8ff, { bonus: { dmg: 0.08 }, sprite: 'arsenal_warding_talisman' }),
+  // THE REST OF THE ARSENAL'S OFF HANDS (it.115): every shield, the quivers, the books and the lantern.
+  armor('cracked_shield', 'Cracked Shield', 'offHand', 2113, [1, 25], 1.6, 0x7a6650, { sprite: 'arsenal_cracked_shield' }),
+  armor('reinforced_round_shield', 'Reinforced Round Shield', 'offHand', 2115, [10, 50], 2.4, 0x8a6f4d, { sprite: 'arsenal_reinforced_round_shield' }),
+  armor('bronze_shield', 'Bronze Shield', 'offHand', 2117, [15, 55], 2.5, 0xc8783c, { sprite: 'arsenal_bronze_shield' }),
+  armor('heater_shield', 'Heater Shield', 'offHand', 2121, [25, 65], 2.8, 0xb8c0cc, { sprite: 'arsenal_heater_shield' }),
+  armor('leaf_shield', 'Leafwarden Shield', 'offHand', 2123, [20, 60], 2.4, 0x6f9a5a, { bonus: { regen: 0.05 }, sprite: 'arsenal_leaf_shield' }),
+  armor('spiked_shield', 'Spiked Shield', 'offHand', 2131, [35, 80], 2.9, 0x8a8a94, { bonus: { dmg: 0.03 }, sprite: 'arsenal_spiked_shield' }),
+  armor('siege_pavise', 'Siege Pavise', 'offHand', 2137, [50, 100], 4, 0x8a6a48, { sprite: 'arsenal_pavise' }),
+  armor('arrow_quiver', 'Arrow Quiver', 'offHand', 1809, [1, 60], 0.6, 0x8a6a48, { bonus: { dmg: 0.04 }, sprite: 'arsenal_arrow_quiver' }),
+  armor('bolt_case', 'Bolt Case', 'offHand', 1809, [30, 100], 0.8, 0x6f5a48, { bonus: { dmg: 0.06 }, sprite: 'arsenal_bolt_case' }),
+  armor('knife_bandolier', 'Knife Bandolier', 'offHand', 1809, [10, 70], 0.8, 0x7a6650, { bonus: { dodge: 0.03 }, sprite: 'arsenal_knife_bandolier' }),
+  armor('parrying_dagger', 'Parrying Dagger', 'offHand', 2113, [15, 80], 1.4, 0xb8c0cc, { bonus: { dodge: 0.04 }, sprite: 'arsenal_parrying_dagger' }),
+  armor('apprentice_spellbook', 'Apprentice Spellbook', 'offHand', 1810, [1, 50], 0.8, 0x6a5a9a, { bonus: { regen: 0.1 }, sprite: 'arsenal_spellbook' }),
+  armor('grand_spell_tome', 'Grand Spell Tome', 'offHand', 1810, [40, 100], 1, 0x9a5ad8, { bonus: { dmg: 0.07, regen: 0.1 }, sprite: 'arsenal_spell_tome' }),
+  armor('delvers_lantern', "Delver's Lantern", 'offHand', 1809, [1, 100], 0.6, 0xffcf60, { bonus: { hp: 8, regen: 0.05 }, sprite: 'arsenal_lantern' }),
   // Back.
   armor('travelers_cloak', "Traveler's Cloak", 'cloak', 1975, [1, 40], 1, 0x8a6a48),
   armor('hunters_cloak', "Hunter's Cloak", 'cloak', 1979, [10, 50], 1.1, 0x6f9a5a, { bonus: { dodge: 0.02 } }),
@@ -301,12 +388,13 @@ const JEWELRY: ItemDef[] = [
 ];
 
 /** Crafting materials live in the hero's pouch, never in the pack. */
+/** THE MATERIALS (it.115): the painted ores from the drop (`item_ore_<id>`, turning like the rest). */
 export const MATERIALS: ItemDef[] = [
-  { id: 'iron_scrap', desc: "The forge’s bread: from every salvage and every scrap-pack on the armorer’s counter. Five transmute to one Arcane Dust.", name: 'Iron Scraps', slot: 'material', rarity: 'common', icon: 'raven209', value: 6, color: 0x9a9a9a },
-  { id: 'arcane_dust', desc: "Ground from uncommon and better gear. Reinforcement from +4 and every enchantment ask for it. Five make an Essence.", name: 'Arcane Dust', slot: 'material', rarity: 'uncommon', icon: 'raven187', value: 25, color: 0x5f7fdf },
-  { id: 'essence', desc: "The heart of rare gear. Refining, enchanting and reinforcement past +8 spend it. Four make an Alloy Shard.", name: 'Essence', slot: 'material', rarity: 'rare', icon: 'raven170', value: 110, color: 0x5fd8c8 },
-  { id: 'alloy_shard', desc: "Epic and better salvage. Three make a Catalyst.", name: 'Alloy Shards', slot: 'material', rarity: 'epic', icon: 'raven213', value: 420, color: 0xc8a0ff },
-  { id: 'catalyst', desc: "One per attempt from +13 to +15, and one to forge a unique. The rarest thing in the pouch.", name: 'Catalyst', slot: 'material', rarity: 'legendary', icon: 'raven172', value: 1500, color: 0xffb347 },
+  { id: 'iron_scrap', desc: "The forge’s bread: from every salvage and every scrap-pack on the armorer’s counter. Five transmute to one Arcane Dust.", name: 'Iron Scraps', slot: 'material', rarity: 'common', icon: 'raven209', sprite: 'item_ore_iron_scrap', value: 6, color: 0x9a9a9a },
+  { id: 'arcane_dust', desc: "Ground from uncommon and better gear. Reinforcement from +4 and every enchantment ask for it. Five make an Essence.", name: 'Arcane Dust', slot: 'material', rarity: 'uncommon', icon: 'raven187', sprite: 'item_ore_arcane_dust', value: 25, color: 0x5f7fdf },
+  { id: 'essence', desc: "The heart of rare gear. Refining, enchanting and reinforcement past +8 spend it. Four make an Alloy Shard.", name: 'Essence', slot: 'material', rarity: 'rare', icon: 'raven170', sprite: 'item_ore_essence', value: 110, color: 0x5fd8c8 },
+  { id: 'alloy_shard', desc: "Epic and better salvage. Three make a Catalyst.", name: 'Alloy Shards', slot: 'material', rarity: 'epic', icon: 'raven213', sprite: 'item_ore_alloy_shard', value: 420, color: 0xc8a0ff },
+  { id: 'catalyst', desc: "One per attempt from +13 to +15, and one to forge a unique. The rarest thing in the pouch.", name: 'Catalyst', slot: 'material', rarity: 'legendary', icon: 'raven172', sprite: 'item_ore_catalyst', value: 1500, color: 0xffb347 },
 ];
 
 export const MATERIAL_ORDER: readonly string[] = ['iron_scrap', 'arcane_dust', 'essence', 'alloy_shard', 'catalyst'];
@@ -321,38 +409,89 @@ export const DRAUGHTS: ItemDef[] = [
   { id: 'potion_stone', desc: "Forty percent of every blow turned for eight seconds; stacks under the 75% cap with Warding lines.", name: 'Draught of Stone', slot: 'consumable', rarity: 'uncommon', icon: 'raven123', sprite: 'item_potion_stone', spin: 'spin_potion_stone', value: 120, use: { stone: 480 }, color: 0x5f7fdf },
   { id: 'potion_might', desc: "A quarter more damage from everything for ten seconds. Drink it before the warden, not after.", name: 'Draught of Might', slot: 'consumable', rarity: 'rare', icon: 'raven269', sprite: 'item_potion_might', spin: 'spin_potion_might', value: 150, use: { might: 600 }, color: 0xe0803a },
   { id: 'greater_health', desc: "Eight tenths of your life back. The same five-second cooldown as any healing draught.", name: 'Greater Healing Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven270', sprite: 'item_potion_greater_health', spin: 'spin_potion_greater_health', value: 80, use: { heal: 0.8 }, color: 0xc83030 },
+  // THE FIVE FLASKS (it.115): the rest of the bake's picked bottles.
+  { id: 'hunters_antidote', desc: "A quarter of your life back and four seconds of haste: the hunter's way out of a bad bite. Counts as a healing draught.", name: "Hunter's Antidote", slot: 'consumable', rarity: 'uncommon', sprite: 'item_potion_antidote', spin: 'spin_potion_antidote', value: 70, use: { heal: 0.25, haste: 240 }, color: 0x6fbf5a },
+  { id: 'potion_frostward', desc: "Ice under the skin: forty percent of every blow turned for ten seconds.", name: 'Frostward Draught', slot: 'consumable', rarity: 'rare', sprite: 'item_potion_frost', spin: 'spin_potion_frost', value: 140, use: { stone: 600 }, color: 0x9fd8ff },
+  { id: 'potion_void', desc: "The dark in a bottle. A quarter more damage for eight seconds and a little of your pool back.", name: 'Void Draught', slot: 'consumable', rarity: 'rare', sprite: 'item_potion_void', spin: 'spin_potion_void', value: 150, use: { might: 480, resource: 0.2 }, color: 0x7a4ab8 },
+  { id: 'potion_focus', desc: "Eight tenths of your mana or stamina, on the two-second resource cooldown.", name: 'Draught of Focus', slot: 'consumable', rarity: 'uncommon', sprite: 'item_potion_focus', spin: 'spin_potion_focus', value: 70, use: { resource: 0.8 }, color: 0xd8e0e8 },
+  { id: 'acid_flask', desc: "Bitter and green. Might and haste together for six seconds - and a long regret.", name: 'Acid Flask', slot: 'consumable', rarity: 'rare', sprite: 'item_potion_poison', spin: 'spin_potion_poison', value: 160, use: { might: 360, haste: 360 }, color: 0x7fd65a },
   { id: 'greater_mana', desc: "Your whole pool refilled. The same two-second cooldown as any resource draught.", name: 'Greater Mana Draught', slot: 'consumable', rarity: 'uncommon', icon: 'raven68', sprite: 'item_potion_greater_mana', spin: 'spin_potion_greater_mana', value: 80, use: { resource: 1 }, color: 0x4a6ad8 },
 ];
 
-/** RECIPE SCROLLS (it.80): read one to learn an enchantment for the forge. Three baked scroll turntables take turns (it.114). */
-export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r, i) => ({
-  id: `recipe_${r.key}`,
-  name: `Recipe: ${r.name}`,
-  slot: 'consumable',
-  rarity: 'rare',
-  icon: `raven${r.icon}`,
-  spin: `spin_scroll_${'abc'[i % 3]}`,
-  value: 220,
-  use: { recipe: r.key },
-  color: 0xd8c890,
-  desc: `${r.desc} Read it to learn the recipe forever; then lay it on a weapon at the camp forge.`,
-}));
+/**
+ * RECIPE SCROLLS (it.80): read one to learn an enchantment for the forge.
+ * THE ART BY FAMILY (it.115): the elemental procs on the plain scroll
+ * (`scroll_a`), the wounding procs on the violet one (`scroll_c`), the
+ * sustain traits in the brown tome (`tome_a`), the martial traits in the
+ * blue tome (`tome_b`), the gilded hand in the old grey one (`tome_c`).
+ */
+const RECIPE_ART: Record<string, string> = {
+  flame: 'scroll_a', frost: 'scroll_a', storm: 'scroll_a',
+  venom: 'scroll_c', sanguine: 'scroll_c', crushing: 'scroll_c',
+  reaping: 'tome_a', siphon: 'tome_a',
+  cleaving: 'tome_b', swiftness: 'tome_b', keen: 'tome_b',
+  fortune: 'tome_c',
+};
+export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r, i) => {
+  const art = RECIPE_ART[r.key] ?? `scroll_${'abc'[i % 3]}`;
+  return {
+    id: `recipe_${r.key}`,
+    name: `Recipe: ${r.name}`,
+    slot: 'consumable',
+    rarity: 'rare',
+    icon: `raven${r.icon}`,
+    sprite: `item_${art}`,
+    spin: `spin_${art}`,
+    value: 220,
+    use: { recipe: r.key },
+    color: 0xd8c890,
+    desc: `${r.desc} Read it to learn the recipe forever; then lay it on a weapon at the camp forge.`,
+  };
+});
 
 /**
- * FOOD (it.114). Twenty-five dishes from the bake (`item_food_<slug>` singles,
- * `spin_food_<slug>` turntables), medieval fare only. Eaten from the pack or
- * the belt; the heal is served over three seconds and every bite feeds the
- * HUNGER gauge. Tiers:
- *   snack  8% life  +15 hunger   12 gold
- *   meal  15% life  +35 hunger   28 gold
- *   feast 30% life  +70 hunger   70 gold  (heals to FULL when already full)
+ * THE ALES (it.115): ten of the 105 baked polyy drinks (`item_drink_<key>`
+ * + `spin_drink_<key>`), poured at the tavern and kept by the alchemist. A
+ * short brew - MIGHT or HASTE for six seconds - on the brews' one-second
+ * cooldown, cheap, and they turn in the cell like every other bottle.
+ */
+const ale = (key: string, name: string, brew: 'might' | 'haste', desc: string): ItemDef => ({
+  id: `ale_${key}`,
+  name,
+  slot: 'consumable',
+  rarity: 'common',
+  sprite: `item_drink_${key}`,
+  spin: `spin_drink_${key}`,
+  value: 18,
+  use: brew === 'might' ? { might: 6 * 60 } : { haste: 6 * 60 },
+  color: brew === 'might' ? 0xe0803a : 0x7fd67f,
+  desc,
+});
+export const ALES: ItemDef[] = [
+  ale('016_griffin', 'Griffin Ale', 'might', 'A brown ale under a griffin seal. A quarter more damage for six seconds, then the taste of it for an hour.'),
+  ale('017_dragon', "Dragon's Breath Stout", 'might', 'Black, thick, and it bites back. Might for six seconds.'),
+  ale('019_wolfsun', 'Wolfsun Mead', 'haste', 'Honey mead of the hill folk. Thirty percent faster on your feet for six seconds.'),
+  ale('021_starforge', 'Starforge Porter', 'might', 'The smiths drink it at the end of the shift. Might for six seconds.'),
+  ale('047_ambercrown', 'Ambercrown Cider', 'haste', 'Orchard cider, sharp and cold. Haste for six seconds.'),
+  ale('048_knightshield', 'Knightshield Lager', 'might', 'The garrison’s ration ale. Might for six seconds.'),
+  ale('050_bloodorange', 'Bloodorange Punch', 'haste', 'A red punch from the market ward. Haste for six seconds.'),
+  ale('055_emeraldforest', 'Greenwood Herb Ale', 'haste', 'Bitter herbs in a pale ale, the forester’s brew. Haste for six seconds.'),
+  ale('061_bronzerune', 'Bronzerune Dwarven Ale', 'might', 'Stamped with a dwarven rune. Might for six seconds.'),
+  ale('063_druidwoodland', 'Druid’s Woodland Brew', 'haste', 'Something green in a stone bottle. Haste for six seconds.'),
+];
+
+/**
+ * FOOD (it.114, hunger dropped it.115). All fifty dishes of the bake
+ * (`item_food_<slug>` singles, `spin_food_<slug>` turntables); the tavern's
+ * medieval fare first, the market ward's stranger plates after (it.115). Eaten from the pack or the belt; the heal is served over three
+ * seconds and the tier pours a brew (the table is `FOOD_TIER` in the
+ * catalog, re-exported here for the codex):
+ *   snack  8% life                          12 gold
+ *   meal  15% life · MIGHT 20 s             28 gold
+ *   feast 30% life · STONE 30 s · HASTE 20 s 70 gold
  * Foods stack in the pack like draughts (one entry each, one cell together).
  */
-export const FOOD_TIER: Record<FoodTier, { heal: number; hunger: number; value: number; rarity: ItemDef['rarity']; color: number }> = {
-  snack: { heal: 0.08, hunger: 15, value: 12, rarity: 'common', color: 0xd8a85c },
-  meal: { heal: 0.15, hunger: 35, value: 28, rarity: 'uncommon', color: 0xe0803a },
-  feast: { heal: 0.3, hunger: 70, value: 70, rarity: 'rare', color: 0xffb347 },
-};
+export { FOOD_TIER };
 
 const food = (slug: string, name: string, tier: FoodTier, desc: string): ItemDef => {
   const t = FOOD_TIER[tier];
@@ -364,7 +503,7 @@ const food = (slug: string, name: string, tier: FoodTier, desc: string): ItemDef
     sprite: `item_food_${slug}`,
     spin: `spin_food_${slug}`,
     value: t.value,
-    use: { food: { heal: t.heal, hunger: t.hunger, tier } },
+    use: { food: { heal: t.heal, tier } },
     color: t.color,
     desc,
   };
@@ -399,6 +538,33 @@ export const FOODS: ItemDef[] = [
   food('grilled_steak_board', 'Steak Board', 'feast', 'A slab of beef seared on the iron, rested and sliced on the board.'),
   food('roasted_quail_board', 'Roasted Quail', 'feast', 'A brace of quail roasted with herbs, the lord’s table brought underground.'),
   food('pot_roast_board', 'Pot Roast', 'feast', 'Beef braised all day with carrots and onion, falling apart under the knife.'),
+  // THE REST OF THE LARDER (it.115): every dish of the bake is on the table now - the market ward's
+  // stalls, the sweetshop and the harbour cooks' fare beside the tavern's.
+  food('caramel_flan', 'Caramel Custard', 'snack', 'A trembling custard under burnt sugar, from the sweetshop by the fountain.'),
+  food('chocolate_eclair', 'Cream Eclair', 'snack', 'Choux pastry split and filled with cream, glazed dark on top.'),
+  food('chocolate_lava_cake', 'Molten Cocoa Cake', 'snack', 'A small dark cake that pours its heart out when cut.'),
+  food('cinnamon_roll_stack', 'Cinnamon Rolls', 'snack', 'Three spiral buns in a sticky stack, still warm.'),
+  food('frosted_cupcake', 'Frosted Fairy Cake', 'snack', 'A little cake under a swirl of sugar frosting.'),
+  food('layer_cake_slice', 'Layer Cake Slice', 'snack', 'A tall wedge of sponge and cream from a feast-day cake.'),
+  food('pepperoni_pizza_slice', 'Sausage Flatbread Slice', 'snack', 'Hot flatbread with cheese and spiced sausage, folded to eat walking.'),
+  food('steamed_bao_buns', 'Steamed Buns', 'snack', 'Soft white buns around a spoon of braised pork, from the eastern stall.'),
+  food('croissant_sandwich', 'Crescent Roll Sandwich', 'meal', 'A buttered crescent roll split round ham and cheese.'),
+  food('falafel_pita_pocket', 'Chickpea Flatbread', 'meal', 'Fried chickpea balls and greens in a pocket of flatbread.'),
+  food('fish_taco_board', 'Fish Flatbreads', 'meal', 'Fried river fish on small flatbreads with a sharp slaw.'),
+  food('fish_and_chips_plate', 'Fish and Fried Roots', 'meal', 'Battered fish and fat fried roots, salt and vinegar on the side.'),
+  food('fried_chicken_plate', 'Fried Fowl', 'meal', 'Crisp-coated fowl fried in lard, a heap of it on the plate.'),
+  food('loaded_burrito', 'Wrapped Flatbread', 'meal', 'Beans, rice and spiced meat rolled tight in a flatbread for the road.'),
+  food('loaded_nachos', 'Cheese-Laden Crisps', 'meal', 'Fried corn crisps buried in melted cheese and peppers.'),
+  food('lobster_roll', 'Lobster Roll', 'meal', 'Harbour lobster in butter, piled into a soft roll.'),
+  food('meatball_sub', 'Meatball Loaf', 'meal', 'A long loaf of meatballs in tomato and cheese. Hold it with both hands.'),
+  food('noodle_soup_bowl', 'Noodle Broth', 'meal', 'Long noodles in a clear broth with an egg and greens.'),
+  food('red_curry_rice_bowl', 'Spiced Rice Bowl', 'meal', 'Rice under a red, fiery stew from the spice merchants.'),
+  food('shrimp_po_boy', 'Shrimp Loaf', 'meal', 'Fried shrimp and greens in a crusty loaf, the dockhands’ lunch.'),
+  food('stacked_cheeseburger', 'Tavern Burger', 'meal', 'Two patties, cheese and onion on a bun: the cook’s own invention.'),
+  food('stuffed_bell_pepper', 'Stuffed Pepper', 'meal', 'A sweet pepper baked round rice and minced meat.'),
+  food('sushi_roll_plate', 'Eastern Rice Rolls', 'meal', 'Rolls of rice and raw fish, as the eastern traders eat them.'),
+  food('waffle_stack', 'Waffle Stack', 'meal', 'Iron-baked waffles, berries and cream between them.'),
+  food('seafood_paella_bowl', 'Seafood Rice Pan', 'feast', 'A wide pan of saffron rice, mussels and prawns for the whole table.'),
 ];
 
 /** The dishes of one tier (for the drop roll and the merchants). */
@@ -406,7 +572,9 @@ export function foodsOfTier(tier: FoodTier): ItemDef[] {
   return FOODS.filter((d) => d.use?.food?.tier === tier);
 }
 
-export const RAVEN_ITEMS: ItemDef[] = [...WEAPONS, ...UNIQUES, ...ARMOR, ...JEWELRY, ...MATERIALS, ...DRAUGHTS, ...RECIPES, ...FOODS];
+export const RAVEN_ITEMS: ItemDef[] = [...WEAPONS, ...UNIQUES, ...ARMOR, ...JEWELRY, ...MATERIALS, ...DRAUGHTS, ...ALES, ...RECIPES, ...FOODS, ...CURIOS];
+
+export { CURIO_DRINKS, CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS } from './curios';
 
 /** Every base that can be rolled or forged (no materials, draughts, recipes or food). */
 export function gearBases(): ItemDef[] {

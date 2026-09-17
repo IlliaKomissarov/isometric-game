@@ -15,6 +15,15 @@
  *     until the errand is paid, then opened on a bed and the warded chest -
  *     the same stash the town keeps, so anything left in it is in reach from
  *     every stash in the world and from every hero of the party.
+ *
+ * THE DOOR IS WHERE THE STREET IS (it.115). The street door of the building is
+ * on its SOUTH face - the stair that comes down into the lane - and the
+ * taproom's way out was an arch in its NORTH wall. The way out is in the south
+ * wall now, under the same stair, and the party walks in through it with the
+ * bar straight ahead. The south and east walls, which used to be missing, are
+ * drawn as cut-away wainscot (`near`), with the doorway standing full height
+ * in the south one. The back door to the cellar stays in the west wall, by the
+ * south corner - the gabled hall's end, where the lane shows its cellar door.
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type Room } from '@/scenes/DungeonGenerator';
@@ -33,8 +42,8 @@ const PART_Y = 13;
 /** The door piece spans tiles (22,13) and (23,13); its opening is over the second. */
 const DOOR_PIECE_X = 22;
 const DOOR_GAP = { x: 23, y: PART_Y };
-/** The way out to the street: an arch in the north-east wall over tiles (8,1) and (9,1). */
-const OUT_PIECE_X = 8;
+/** The way out to the street (it.115): a doorway in the SOUTH wall over tiles (14,21) and (15,21). */
+const OUT_PIECE_X = 14;
 /** THE CELLAR DOOR (it.97): a leaf in the north-west wall over tiles (1,18) and (1,19). */
 const CELLAR_PIECE_Y = 18;
 
@@ -86,14 +95,20 @@ export function buildInnLayout(seed: number, roomOpen = false, cellarOpen = fals
   const wallW = (x: number, y: number, variant: string): void => decal({ kind: 'innwall', x, y, w: 1, h: 2, variant });
 
   // ---- THE WALLS -------------------------------------------------------
-  for (let x = HALL.x0; x <= HALL.x1; x += 2) wallN(x, 1, x === OUT_PIECE_X ? 'inn_arch_n' : 'inn_wall_n');
+  for (let x = HALL.x0; x <= HALL.x1; x += 2) wallN(x, 1, 'inn_wall_n');
+  // The near walls (it.115): wainscot along the south and the east, the street doorway in the south.
+  for (let x = HALL.x0; x <= HALL.x1; x += 2) decal({ kind: 'innwall', x, y: HALL.y1, w: 2, h: 1, variant: x === OUT_PIECE_X ? 'inn_arch_n' : 'inn_wall_n', near: true });
+  for (let y = HALL.y0; y <= HALL.y1; y += 2) decal({ kind: 'innwall', x: HALL.x1, y, w: 1, h: 2, variant: 'inn_wall_w', near: true });
   for (let y = HALL.y0; y <= HALL.y1; y += 2) wallW(1, y, y === 8 ? 'inn_hearth_w' : y === CELLAR_PIECE_Y ? (cellarOpen ? 'inn_door_w_open' : 'inn_door_w_shut') : 'inn_wall_w');
-  for (let x = ROOM.x0; x <= ROOM.x1; x += 2) wallN(x, PART_Y, x === DOOR_PIECE_X ? (roomOpen ? 'inn_door_open' : 'inn_door_shut') : 'inn_wall_n');
-  for (let y = PART_Y; y <= ROOM.y1; y += 2) wallW(PART_X, y, 'inn_wall_w');
+  // The partition is a NEAR wall from the hall (the room lies on the camera's
+  // side of it), so it is cut away like the outer ones (it.115) - a full panel
+  // there stood alone in the middle of the boards. Its door stands full height.
+  for (let x = ROOM.x0; x <= ROOM.x1; x += 2) decal({ kind: 'innwall', x, y: PART_Y, w: 2, h: 1, variant: x === DOOR_PIECE_X ? (roomOpen ? 'inn_door_open' : 'inn_door_shut') : 'inn_wall_n', near: true });
+  for (let y = PART_Y; y <= ROOM.y1; y += 2) decal({ kind: 'innwall', x: PART_X, y, w: 1, h: 2, variant: 'inn_wall_w', near: true });
 
   // ---- THE WAY OUT -----------------------------------------------------
-  const door = { x: OUT_PIECE_X + 1, y: 2 };
-  const spawn = { x: OUT_PIECE_X + 1, y: 3 };
+  const door = { x: OUT_PIECE_X + 1, y: HALL.y1 };
+  const spawn = { x: OUT_PIECE_X + 1, y: HALL.y1 - 1 };
   decal({ kind: 'inndoor', x: door.x, y: door.y });
 
   // ---- THE BAR ---------------------------------------------------------
@@ -120,7 +135,7 @@ export function buildInnLayout(seed: number, roomOpen = false, cellarOpen = fals
   rug('inn_carpet_b', 3, 11, 0.4, 0);
 
   // ---- THE HALL: tables, rugs, casks -----------------------------------
-  for (const [tx, ty] of [[7, 14], [12, 8], [14, 18], [7, 19], [16, 12]] as const) {
+  for (const [tx, ty] of [[7, 14], [12, 8], [11, 18], [7, 19], [16, 12]] as const) { // (14,18) stood in the new doorway (it.115)
     put('inn_table', tx, ty, 0.1, 0.1);
     put('inn_chair_a', tx - 1, ty, -0.1, 0.25, false);
     put('inn_chair_b', tx + 1, ty, 0.35, -0.1, false);

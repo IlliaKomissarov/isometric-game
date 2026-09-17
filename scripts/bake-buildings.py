@@ -46,7 +46,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bakelib import (ATLAS, DROP, TILE_H, TILE_W, ground_diamond, key_magenta,  # noqa: E402
+from bakelib import (ATLAS, DROP, MASK_OUT, TILE_H, TILE_W, ground_diamond, key_magenta,  # noqa: E402
                      write_single, read_manifest)
 
 PREVIEW = os.path.join(os.environ.get('CLAUDE_SCRATCHPAD',
@@ -420,18 +420,55 @@ def bake_tufts():
 
 
 # ---------------------------------------------------------------------------
-# (f) overworld ground kinds
+# (f) overworld ground kinds, and the blend that lays them INTO the grass (it.115)
 # ---------------------------------------------------------------------------
 
 OW_DIR = os.path.join(DROP, 'Overworld - Large', 'Flat')
-#: kind -> (target mean luminance, [(sheet, row, col), ...] four cells)
+#: kind -> (target mean RGB, target luminance spread, [(sheet, row, col), ...] four cells)
+#:
+#: TONED, NOT GAINED (it.115). it.114 matched each cell's mean LUMINANCE to a
+#: target and left the hue alone, so the moss came out olive-yellow at L 84 on a
+#: floor whose grass is a dark green at L 54 - every patch read as a lit tile.
+#: Each cell is now moved onto a target COLOUR, and its texture contrast onto a
+#: target spread, both picked against `town_grass` / `town_dirt` (the floors
+#: these lie on), so a patch is a different material in the same light.
 GROUND = {
-    'ow_forest': (72, [('Forest', 5, 0), ('Forest', 5, 1), ('Forest', 1, 2), ('Forest', 2, 0)]),
-    'ow_moss':   (84, [('Terrain 1', 0, 2), ('Terrain 1', 3, 1), ('Terrain 1', 3, 0), ('Terrain 1', 2, 2)]),
-    'ow_gravel': (88, [('Terrain 2', 3, 2), ('Terrain 2', 0, 2), ('Terrain 2', 0, 1), ('Terrain 2', 3, 1)]),
-    'ow_mud':    (78, [('Terrain 1', 1, 1), ('Terrain 1', 2, 1), ('Terrain 1', 0, 0), ('Terrain 1', 1, 0)]),
+    'ow_forest': ((58, 54, 38), 10.0, [('Forest', 5, 0), ('Forest', 5, 1), ('Forest', 1, 2), ('Forest', 1, 1)]),
+    'ow_moss':   ((50, 67, 34), 7.0, [('Terrain 1', 3, 0), ('Terrain 1', 3, 1), ('Terrain 1', 0, 2), ('Terrain 1', 2, 2)]),
+    'ow_gravel': ((80, 76, 66), 10.0, [('Terrain 2', 0, 0), ('Terrain 2', 0, 1), ('Terrain 2', 4, 1), ('Terrain 2', 2, 0)]),
+    'ow_mud':    ((58, 47, 36), 7.0, [('Terrain 1', 1, 1), ('Terrain 1', 2, 1), ('Terrain 1', 0, 0), ('Terrain 1', 1, 0)]),
+    'ow_meadow': ((46, 64, 36), 8.0, [('Forest', 0, 0), ('Forest', 2, 2), ('Forest', 3, 0), ('Forest', 0, 2)]),
 }
+#: THE FLOWER BEDS (it.115): Screaming Brain's `Large 256x128` Flora sheets (CC0,
+#: the same studio as the Overworld set). Their colour IS the point, so they are
+#: not moved onto a target colour - only darkened onto a target luminance and
+#: taken a little way toward grey, into the same night as the grass. Each kind
+#: is two cells and their mirror images, so a bed is one kind of flower.
+#: kind -> (tone, [(sheet, row, col, mirrored), ...]); tone is ('dim', luminance,
+#: saturation kept) for a bed whose colour is its flowers, or ('tone', rgb, spread)
+#: for a bed of pale flowers on green, whose GREEN is moved onto the grass and
+#: whose flowers stay the bright spots on it.
+FLORA_DIR = os.path.join(DROP, 'Large 256x128', 'Exterior', 'Flora')
+FLORA = {
+    'ow_flowers': (('tone', (46, 60, 34), 26.0), [('Floor_Flora_02', 0, 2, False), ('Floor_Flora_02', 2, 0, False), ('Floor_Flora_02', 0, 2, True), ('Floor_Flora_02', 2, 0, True)]),
+    'ow_poppies': (('dim', 66, 0.95), [('Floor_Flora_02', 1, 0, False), ('Floor_Flora_01', 4, 2, False), ('Floor_Flora_02', 1, 0, True), ('Floor_Flora_01', 4, 2, True)]),
+}
+#: THE LILY PADS (it.115): three soft-edged clusters cut from the Flora sheet's
+#: pad bed, laid over the river's shallows as ground paint.
+LILY_CELL = ('Floor_Flora_01', 5, 0)
 MAGENTA_SHEETS = ('Terrain 3', 'Water')
+#: How much of a source cell's edge is the pack's outline, in source pixels (it.115).
+RIM_PX = 10
+
+#: THE BLEND SOURCES, in the order `SceneManager` indexes the atlas rows by
+#: (it.115): the two town kinds the outdoor floors carry (their road and their
+#: shore) and the five overworld kinds. Row = source * 4 + variant.
+BLEND_SOURCES = ['town_dirt', 'town_sand', 'ow_mud', 'ow_gravel', 'ow_forest', 'ow_moss', 'ow_meadow', 'ow_flowers', 'ow_poppies']
+#: The eight neighbour directions, as WORLD tile offsets from the tile the
+#: overlay is drawn on: four edges, then four corners.
+BLEND_DIRS = [(1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (-1, 1), (-1, -1), (1, -1)]
+#: One 64x32 diamond per cell, padded a pixel all round so the sampler never bleeds.
+BLEND_CELL_W, BLEND_CELL_H = TILE_W + 2, TILE_H + 2
 
 
 def big_diamond_mask(w, h):
@@ -446,16 +483,45 @@ def big_diamond_mask(w, h):
 _ow_cache = {}
 
 
-def ow_cell(sheet, r, c):
+def ow_cell(sheet, r, c, path=None):
     if sheet not in _ow_cache:
-        im = Image.open(os.path.join(OW_DIR, 'Overworld - %s - Flat 256x128.png' % sheet)).convert('RGBA')
+        im = Image.open(path or os.path.join(OW_DIR, 'Overworld - %s - Flat 256x128.png' % sheet)).convert('RGBA')
         if sheet in MAGENTA_SHEETS:
             im = key_magenta(im, tol=60)
         _ow_cache[sheet] = im
     cell = _ow_cache[sheet].crop((c * 256, r * 128, (c + 1) * 256, (r + 1) * 128))
     a = np.array(cell)
-    a[~big_diamond_mask(256, 128)] = 0        # whatever the background was, only the diamond survives
-    return np_bleed(Image.fromarray(a, 'RGBA'), 8)
+    # THE RIM (it.115): the pack draws a dark line round every diamond, which
+    # laid edge to edge is a grid over the whole patch. The outer RIM_PX of the
+    # cell is dropped and refilled from the inside before the cut.
+    yy, xx = np.mgrid[0:128, 0:256]
+    inner = np.abs((xx + 0.5 - 128) / 128) + np.abs((yy + 0.5 - 64) / 64) <= 1 - RIM_PX / 128
+    a[~inner] = 0
+    return grow_fill(a, inner, RIM_PX + 12)
+
+
+def grow_fill(a, known, passes):
+    """
+    Refill every pixel outside `known` from its known neighbours, one ring per
+    pass, marking each ring known as it goes (`np_bleed` keeps its fills at
+    alpha 0 and so only ever reaches one pixel). Returns an opaque image.
+    """
+    rgb = a[:, :, :3].astype(np.float32)
+    known = known.copy()
+    for _ in range(passes):
+        acc = np.zeros_like(rgb)
+        cnt = np.zeros(known.shape, dtype=np.float32)
+        k = known.astype(np.float32)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx or dy:
+                    acc += np.roll(np.roll(rgb * k[:, :, None], dy, axis=0), dx, axis=1)
+                    cnt += np.roll(np.roll(k, dy, axis=0), dx, axis=1)
+        ring = (~known) & (cnt > 0)
+        rgb[ring] = acc[ring] / cnt[ring][:, None]
+        known = known | ring
+    out = np.dstack([np.clip(rgb, 0, 255), np.full(known.shape, 255, np.float32)]).astype(np.uint8)
+    return Image.fromarray(out, 'RGBA')
 
 
 def luminance_mean(im):
@@ -465,40 +531,202 @@ def luminance_mean(im):
     return float(lum[m].mean())
 
 
-def gain(im, k):
+def tone(im, rgb, spread):
+    """The cell moved onto a target mean colour and a target luminance spread."""
     a = np.array(im.convert('RGBA')).astype(np.float32)
-    a[:, :, :3] = np.clip(a[:, :, :3] * k, 0, 255)
+    m = a[:, :, 3] >= 128
+    col = a[:, :, :3]
+    mean = col[m].mean(axis=0)
+    lum = col @ np.array([.30, .59, .11], dtype=np.float32)
+    k = spread / max(1.0, float(lum[m].std()))
+    a[:, :, :3] = np.clip((col - mean) * k + np.array(rgb, dtype=np.float32), 0, 255)
     return Image.fromarray(a.astype(np.uint8), 'RGBA')
+
+
+def value_noise(size, cells, rng):
+    """Smooth noise in [-1, 1]: a random `cells` grid, bicubic-upscaled to `size`."""
+    g = rng.rand(cells, cells).astype(np.float32)
+    im = Image.fromarray((g * 255).astype(np.uint8), 'L').resize((size, size), Image.BICUBIC)
+    return np.array(im).astype(np.float32) / 127.5 - 1.0
+
+
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def blend_alpha(d, variant):
+    """
+    THE FEATHER (it.115): the alpha of the overlay a tile wears on its side
+    facing neighbour `d`, in the tile's own WORLD coordinates (a along x, b
+    along y, both -0.5..0.5 from its centre). An edge overlay is opaque on the
+    shared edge and gone about half a tile in, along a ragged line; a corner
+    overlay is a small ragged fan about the shared corner. The raggedness is
+    two octaves of value noise sampled in world units, a different window of it
+    per direction and variant, so no two tile edges on screen match.
+    """
+    dx, dy = BLEND_DIRS[d]
+    rng = np.random.RandomState(1000 + d * 17 + variant * 131)
+    big = value_noise(256, 12, rng) * 0.7 + value_noise(256, 40, rng) * 0.3
+    yy, xx = np.mgrid[0:TILE_H, 0:TILE_W].astype(np.float32)
+    u = (xx + 0.5 - TILE_W / 2) / (TILE_W / 2)
+    v = (yy + 0.5 - TILE_H / 2) / (TILE_H / 2)
+    a = (u + v) / 2
+    b = (v - u) / 2
+    # the noise lives on the tile's world plane: 1 tile = 64 noise px
+    ox, oy = rng.randint(32, 160), rng.randint(32, 160)
+    nx = np.clip(((a + 0.5) * 64 + ox).astype(np.int32), 0, 255)
+    ny = np.clip(((b + 0.5) * 64 + oy).astype(np.int32), 0, 255)
+    n = big[ny, nx]
+    if dx == 0 or dy == 0:
+        t = a * dx + b * dy + 0.5                       # 1 on the shared edge
+        al = smoothstep(0.34, 0.92, t + 0.30 * n)
+        al = np.maximum(al, smoothstep(0.90, 1.0, t))    # always opaque right on the edge
+    else:
+        dist = np.hypot(a - 0.5 * dx, b - 0.5 * dy)     # 0 at the shared corner
+        al = 1.0 - smoothstep(0.12, 0.58, dist + 0.18 * n)
+    return al
 
 
 def bake_ground():
     tiles_by_kind = {}
-    for kind, (target, cells) in GROUND.items():
+    for kind, (rgb, spread, cells) in GROUND.items():
         outs = []
         for i, (sheet, r, c) in enumerate(cells):
-            d = ground_diamond(ow_cell(sheet, r, c))
-            d = gain(d, target / max(1.0, luminance_mean(d)))     # gain-matched onto the kind's target
+            raw = ground_diamond(ow_cell(sheet, r, c))
+            d = tone(raw, rgb, spread)
             key = '%s_%d' % (kind, i)
-            emit(key, d, '1x1', '%s r%d c%d, mean L %.0f -> %.0f' % (sheet, r, c, luminance_mean(ground_diamond(ow_cell(sheet, r, c))), luminance_mean(d)), (0.5, 1.0))
+            emit(key, d, '1x1', '%s r%d c%d, mean L %.0f -> %.0f' % (sheet, r, c, luminance_mean(raw), luminance_mean(d)), (0.5, 1.0))
             outs.append(d)
         tiles_by_kind[kind] = outs
-    # 4x4 in projection, every kind, x3 nearest so the seams are visible
-    n = 4
-    pw, ph = TILE_W * n, TILE_H * n + TILE_H
-    sheet = Image.new('RGBA', (pw * len(tiles_by_kind), ph + 14), (52, 56, 66, 255))
-    d = ImageDraw.Draw(sheet)
-    rng = np.random.RandomState(7)
-    for ki, (kind, outs) in enumerate(tiles_by_kind.items()):
-        for ty in range(n):
-            for tx in range(n):
-                sx = ki * pw + (tx - ty) * TILE_W // 2 + pw // 2 - TILE_W // 2
-                sy = 14 + (tx + ty) * TILE_H // 2
-                t = outs[rng.randint(4)]
-                sheet.alpha_composite(t, (sx, sy))
-        d.text((ki * pw + 2, 1), kind, fill=(255, 225, 120, 255))
-    sheet = sheet.resize((sheet.size[0] * 3, sheet.size[1] * 3), Image.NEAREST)
+    for kind, (how, cells) in FLORA.items():
+        outs = []
+        for i, (sheet, r, c, mirrored) in enumerate(cells):
+            raw = ow_cell(sheet, r, c, os.path.join(FLORA_DIR, sheet + '-256x128.png'))
+            if mirrored:
+                raw = raw.transpose(Image.FLIP_LEFT_RIGHT)
+            raw = ground_diamond(raw)
+            d = dim(raw, how[1], how[2]) if how[0] == 'dim' else tone(raw, how[1], how[2])
+            key = '%s_%d' % (kind, i)
+            emit(key, d, '1x1', '%s r%d c%d%s, mean L %.0f -> %.0f' % (sheet, r, c, ' mirrored' if mirrored else '', luminance_mean(raw), luminance_mean(d)), (0.5, 1.0))
+            outs.append(d)
+        tiles_by_kind[kind] = outs
+    bake_lilies()
+    bake_blend(tiles_by_kind)
+
+
+def dim(im, lum, sat):
+    """Keep the hue: a gain onto `lum`, then `sat` of the chroma kept."""
+    a = np.array(im.convert('RGBA')).astype(np.float32)
+    m = a[:, :, 3] >= 128
+    col = a[:, :, :3] * (lum / max(1.0, luminance_mean(im)))
+    grey = (col @ np.array([.30, .59, .11], dtype=np.float32))[:, :, None]
+    a[:, :, :3] = np.clip(grey + (col - grey) * sat, 0, 255)
+    return Image.fromarray(a.astype(np.uint8), 'RGBA')
+
+
+def bake_lilies():
+    """Three pad clusters: the bed at x0.3, cut to a ragged, feathered ellipse, darkened into the water's light."""
+    sheet, r, c = LILY_CELL
+    bed = ow_cell(sheet, r, c, os.path.join(FLORA_DIR, sheet + '-256x128.png'))
+    bed = scale_rgba(bed, 0.3)
+    bw, bh = bed.size
+    for i, (cx, cy, w, h) in enumerate(((0.38, 0.5, 46, 22), (0.62, 0.45, 36, 18), (0.5, 0.55, 28, 14))):
+        box = (int(cx * bw - w / 2), int(cy * bh - h / 2))
+        cut = np.array(bed.crop((box[0], box[1], box[0] + w, box[1] + h))).astype(np.float32)
+        rng = np.random.RandomState(40 + i)
+        n = value_noise(64, 6, rng)[:h, :w]
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        d = np.hypot((xx + 0.5 - w / 2) / (w / 2), (yy + 0.5 - h / 2) / (h / 2))
+        cut[:, :, 3] = 255.0 * (1.0 - smoothstep(0.55, 0.95, d + 0.18 * n))
+        im = dim(Image.fromarray(cut.astype(np.uint8), 'RGBA'), 62, 0.8)
+        emit('lily_%s' % 'abc'[i], im, '1x1', '%s r%d c%d x0.3 blob %d' % (sheet, r, c, i), (0.5, 0.5))
+
+
+def blend_source(name, v, tiles_by_kind):
+    if name in tiles_by_kind:
+        return tiles_by_kind[name][v]
+    return Image.open(os.path.join(ATLAS, 'single_%s_%d.png' % (name, v))).convert('RGBA')
+
+
+def bake_blend(tiles_by_kind):
+    """
+    THE BLEND ATLAS (it.115): `ow_blend`, one row per (source, variant), one
+    column per BLEND_DIRS entry - the source's diamond with that direction's
+    feathered alpha, cut to the tile's own (dilated) mask. `SceneManager` slices
+    it and lays the cells over the lower-ranked tiles round a patch, so a patch
+    has a ragged, soft outline instead of a staircase of hard diamonds.
+    """
+    mask = np.array(MASK_OUT).astype(np.float32) / 255.0
+    rows = len(BLEND_SOURCES) * 4
+    atlas = Image.new('RGBA', (BLEND_CELL_W * len(BLEND_DIRS), BLEND_CELL_H * rows), (0, 0, 0, 0))
+    alphas = {(d, v): blend_alpha(d, v) for d in range(len(BLEND_DIRS)) for v in range(4)}
+    for si, name in enumerate(BLEND_SOURCES):
+        for v in range(4):
+            src = np.array(np_bleed(blend_source(name, v, tiles_by_kind), 4)).astype(np.float32)
+            for d in range(len(BLEND_DIRS)):
+                cell = src.copy()
+                cell[:, :, 3] = 255.0 * alphas[(d, v)] * mask
+                im = Image.fromarray(np.clip(cell, 0, 255).astype(np.uint8), 'RGBA')
+                atlas.paste(im, (d * BLEND_CELL_W + 1, (si * 4 + v) * BLEND_CELL_H + 1))
+    ZOOM['ow_blend'] = atlas
+    if not DRY:
+        write_single('ow_blend', atlas)
+    REPORT.append(('ow_blend', atlas.size[0], atlas.size[1], '-', 0, 0, '%d sources x 4 variants x %d dirs' % (len(BLEND_SOURCES), len(BLEND_DIRS))))
+    projected_preview(tiles_by_kind, atlas)
+
+
+def projected_preview(tiles_by_kind, atlas):
+    """
+    A 20x20 field laid the way `SceneManager` lays it - grass, a dirt road, a
+    sand shore, and a patch of every kind - once hard and once blended, so the
+    effect of the atlas can be judged before the game ever sees it.
+    """
+    n = 20
+    rank = {'town_grass': 0, 'town_dirt': 1, 'town_sand': 2, 'ow_mud': 3, 'ow_gravel': 4, 'ow_forest': 5, 'ow_moss': 6, 'ow_meadow': 7, 'ow_flowers': 8, 'ow_poppies': 9}
+    kinds = [['town_grass'] * n for _ in range(n)]
+    for y in range(n):
+        for x in range(n):
+            if abs(x - y) <= 1:
+                kinds[y][x] = 'town_dirt'
+            if y >= 17:
+                kinds[y][x] = 'town_sand'
+            for kind, cx, cy, r in (('ow_moss', 5, 12, 2.6), ('ow_gravel', 14, 5, 2.2), ('ow_forest', 4, 3, 3.0),
+                                    ('ow_mud', 11, 10, 1.8), ('ow_meadow', 15, 14, 2.8), ('ow_flowers', 9, 16, 1.8), ('ow_poppies', 17, 9, 1.6)):
+                wob = 0.5 * np.sin(x * 1.3 + y * 0.7)
+                if np.hypot(x - cx, y - cy) <= r + wob and kinds[y][x] == 'town_grass':
+                    kinds[y][x] = kind
+    base = dict(tiles_by_kind)
+    for k in ('town_grass', 'town_dirt', 'town_sand'):
+        base[k] = [Image.open(os.path.join(ATLAS, 'single_%s_%d.png' % (k, v))).convert('RGBA') for v in range(4)]
+    W = n * TILE_W + TILE_W
+    H = n * TILE_H + TILE_H
+    out = Image.new('RGBA', (W * 2, H), (10, 10, 14, 255))
+    for pane, blend in ((0, False), (1, True)):
+        ox = pane * W + W // 2 - TILE_W // 2
+        for y in range(n):
+            for x in range(n):
+                v = (x * 5 + y * 11) % 4
+                out.alpha_composite(base[kinds[y][x]][v], (ox + (x - y) * TILE_W // 2, (x + y) * TILE_H // 2))
+        if not blend:
+            continue
+        for y in range(n):
+            for x in range(n):
+                layers = []
+                for d, (dx, dy) in enumerate(BLEND_DIRS):
+                    xx, yy = x + dx, y + dy
+                    if not (0 <= xx < n and 0 <= yy < n):
+                        continue
+                    k = kinds[yy][xx]
+                    if rank[k] > rank[kinds[y][x]] and k in BLEND_SOURCES:
+                        layers.append((rank[k], BLEND_SOURCES.index(k), (xx * 5 + yy * 11) % 4, d))
+                for _, si, v, d in sorted(layers):
+                    cell = atlas.crop((d * BLEND_CELL_W + 1, (si * 4 + v) * BLEND_CELL_H + 1,
+                                       d * BLEND_CELL_W + 1 + TILE_W, (si * 4 + v) * BLEND_CELL_H + 1 + TILE_H))
+                    out.alpha_composite(cell, (ox + (x - y) * TILE_W // 2, (x + y) * TILE_H // 2))
     os.makedirs(PREVIEW, exist_ok=True)
-    sheet.save(os.path.join(PREVIEW, 'ground.png'))
+    out.save(os.path.join(PREVIEW, 'ground_blend.png'))
+    out.crop((W, 0, W + W // 2, H // 2)).resize((W, H), Image.NEAREST).save(os.path.join(PREVIEW, 'ground_blend_zoom.png'))
 
 
 # ---------------------------------------------------------------------------

@@ -158,9 +158,46 @@ body.tier-micro .toast-title, body.tier-compact .toast-title { font-size: 11px; 
 body.tier-micro .toast-sub, body.tier-compact .toast-sub { font-size: 12.5px; }
 `;
 
+/**
+ * THE WORD HAS THE FLOOR (it.115). `ui/Dialogue` puts this class on the body
+ * while its panel is up and fires this event on `document` when it closes.
+ * Named here as literals so the notices do not import the dialogue.
+ */
+const DIALOGUE_OPEN_CLASS = 'dialogue-open';
+const DIALOGUE_CLOSED_EVENT = 'dialogue:closed';
+const FLUSH_POLL_MS = 300;
+
+/**
+ * WHO ELSE HAS THE FLOOR (it.115): a cutscene (`body.cine`, where the stack
+ * is hidden and a notice would expire unseen) and the corner speech box
+ * (`#cine-speak.show`, which sits where the stack stands on a narrow screen)
+ * hold the notices exactly as the dialogue does.
+ */
+function floorTaken(): boolean {
+  const b = document.body.classList;
+  return b.contains(DIALOGUE_OPEN_CLASS) || b.contains('cine') || !!document.querySelector('#cine-speak.show');
+}
+
 export class ToastUI {
   private readonly root: HTMLElement;
   private readonly live = new Map<HTMLElement, number>();
+  /**
+   * HELD WHILE SOMEBODY IS TALKING (it.115). A quest that completes inside a
+   * conversation used to drop "QUEST COMPLETE" straight over the speaker's
+   * lines. A notice raised while `floorTaken()` waits here and is shown when
+   * the panel closes (or the scene ends) - on the close event, or on the poll.
+   */
+  private readonly held: ToastSpec[] = [];
+  /**
+   * A beat after the close, not on it: a conversation of several pages closes
+   * one panel and opens the next in a microtask, and a flush on the event
+   * itself would slip the notices in under the next page. By the time this
+   * runs the class is back on if there is more talking to do.
+   */
+  private readonly onClosed = (): void => {
+    window.setTimeout(() => this.flush(), 80);
+  };
+  private readonly poll: number;
 
   constructor() {
     if (!document.getElementById('toast-css')) {
@@ -172,9 +209,32 @@ export class ToastUI {
     this.root = document.createElement('div');
     this.root.id = 'toast-stack';
     document.body.appendChild(this.root);
+    document.addEventListener(DIALOGUE_CLOSED_EVENT, this.onClosed);
+    this.poll = window.setInterval(() => this.flush(), FLUSH_POLL_MS);
   }
 
-  show(spec: ToastSpec): HTMLElement {
+  /** How many notices wait for the dialogue to close (it.115). */
+  get pending(): number {
+    return this.held.length;
+  }
+
+  /** The held notices go up, oldest first, once nobody is talking. */
+  private flush(): void {
+    if (!this.held.length || floorTaken()) return;
+    const batch = this.held.splice(0, this.held.length);
+    for (const spec of batch) this.show(spec);
+  }
+
+  show(spec: ToastSpec): HTMLElement | null {
+    if (floorTaken()) {
+      // A keyed notice replaces its held twin, exactly as it would on screen.
+      if (spec.key) {
+        const i = this.held.findIndex((h) => h.key === spec.key);
+        if (i >= 0) this.held.splice(i, 1);
+      }
+      this.held.push(spec);
+      return null;
+    }
     const kind = spec.kind ?? 'info';
     const ms = spec.ms ?? readTime(`${spec.title} ${spec.sub ?? ''}`);
     if (spec.key) {
@@ -213,10 +273,14 @@ export class ToastUI {
   }
 
   clear(): void {
+    this.held.length = 0;
     for (const el of [...this.live.keys()]) this.dismiss(el, true);
   }
 
   destroy(): void {
+    document.removeEventListener(DIALOGUE_CLOSED_EVENT, this.onClosed);
+    window.clearInterval(this.poll);
+    this.held.length = 0;
     for (const t of this.live.values()) window.clearTimeout(t);
     this.live.clear();
     this.root.remove();

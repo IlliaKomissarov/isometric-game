@@ -24,7 +24,19 @@ What is written (all registered through `bakelib`):
   item_scroll_a..c      3 rolled scrolls, 3 tomes (+ spin_)
   item_tome_a..c
   item_weapon_<slug>    all 25 polyy weapons (+ spin_)
+  item_drink_<nnn>_<name>  the 105 polyy drinks (cans, bottles, soda bottles), keyed
+  spin_drink_<nnn>_<name>  by their pack number so a repeated name never collides;
+                        every one turns since it.115 (all 105 are poured)
+  item_potion_p<nnn>    THE CURIOS (it.115): every other polyy potion (156), icon +
+  spin_potion_p<nnn>    palette-quantized spin; its brew read from its colour
+  item_scroll_s<nnn>    every other scroll and tome (109), the same
+  spin_scroll_s<nnn>
+  item_ore_o<nn>        every other ore of `ores/Style1` (54) + flat spin
+  src/items/curios.gen.ts  the generated table `items/curios` turns into items
   arsenal_<id>          80 singles from the 64x64 masters (nearest)
+  spin_arsenal_<id>     a 16-frame flat turntable of each (nearest, it.115)
+  item_ore_<key>        the crafting materials from `ores/Style1` (64 px)
+  spin_ore_<key>        and their 16-frame flat turntables (it.115)
   coin_small/medium/large   Flare 'drop' bounce anims (nearest)
   item_coin_small/medium/large  the rested last frame of each
   coin_pile_a/b         32x32 OGA coin piles (nearest)
@@ -34,11 +46,17 @@ the polyy renders have hard, unoutlined edges); the spins are left as
 rendered.
 
 Usage:
-    python scripts/bake-items.py [--only food|potions|scrolls|weapons|arsenal|coins] [--preview] [--fetch-coins]
+    python scripts/bake-items.py [--only food|potions|scrolls|weapons|drinks|arsenal|ores|coins|curios] [--preview] [--fetch-coins]
+
+THE SPINS ARE STRIPS (it.115): `write_anim` lays a one-direction turntable
+as a single ROW of 30 trimmed cells, so the DOM steps it with one
+`background-position-x` animation (`.inv-spin`, steps(30)) - no separate
+`strip_*` bake is needed; the world reads the same sheet through spriteLib.
 """
 import argparse
 import csv
 import glob
+import json
 import os
 import re
 import shutil
@@ -54,14 +72,51 @@ import bakelib  # noqa: E402
 from bakelib import ATLAS, DROP, ROOT, contact_sheet, read_manifest  # noqa: E402
 
 
+def _swap_manifest():
+    """
+    THE HELD MANIFEST (it.115). A long-lived reader (the dev server, a browser
+    tab polling it) can hold `manifest.json` open without share-delete: then
+    REPLACING it (`os.replace`, what bakelib does) is refused for as long as
+    the handle lives, while RENAMING it away is allowed. bakelib wrote and
+    closed a complete `manifest.json.tmp` before it raised, so the swap is two
+    renames: the old file steps aside (the reader keeps its handle on it), the
+    new one takes the name. Returns False when there is no complete tmp.
+    """
+    man = bakelib.MANIFEST
+    tmp = man + '.tmp'
+    if not os.path.exists(tmp):
+        return False
+    try:
+        with open(tmp, 'r', encoding='utf-8') as f:
+            json.load(f)
+    except ValueError:
+        return False
+    old = man + '.old'
+    try:
+        if os.path.exists(old):
+            os.remove(old)
+    except OSError:
+        pass
+    os.rename(man, old)
+    os.rename(tmp, man)
+    try:
+        os.remove(old)
+    except OSError:
+        pass  # Still held; the next swap removes it.
+    return True
+
+
 def _retry(fn):
     """Other bakes read the manifest while this one replaces it; on Windows that
-    is a transient PermissionError on `os.replace`, so try again rather than die."""
+    is a transient PermissionError on `os.replace`, so try again rather than die -
+    and when the file is HELD rather than busy, swap it in by rename (it.115)."""
     def wrapped(*a, **kw):
         for attempt in range(20):
             try:
                 return fn(*a, **kw)
             except PermissionError:
+                if _swap_manifest():
+                    return None
                 if attempt == 19:
                     raise
                 time.sleep(0.25 * (attempt + 1))
@@ -76,6 +131,8 @@ FOOD = os.path.join(ITEMS, 'food', 'food_inventory_sprites_50_pack')
 WEAPONS = os.path.join(ITEMS, 'fantasy_weapon_sprites_25_pack')
 POTION_PACKS = [os.path.join(ITEMS, '2'), os.path.join(ITEMS, '2', '1'), os.path.join(ITEMS, '2', '2')]
 SCROLL_PACKS = [os.path.join(ITEMS, 'scrolls'), os.path.join(ITEMS, 'scrolls', 'part2')]
+DRINK_PACKS = [os.path.join(ITEMS, '1'), os.path.join(ITEMS, '1', 'part2')]
+ORES = os.path.join(ITEMS, 'ores', 'Style1')
 ARSENAL = os.path.join(ITEMS, 'The-Adventurers-Arsenal-v1.0.1')
 
 SCRATCH = os.environ.get('BAKE_ITEMS_SCRATCH') or os.path.join(
@@ -88,6 +145,7 @@ OGA_DIR = os.path.join(SCRATCH, 'oga')
 ICON_SIZE = 64      # the size the DOM cells draw at
 SPIN_SIZE = 96      # the turntable size baked for the spins
 FRAMES = 30         # rotation frames per turntable
+FLAT_FRAMES = 16    # frames of a generated flat turntable (Arsenal, ores; it.115)
 GRID_COLS = 8
 
 FLARE_LOOT = 'https://raw.githubusercontent.com/flareteam/flare-game/v1.14/mods/fantasycore/'
@@ -98,7 +156,7 @@ CREDITS = [
     'https://github.com/flareteam/flare-game/tree/v1.14/mods/fantasycore/images/loot',
     'Gold Treasure Icons (gold_0.png): Clint Bellanger, CC-BY-SA 3.0, '
     'https://opengameart.org/content/gold-treasure-icons',
-    'Food / weapon / potion / scroll turntables: polyy.ai, CC0',
+    'Food / weapon / potion / scroll / drink turntables: polyy.ai, CC0',
     "The Adventurer's Arsenal: RastalR standard asset licence v1.1 (no credit required, no redistribution of sources)",
 ]
 
@@ -154,6 +212,28 @@ SCROLLS = {
     'tome_b': 73,    # sapphire-arcane: blue arcane tome
     'tome_c': 46,    # dusty-secret: grey, old
 }
+
+#: THE ALES (it.115): the drinks the registry pours (`ALES`) - only these carry a
+#: spin; the other 95 drinks keep their 64 px single (a 96 px strip is ~170 KB).
+DRINK_SPINS = {
+    '016_griffin', '017_dragon', '019_wolfsun', '021_starforge', '047_ambercrown',
+    '048_knightshield', '050_bloodorange', '055_emeraldforest', '061_bronzerune', '063_druidwoodland',
+}
+
+#: THE MATERIALS (it.115): game material id -> ore number in `ores/Style1` (the
+#: painted style; styles 2-9 are pixelations of the same rocks).
+ORE_ART = {
+    'iron_scrap': 10,   # silver-grey metal lump
+    'arcane_dust': 11,  # bright blue crystal
+    'essence': 28,      # teal crystal prism
+    'alloy_shard': 21,  # violet amethyst
+    'catalyst': 48,     # the golden geode
+}
+
+#: THE CURIOS (it.115): a new strip is saved with a 256-colour palette (a 96 px
+#: polyy strip drops from ~270 KB to ~65 KB with no visible banding).
+QUANTIZE_NEW = True
+CURIO_TS = os.path.join(ROOT, 'src', 'items', 'curios.gen.ts')
 
 #: Flare loot strips: key -> (png, animation txt)
 COINS = {
@@ -235,6 +315,83 @@ def bake_turntable(icon_name, spin_name, icon_path, spin_path, preview):
     spin = grid_frames(spin_path, SPIN_SIZE)
     write_anim(spin_name, {0: spin}, nearest=False)
     return icon, spin
+
+
+def flat_turntable(im, n=FLAT_FRAMES, nearest=True, swing=55.0):
+    """
+    A TURNTABLE FOR FLAT ART (it.115). The Arsenal masters and the ores are
+    single drawings; the cell still has to turn. A full flip showed the
+    drawing edge-on (a sliver) two frames in sixteen, so the drawing ROCKS
+    instead: it turns `swing` degrees each way on a sine, its width follows
+    cos (never under 57%), the far half of the turn darkens a little and a
+    faint sheen crosses it as it comes face-on. It loops without a seam.
+    """
+    im = im.convert('RGBA')
+    w, h = im.size
+    resample = Image.NEAREST if nearest else Image.LANCZOS
+    frames = []
+    for i in range(n):
+        ang = np.radians(swing) * np.sin(2 * np.pi * i / n)
+        c = float(np.cos(ang))
+        nw = max(2, int(round(w * c)))
+        f = np.array(im.resize((nw, h), resample)).astype(np.float32)
+        shade = 0.78 + 0.22 * c
+        sheen = c ** 12 * 0.14
+        f[:, :, :3] = np.clip(f[:, :, :3] * shade + 255 * sheen, 0, 255)
+        cell = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+        fi = Image.fromarray(f.astype(np.uint8), 'RGBA')
+        # The drawing hinges at its centre; a turn toward the viewer's right shifts the narrow face that way.
+        off = (w - nw) // 2 + int(round(np.sin(ang) * (w - nw) * 0.35))
+        cell.paste(fi, (max(0, min(w - nw, off)), 0), fi)
+        frames.append(cell)
+    return frames
+
+
+def quantize_file(name):
+    """Re-save an anim sheet with a 256-colour palette (alpha kept) - it.115."""
+    if not QUANTIZE_NEW:
+        return
+    path = os.path.join(ATLAS, name + '.png')
+    im = Image.open(path).convert('RGBA')
+    im.quantize(256, method=Image.Quantize.FASTOCTREE, dither=Image.Dither.NONE).save(path, optimize=True)
+
+
+def brew_of(im):
+    """
+    WHAT A BOTTLE POURS, BY ITS COLOUR (it.115). The saturation-weighted mean
+    hue of the painted pixels: red heals, blue restores, violet does both,
+    green hastens, orange and gold pour might, and a pale or grey vessel
+    turns blows (stone).
+    """
+    a = np.array(im.convert('RGBA')).astype(np.float32) / 255.0
+    m = a[:, :, 3] > 0.5
+    rgb = a[:, :, :3][m]
+    if not len(rgb):
+        return 'stone'
+    mx, mn = rgb.max(1), rgb.min(1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    r, g, b = rgb[:, 0], rgb[:, 1], rgb[:, 2]
+    d = np.maximum(mx - mn, 1e-6)
+    h = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+    w = sat * mx
+    if sat.mean() < 0.2 or w.sum() < 1e-3:
+        return 'stone'
+    ang = np.radians(h)
+    hue = (np.degrees(np.arctan2((np.sin(ang) * w).sum(), (np.cos(ang) * w).sum())) + 360) % 360
+    if hue < 18 or hue >= 335:
+        return 'heal'
+    if hue < 58:
+        return 'might'
+    if hue < 165:
+        return 'haste'
+    if hue < 255:
+        return 'mana'
+    return 'elixir'
+
+
+def title_of(words):
+    """`sea-witch` / `herbal_healer` -> `Sea-Witch` / `Herbal Healer`."""
+    return ' '.join('-'.join(p[:1].upper() + p[1:] for p in w.split('-')) for w in words.replace('_', ' ').split())
 
 
 def icon_grid(icons, path, cols=10, cell=64):
@@ -336,6 +493,43 @@ def bake_weapons(preview):
     return names
 
 
+def drink_key(item):
+    """`drinks-016-bottle-griffin` -> `016_griffin` (the number keeps repeated names apart)."""
+    m = re.match(r'drinks-(\d{3})-(?:soda-bottle|bottle|can)-(.+)$', item)
+    assert m, 'unexpected drink name %s' % item
+    return '%s_%s' % (m.group(1), slug(m.group(2)))
+
+
+def bake_drinks(preview):
+    """THE DRINKS (it.115): every turntable in `1/` and `1/part2/`, icon and spin, like the food."""
+    names, icons, spins = [], [], []
+    DRINK_ROWS.clear()
+    files = []
+    for p in DRINK_PACKS:
+        files += sorted(glob.glob(os.path.join(p, 'sprite', '%dpx_studio' % ICON_SIZE, 'drinks-*_nopalette.png')))
+    assert len(files) == 105, 'expected 105 drinks, found %d' % len(files)
+    for f in files:
+        item = os.path.basename(f)[:-len('_nopalette.png')]
+        pack = os.path.dirname(os.path.dirname(os.path.dirname(f)))
+        key = drink_key(item)
+        # EVERY DRINK TURNS (it.115): the ten ales keep their full-colour strips, the rest are quantized.
+        icon, spin = bake_turntable('item_drink_' + key, 'spin_drink_' + key,
+                                    turntable(pack, item, ICON_SIZE), turntable(pack, item, SPIN_SIZE), preview)
+        if key not in DRINK_SPINS:
+            quantize_file('spin_drink_' + key)
+        names += ['item_drink_' + key, 'spin_drink_' + key]
+        spins.append(spin)
+        m = re.match(r'drinks-\d{3}-(soda-bottle|bottle|can)-(.+)$', item)
+        DRINK_ROWS.append((key, title_of(m.group(2)), m.group(1).replace('soda-bottle', 'soda'), brew_of(icon)))
+        icons.append((key, icon))
+        print('  drink %-22s <- %s%s' % (key, item, ' (spin)' if key in DRINK_SPINS else ''))
+    assert len(files) == len(spins), 'a drink went unspun'
+    if preview:
+        icon_grid(icons, os.path.join(PREVIEW_DIR, 'preview_drink_icons.png'), cols=15)
+        spin_sheet(spins[:40], os.path.join(PREVIEW_DIR, 'preview_drink_spin.png'))
+    return names
+
+
 def bake_arsenal(preview):
     names, icons = [], []
     src_csv = os.path.join(ARSENAL, 'metadata', 'items.csv')
@@ -346,14 +540,159 @@ def bake_arsenal(preview):
         im = Image.open(os.path.join(ARSENAL, r['master_64'])).convert('RGBA')
         assert im.size == (64, 64), '%s: %s' % (r['id'], im.size)
         write_single('arsenal_' + r['id'], im, nearest=True)
-        names.append('arsenal_' + r['id'])
+        write_anim('spin_arsenal_' + r['id'], {0: flat_turntable(im)}, nearest=True)
+        names += ['arsenal_' + r['id'], 'spin_arsenal_' + r['id']]
         icons.append((r['id'], im))
     dst = os.path.join(ROOT, 'docs', 'arsenal-items.csv')
     shutil.copyfile(src_csv, dst)
     print('  %d arsenal icons; csv -> %s' % (len(rows), dst))
     if preview:
         icon_grid(icons, os.path.join(PREVIEW_DIR, 'preview_arsenal_icons.png'), cols=10)
+        spin_sheet([flat_turntable(im) for _, im in icons[:24]], os.path.join(PREVIEW_DIR, 'preview_arsenal_spin.png'))
     return names
+
+
+def ore_icon(n):
+    """A Style1 rock, cropped to its paint, squared with a margin, at 64 px."""
+    src = Image.open(os.path.join(ORES, '%d_256_style1.png' % n)).convert('RGBA')
+    box = src.getbbox()
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    side = max(bw, bh) + 8
+    sq = Image.new('RGBA', (side, side), (0, 0, 0, 0))
+    sq.paste(src.crop(box), ((side - bw) // 2, (side - bh) // 2))
+    return sq.resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
+
+
+def bake_ores(preview):
+    """THE MATERIALS (it.115): five painted ores at 64 px, each with a flat turntable."""
+    names, icons, spins = [], [], []
+    for key, n in ORE_ART.items():
+        icon = ore_icon(n)
+        write_single('item_ore_' + key, icon, nearest=False)
+        spin = flat_turntable(icon, nearest=False)
+        write_anim('spin_ore_' + key, {0: spin}, nearest=False)
+        names += ['item_ore_' + key, 'spin_ore_' + key]
+        icons.append((key, icon))
+        spins.append(spin)
+        print('  ore %-12s <- %d_256_style1.png' % (key, n))
+    # The curio ores' turntables too (their rows are written by `curios`).
+    for n in ORE_NUMBERS:
+        key = 'o%02d' % n
+        icon = ore_icon(n)
+        write_single('item_ore_' + key, icon, nearest=False)
+        write_anim('spin_ore_' + key, {0: flat_turntable(icon, nearest=False)}, nearest=False)
+        quantize_file('spin_ore_' + key)
+        names += ['item_ore_' + key, 'spin_ore_' + key]
+    if preview:
+        icon_grid(icons, os.path.join(PREVIEW_DIR, 'preview_ore_icons.png'), cols=5)
+        spin_sheet(spins, os.path.join(PREVIEW_DIR, 'preview_ore_spin.png'))
+    return names
+
+
+#: Rows the curio group writes to `curios.gen.ts` (drinks fill theirs in `bake_drinks`).
+DRINK_ROWS = []
+
+#: THE OTHER ORES (it.115): every Style1 rock not in ORE_ART.
+ORE_NUMBERS = [n for n in range(1, 60) if n not in ORE_ART.values()]
+
+
+def bake_curios(preview):
+    """
+    THE CURIOS (it.115). Everything else the drop holds: 156 potions, 109
+    scrolls and tomes, 54 ores - each an icon and a palette-quantized spin -
+    and `src/items/curios.gen.ts`, the table `items/curios` turns into items
+    (the brew of each bottle and scroll read from its colour by `brew_of`).
+    The drinks' rows come from `bake_drinks`, which this group runs first.
+    """
+    names = bake_drinks(preview)
+    potion_rows, scroll_rows, ore_rows = [], [], []
+    picked = set(POTIONS.values())
+    files = []
+    for p in POTION_PACKS:
+        files += glob.glob(os.path.join(p, 'sprite', '%dpx_studio' % ICON_SIZE, 'potion_*_nopalette.png'))
+    icons = []
+    for f in sorted(files, key=lambda f: int(os.path.basename(f).split('_')[1])):
+        item = os.path.basename(f)[:-len('_nopalette.png')]
+        m = re.match(r'potion_(\d+)_(.+)$', item)
+        n = int(m.group(1))
+        if n in picked:
+            continue
+        pack = os.path.dirname(os.path.dirname(os.path.dirname(f)))
+        key = 'p%03d' % n
+        icon, _ = bake_turntable('item_potion_' + key, 'spin_potion_' + key, f, turntable(pack, item, SPIN_SIZE), preview)
+        quantize_file('spin_potion_' + key)
+        names += ['item_potion_' + key, 'spin_potion_' + key]
+        potion_rows.append((key, title_of(m.group(2)), brew_of(icon)))
+        icons.append((key, icon))
+        print('  potion %s %-26s %s' % (key, m.group(2), potion_rows[-1][2]))
+    assert len(potion_rows) == 170 - len(picked), 'expected %d curio potions, found %d' % (170 - len(picked), len(potion_rows))
+    picked = set(SCROLLS.values())
+    files = []
+    for p in SCROLL_PACKS:
+        files += glob.glob(os.path.join(p, 'sprite', '%dpx_studio' % ICON_SIZE, '*_nopalette.png'))
+    for f in sorted(files, key=lambda f: int(os.path.basename(f).split('_')[0])):
+        item = os.path.basename(f)[:-len('_nopalette.png')]
+        m = re.match(r'(\d+)_(unrolled-scroll|rolled-scroll|tome)_(.+)$', item)
+        assert m, item
+        n = int(m.group(1))
+        if n in picked:
+            continue
+        pack = os.path.dirname(os.path.dirname(os.path.dirname(f)))
+        key = 's%03d' % n
+        icon, _ = bake_turntable('item_scroll_' + key, 'spin_scroll_' + key, f, turntable(pack, item, SPIN_SIZE), preview)
+        quantize_file('spin_scroll_' + key)
+        names += ['item_scroll_' + key, 'spin_scroll_' + key]
+        scroll_rows.append((key, title_of(m.group(3)), 'tome' if m.group(2) == 'tome' else 'scroll', brew_of(icon)))
+        icons.append((key, icon))
+        print('  scroll %s %-26s %s' % (key, m.group(3), scroll_rows[-1][3]))
+    assert len(scroll_rows) == 115 - len(picked), 'expected %d curio scrolls, found %d' % (115 - len(picked), len(scroll_rows))
+    for n in ORE_NUMBERS:
+        key = 'o%02d' % n
+        icon = ore_icon(n)
+        write_single('item_ore_' + key, icon, nearest=False)
+        write_anim('spin_ore_' + key, {0: flat_turntable(icon, nearest=False)}, nearest=False)
+        quantize_file('spin_ore_' + key)
+        names += ['item_ore_' + key, 'spin_ore_' + key]
+        ore_rows.append((key, n))
+        icons.append((key, icon))
+    print('  %d potions, %d scrolls, %d ores' % (len(potion_rows), len(scroll_rows), len(ore_rows)))
+    write_curio_table(potion_rows, scroll_rows, ore_rows)
+    if preview:
+        icon_grid(icons, os.path.join(PREVIEW_DIR, 'preview_curio_icons.png'), cols=20)
+    return names
+
+
+def write_curio_table(potions, scrolls, ores):
+    def q(v):
+        return json.dumps(v, ensure_ascii=False).replace('"', "'")
+    out = [
+        '/**',
+        ' * @module items/curios.gen',
+        ' * GENERATED by `scripts/bake-items.py --only curios` (it.115) - do not edit by hand.',
+        ' * Every drink, potion, scroll and ore of the item drop the bake turned into an',
+        ' * icon (`item_*`) and a spin (`spin_*`); `brew` is read from the colour of the art.',
+        ' * `items/curios` turns these rows into items.',
+        ' */',
+        '',
+        "export type CurioBrew = 'heal' | 'mana' | 'elixir' | 'haste' | 'might' | 'stone';",
+        '',
+        '/** [key, title, vessel, brew] - `item_drink_<key>` / `spin_drink_<key>`. */',
+        "export const GEN_DRINKS: ReadonlyArray<readonly [string, string, 'can' | 'bottle' | 'soda', CurioBrew]> = [",
+    ]
+    out += ['  [%s, %s, %s, %s],' % (q(k), q(t), q(v), q(b)) for k, t, v, b in DRINK_ROWS]
+    out += ['];', '', '/** [key, title, brew] - `item_potion_<key>` / `spin_potion_<key>`. */',
+            'export const GEN_POTIONS: ReadonlyArray<readonly [string, string, CurioBrew]> = [']
+    out += ['  [%s, %s, %s],' % (q(k), q(t), q(b)) for k, t, b in potions]
+    out += ['];', '', '/** [key, title, form, brew] - `item_scroll_<key>` / `spin_scroll_<key>`. */',
+            "export const GEN_SCROLLS: ReadonlyArray<readonly [string, string, 'scroll' | 'tome', CurioBrew]> = ["]
+    out += ['  [%s, %s, %s, %s],' % (q(k), q(t), q(f), q(b)) for k, t, f, b in scrolls]
+    out += ['];', '', '/** [key, rock number in ores/Style1] - `item_ore_<key>` / `spin_ore_<key>`. */',
+            'export const GEN_ORES: ReadonlyArray<readonly [string, number]> = [']
+    out += ['  [%s, %d],' % (q(k), n) for k, n in ores]
+    out += ['];', '']
+    with open(CURIO_TS, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(out))
+    print('  table ->', CURIO_TS)
 
 
 def fetch_coins():
@@ -435,8 +774,11 @@ GROUPS = {
     'potions': bake_potions,
     'scrolls': bake_scrolls,
     'weapons': bake_weapons,
+    'drinks': bake_drinks,
     'arsenal': bake_arsenal,
+    'ores': bake_ores,
     'coins': bake_coins,
+    'curios': bake_curios,
 }
 
 
@@ -481,7 +823,7 @@ def main():
     if args.fetch_coins:
         fetch_coins()
         return
-    groups = args.only or ['food', 'potions', 'scrolls', 'weapons', 'arsenal', 'coins']
+    groups = args.only or ['food', 'potions', 'scrolls', 'weapons', 'curios', 'arsenal', 'ores', 'coins']  # curios bakes the drinks first
     if args.preview:
         os.makedirs(PREVIEW_DIR, exist_ok=True)
     all_names = []

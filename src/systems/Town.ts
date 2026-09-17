@@ -24,7 +24,7 @@ import { ITEMS, itemValue, type ItemDef } from '@/items/catalog';
 import { ilvlForDepth, itemDef, rollGear } from '@/items/instance';
 import { ENCHANTS } from '@/items/effects';
 import type { StashState } from '@/persist/SaveGame';
-import { foodsOfTier, gearBases } from '@/items/registry';
+import { CURIO_DRINKS, CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS, foodsOfTier, gearBases } from '@/items/registry';
 import { mulberry32 } from '@/utils/rng';
 
 /**
@@ -146,6 +146,11 @@ export class TownSystem {
       return pool[Math.floor(rand() * pool.length)].id;
     };
     alch.push(pick('snack'), pick('snack'), pick('snack'), pick('meal'));
+    // THE CURIO SHELF (it.115): three of the bake's other flasks, and an ore or two for the forge.
+    const any = (family: ItemDef[]): string => family[Math.floor(rand() * family.length)].id;
+    alch.push(any(CURIO_POTIONS), any(CURIO_POTIONS), any(CURIO_POTIONS), any(CURIO_ORES));
+    if (deepestFloor >= 3) alch.push('hunters_antidote', 'potion_focus', any(CURIO_ORES));
+    if (deepestFloor >= 6) alch.push('potion_frostward', 'potion_void');
     this.stockAlch = alch.filter((id) => id in ITEMS);
     // THE TAVERN KEEPER'S LARDER (it.114): bread and pretzels always, six snacks,
     // five meals, and a feast or two once the crypt has been walked a way.
@@ -155,6 +160,8 @@ export class TownSystem {
     tavern.push(pick('feast'));
     if (deepestFloor >= 3) tavern.push(pick('feast'));
     if (deepestFloor >= 6) tavern.push('food_whole_roast_chicken', pick('meal'));
+    // THE TAPS (it.115): four of the bake's bottles and tins behind the bar.
+    for (let i = 0; i < 4; i++) tavern.push(CURIO_DRINKS[Math.floor(rand() * CURIO_DRINKS.length)].id);
     this.stockTavern = tavern.filter((id) => id in ITEMS);
     // THE MARKET WARD (it.84). The JEWELER: five rolled rings and amulets, a
     // silver band for the fresh delver. The SCRIBE: recipe scrolls the depth
@@ -165,6 +172,8 @@ export class TownSystem {
     for (let i = 0; i < 5; i++) jewel.push(rollGear(rand, ilvl, { slot: 'ring', floor: 'uncommon', weights: { uncommon: 45, rare: 40, epic: 13, legendary: 2 } }));
     this.stockJewel = [...new Set(jewel.filter((id) => !!itemDef(id)))];
     const scribe: string[] = ['potion_might', 'greater_mana', 'rejuvenation'];
+    // THE SCRIBE'S SHELF (it.115): three scrolls or tomes of the bake.
+    for (let i = 0; i < 3; i++) scribe.push(CURIO_SCROLLS[Math.floor(rand() * CURIO_SCROLLS.length)].id);
     const allowed = Object.values(ENCHANTS).filter((r) => r.depth <= Math.max(2, deepestFloor)).map((r) => r.key);
     for (let i = 0; i < 3 && allowed.length; i++) scribe.push(`recipe_${allowed.splice(Math.floor(rand() * allowed.length), 1)[0]}`);
     this.stockScribe = scribe.filter((id) => !!itemDef(id));

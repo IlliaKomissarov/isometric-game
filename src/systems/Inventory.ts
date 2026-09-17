@@ -5,37 +5,29 @@
  * player directly — it enqueues commands, keeping equipment changes inside
  * the tick pipeline (and therefore co-op-replicable).
  *
- * FOOD AND HUNGER (it.114). Food is eaten through the same path as a
- * draught (`useIndex`), on its own short cooldown, and unlike a draught its
- * healing is SERVED OVER THREE SECONDS: `tickHunger` (once per sim tick,
- * from main) doles the bite out in six slices through the `feed` hook (or
- * the `heal` hook when nobody wired `feed`). Every bite raises HUNGER, a
- * 0..100 gauge kept HERE (the system already holds the belt and the
- * cooldowns; the player entity is not this module's to change):
- *
- *   100 = well fed · decays one point every 40 s ON DUNGEON FLOORS only
- *   < 50  HUNGRY   · a warning, nothing else
- *   < 25  STARVING · regeneration stops (`regenMult` = 0) and every blow the
- *                    hero lands loses a tenth (`hungerMalus` = 0.1)
- *   ≥ 95  FULL     · a feast eaten here heals to FULL ("if you have a lot,
- *                    you can fully heal")
- *
- * The number is simulation state (it rides the save and a co-op snapshot);
- * the HUD reads it through `InventorySystem.of(player)`.
+ * FOOD (it.114, hunger removed it.115). Food is eaten through the same path
+ * as a draught (`useIndex`), on its own short cooldown, and unlike a draught
+ * its healing is SERVED OVER THREE SECONDS: `tick` (once per sim tick, from
+ * main) doles the bite out in six slices through the `feed` hook (or the
+ * `heal` hook when nobody wired `feed`). A dish also pours its tier's brews
+ * — a meal MIGHT, a feast STONE SKIN and HASTE — through exactly the code a
+ * Draught of Might or Haste runs (`applyBrews`), so the HUD's buff cues and
+ * auras fire the same way. There is no belly to fill and nothing to starve:
+ * the owner asked for food that heals and buffs, not a hunger clock.
  */
 
 import { eventBus } from '@/core/EventBus';
 import type { InputCommand } from '@/core/InputQueue';
 import type { Player } from '@/entities/Player';
 import { decodeItemId, itemDef } from '@/items/instance';
-import type { FoodTier, ItemDef } from '@/items/catalog';
+import { FOOD_TIER, type FoodTier, type ItemDef } from '@/items/catalog';
 
 /** Effects a consumable may trigger — wired by main (heal goes through Combat). */
 export interface UseHooks {
   heal: (fraction: number) => void;
   restore: (fraction: number) => void;
   portal: () => boolean;
-  /** A timed brew took hold (it.80): the HUD's cue. */
+  /** A timed brew took hold (it.80): the HUD's cue. A dish's brews arrive here too (it.115). */
   buff?: (kind: 'haste' | 'stone' | 'might', ticks: number) => void;
   /** A recipe scroll was read (it.80). */
   learned?: (key: string) => void;
@@ -47,8 +39,10 @@ export interface UseHooks {
    * bite itself announced it. Falls back to `heal` when absent.
    */
   feed?: (fraction: number) => void;
-  /** A bite was taken (it.114): the label and the crumbs over the hero. The UI plays the sound. */
-  eat?: (def: ItemDef, hunger: number, full: boolean) => void;
+  /** A bite was taken (it.114): the label and the crumbs over the hero. The UI plays the sound. `tier` says what was eaten (it.115). */
+  eat?: (def: ItemDef, tier: FoodTier) => void;
+  /** An ore went into the pouch (it.115): the notice. */
+  smelted?: (def: ItemDef, material: string, count: number) => void;
 }
 
 /** Draught cooldowns by category (ticks): healing 5 s, resource 2 s, brews 1 s, food 1.5 s. */
@@ -58,49 +52,30 @@ export type QuaffCategory = keyof typeof QUAFF_COOLDOWN;
 
 /** Which cooldown a draught (or a dish) runs on. */
 export function quaffCategory(use: NonNullable<ItemDef['use']>): QuaffCategory | null {
-  if (use.portal || use.recipe) return null;
+  if (use.portal || use.recipe || use.smelt) return null;
   if (use.food) return 'food';
   if (use.heal) return 'heal';
   if (use.resource) return 'resource';
   return 'buff';
 }
 
-// ---- HUNGER (it.114) ---------------------------------------------------------------
+// ---- FOOD (it.114 / it.115) ---------------------------------------------------------
 
-export const HUNGER_MAX = 100;
-/** One point lost every 40 s on a dungeon floor (2,400 ticks at 60 Hz). */
-export const HUNGER_DECAY_TICKS = 40 * 60;
-/** Under this the hero is HUNGRY: a warning on the gauge. */
-export const HUNGER_HUNGRY = 50;
-/** Under this the hero is STARVING: no regeneration, a tenth off every blow. */
-export const HUNGER_STARVING = 25;
-/** At or over this the hero is FULL: a feast heals to full. */
-export const HUNGER_FULL = 95;
-/** The damage lost while starving. */
-export const STARVING_MALUS = 0.1;
 /** A bite's healing is served in this many slices over this many ticks. */
 export const FEED_TICKS = 180;
 export const FEED_SLICES = 6;
 
-export type HungerState = 'fed' | 'hungry' | 'starving';
+/** What each tier does when eaten (the catalog's table, here so the UI needs no registry import). */
+export const FOOD_EFFECT: Record<FoodTier, { heal: number; might?: number; stone?: number; haste?: number }> = {
+  snack: { heal: FOOD_TIER.snack.heal, might: FOOD_TIER.snack.might, stone: FOOD_TIER.snack.stone, haste: FOOD_TIER.snack.haste },
+  meal: { heal: FOOD_TIER.meal.heal, might: FOOD_TIER.meal.might, stone: FOOD_TIER.meal.stone, haste: FOOD_TIER.meal.haste },
+  feast: { heal: FOOD_TIER.feast.heal, might: FOOD_TIER.feast.might, stone: FOOD_TIER.feast.stone, haste: FOOD_TIER.feast.haste },
+};
 
-export function hungerStateOf(hunger: number): HungerState {
-  return hunger < HUNGER_STARVING ? 'starving' : hunger < HUNGER_HUNGRY ? 'hungry' : 'fed';
-}
-
-export const HUNGER_WORD: Record<HungerState, string> = { fed: 'WELL FED', hungry: 'HUNGRY', starving: 'STARVING' };
-
-/** What each tier does when eaten (mirrors the registry's FOOD_TIER; here so the UI needs no registry import). */
-export const FOOD_EFFECT: Record<FoodTier, { heal: number; hunger: number }> = { snack: { heal: 0.08, hunger: 15 }, meal: { heal: 0.15, hunger: 35 }, feast: { heal: 0.3, hunger: 70 } };
-
-/** Every live system by its hero: the HUD reads hunger through this, never through the player. */
+/** Every live system by its hero: the HUD reads the bite in progress through this, never through the player. */
 const BY_PLAYER = new WeakMap<Player, InventorySystem>();
 
 export class InventorySystem {
-  /** HUNGER (it.114): 0..100, 100 = well fed. Saved and restored by main. */
-  hunger = HUNGER_MAX;
-  /** Ticks toward the next point of decay. */
-  private hungerClock = 0;
   /** The bite being served: slices left and the fraction each slice heals. */
   private feedLeft = 0;
   private feedFraction = 0;
@@ -118,50 +93,18 @@ export class InventorySystem {
     return player ? BY_PLAYER.get(player) : undefined;
   }
 
-  get hungerState(): HungerState {
-    return hungerStateOf(this.hunger);
-  }
-
-  /** The damage lost to an empty belly: 0.1 while starving, else 0 (main applies it). */
-  hungerMalus(): number {
-    return this.hungerState === 'starving' ? STARVING_MALUS : 0;
-  }
-
-  /** Multiplier on health regeneration: 0 while starving, else 1 (main applies it). */
-  regenMult(): number {
-    return this.hungerState === 'starving' ? 0 : 1;
-  }
-
   /** A bite is still being served (the HUD's little regen mark). */
   get feeding(): boolean {
     return this.feedLeft > 0;
   }
 
-  /**
-   * ONCE PER SIM TICK (main): the belly empties on dungeon floors only, and
-   * a bite in progress serves its next slice. Never below zero.
-   */
-  tickHunger(onDungeonFloor: boolean): void {
-    if (onDungeonFloor && this.player.hp > 0) {
-      if (++this.hungerClock >= HUNGER_DECAY_TICKS) {
-        this.hungerClock = 0;
-        if (this.hunger > 0) {
-          const was = this.hungerState;
-          this.hunger--;
-          if (this.hungerState !== was) eventBus.emit('inventory:changed', {}); // The panel's word changed.
-        }
-      }
-    }
+  /** ONCE PER SIM TICK (main): a bite in progress serves its next slice. */
+  tick(): void {
     if (this.feedLeft > 0 && ++this.feedClock >= FEED_TICKS / FEED_SLICES) {
       this.feedClock = 0;
       this.feedLeft--;
       if (this.player.hp > 0) (this.hooks.feed ?? this.hooks.heal)(this.feedFraction);
     }
-  }
-
-  /** Restore the gauge from a save (clamped). */
-  setHunger(v: number): void {
-    this.hunger = Math.max(0, Math.min(HUNGER_MAX, Math.round(Number.isFinite(v) ? v : HUNGER_MAX)));
   }
 
   /** Drink/read/eat a backpack consumable (it.39; food it.114). Returns true when consumed. */
@@ -186,6 +129,11 @@ export class InventorySystem {
       }
       this.player.quaffCd.set(cat, QUAFF_COOLDOWN[cat]);
     }
+    if (def.use.smelt) {
+      // AN ORE (it.115): into the pouch, no cooldown.
+      this.player.addMaterial(def.use.smelt.material, def.use.smelt.count);
+      this.hooks.smelted?.(def, def.use.smelt.material, def.use.smelt.count);
+    }
     if (def.use.recipe) {
       this.player.recipes.add(def.use.recipe);
       this.hooks.learned?.(def.use.recipe);
@@ -194,25 +142,7 @@ export class InventorySystem {
     if (def.use.food) this.eat(def, def.use.food);
     if (def.use.heal) this.hooks.heal(def.use.heal);
     if (def.use.resource) this.hooks.restore(def.use.resource);
-    const p = this.player;
-    if (def.use.haste) {
-      p.hasteTicks = Math.max(p.hasteTicks, def.use.haste);
-      p.hasteMult = Math.max(p.hasteMult, 1.3);
-      p.buffMax.haste = Math.max(p.buffMax.haste, def.use.haste);
-      this.hooks.buff?.('haste', def.use.haste);
-    }
-    if (def.use.stone) {
-      p.drTicks = Math.max(p.drTicks, def.use.stone);
-      p.drFrac = Math.max(p.drFrac, 0.4);
-      p.buffMax.dr = Math.max(p.buffMax.dr, def.use.stone);
-      this.hooks.buff?.('stone', def.use.stone);
-    }
-    if (def.use.might) {
-      p.dmgBuffTicks = Math.max(p.dmgBuffTicks, def.use.might);
-      p.dmgBuffMult = Math.max(p.dmgBuffMult, 1.25);
-      p.buffMax.dmg = Math.max(p.buffMax.dmg, def.use.might);
-      this.hooks.buff?.('might', def.use.might);
-    }
+    this.applyBrews(def.use);
     this.player.backpack.splice(index, 1);
     eventBus.emit('inventory:changed', {});
     eventBus.emit('item:used', { itemId: def.id });
@@ -220,26 +150,45 @@ export class InventorySystem {
   }
 
   /**
-   * A BITE (it.114). The gauge rises by the tier; the healing is queued in
-   * slices (a bite already being served is topped up, not lost). A feast on
-   * a full belly heals to full at once.
+   * THE BREWS (it.80, shared with food it.115): haste, stone skin and might
+   * in ticks. Each refreshes to the longer of what is running and what was
+   * poured; the HUD's `buff` cue fires for each.
+   */
+  private applyBrews(use: { haste?: number; stone?: number; might?: number }): void {
+    const p = this.player;
+    if (use.haste) {
+      p.hasteTicks = Math.max(p.hasteTicks, use.haste);
+      p.hasteMult = Math.max(p.hasteMult, 1.3);
+      p.buffMax.haste = Math.max(p.buffMax.haste, use.haste);
+      this.hooks.buff?.('haste', use.haste);
+    }
+    if (use.stone) {
+      p.drTicks = Math.max(p.drTicks, use.stone);
+      p.drFrac = Math.max(p.drFrac, 0.4);
+      p.buffMax.dr = Math.max(p.buffMax.dr, use.stone);
+      this.hooks.buff?.('stone', use.stone);
+    }
+    if (use.might) {
+      p.dmgBuffTicks = Math.max(p.dmgBuffTicks, use.might);
+      p.dmgBuffMult = Math.max(p.dmgBuffMult, 1.25);
+      p.buffMax.dmg = Math.max(p.buffMax.dmg, use.might);
+      this.hooks.buff?.('might', use.might);
+    }
+  }
+
+  /**
+   * A BITE (it.114, buffs it.115). The healing is queued in slices (a bite
+   * already being served is topped up, not lost), and the tier's brews are
+   * poured: a meal MIGHT, a feast STONE SKIN and HASTE.
    */
   private eat(def: ItemDef, food: NonNullable<NonNullable<ItemDef['use']>['food']>): void {
-    const wasFull = this.hunger >= HUNGER_FULL;
-    this.hunger = Math.min(HUNGER_MAX, this.hunger + food.hunger);
-    let fraction = food.heal;
-    if (wasFull && food.tier === 'feast') {
-      fraction = 1;
-      this.hooks.heal(1); // Straight to full: the one instant heal food gives.
-      this.feedLeft = 0;
-    } else {
-      // Top up: whatever is still owed joins the new bite, served over a fresh three seconds.
-      const owed = this.feedLeft * this.feedFraction;
-      this.feedFraction = (owed + fraction) / FEED_SLICES;
-      this.feedLeft = FEED_SLICES;
-      this.feedClock = 0;
-    }
-    this.hooks.eat?.(def, food.hunger, wasFull && food.tier === 'feast');
+    // Top up: whatever is still owed joins the new bite, served over a fresh three seconds.
+    const owed = this.feedLeft * this.feedFraction;
+    this.feedFraction = (owed + food.heal) / FEED_SLICES;
+    this.feedLeft = FEED_SLICES;
+    this.feedClock = 0;
+    this.applyBrews(FOOD_TIER[food.tier]);
+    this.hooks.eat?.(def, food.tier);
   }
 
   /** Apply one tick's drained commands (shares the array with MovementSystem). */
@@ -314,5 +263,5 @@ export class InventorySystem {
 /** What may ride the belt: any draught but a portal or a recipe, and any dish (it.114). */
 export function beltable(def: ItemDef): boolean {
   if (def.slot === 'food') return !!def.use?.food;
-  return def.slot === 'consumable' && !def.use?.portal && !def.use?.recipe && !def.use?.key;
+  return def.slot === 'consumable' && !def.use?.portal && !def.use?.recipe && !def.use?.key && !def.use?.smelt;
 }

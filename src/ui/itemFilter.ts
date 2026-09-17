@@ -12,7 +12,7 @@
  * spotted at a glance. The codex explains the colours.
  */
 
-import { RARITY_ORDER, type ItemDef } from '@/items/catalog';
+import { RARITY_ORDER, kindWord, type ItemDef } from '@/items/catalog';
 import { itemValue } from '@/items/catalog';
 
 export type FilterKey = 'all' | 'weapon' | 'armor' | 'jewelry' | 'draught' | 'food' | 'scroll' | 'effect';
@@ -57,14 +57,20 @@ export function matchesFilter(def: ItemDef, f: FilterKey): boolean {
     case 'jewelry':
       return def.slot === 'ring';
     case 'draught':
-      return def.slot === 'consumable' && !def.use?.recipe && !def.use?.portal;
+      return def.slot === 'consumable' && !def.use?.recipe && !def.use?.portal && !isScroll(def);
     case 'food':
       return def.slot === 'food';
     case 'scroll':
-      return def.slot === 'consumable' && (!!def.use?.recipe || !!def.use?.portal);
+      return def.slot === 'consumable' && (!!def.use?.recipe || !!def.use?.portal || isScroll(def));
     case 'effect':
       return !!effectClass(def);
   }
+}
+
+/** A curio scroll or tome (it.115) files under SCROLLS though it pours a brew. */
+function isScroll(def: ItemDef): boolean {
+  const k = kindWord(def);
+  return k === 'scroll' || k === 'tome';
 }
 
 export function compareItems(a: ItemDef, b: ItemDef, s: SortKey): number {

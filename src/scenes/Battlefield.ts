@@ -17,12 +17,15 @@
  *                first of the dead - this end was the rout.
  *   MIDDLE       THE MANOR: a walled estate standing whole in the middle of a
  *                field that is not, with its gate open and its windows lit.
- *   NORTH        the siege line - three engines that still throw and the wrecks
- *                of three more, laid on the house they were battering.
+ *   NORTH        the siege line - three catapults and two ballistae that still
+ *                shoot, and the wrecks of four more, laid on the house they
+ *                were battering.
  *   SOUTH        the war camp - pavilions, cook fires, cauldrons, and the
  *                spoil-heaps of an army that packed up in a hurry.
- *   EAST edge    THE EASTERN ROAD, barricaded behind a portcullis: the city
- *                beyond it is not built yet, and the map says so by name.
+ *   EAST         THE EASTERN ROAD (it.115): the field ends in a stone wall along
+ *                its north-east edge, and the road goes out through the wall's
+ *                one arch - barricaded, because the city beyond it is not
+ *                built yet, and the map says so by name.
  *
  * THE BORDER is FOUR RINGS of heavy timber, thinning outward, grown with one BFS
  * out of the open ground - the same belt the farmlands use (it.103). There is no
@@ -66,8 +69,17 @@ const ENTRY = { x: 6, y: 27 };
 const HOME = { x: 4, y: 27 };
 /** The manor's footprint: five by five, in the middle of everything. */
 const MANOR = { x: 31, y: 22, w: 5, h: 5 };
-/** The barricaded road east, and the city that is not built yet. */
-const CITY = { x: 66, y: 26, label: 'THE EASTERN ROAD' };
+/** The barricaded road east: the opening in the wall's arch, and the city that is not built yet. */
+const CITY = { x: 57, y: 14, label: 'THE EASTERN ROAD' };
+/**
+ * THE NORTH-EAST WALL (it.115): the row it stands on and its run. Everything
+ * north of the row inside the run, and everything east of the run, is not field.
+ * The wall kit's pieces cover two tiles each, so the run is an even count and
+ * the arch piece (`CITY.x - 1`) falls on the run's own step.
+ */
+const WALL_Y = 14;
+const WALL_X0 = 44;
+const WALL_X1 = 69;
 
 /**
  * THE ROAD ACROSS. Bridge, manor gate, eastern road - the line the whole map is
@@ -81,7 +93,10 @@ const ROAD: ReadonlyArray<{ x: number; y: number }> = [
   { x: 33, y: 29 },
   { x: 44, y: 28 },
   { x: 56, y: 27 },
-  { x: 66, y: 26 },
+  // ...and up to the gate in the north-east wall (it.115).
+  { x: 58, y: 22 },
+  { x: 57, y: 18 },
+  { x: 57, y: 15 },
 ];
 
 export function buildFieldLayout(seed: number): { layout: TownLayout; field: FieldLayout } {
@@ -160,6 +175,31 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
       for (const i of fill) grid[i] = TILE_FLOOR;
     }
   }
+
+  /**
+   * THE FIELD ENDS AT A WALL (it.115). it.112's eastern road was a lone arch on
+   * the rim of an open lobe: the field ran on round both sides of it, so the
+   * "barred" way could be walked past, and the road ran out beyond it into bare
+   * ground with no tree line east of it at all. The field is now cut square
+   * along its north-east edge - nothing north of the wall row inside its run,
+   * nothing east of the run - and the ground under the wall is made whole, so
+   * the wall stands on a straight edge with no bay of void at its foot. The
+   * wood (below) grows on everything that was cut, which closes the east.
+   */
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (x <= WALL_X1 && (x < WALL_X0 || y > WALL_Y)) continue;
+      grid[idx(x, y)] = TILE_WALL;
+      onRoad[idx(x, y)] = 0;
+    }
+  for (let x = WALL_X0; x <= WALL_X1; x++) for (let y = WALL_Y + 1; y <= WALL_Y + 3; y++) grid[idx(x, y)] = TILE_FLOOR;
+  // The opening, and the road on through the wood behind the wall: drawn, never walked.
+  for (let y = WALL_Y - 7; y <= WALL_Y; y++)
+    for (let x = CITY.x - 1; x <= CITY.x + 1; x++) {
+      if (y === WALL_Y && x !== CITY.x) continue;
+      grid[idx(x, y)] = TILE_BLOCKED;
+      tileKind[idx(x, y)] = KIND_FIELD_ROAD;
+    }
 
   /**
    * THE CHURN (it.110, given its own ground it.112).
@@ -323,6 +363,17 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
     if (!at) continue;
     catapults.push({ x: at.x, y: at.y, ...want });
   }
+  /**
+   * THE BALLISTAE (it.115): two bolt-throwers in the line between the
+   * catapults, laid on the same house. They are worked with the same crank and
+   * listed with the engines, so the loose-at-nothing fallback aims them too.
+   */
+  for (const [ax, ay] of [[31, 11], [21, 13]] as const) {
+    const want = aimAtManor(ax, ay);
+    const at = structure('siege', ax, ay, 2, 2, 'ballista', 6, { aim: { x: want.dx, y: want.dy } });
+    if (!at) continue;
+    catapults.push({ x: at.x, y: at.y, ...want });
+  }
   for (const [ax, ay] of [[20, 17], [42, 8], [52, 12], [31, 16]] as const) {
     const want = aimAtManor(ax, ay);
     structure('siege', ax, ay, 2, 2, 'wreck', 7, { aim: { x: want.dx, y: want.dy } });
@@ -446,11 +497,16 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
    *                 timber was cut on the spot, and the stumps are still there.
    *   THE STONES    boundary menhirs along the road, older than any of this.
    */
+  /**
+   * NO LONE PLANKS (it.115). `gl_wreck_b..g` are single 32 px slices of a shed's
+   * wall - stood alone on a 2x2 they read as a board floating on the field. The
+   * wrecks are the two whole timber pieces and the pack's broken masonry.
+   */
   for (const [x, y, v] of [
-    [10, 18, 'gl_wreck_a'], [12, 36, 'gl_wreck_b'], [31, 47, 'gl_wreck_c'],
-    [56, 18, 'gl_wreck_d'], [58, 36, 'gl_wreck_e'], [43, 12, 'gl_wreck_f'],
-    [20, 45, 'gl_wreck_g'], [50, 47, 'gl_wreck_shed'], [8, 31, 'gl_wreck_a'],
-    [63, 33, 'gl_wreck_b'], [37, 49, 'gl_wreck_d'],
+    [10, 18, 'gl_wreck_a'], [12, 36, 'ruin_c'], [31, 47, 'gl_wreck_shed'],
+    [56, 18, 'ruin_f'], [58, 36, 'gl_wreck_a'], [43, 12, 'ruin_g'],
+    [20, 45, 'gl_wreck_shed'], [50, 47, 'ruin_d'], [8, 31, 'gl_wreck_a'],
+    [63, 33, 'ruin_c'], [37, 49, 'ruin_f'],
   ] as const) structure('ruin', x, y, 2, 2, v, 5);
   structure('ruin', 23, 9, 3, 3, 'gl_wreck_tower', 6);
   // The burial line: laid in two ranks facing the bridge, so it reads as a row
@@ -502,16 +558,24 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
   // The one thing on this map the hero walks up to and is told no.
   const cityGate = { ...CITY };
   {
-    const gx = cityGate.x;
-    const gy = cityGate.y;
-    for (let y = gy - 2; y <= gy + 2; y++) if (inside(gx, y)) grid[idx(gx, y)] = TILE_BLOCKED;
-    if (inside(gx - 1, gy)) {
-      grid[idx(gx - 1, gy)] = TILE_FLOOR;
-      tileKind[idx(gx - 1, gy)] = KIND_FIELD_ROAD;
-      onRoad[idx(gx - 1, gy)] = 1;
+    /**
+     * THE WALL (it.115): the stone kit's far pieces - they face the camera, so
+     * the hero is always in front of them - one every two tiles along the row,
+     * and the arch over the road. Each piece stands on its row and is lit from
+     * the field it faces (`TownProps`' `innwall`).
+     */
+    for (let x = WALL_X0; x < WALL_X1; x += 2)
+      decal({ kind: 'innwall', x, y: WALL_Y, w: 2, h: 1, variant: x === CITY.x - 1 ? 'dun_stone_arch_n' : 'dun_stone_wall_n' });
+    decal({ kind: 'citygate', x: cityGate.x, y: cityGate.y, variant: cityGate.label });
+    // THE BARRICADE: spiked timber across the whole mouth of the arch, which is
+    // what "barred" is - solid, three tiles, nothing past it.
+    for (let x = CITY.x - 1; x <= CITY.x + 1; x++) {
+      grid[idx(x, WALL_Y + 1)] = TILE_BLOCKED;
+      onRoad[idx(x, WALL_Y + 1)] = 0;
+      props.push({ kind: 'barricade', x, y: WALL_Y + 1, variant: x === CITY.x ? 'barricade_b' : 'barricade_a' });
     }
-    decal({ kind: 'citygate', x: gx, y: gy, variant: cityGate.label });
-    for (const dy of [-2, 2]) if (isFloor(gx - 1, gy + dy)) block({ kind: 'barricade', x: gx - 1, y: gy + dy, variant: dy < 0 ? 'barricade_a' : 'barricade_b' });
+    // The watch's fires, either side of the road where it meets the wall.
+    for (const dx of [-2, 2]) put('brazier', CITY.x + dx, WALL_Y + 1);
   }
   decal({ kind: 'fieldroad', x: HOME.x, y: HOME.y });
   for (const t of [ENTRY, HOME]) if (inside(t.x, t.y)) grid[idx(t.x, t.y)] = TILE_FLOOR;
@@ -559,15 +623,22 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
     const DEEP_TREES = ['bigtree_a', 'bigtree_b', 'bigtree_c', 'pine_a', 'pine_c', 'tree_b'] as const;
     const FILL = [0, 1, 1, 0.6, 0.3] as const;
     const roadMouth = (x: number, y: number): boolean => {
-      if (Math.abs(y - CITY.y) <= 2 && x >= CITY.x - 1) return true;
       for (const r of ROAD.slice(0, 2)) if (Math.abs(x - r.x) <= 2 && Math.abs(y - r.y) <= 2) return true;
       return false;
     };
+    /**
+     * WHERE THE WALL IS, NOTHING GROWS (it.115): no trunk in the wall's own row
+     * (it would stand in the masonry) and none on the road beyond the arch, so
+     * the way on reads as an avenue into the dark.
+     */
+    const walled = (x: number, y: number): boolean =>
+      (y === WALL_Y && x >= WALL_X0 - 1 && x <= WALL_X1 + 1) || (Math.abs(x - CITY.x) <= 1 && y < WALL_Y && y >= WALL_Y - 8);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const d = depth[idx(x, y)];
         if (d <= 0) continue;
         if (roadMouth(x, y) && d <= 2) continue;
+        if (walled(x, y)) continue;
         const fill = FILL[d] ?? 0;
         if (fill < 1 && ((x * 13 + y * 7) % 100) / 100 >= fill) continue;
         const set = d <= 1 ? NEAR_TREES : DEEP_TREES;

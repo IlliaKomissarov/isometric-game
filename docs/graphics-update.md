@@ -91,8 +91,9 @@ Rules that hold throughout:
       reaper / flesh golem / drake / apex the deep.
 - [ ] Catapults/ballistae on the battlefield from the real bakes (sheets
       baked; the dresser still draws the it.112 engine).
-- [ ] Buildings and props placed for variety in town, forest, farm, river
-      (baked; placement to follow).
+- [x] Buildings and props placed for variety (it.115): the riverside's nine
+      farmsteads, the eastern quarter's houses, handcarts, the Stag re-baked
+      with its south stair; overworld ground kinds 15-21 laid and feathered.
 - [x] NPC segregation: `STREET_FOLK` (pixel) keeps the old quarter and the
       east; `MARKET_FOLK` (the smooth bodies, the duelist, the halberdier)
       walks the Market Ward, the taproom and the open country.
@@ -130,4 +131,19 @@ Rules that hold throughout:
 - [x] qa75: the arrival, the graphics-update section (new kinds' sheets,
       engine switches, the notice stack, gateway notes, the footprint audit,
       the yard's purse, the menagerie round trip).
-- [ ] Device matrix; Chrome walk of every floor; docs; deploy.
+- [x] Docs; deploy (it.115).
+
+## Iteration 115 — the owner's list
+
+- [x] Hunger removed; food heals and buffs. Every item cell turns; the whole
+      item folder baked (758 items). Uniform drops, the E-to-loot line, GOLD.
+- [x] Feet calibrated per clip (`calibrate-feet.py`); sizes; facing rows;
+      the menagerie as a showroom with its own picker; human voices.
+- [x] The crypt's walls stay drawn once seen; low south/east walls; arena
+      stairs vs rift; placement audit.
+- [x] Lord Milk; strict smooth/pixel separation; walkers yield; the Stag's
+      door and interior; entry mats.
+- [x] Ballistae; the battlefield's eastern wall and arch.
+- [ ] Still open: armour and rings have no art in the drop (they sway only);
+      the curios are not in the Journal; the ballista's loaded-bolt sheets,
+      the Ancient towers and the carts are unused; the stair art is sandstone.

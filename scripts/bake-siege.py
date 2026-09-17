@@ -299,7 +299,7 @@ SINGLES = {
     # One pile of the eight (they are the same pile from eight sides), x1.
     'catapult_rocks': lambda: rocks(0),
     # The loose bolt along +x: 184 px of shaft and head -> ~26 px.
-    'ballista_bolt': lambda: bolt_single(),
+    'ballista_bolt': lambda: bolt_single(40),  # it.115: long enough to read crossing the field
 }
 
 

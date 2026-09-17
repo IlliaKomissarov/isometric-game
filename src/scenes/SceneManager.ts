@@ -30,6 +30,7 @@ import { mulberry32 } from '@/utils/rng';
 import { vec2 } from '@/utils/Vec2';
 import { depthKey, worldToScreen } from '@/utils/iso';
 import { TILE_BLOCKED, TILE_DOOR, TILE_FLOOR, TILE_WALL, planWallPieces, type DungeonMap, type TorchSpot, type WallPiece } from './DungeonGenerator';
+import { layGroundBlend } from './GroundBlend';
 
 export type FloorTheme = 'stone' | 'temple' | 'frost' | 'ember' | 'town' | 'inn' | 'cellar';
 
@@ -52,6 +53,12 @@ const PIECE_H = 256;
 const BLOOD_RATE = 0.045;
 /** Every sixth wall piece on a room wall carries a torch bracket. */
 const TORCH_EVERY = 6;
+/**
+ * How far a near-wall stub is slid from the wall tile back toward the floor it
+ * closes, in tiles (it.115): one tile less the wall's painted thickness
+ * (~10 px of 32), so the stub's back edge lies on the floor's edge.
+ */
+const LOW_INSET = 0.7;
 /** How far above the wall's base the flame hangs. */
 const TORCH_LIFT = 60;
 
@@ -101,6 +108,8 @@ export class SceneManager {
         }
       }
     }
+    // THE GROUND BLEND (it.115): the outdoor floors' patches get soft, ragged edges (a no-op elsewhere).
+    if (theme === 'town') layGroundBlend(map, viewport, lighting);
     if (kitWalls && !wallsFromProps) this.buildTilesetWalls(map, viewport, lighting, theme);
     map.torchSpots = this.torchSpots;
   }
@@ -228,15 +237,16 @@ export class SceneManager {
    * (x, y-1) for a north piece and (x-1, y) for a west piece, (x, y) being the
    * piece's first wall tile. Sorted by `depthKey(x, y+1) + 4` for both sides -
    * strictly between the tiles behind the piece and the floor in front of it
-   * (it.97), so the hero on the tile in front always draws over it. Registered
-   * as WALLS at their first tile, so Lighting lights them from the floor they
-   * face (the wall tint path takes the brighter of the south and east floors)
-   * and fogs them as it fogged the cubes.
+   * (it.97), so the hero on the tile in front always draws over it.
+   *
+   * LIT AND FOGGED AS PIECES (it.115): each piece is registered with the FLOOR
+   * tiles its face looks at (`Lighting.registerPiece`), so it comes out of the
+   * shroud the moment any of them is seen and stays drawn - dark - once they
+   * fall out of sight. Registering a two-tile run on one WALL tile (it.114)
+   * left most of a room's wall unrendered until that tile passed a sight test.
    */
   private buildTilesetWalls(map: DungeonMap, viewport: Viewport, lighting: Lighting, theme: FloorTheme): void {
     const plan = planWallPieces(map);
-    const { width, height } = map;
-    const taken = new Uint8Array(width * height);
     const rand = mulberry32(map.seed ^ 0x70c4);
     const torchPhase = Math.floor(rand() * TORCH_EVERY);
     let roomPieces = 0;
@@ -252,17 +262,14 @@ export class SceneManager {
       sprite.position.set(s0.x - TILE_W, s0.y + TILE_H * 2 - PIECE_H);
       sprite.zIndex = depthKey(piece.x, piece.y + 1) + 4;
       viewport.objectLayer.addChild(sprite);
-      // One wall sprite per tile in Lighting: the first tile, else the second.
-      const second = piece.side === 'n' ? { x: piece.x + 1, y: piece.y } : { x: piece.x, y: piece.y + 1 };
-      const slot = !taken[piece.y * width + piece.x] ? piece : !taken[second.y * width + second.x] ? second : null;
-      if (slot) {
-        taken[slot.y * width + slot.x] = 1;
-        lighting.registerWall(slot.x, slot.y, sprite);
-      } else {
-        // Both tiles spoken for (a lean-over on a busy stub): lit as a prop from the floor it faces.
-        const faced = piece.side === 'n' ? { x: piece.x, y: piece.y + 1 } : { x: piece.x + 1, y: piece.y };
-        lighting.registerProp(Math.min(width - 1, faced.x), Math.min(height - 1, faced.y), sprite);
-      }
+      // The floor the face looks at: south of an `n` run, east of a `w` run;
+      // a corner is both (its row, and its column one tile up and over).
+      const faced =
+        piece.side === 'n'
+          ? [{ x: piece.x, y: piece.y + 1 }, { x: piece.x + 1, y: piece.y + 1 }]
+          : [{ x: piece.x + 1, y: piece.y }, { x: piece.x + 1, y: piece.y + 1 }];
+      if (piece.kind === 'corner') faced.push({ x: piece.x + 2, y: piece.y - 1 }, { x: piece.x + 2, y: piece.y });
+      lighting.registerPiece(sprite, faced, true);
       return sprite;
     };
 
@@ -274,8 +281,31 @@ export class SceneManager {
       this.torchSpots.push({ side: piece.side, x: piece.x, y: piece.y, gx: faced.x, gy: faced.y, zIndex: sprite.zIndex });
     }
 
+    // THE NEAR WALLS (it.115): a one-tile low stub on every south and east
+    // floor edge, seated like the tall piece of the same facing on the wall
+    // tile beyond, then slid back toward the floor by LOW_INSET so the stub's
+    // back edge meets the floor's edge instead of leaving a strip of void. The
+    // stub sorts just above everything on the floor tile it closes
+    // (`depthKey(x+1, y+1) + 2`) and below the tall face of a room beyond (+4).
+    const lowN = `dun_${theme}_low_n`;
+    const lowW = `dun_${theme}_low_w`;
+    if (spriteLib.hasSingle(lowN) && spriteLib.hasSingle(lowW)) {
+      const texN = spriteLib.single(lowN);
+      const texW = spriteLib.single(lowW);
+      for (const st of plan.stubs) {
+        const sprite = new Sprite(st.side === 's' ? texN : texW);
+        const slide = st.shift * (1 - LOW_INSET);
+        const s0 = st.side === 's' ? worldToScreen(st.x + slide, st.y - LOW_INSET, this.scratch) : worldToScreen(st.x - LOW_INSET, st.y, this.scratch);
+        sprite.position.set(s0.x - TILE_W, s0.y + TILE_H * 2 - PIECE_H);
+        sprite.zIndex = depthKey(st.x + 1, st.y + 1) + (st.shift === 0 ? 2 : 3);
+        viewport.objectLayer.addChild(sprite);
+        const beyond = st.side === 's' ? { x: st.x + st.shift, y: st.y } : { x: st.x, y: st.y };
+        lighting.registerPiece(sprite, st.shift === 0 ? [{ x: st.x, y: st.y }] : [{ x: st.x, y: st.y }, beyond], false);
+      }
+    }
+
     // Free-standing pillars: a 1x1 standing piece on its tile centre, sorted
-    // like any standing prop, lit and fogged as a wall tile.
+    // like any standing prop, seen from any of the four floors around it.
     const pillarName = `dun_${theme}_pillar`;
     if (spriteLib.hasSingle(pillarName)) {
       for (const p of plan.pillars) {
@@ -285,7 +315,7 @@ export class SceneManager {
         sprite.position.set(s.x, s.y + 4);
         sprite.zIndex = depthKey(p.x + 0.5, p.y + 0.5);
         viewport.objectLayer.addChild(sprite);
-        lighting.registerWall(p.x, p.y, sprite);
+        lighting.registerPiece(sprite, [{ x: p.x, y: p.y + 1 }, { x: p.x + 1, y: p.y }, { x: p.x, y: p.y - 1 }, { x: p.x - 1, y: p.y }], true);
       }
     }
   }

@@ -5,6 +5,8 @@
  * One obsidian-glass plate carrying everything a player checks mid-fight —
  * an animated portrait, the level badge, the health and resource gauges, the
  * experience sliver and the purse, with the active buffs docked beneath it.
+ * THE PURSE SAYS WHAT IT IS (it.115): a GOLD label beside the coin glyph,
+ * like the HP / MANA / XP labels on the bars.
  *
  * WHY THE GLOBES RETIRED. Two 150 px globes at the foot of the screen were
  * the single largest thing standing in the combat corridor, and on a phone
@@ -26,7 +28,6 @@
 
 import type { Player } from '@/entities/Player';
 import { uiIdleFrame } from '@/render/animUtil';
-import { HUNGER_MAX, HUNGER_WORD, InventorySystem, hungerStateOf, type HungerState } from '@/systems/Inventory';
 
 /** How much of the remaining gap a gauge closes per frame. */
 const FILL_LERP = 0.22;
@@ -52,22 +53,6 @@ export class StatusFrame {
   private readonly gold: HTMLElement;
   private readonly hp: Gauge;
   private readonly res: Gauge;
-  /** HUNGER (it.114): the gauge under the XP sliver - glyph, bar, state word. */
-  private readonly hungerEl: HTMLElement;
-  private readonly hungerFill: HTMLElement;
-  private readonly hungerText: HTMLElement;
-  private hungerShown = -1;
-  private hungerState: HungerState | null = null;
-  /**
-   * THE LABEL NEAR THE HERO (it.114): a small HUNGER word under the hero's
-   * feet, faint while well fed, amber when hungry, red and pulsing when
-   * starving, and a "+N" leap on a bite. Main places it each frame through
-   * `trackHero` (the HUD never reads the camera itself).
-   */
-  private readonly heroLabel: HTMLElement;
-  private readonly heroWord: HTMLElement;
-  private readonly heroBar: HTMLElement;
-  private heroBite = 0;
   private raf = 0;
   private frameIndex = -1;
 
@@ -86,10 +71,8 @@ export class StatusFrame {
       '<div class="ds-bar sf-hp" title="Life"><i class="ds-ghost"></i><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">&#10084;</span>HP</b><span class="ds-bar-text">0</span></div>' +
       `<div class="ds-bar sf-res" title="${player.resourceName === 'MANA' ? 'Mana' : 'Stamina'}"><i class="ds-ghost"></i><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">${player.resourceName === 'MANA' ? '&#9672;' : '&#9889;'}</span>${player.resourceName === 'MANA' ? 'MANA' : 'STAMINA'}</b><span class="ds-bar-text">0</span></div>` +
       '<div class="ds-bar sf-xp" title="Experience to the next level"><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">&#9733;</span>XP</b><span class="ds-bar-text">XP</span></div>' +
-      // HUNGER (it.114): the belly under the XP sliver - it empties on dungeon floors, food fills it.
-      '<div class="ds-bar sf-hunger" title="Hunger: it empties on dungeon floors; eat to fill it. Starving stops regeneration and costs a tenth of every blow."><i class="ds-fill"></i><i class="ds-gloss"></i><b class="ds-bar-label"><span class="ds-glyph">&#936;</span>HUNGER</b><span class="ds-bar-text">WELL FED</span></div>' +
       '</div>' +
-      '<div class="sf-purse"><span class="sf-coin">&#9670;</span><b>0</b></div>';
+      '<div class="sf-purse" title="Gold"><span class="sf-coin">&#9670;</span><span class="sf-gold-label">GOLD</span><b>0</b></div>';
     StatusFrame.stack().appendChild(this.root);
 
     this.portrait = this.root.querySelector('canvas') as HTMLCanvasElement;
@@ -110,19 +93,6 @@ export class StatusFrame {
     const xp = this.root.querySelector('.sf-xp') as HTMLElement;
     this.xpFill = xp.querySelector('.ds-fill') as HTMLElement;
     this.xpText = xp.querySelector('.ds-bar-text') as HTMLElement;
-    this.hungerEl = this.root.querySelector('.sf-hunger') as HTMLElement;
-    this.hungerFill = this.hungerEl.querySelector('.ds-fill') as HTMLElement;
-    this.hungerText = this.hungerEl.querySelector('.ds-bar-text') as HTMLElement;
-
-    // THE LABEL NEAR THE HERO (it.114): one per local hero; a second seat's frame shares nothing here.
-    this.heroLabel = document.createElement('div');
-    this.heroLabel.id = 'hero-hunger';
-    this.heroLabel.className = 'hud-el';
-    this.heroLabel.innerHTML = '<span class="hh-glyph">&#936;</span><span class="hh-word">HUNGER</span><i class="hh-bar"><b></b></i><em class="hh-bite"></em>';
-    this.heroWord = this.heroLabel.querySelector('.hh-word') as HTMLElement;
-    this.heroBar = this.heroLabel.querySelector('.hh-bar b') as HTMLElement;
-    document.body.appendChild(this.heroLabel);
-
     // The resource keeps its own colour: arcane blue for mana, emerald for
     // stamina. A class carries exactly one of the two, so the second gauge
     // is that class's, named and tinted for it.
@@ -177,68 +147,8 @@ export class StatusFrame {
     this.xpFill.style.width = `${Math.min(100, Math.max(0, (p.xp / next) * 100)).toFixed(2)}%`;
     this.xpText.textContent = `${p.xp} / ${next}`;
     this.root.classList.toggle('hurt', p.hp / hpMax < 0.3 && p.hp > 0);
-    this.paintHunger();
     // A hidden page never runs rAF, so nothing would ever ease. Settle now.
     if (document.hidden) this.settle();
-  }
-
-  /**
-   * THE BELLY (it.114): read through the inventory system that serves this
-   * hero (the gauge is simulation state kept there, not on the entity).
-   * Cheap enough to run every frame; it only writes when the number moved.
-   */
-  private paintHunger(): void {
-    const inv = InventorySystem.of(this.player);
-    const hunger = inv ? inv.hunger : HUNGER_MAX;
-    const state = hungerStateOf(hunger);
-    if (hunger !== this.hungerShown) {
-      const pct = `${Math.min(100, Math.max(0, (hunger / HUNGER_MAX) * 100)).toFixed(1)}%`;
-      // A BITE (it.114): the gauge only ever rises when something was eaten - the label leaps with the number.
-      if (this.hungerShown >= 0 && hunger - this.hungerShown >= 5) this.bite(hunger - this.hungerShown);
-      this.hungerShown = hunger;
-      this.hungerFill.style.width = pct;
-      this.hungerText.textContent = `${HUNGER_WORD[state]} · ${Math.round(hunger)}`;
-      this.heroBar.style.width = pct;
-      this.heroWord.textContent = state === 'fed' ? 'HUNGER' : HUNGER_WORD[state];
-    }
-    if (state !== this.hungerState) {
-      this.hungerState = state;
-      this.hungerEl.classList.toggle('hungry', state === 'hungry');
-      this.hungerEl.classList.toggle('starving', state === 'starving');
-      this.root.classList.toggle('starving', state === 'starving');
-      this.heroLabel.classList.toggle('hungry', state === 'hungry');
-      this.heroLabel.classList.toggle('starving', state === 'starving');
-    }
-    this.hungerEl.classList.toggle('feeding', !!inv?.feeding);
-    this.heroLabel.classList.toggle('feeding', !!inv?.feeding);
-  }
-
-  /** The "+N" leap on the near-hero label. */
-  private bite(gain: number): void {
-    const el = this.heroLabel.querySelector('.hh-bite') as HTMLElement | null;
-    if (!el) return;
-    el.textContent = `+${Math.round(gain)}`;
-    this.heroLabel.classList.remove('bite');
-    void this.heroLabel.offsetWidth; // Restart the animation.
-    this.heroLabel.classList.add('bite');
-    clearTimeout(this.heroBite);
-    this.heroBite = window.setTimeout(() => this.heroLabel.classList.remove('bite'), 1400);
-  }
-
-  /**
-   * MAIN CALLS THIS EVERY FRAME (it.114) with the hero's canvas position and
-   * the camera zoom, the way it tracks the level-up banner: the label rides
-   * under the hero's feet. `show` false parks it (a cutscene, a dead hero).
-   */
-  trackHero(canvasX: number, canvasY: number, zoom: number, show = true): void {
-    const el = this.heroLabel;
-    if (!show) {
-      if (el.classList.contains('show')) el.classList.remove('show');
-      return;
-    }
-    if (!el.classList.contains('show')) el.classList.add('show');
-    el.style.left = `${Math.round(canvasX)}px`;
-    el.style.top = `${Math.round(canvasY + 26 * zoom)}px`;
   }
 
   /** Snap both gauges to the truth — used when no frames are coming. */
@@ -278,7 +188,6 @@ export class StatusFrame {
       } else g.ghosted = g.shown;
     }
     if (moved) this.paint();
-    this.paintHunger();
     this.drawPortrait();
   }
 
@@ -309,8 +218,6 @@ export class StatusFrame {
   destroy(): void {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
-    clearTimeout(this.heroBite);
-    this.heroLabel.remove();
     this.root.remove();
   }
 }

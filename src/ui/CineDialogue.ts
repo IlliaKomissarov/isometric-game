@@ -105,11 +105,21 @@ export class CineDialogue {
     }
   }
 
-  /** The bars lift: nothing is being said any more. */
+  /**
+   * The bars lift: nothing is being said any more. FULLY down (it.115): the
+   * text, the name, the face and every state class go with the `show`, so a
+   * scene destroyed mid-line leaves no ghost of the last speaker for the next
+   * scene's box to fade in over.
+   */
   clear(): void {
     this.left = 0;
     this.shown = '';
-    this.box.classList.remove('show');
+    this.box.classList.remove('show', 'waits', 'foe');
+    this.who.textContent = '';
+    this.role.textContent = '';
+    this.line.textContent = '';
+    this.face.replaceChildren();
+    this.box.classList.add('faceless');
   }
 
   destroy(): void {

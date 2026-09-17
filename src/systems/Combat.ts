@@ -21,7 +21,6 @@
 
 import { difficulty } from '@/core/Difficulty';
 import { eventBus } from '@/core/EventBus';
-import { InventorySystem } from '@/systems/Inventory';
 import type { InputCommand } from '@/core/InputQueue';
 import { state } from '@/core/StateManager';
 import type { Enemy } from '@/entities/Enemy';
@@ -608,8 +607,7 @@ export class CombatSystem {
     // outgoing damage; Stone Skin absorbs a fraction of what comes in.
     let rolled = event.amount;
     const sourceHero = this.players[this.seatOf(state.getEntity(event.sourceId))] ?? null;
-    // A STARVING HERO HITS SOFTER (it.114): the belly's malus, read off the seat's inventory.
-    if (sourceHero) rolled = Math.round(rolled * sourceHero.damageMult * (1 - (InventorySystem.of(sourceHero)?.hungerMalus() ?? 0)));
+    if (sourceHero) rolled = Math.round(rolled * sourceHero.damageMult);
     if (targetHero && targetHero.damageReduction > 0) {
       rolled = Math.round(rolled * (1 - targetHero.damageReduction));
     }

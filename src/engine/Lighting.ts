@@ -157,6 +157,32 @@ interface DynamicLight {
 /** How far the hero's render position may drift from the last LOS origin before the render side recomputes. */
 const LOS_REFRESH_DIST = 0.35;
 
+/**
+ * A WALL PIECE THAT SPANS TILES (it.115). The crypt's tileset walls are
+ * 128x256 runs over two tiles (and the near-wall stubs sit between a floor and
+ * its wall), but Lighting used to know one sprite per WALL TILE: a piece was
+ * registered on its first tile only, so it stayed unrendered until that one
+ * tile happened to pass a line-of-sight test - and a wall tile is rarely the
+ * tile a hero sees. That is the owner's "only the part next to the character
+ * shows up, the rest of the wall is as if it does not exist".
+ *
+ * A piece now names the FLOOR tiles its face looks at. It is revealed the
+ * first time any of them is seen, and from then on it is always drawn: lit by
+ * the brightest of those tiles while one is in sight, else the floor's
+ * remembered (explored) shade. A piece nobody has looked at stays hidden - the
+ * shroud still keeps the map's shape a secret.
+ */
+interface PieceEntry {
+  sprite: Sprite;
+  /** The floor tiles the face looks at (row-major indices). */
+  tiles: Int32Array;
+  revealed: boolean;
+  /** Tall pieces take part in the cutaway; the near-wall stubs never hide the hero. */
+  tall: boolean;
+  /** The last tint written, so an unchanged piece costs no Pixi write. */
+  tint: number;
+}
+
 export class Lighting {
   private width = 0;
   private height = 0;
@@ -165,6 +191,15 @@ export class Lighting {
   private wallSprites: (Sprite | null)[] = [];
   /** Decorative props on a tile (braziers, statues) — tinted like walls. */
   private propSprites = new Map<number, Sprite[]>();
+  /** The crypt's multi-tile wall pieces (it.115), and tile -> the pieces that look at it. */
+  private pieces: PieceEntry[] = [];
+  private tilePieces = new Map<number, number[]>();
+  /** Pieces whose alpha is animating away from 1 (the tall-piece cutaway). */
+  private readonly fadingPieces = new Set<number>();
+  /** This frame's tint per tile, valid where `tileTintStamp` equals `frameNo` (it.115). */
+  private tileTint!: Uint32Array;
+  private tileTintStamp!: Uint32Array;
+  private frameNo = 1;
 
   /**
    * THE VISIBLE SET, without a Set (it.114): `visStamp[idx] === gen` means the
@@ -273,6 +308,12 @@ export class Lighting {
     this.floorSprites = new Array<Sprite | null>(n).fill(null);
     this.wallSprites = new Array<Sprite | null>(n).fill(null);
     this.propSprites.clear();
+    this.pieces = [];
+    this.tilePieces.clear();
+    this.fadingPieces.clear();
+    this.tileTint = new Uint32Array(n);
+    this.tileTintStamp = new Uint32Array(n);
+    this.frameNo = 1;
     this.sources.length = 0;
     this.srcR = new Float32Array(n);
     this.srcG = new Float32Array(n);
@@ -444,6 +485,78 @@ export class Lighting {
     sprite.tint = HIDDEN_TINT;
     sprite.visible = false;
     this.wallSprites[gy * this.width + gx] = sprite;
+  }
+
+  /**
+   * A tileset wall piece that looks at `tiles` (it.115; see `PieceEntry`).
+   * Starts hidden unless one of those tiles has already been seen (a piece
+   * added after `unpackExplored`, or to a floor rebuilt in place).
+   * `tall` pieces fade when they stand between the camera and the hero.
+   */
+  registerPiece(sprite: Sprite, tiles: ReadonlyArray<{ x: number; y: number }>, tall: boolean): void {
+    const idx = new Int32Array(tiles.length);
+    let n = 0;
+    for (const t of tiles) {
+      if (t.x < 0 || t.y < 0 || t.x >= this.width || t.y >= this.height) continue;
+      idx[n++] = t.y * this.width + t.x;
+    }
+    const entry: PieceEntry = { sprite, tiles: idx.subarray(0, n), revealed: false, tall, tint: HIDDEN_TINT };
+    const id = this.pieces.length;
+    this.pieces.push(entry);
+    for (let i = 0; i < n; i++) {
+      const list = this.tilePieces.get(entry.tiles[i]);
+      if (list) list.push(id);
+      else this.tilePieces.set(entry.tiles[i], [id]);
+      if (this.states[entry.tiles[i]] !== FogState.HIDDEN) entry.revealed = true;
+    }
+    sprite.visible = entry.revealed;
+    entry.tint = entry.revealed ? this.exploredTint : HIDDEN_TINT;
+    sprite.tint = entry.tint;
+  }
+
+  /** The pieces looking at a tile come out of the shroud with it (it.115). */
+  private revealPiecesAt(idx: number): void {
+    const list = this.tilePieces.get(idx);
+    if (!list) return;
+    for (const id of list) {
+      const p = this.pieces[id];
+      if (p.revealed) continue;
+      p.revealed = true;
+      p.sprite.visible = true;
+      p.tint = this.exploredTint;
+      p.sprite.tint = p.tint;
+    }
+  }
+
+  /**
+   * Tint every revealed piece from this frame's tile tints (it.115): the
+   * brightest tile it looks at that is lit this frame, else the explored shade.
+   * ~200 pieces a floor, two or three tiles each - a few hundred array reads.
+   */
+  private updatePieces(): void {
+    const frame = this.frameNo;
+    const stamp = this.tileTintStamp;
+    const tints = this.tileTint;
+    for (const p of this.pieces) {
+      if (!p.revealed) continue;
+      let best = -1;
+      let tint = this.exploredTint;
+      const tiles = p.tiles;
+      for (let i = 0; i < tiles.length; i++) {
+        const idx = tiles[i];
+        if (stamp[idx] !== frame) continue;
+        const t = tints[idx];
+        const luma = ((t >> 16) & 0xff) + ((t >> 8) & 0xff) + (t & 0xff);
+        if (luma > best) {
+          best = luma;
+          tint = t;
+        }
+      }
+      if (tint !== p.tint) {
+        p.tint = tint;
+        p.sprite.tint = tint;
+      }
+    }
   }
 
   /**
@@ -702,6 +815,7 @@ export class Lighting {
         if (wall) wall.visible = true;
         const props = this.propSprites.get(idx);
         if (props) for (const p of props) p.visible = true;
+        this.revealPiecesAt(idx);
       }
       this.states[idx] = FogState.VISIBLE;
     }
@@ -749,6 +863,7 @@ export class Lighting {
     const list = this.visList;
     const count = this.visCount;
     const flicker = this.lastFlicker;
+    const frame = ++this.frameNo;
     for (let i = 0; i < count; i++) {
       const idx = list[i];
       const gx = idx % w;
@@ -756,6 +871,8 @@ export class Lighting {
       const d = Math.hypot(gx + 0.5 - px, gy + 0.5 - py);
       const base = this.falloff(d) * flicker;
       const tint = this.composeTint(base, idx);
+      this.tileTint[idx] = tint;
+      this.tileTintStamp[idx] = frame;
       const floor = this.floorSprites[idx];
       if (floor) floor.tint = tint;
       const props = this.propSprites.get(idx);
@@ -790,7 +907,9 @@ export class Lighting {
     }
 
     if (!this.omniscient) this.updateRing(px, py, ox, oy);
+    this.updatePieces();
     this.updateWallCutaway(px, py, dt);
+    this.updatePieceCutaway(px, py, dt);
   }
 
   /**
@@ -839,6 +958,8 @@ export class Lighting {
         if (d2 > r2) continue;
         if (!this.losSnap(ox, oy, gx, gy)) continue;
         const tint = this.composeTint(this.falloff(Math.sqrt(d2)) * flicker, idx);
+        this.tileTint[idx] = tint;
+        this.tileTintStamp[idx] = this.frameNo;
         const floor = this.floorSprites[idx];
         if (floor) floor.tint = tint;
         const wall = this.wallSprites[idx];
@@ -866,6 +987,7 @@ export class Lighting {
     for (let idx = 0; idx < this.states.length; idx++) {
       if (this.states[idx] !== FogState.HIDDEN) continue;
       this.states[idx] = FogState.EXPLORED;
+      this.revealPiecesAt(idx);
       const floor = this.floorSprites[idx];
       if (floor) {
         floor.visible = true;
@@ -906,6 +1028,7 @@ export class Lighting {
       if (!(packed[i >> 3] & (1 << (i & 7)))) continue;
       if (this.states[i] !== FogState.HIDDEN) continue;
       this.states[i] = FogState.EXPLORED;
+      this.revealPiecesAt(i);
       const floor = this.floorSprites[i];
       if (floor) {
         floor.visible = true;
@@ -992,6 +1115,45 @@ export class Lighting {
       if (target === 1 && wall.alpha > 0.995) {
         wall.alpha = 1;
         this.fadingWalls.delete(idx);
+      }
+    }
+  }
+
+  /**
+   * The cutaway for the tileset pieces (it.115): a TALL piece whose face sorts
+   * in front of the hero and whose painted face (the lower half of its canvas)
+   * covers the hero's body fades, with the same hysteresis as the cubes. The
+   * pieces are few (~200 a floor), so all of them are tested; the near-wall
+   * stubs are never tested - they are knee-high by design.
+   */
+  private updatePieceCutaway(px: number, py: number, dt: number): void {
+    if (this.pieces.length === 0) return;
+    const ps = worldToScreen(px, py, this.scratch);
+    const psx = ps.x;
+    const psy = ps.y;
+    const playerDepth = depthKey(px, py);
+    const k = 1 - Math.exp(-14 * dt);
+    for (let id = 0; id < this.pieces.length; id++) {
+      const p = this.pieces[id];
+      if (!p.tall || !p.revealed) continue;
+      const wall = p.sprite;
+      const held = this.fadingPieces.has(id);
+      let target = 1;
+      const depthMargin = held ? 10 : -2;
+      if (wall.zIndex > playerDepth - depthMargin) {
+        const pad = held ? 14 : 0;
+        const left = wall.x;
+        const right = wall.x + wall.width;
+        const top = wall.y + wall.height * 0.5;
+        const bottom = wall.y + wall.height;
+        if (right + pad > psx - 16 && left - pad < psx + 16 && bottom + pad > psy - 50 && top - pad < psy + 4) target = WALL_FADE_ALPHA;
+      }
+      if (target !== 1) this.fadingPieces.add(id);
+      else if (!held) continue;
+      wall.alpha += (target - wall.alpha) * k;
+      if (target === 1 && wall.alpha > 0.995) {
+        wall.alpha = 1;
+        this.fadingPieces.delete(id);
       }
     }
   }

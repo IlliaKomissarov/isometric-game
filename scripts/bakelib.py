@@ -339,7 +339,17 @@ def _update(fn):
                 break
             except PermissionError:
                 if attempt == 39:
-                    raise
+                    # IN PLACE, STILL UNDER THE LOCK (it.115): a handle that
+                    # allows renaming the manifest but not replacing it over
+                    # (seen with the dev server up) would otherwise fail every
+                    # bake; rewriting the same file is safe while we hold the lock.
+                    with open(MANIFEST, 'w', encoding='utf-8', newline=CRLF) as f:
+                        f.write(json.dumps(man, indent=1, ensure_ascii=False))
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    break
                 time.sleep(0.1)
     finally:
         _release()

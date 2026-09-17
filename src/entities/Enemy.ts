@@ -711,7 +711,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       tint: 0xffffff,
       stride: 0.26,
       ownShadow: true,
-      heightMult: 0.72, // Low and wide.
+      heightMult: 0.45, // Low and wide. It.115: 0.72 of a 34 px body spread the legs over two tiles - a boss-sized widow; now its span matches the other widows.
     },
   },
   wolf: {
@@ -1150,7 +1150,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       tint: 0xffffff,
       stride: 0.4,
       ownShadow: true,
-      heightMult: 1.4,
+      heightMult: 1.35, // It.115: a head over the hero, not a warden (the rig now counts the club too).
     },
   },
   orcSpearman: {
@@ -1264,7 +1264,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       tint: 0xffffff,
       stride: 0.3,
       ownShadow: true,
-      heightMult: 1.4,
+      heightMult: 1.25, // It.115: the branches already make it wide.
     },
   },
   wyrm: {
@@ -1375,7 +1375,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       scale: 0.538,
       tint: 0xffffff,
       stride: 0.4,
-      heightMult: 1.3,
+      heightMult: 1.25, // It.115.
     },
   },
   // --- The risen, the second wave. ---
@@ -1774,6 +1774,14 @@ export class Enemy extends Entity {
 
   private readonly bobPhase = Math.random() * Math.PI * 2;
   private elapsed = 0;
+  /**
+   * ALIVE IN A SCENE (it.115). While the bars are down the whole sim is held
+   * and `update` never runs, so a speaker stood frozen mid-breath. Only the
+   * visual clock moves here - no AI, no position, nothing a peer must agree on.
+   */
+  breathe(dt: number): void {
+    if (this.hp > 0 && this.action !== 'dead') this.elapsed += dt;
+  }
   private rigScale = 1;
   private shadowLight: LightDir = { x: 0, y: 0, k: 0 };
 
@@ -2021,15 +2029,23 @@ export class Enemy extends Entity {
   private currentAnim: AnimName | null = null;
 
   /**
-   * FEET-TRUE ANCHOR (it.42): the body's anchor comes from the atlas's
-   * painted bounds so the lowest painted pixel sits on the tile — no sprite
-   * floats above its feet, whatever the sheet's padding. Sheets with a
-   * baked shadow keep a sliver of it below the feet.
+   * FEET-TRUE ANCHOR (it.42): the body's anchor comes from the atlas so the
+   * feet sit on the tile - no sprite floats above its feet, whatever the
+   * sheet's padding.
+   *
+   * IT.115, PER CLIP AND PER FRAME: the anchor is the clip's calibrated
+   * `feetY` (`scripts/calibrate-feet.py`), and a fall's own row per frame.
+   * The old rule put the LOWEST PAINTED PIXEL of the whole clip on the tile,
+   * so a brute whose club swings 64 px below his boots stood 38 screen px in
+   * the air for the whole swing, and a body that fell towards the camera hung
+   * over its own corpse. The hand-tuned `feetAnchor(s)` only speak for sheets
+   * the calibration has not measured.
    */
-  private paintedAnchorY(anim: AnimName): number {
+  private feetAnchorY(anim: AnimName, frame: number): number {
     const e = spriteLib.entry(anim);
     const sprite = this.def.sprite;
     if (!e || !e.painted || !sprite) return sprite?.anchorY ?? 1;
+    if (e.feetY !== undefined) return Math.max(0.3, Math.min(1, spriteLib.feetY(anim, frame) / e.origH));
     const perAnim = sprite.feetAnchors?.[anim];
     if (perAnim !== undefined) return perAnim;
     if (sprite.feetAnchor !== undefined) return sprite.feetAnchor;
@@ -2038,12 +2054,20 @@ export class Enemy extends Entity {
     return Math.max(0.5, Math.min(1, (e.painted.bottom + 1 - shadow) / e.origH));
   }
 
-  /** Put an atlas frame on the body with its feet-true anchor. */
+  /** The anchor a corpse of this body keeps (it.115): the death clip's last frame, on its tile. */
+  corpseAnchorY(): number {
+    const sprite = this.def.sprite;
+    if (!sprite || !spriteLib.hasAnim(sprite.death)) return sprite?.anchorY ?? 1;
+    return this.feetAnchorY(sprite.death, spriteLib.anim(sprite.death).frameCount - 1);
+  }
+
+  /** Put an atlas frame on the body with its feet-true anchor (per frame for a fall). */
   private setFrame(anim: AnimName, dir: number, frame: number): void {
     this.body.texture = spriteLib.frame(anim, dir, frame);
-    if (this.currentAnim !== anim) {
+    const perFrame = !!spriteLib.entry(anim)?.feetFrames;
+    if (this.currentAnim !== anim || perFrame) {
       this.currentAnim = anim;
-      this.body.anchor.set(0.5, this.paintedAnchorY(anim));
+      this.body.anchor.set(0.5, this.feetAnchorY(anim, frame));
     }
   }
 
@@ -2056,7 +2080,9 @@ export class Enemy extends Entity {
       this.body.position.set(0, 2);
       // DATA-DRIVEN SCALE (it.36): the standard height ÷ the atlas's painted
       // idle height. Bosses use the boss standard; flavor via heightMult.
-      const painted = spriteLib.paintedHeight(sprite.idle ?? sprite.walk);
+      // It.115: the BODY height - top of the paint to the calibrated feet -
+      // of the tallest of idle, walk and attack/1.45 (`rigHeight`).
+      const painted = spriteLib.rigHeight(sprite.idle, sprite.walk, sprite.attack);
       const target = (this.isBoss() ? BOSS_HEIGHT : MOB_HEIGHT) * (sprite.heightMult ?? 1);
       this.rigScale = painted > 0 ? target / painted : sprite.scale;
       this.body.scale.set(this.rigScale);

@@ -57,7 +57,7 @@
 import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
 import { claimProp, claims, footprintOf, KIND_DIRT, KIND_GRASS, KIND_SAND, KIND_WATER, type RiverLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
 import { mulberry32 } from '@/utils/rng';
-import { bareLayout } from './Forest';
+import { bareLayout, carriageVariant, groundPainter, KIND_OW_FLOWERS, KIND_OW_FOREST, KIND_OW_GRAVEL, KIND_OW_MEADOW, KIND_OW_MOSS, KIND_OW_MUD, KIND_OW_POPPIES, mushroomVariant, rocksVariant, smallPiece, tileHash, tuftVariant } from './Forest';
 
 export const RIVER_W = 84;
 export const RIVER_H = 60;
@@ -126,6 +126,20 @@ const STEADINGS: Record<string, Steading> = {
   greatbarn: { kind: 'barracks', w: 6, h: 5, px: 362, ph: 288 },
   workshop: { kind: 'smithy', w: 5, h: 6, px: 350, ph: 297 },
   tower: { kind: 'watchtower', w: 2, h: 2, px: 141, ph: 208 },
+  /**
+   * THE WORKING FARM (it.115): polyy's village buildings, baked in it.114 and
+   * never stood anywhere. The bake scaled each one so its base diamond spans
+   * its footprint, and `TownProps` seats it on its own measured base anchor.
+   */
+  watermill: { kind: 'house', variant: 'bld_watermill_a', w: 4, h: 4, px: 218, ph: 236 },
+  windmill: { kind: 'house', variant: 'bld_windmill_b', w: 4, h: 4, px: 226, ph: 318 },
+  granary: { kind: 'house', variant: 'bld_granary_staddle_a', w: 3, h: 3, px: 212, ph: 198 },
+  dovecote: { kind: 'house', variant: 'bld_dovecote_a', w: 2, h: 2, px: 106, ph: 136 },
+  lumbershed: { kind: 'house', variant: 'bld_lumber_shed_a', w: 3, h: 3, px: 141, ph: 119 },
+  stable: { kind: 'house', variant: 'bld_stable_a', w: 3, h: 3, px: 166, ph: 154 },
+  shrine: { kind: 'house', variant: 'bld_wayside_shrine_a', w: 2, h: 2, px: 128, ph: 181 },
+  fisherhut: { kind: 'house', variant: 'bld_fisherman_hut_b', w: 3, h: 3, px: 183, ph: 177 },
+  roundhut: { kind: 'house', variant: 'bld_round_cottage_a', w: 3, h: 3, px: 144, ph: 148 },
 };
 
 /**
@@ -158,7 +172,13 @@ const SHORE_BAND = 1.5;
  * never touches the shared random stream (it.98).
  */
 function bankJitter(x: number, y: number): number {
-  return (((x * 37 + y * 91) % 5) - 2) * 0.3;
+  /**
+   * SMOOTH AGAIN (it.115). The per-tile jitter above made the margin a CHEQUER
+   * of sand and grass diamonds - the "chessboard" along the whole bank. The
+   * sawtooth it was fighting is now softened by `GroundBlend`, which feathers
+   * the sand into the grass, so the band only needs a slow wander of its own.
+   */
+  return 0.45 * Math.sin(x * 0.37 + y * 0.21 + 0.6) + 0.25 * Math.cos(y * 0.53 - x * 0.17);
 }
 
 /** Distance from a point to the river's course, in tiles. */
@@ -503,6 +523,17 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
   steadingNear('longbarn', 60, 12);
   steadingNear('cottage_a', 66, 6);
   steadingNear('tower', BRIDGE.x - 6, BRIDGE.y - 5, 6);
+  // THE WORKING FARM (it.115): a mill on the water, a mill on the hill, and the
+  // outbuildings a holding this size keeps - each spiralled onto open ground.
+  steadingNear('watermill', 13, 47, 8);
+  steadingNear('windmill', 41, 5, 7);
+  steadingNear('stable', 50, 4, 6);
+  steadingNear('granary', YARD.x + 9, YARD.y + 1, 5);
+  steadingNear('dovecote', YARD.x - 10, YARD.y - 3, 8);
+  steadingNear('lumbershed', 27, 13, 6);
+  steadingNear('shrine', 50, 24, 10);
+  steadingNear('fisherhut', 8, 38, 6);
+  steadingNear('roundhut', 8, 26, 6);
 
   put('well', YARD.x + 3, YARD.y - 1);
   put('cart', YARD.x - 5, YARD.y + 1, 'cart_b');
@@ -519,6 +550,9 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     [63, 16, 'crates_wood', undefined], [69, 10, 'barrels_stacked', undefined],
     [45, 12, 'cart', undefined], [55, 20, 'barrel', 'barrel_c'],
   ] as const) put(kind as TownProp['kind'], x, y, variant);
+  // WAGONS WAITING (it.115): an old cart or two where a farm would leave one - the yard's corner, the bridge head, the upper acres.
+  for (const [x, y] of [[YARD.x + 6, YARD.y - 3], [BRIDGE.x - 6, BRIDGE.y + 3], [BRIDGE.x - 7, BRIDGE.y - 3], [42, 26], [58, 18], [16, 33]] as const)
+    put('barricade', x, y, carriageVariant(x, y));
 
   // The yard fence, with the yard's mouth left open onto the track.
   for (let x = YARD.x - 6; x <= YARD.x + 7; x += 2) {
@@ -708,6 +742,30 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     if (inside(far, y)) decal({ kind: 'bridgegate', x: far, y, variant: 'THE FAR BANK' });
   }
 
+  /**
+   * THE SHALLOWS (it.115): rushes standing IN the water along the near bank and
+   * lily pads a tile or two out - never under the span, a jetty's line or the
+   * far side. Both are paint; nobody walks there anyway.
+   */
+  {
+    const nearBankWater = (x: number, y: number, reach: number): boolean => {
+      for (let oy = -reach; oy <= reach; oy++)
+        for (let ox = -reach; ox <= reach; ox++) if (isNear(x + ox, y + oy) && !onTrack[idx(x + ox, y + oy)]) return true;
+      return false;
+    };
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        if (!isWater(x, y) || acrossWater(x, y) || grid[idx(x, y)] === TILE_FLOOR) continue; // a jetty's planks are floor
+        if (crossing && Math.abs(y - crossing.y) <= 3 && x >= crossing.near - 2) continue;
+        let edge = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) if (isNear(x + dx, y + dy)) edge = true;
+        if (edge && tileHash(x, y, 31) < 0.34)
+          decal({ kind: 'reeds', x, y, variant: 'grassclump', ox: (tileHash(x, y, 32) - 0.5) * 0.5, oy: (tileHash(x, y, 33) - 0.5) * 0.5 });
+        else if (!edge && nearBankWater(x, y, 2) && tileHash(x, y, 34) < 0.22)
+          decal({ kind: 'debris', x, y, variant: `lily_${'abc'[Math.floor(tileHash(x, y, 35) * 3)]}`, ox: (tileHash(x, y, 36) - 0.5) * 0.6, oy: (tileHash(x, y, 37) - 0.5) * 0.6 });
+      }
+  }
+
   // ---- THE TREE LINE ----------------------------------------------------
   // Everything that is neither land nor river is wood, several rings deep, so
   // the map ends in a border rather than in a cliff. The river's own mouths are
@@ -810,6 +868,80 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     }
   }
 
+  /**
+   * ---- THE GROUND (it.115) ---------------------------------------------
+   * "No variety, especially by the river": the whole meadow was one grass
+   * diamond from the gate to the bridge. The river's own geometry now lays it:
+   *
+   *   MUD     a wet margin just past the sand, the length of the bank, and the
+   *           farmyard trodden to mud round the well
+   *   LITTER  leaf-fall on the ground the tree line overhangs
+   *   MOSS    a shaded band behind that, and the damp low spots of the pasture
+   *   GRAVEL  the bridge head and the gate yard, and the last of the track up
+   *           to the span; a few stony outcrops in the upper acres
+   *
+   * Grass only is repainted - never the water, the sand, the track or the far
+   * bank - so the it.107 bank and the town's earlier tiles stay as they were.
+   */
+  const bankEdge = (x: number, y: number): number => RIVER_HALF + 0.5 * Math.sin(y * 0.42 + 0.8) + 0.3 * Math.sin(x * 0.29 - 1.1) + SHORE_BAND + bankJitter(x, y);
+  const meadow = groundPainter(W, H, tileKind, (x, y) => grid[idx(x, y)] !== 0 && !farSide[idx(x, y)] && tileKind[idx(x, y)] === KIND_GRASS && !onTrack[idx(x, y)]);
+  const paved = groundPainter(W, H, tileKind, (x, y) => grid[idx(x, y)] !== 0 && !farSide[idx(x, y)] && (tileKind[idx(x, y)] === KIND_GRASS || tileKind[idx(x, y)] === KIND_DIRT));
+  /** How many steps a tile is from the wood (a tile that is neither land nor river), up to 3. */
+  const woodDist = (x: number, y: number): number => {
+    for (let r = 1; r <= 3; r++)
+      for (let oy = -r; oy <= r; oy++)
+        for (let ox = -r; ox <= r; ox++) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+          const nx = x + ox;
+          const ny = y + oy;
+          if (!inside(nx, ny) || (grid[idx(nx, ny)] === 0 && tileKind[idx(nx, ny)] !== KIND_WATER)) return r;
+        }
+    return 9;
+  };
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (acrossWater(x, y)) continue;
+      const wet = toCourse(x + 0.5, y + 0.5) - bankEdge(x, y);
+      // A wet margin a tile deep, and a little deeper where the bank dips.
+      if (wet > 0 && wet <= 0.9 + 0.6 * Math.max(0, Math.sin(x * 0.33 - y * 0.12))) meadow.tile(x, y, KIND_OW_MUD);
+      else {
+        const w = woodDist(x, y);
+        if (w === 1) meadow.tile(x, y, KIND_OW_FOREST);
+        else if (w === 2 && Math.sin(x * 0.45 + y * 0.2) + Math.cos(y * 0.38 - x * 0.12) > 0.2) meadow.tile(x, y, KIND_OW_MOSS);
+      }
+    }
+  /**
+   * THE MEADOW ITSELF (it.115). Between the paths and the wood the grass is not
+   * one lawn: long grass in broad drifts, wildflowers where it is sunniest, and
+   * red poppies in a few pockets - each a slow, continuous field so a drift is
+   * one shape with a ragged edge (`GroundBlend` feathers it), never a speckle.
+   */
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++) {
+      if (acrossWater(x, y)) continue;
+      const drift = Math.sin(x * 0.21 + y * 0.13 + 0.4) + Math.cos(y * 0.27 - x * 0.09 + 1.3);
+      const bloom = Math.sin(x * 0.17 - y * 0.23 + 2.1) + Math.cos(x * 0.31 + y * 0.07 - 0.5);
+      if (bloom > 1.35) meadow.tile(x, y, KIND_OW_FLOWERS);
+      else if (drift > 1.05) meadow.tile(x, y, KIND_OW_MEADOW);
+    }
+  for (const [cx, cy, rx, ry] of [[15, 27, 1.8, 1.3], [35, 25, 2, 1.4], [50, 16, 1.6, 1.2], [22, 38, 1.8, 1.2], [60, 9, 1.7, 1.2], [9, 35, 1.4, 1]] as const)
+    meadow.patch(cx, cy, rx, ry, KIND_OW_POPPIES);
+  // The farmyard, trodden to mud about the well and the barn door.
+  meadow.patch(YARD.x + 1, YARD.y, 5.5, 3.4, KIND_OW_MUD);
+  meadow.patch(YARD.x + 3, YARD.y - 1.5, 2.4, 1.8, KIND_OW_MUD);
+  // The damp low spots of the pasture, by hand.
+  for (const [cx, cy, rx, ry] of [[37, 14, 3.4, 2.4], [49, 25, 3, 2.2], [56, 9, 3.2, 2.2], [11, 38, 2.8, 2], [42, 36, 3, 2.2], [19, 22, 2.6, 2], [63, 5, 2.6, 2]] as const)
+    meadow.patch(cx, cy, rx, ry, KIND_OW_MOSS);
+  // Paved ground where carts turn: the gate yard and the bridge head.
+  paved.patch(ENTRY.x + 1, ENTRY.y, 3, 2.4, KIND_OW_GRAVEL);
+  paved.patch(BRIDGE.x - 3, BRIDGE.y, 4, 3.2, KIND_OW_GRAVEL);
+  paved.strip([[60, 15], [BRIDGE.x - 2, BRIDGE.y], [BRIDGE.x, BRIDGE.y]], 1.4, KIND_OW_GRAVEL);
+  // Stony outcrops in the upper acres, where the plough never went.
+  for (const [cx, cy, rx, ry] of [[44, 27, 1.8, 1.3], [62, 11, 2, 1.4], [30, 18, 1.6, 1.2], [52, 4, 1.8, 1.3]] as const)
+    meadow.patch(cx, cy, rx, ry, KIND_OW_GRAVEL);
+  // Ground under the gate itself stays the track's (it.110).
+  if (crossing) tileKind[idx(crossing.near, crossing.y)] = KIND_DIRT;
+
   // ---- THE WAY IN, AND THE WAY ON ---------------------------------------
   for (const t of [ENTRY, HOME]) if (inside(t.x, t.y)) grid[idx(t.x, t.y)] = TILE_FLOOR;
   decal({ kind: 'riverroad', x: HOME.x, y: HOME.y });
@@ -849,6 +981,41 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     if (chestSpots.some((q) => Math.hypot(q.x - c.x, q.y - c.y) < 6)) continue;
     if (Math.hypot(c.x - YARD.x, c.y - YARD.y) < 5) continue;
     chestSpots.push(c);
+  }
+
+  /**
+   * THE SMALL THINGS (it.115), each on the ground that calls for it: tufts on
+   * the track's verges and through the grass, stones on the wet margin and the
+   * gravel, fungus under the tree line. Paint only - the hero walks through all
+   * of it - and never on a tile anything else already stands on.
+   */
+  {
+    const taken = new Set<number>();
+    for (const p of props) taken.add(idx(p.x, p.y));
+    for (const c of chestSpots) taken.add(idx(c.x, c.y));
+    for (const k of [...kin, oscar, ...bandits]) taken.add(idx(k.x, k.y));
+    for (let y = 1; y < H - 1; y++)
+      for (let x = 1; x < W - 1; x++) {
+        const i = idx(x, y);
+        if (taken.has(i) || grid[i] !== TILE_FLOOR || farSide[i] || onTrack[i]) continue;
+        const k = tileKind[i];
+        let verge = false;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) if (onTrack[idx(x + dx, y + dy)]) verge = true;
+        if (k === KIND_GRASS || k === KIND_OW_MOSS || k === KIND_OW_MEADOW) {
+          if (tileHash(x, y, 11) < (verge ? 0.3 : k === KIND_GRASS ? 0.08 : 0.16)) decal(smallPiece(x, y, tuftVariant(x, y)));
+          else if (k === KIND_GRASS && tileHash(x, y, 17) < 0.012) decal(smallPiece(x, y, rocksVariant(x, y)));
+        } else if (k === KIND_OW_FLOWERS || k === KIND_OW_POPPIES) {
+          if (tileHash(x, y, 18) < 0.07) decal(smallPiece(x, y, tuftVariant(x, y)));
+        } else if (k === KIND_OW_MUD) {
+          if (tileHash(x, y, 12) < 0.07) decal(smallPiece(x, y, rocksVariant(x, y)));
+          else if (tileHash(x, y, 13) < 0.1) decal(smallPiece(x, y, tuftVariant(x, y)));
+        } else if (k === KIND_OW_GRAVEL) {
+          if (tileHash(x, y, 14) < (verge ? 0.08 : 0.28)) decal(smallPiece(x, y, rocksVariant(x, y)));
+        } else if (k === KIND_OW_FOREST) {
+          if (tileHash(x, y, 15) < 0.1) decal(smallPiece(x, y, mushroomVariant(x, y)));
+          else if (tileHash(x, y, 16) < 0.12) decal(smallPiece(x, y, tuftVariant(x, y)));
+        }
+      }
   }
 
   // ---- nothing may be walled into a pocket ------------------------------

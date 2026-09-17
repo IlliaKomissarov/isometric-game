@@ -178,6 +178,30 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
     if (!g) throw new Error('no run');
     g.loop.step(30);
     check('starts in town', g.floor === 0 && !!g.town);
+    {
+      // EVERY ITEM HAS ITS ART AND TURNS (it.115): each def's sprite is a baked single, each spin a
+      // one-row strip; every drop of the item folder is reachable; no food text mentions hunger.
+      const { ITEMS, kindWord } = await import('@/items/catalog');
+      const { CURIOS } = await import('@/items/curios');
+      const { FOODS } = await import('@/items/registry');
+      const defs = Object.values(ITEMS);
+      const noArt = defs.filter((d) => d.sprite && !g.sprites.knowsSingle(d.sprite)).map((d) => d.id);
+      const noSpin = defs.filter((d) => d.spin && (!g.sprites.knows(d.spin) || g.sprites.entry(d.spin)?.dirCount !== 1)).map((d) => d.id);
+      check('every item sprite is a baked single', noArt.length === 0, noArt.slice(0, 8).join());
+      check('every item turntable is a one-row strip in the atlas', noSpin.length === 0, noSpin.slice(0, 8).join());
+      const spun = defs.filter((d) => d.spin).length;
+      check('the drop is in the game: fifty dishes, the curios, most items turning', FOODS.length === 50 && CURIOS.length >= 400 && spun >= 500, `${FOODS.length} dishes, ${CURIOS.length} curios, ${spun} turning`);
+      check('food says what it heals, never hunger', FOODS.every((d) => !/hunger|starv/i.test(`${d.desc} ${d.name}`)) && FOODS.every((d) => (d.use?.food?.heal ?? 0) > 0));
+      check('every item names its kind', defs.every((d) => kindWord(d).length > 0) && kindWord(ITEMS.rusty_sword) === 'sword' && kindWord(ITEMS.short_bow) === 'bow' && kindWord(ITEMS.health_potion) === 'potion');
+      const cell = document.createElement('div');
+      cell.className = 'inv-cell';
+      const { itemIconHtml } = await import('@/ui/itemIcons');
+      cell.innerHTML = itemIconHtml(ITEMS.health_potion);
+      document.body.appendChild(cell);
+      const img = cell.querySelector('img');
+      check('an item cell turns (inv-spin animates)', !!img && getComputedStyle(img).animationName === 'inv-spin', img ? getComputedStyle(img).animationName : 'no img');
+      cell.remove();
+    }
     /**
      * THE ARRIVAL (it.114). A fresh hero now starts at the training ground and
      * the bars come down once: the sentry's two lines, each waiting for the
@@ -1241,7 +1265,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       // The first key still on the floor (the quarry block above took key I, it.88).
       const k = g.mines.keys.find((kk: { uid: number }) => kk.uid >= 0 && !!g.loot.getItem(kk.uid)) ?? g.mines.keys[0];
       const item = g.loot.getItem(k.uid);
-      check('a quarry key lies small on the floor with a beacon above the walls', !!item && item.glyph.scale.x <= 0.31 && !!item.beacon && !item.beacon.visible);
+      check('a quarry key lies small on the floor with a beacon above the walls', !!item && Math.max(item.glyph.width, item.glyph.height) <= 34 && !!item.beacon && !item.beacon.visible);
       g.player.pos.x = k.x + 0.5;
       g.player.pos.y = k.y + 1.5;
       g.lighting.updateVisibility(k.x, k.y + 1);
@@ -1361,7 +1385,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       };
       const forestWas = g.quests.forest;
       g.quests.forest = 'active'; // the city has not asked for a sword yet
-      check('E at the sign offers the training', /TRAINING GROUND/.test(await pressE()));
+      check('E at the sign offers the training', /TRAINING GROUND|LORD MILK/.test(await pressE())); // Lord Milk holds the yard (it.115).
       document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
       await wait(60);
       g.quests.forest = forestWas; // ...and once it has, the officer holds the post
@@ -1378,7 +1402,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         const farmWas = g.quests.farm;
         g.quests.farm = 'done';
         const word = await pressE();
-        check('once the fields are won the post is the training sign again', /TRAINING GROUND/.test(word) && !/ORDWAY/.test(word), word.slice(0, 40));
+        check('once the fields are won the post is the training sign again', /TRAINING GROUND|LORD MILK/.test(word) && !/ORDWAY/.test(word), word.slice(0, 40));
         document.querySelector<HTMLElement>('#dialogue-panel [data-close]')?.click();
         await wait(60);
         T.start();
@@ -1817,6 +1841,11 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       check('the reward opens the room without leaving the inn', await until(() => game() && game().floor === g.INN_FLOOR && game().town?.layout.inn?.roomOpen === true, 15000));
       g = game();
       await fadeClear();
+      // THE KEEPER ASKS FOR THE CELLAR IN THE SAME BREATH (it.115): not now - the counter asks again below.
+      if (await until(() => !!dl(), 4000)) {
+        dl()?.querySelector<HTMLElement>('[data-choice=stay]')?.click();
+        await until(() => !dl(), 3000);
+      }
       const inn2 = g.town.layout.inn;
       const roomProps = g.town.layout.props as Array<{ kind: string; variant?: string }>;
       check('the door stands open on the bed and the warded chest', roomProps.some((q) => q.kind === 'innwall' && q.variant === 'inn_door_open')
@@ -2962,7 +2991,8 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
           // The prompt stands ON the road, one tile in front of the arch, so the
           // hero reads it from the lane rather than from the grass beside it.
           check('and its prompt is on the road itself', !!city && g.scene.isWalkable(Math.floor(city.x), Math.floor(city.y)), city ? `${city.x},${city.y}` : 'none');
-          const wrecks = props.filter((q) => q.kind === 'ruin' && (q.variant ?? '').startsWith('gl_wreck'));
+          // Whole wrecks and masonry ruins since it.115 (the lone plank slices went).
+          const wrecks = props.filter((q) => q.kind === 'ruin' && /^(gl_wreck|ruin_)/.test(q.variant ?? ''));
           const graves = props.filter((q) => q.kind === 'rock' && /^gl_(grave|cross)/.test(q.variant ?? ''));
           check('a hamlet was standing here before the armies were', wrecks.length >= 8, `${wrecks.length} wrecks`);
           check('and the ones they had time to bury are buried', graves.length >= 8, `${graves.length} markers`);
@@ -3146,18 +3176,25 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       }
       // The training ground paid.
       check('the yard paid its hundred gold once', g.quests.tutorial === 'done', String(g.quests.tutorial));
-      // THE MENAGERIE: onto the sand, a costume on, the hero hidden under it, and home again.
+      // THE MENAGERIE (it.115): onto the sand, two bodies on their own spots (never on the hero), and home again.
       g.menagerie(null);
       check('the menagerie is the sand with the gates shut', await until(() => game() && game().floor === -2 && !!game().coliseum?.menagerie, 15000));
       g = game();
       await fadeClear();
       check('the menagerie picker is open', !!document.querySelector('#menagerie.open'));
-      await g.wear('treant');
-      check('a costume goes on and the hero is drawn as it', await until(() => !!game().puppet && game().player.container.renderable === false, 6000));
+      await g.showcase.toggle('treant');
+      await g.showcase.toggle('orcBrute');
+      check('two display models stand on the sand', await until(() => game().showcase.models.length === 2, 6000));
       driveRender(600);
-      check('the costume rides the hero position', !!g.puppet && Math.abs(g.puppet.container.zIndex - g.player.container.zIndex) <= 2, `${g.puppet?.container.zIndex} vs ${g.player.container.zIndex}`);
-      await g.wear(null);
-      check('the hero own body comes back', await until(() => !game().puppet && game().player.container.renderable === true, 3000));
+      {
+        const ms = g.showcase.models as Array<{ x: number; y: number; widthPx: number }>;
+        const apart = Math.hypot(ms[0].x - ms[1].x, ms[0].y - ms[1].y);
+        const off = ms.every((m) => Math.hypot(m.x - g.player.pos.x, m.y - g.player.pos.y) > 1.5);
+        check('each model has its own spot, clear of the other and of the hero', apart > 1 && off, `apart ${apart.toFixed(2)}`);
+        check('the hero keeps his own body', g.player.container.renderable !== false);
+      }
+      await g.showcase.toggle('treant');
+      check('a model comes off the sand', await until(() => game().showcase.models.length === 1, 3000));
       await g.travel(0);
       check('home from the sand', await until(() => game() && game().floor === 0, 15000));
       g = game();

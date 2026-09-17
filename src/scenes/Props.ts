@@ -86,6 +86,9 @@ export function placeProps(
       const gx = room.x + 1 + Math.floor(rand() * (room.w - 2));
       const gy = room.y + 1 + Math.floor(rand() * (room.h - 2));
       if (!isFloor(map, gx, gy)) continue;
+      // Never on the room's heart (it.115): the stair, the warden's seal and the
+      // arena's teleporter all sit on `room.x + floor(w/2), room.y + floor(h/2)`.
+      if (gx === room.x + Math.floor(room.w / 2) && gy === room.y + Math.floor(room.h / 2)) continue;
       const pileName = rand() < 0.5 ? 'coin_pile_a' : 'coin_pile_b';
       const gs = worldToScreen(gx + 0.5, gy + 0.5, scratch);
       let gold: Sprite;
@@ -146,8 +149,19 @@ export function placeWaystone(
   lighting: Lighting,
   ambience: Ambience,
 ): { x: number; y: number } {
-  const gx = map.spawn.x + 2;
-  const gy = map.spawn.y;
+  // ON THE FLOOR (it.115): two tiles east of the spawn was a WALL in any room
+  // under six wide - the stone stood half inside the masonry. The first open
+  // tile of a short list around the spawn is taken instead.
+  const spots = [[2, 0], [0, 2], [-2, 0], [0, -2], [2, 2], [1, 1], [1, 0], [0, 1]];
+  let gx = map.spawn.x;
+  let gy = map.spawn.y + 1;
+  for (const [dx, dy] of spots) {
+    if (isFloor(map, map.spawn.x + dx, map.spawn.y + dy)) {
+      gx = map.spawn.x + dx;
+      gy = map.spawn.y + dy;
+      break;
+    }
+  }
   const cx = gx + 0.5;
   const cy = gy + 0.5;
   const scratch = vec2();
@@ -224,9 +238,11 @@ export function placeStairs(
     viewport.groundLayer.addChild(sprite);
   }
   if (opts?.hidden) {
-    // Sealed arena: invisible AND fog-unregistered (fog toggles `visible`,
-    // so the hide lives on `renderable` — the two never fight).
-    sprite.renderable = false;
+    // A stair that is never drawn (the town gate, the places, depth XX's hall):
+    // unregistered, so Lighting never touches `visible`, and hidden THERE - the
+    // off-screen culler owns `renderable` and set it back every frame (it.115:
+    // that is how the quarry's and depth XX's "hidden" stairs stood in plain sight).
+    sprite.visible = false;
   } else {
     lighting.registerProp(gx, gy, sprite);
   }

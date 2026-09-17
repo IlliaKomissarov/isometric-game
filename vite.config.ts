@@ -8,7 +8,7 @@ import { basename, resolve } from 'path';
  * and the settings head can say which game this is. Bump the iteration here.
  */
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8')) as { version: string };
-const APP_ITERATION = 'it.114';
+const APP_ITERATION = 'it.115';
 
 /**
  * Vite configuration for the isometric ARPG core.

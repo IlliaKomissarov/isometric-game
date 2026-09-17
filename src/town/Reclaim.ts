@@ -60,6 +60,25 @@ export interface SpeechBeat {
    * on its own. Unattributed beats never wait: there is nobody to wait for.
    */
   wait?: boolean;
+  /**
+   * THE SPEAKER MOVES (it.115). A clip the cast member at this beat plays ONCE
+   * when the line goes up - an order given with the sword, a cup set down - and
+   * then falls back to their idle loop. Ignored when the sheet is not resident
+   * or no cast member stands on the beat's tile.
+   */
+  anim?: AnimName;
+  /** The facing for that clip (default: the member's own). */
+  dir?: number;
+  /** Which cast member speaks, by index; omitted, the one standing at `x`,`y`. */
+  castIndex?: number;
+  /**
+   * THE CAMERA LOOKS CLOSER (it.115): a zoom level (2.2 fills the frame with a
+   * face) held from the moment the line goes up until the page is turned - or,
+   * for a line that is not waited on, until its hold runs out.
+   */
+  zoom?: number;
+  /** Where the zoom looks; omitted, the beat's own tile. */
+  zoomAt?: { x: number; y: number };
 }
 
 interface Tween {
@@ -176,6 +195,12 @@ export interface ProcessionHooks {
   /** The camera's cinematic focus (null gives it back to the hero). */
   focus: (x: number, y: number) => void;
   release: () => void;
+  /**
+   * THE SCENE'S ZOOM (it.115): a level while a beat with `zoom` is on screen,
+   * `null` when the page is turned and again when the bars lift. Main routes it
+   * to `Camera.setCineZoom`, which remembers and restores the player's own.
+   */
+  zoom?: (level: number | null) => void;
   sfx: (name: 'barrelBreak' | 'questDone' | 'gateOpen' | 'crowd' | 'depart') => void;
   onDone: () => void;
 }
@@ -202,11 +227,44 @@ interface Walker {
   n: number;
 }
 
+/** Idle loops step at the sheets' natural pace; a spoken clip a shade quicker. */
+const IDLE_FPS = 8;
+const SPEAK_FPS = 10;
+
+/**
+ * ONE WHO STANDS (it.115). Up to it.114 the cast was a single frame each - an
+ * officer frozen at frame 0 while the folk walked past him breathing. Each
+ * now runs its idle loop with its own phase, and can be handed a clip to play
+ * once when its line goes up.
+ */
+interface CastFigure {
+  root: Container;
+  body: Sprite;
+  anim: AnimName;
+  dir: number;
+  height: number;
+  fc: number;
+  /** Seconds of offset into the loop, so a rank of guards does not breathe in unison. */
+  phase: number;
+  /** The one-shot clip in flight, if any. */
+  speak: { anim: AnimName; dir: number; fc: number; clock: number } | null;
+  x: number;
+  y: number;
+}
+
 /** The letterboxed homecoming. */
 export class ProcessionScene {
   private t = 0;
   private readonly walkers: Walker[] = [];
-  private readonly cast: Container[] = [];
+  private readonly cast: CastFigure[] = [];
+  /**
+   * THE CLOSE LOOK (it.115). While a beat with `zoom` is up the camera is pinned
+   * here and the zoom is held; both let go when the page is turned (or, for a
+   * line nobody waits on, when `zoomUntil` passes on the scene's clock).
+   */
+  private beatFocus: { x: number; y: number } | null = null;
+  private zoomUntil = Infinity;
+  private zoomed = false;
   /** Which lines have been said already (it.101). */
   private said = 0;
   /**
@@ -298,21 +356,16 @@ export class ProcessionScene {
     }
     // THOSE WHO STAND (it.101): the officer at the head of the muster, the
     // general over his line. Placed once; they do not walk anywhere.
-    for (const c of h.cast ?? []) {
-      if (!spriteLib.hasAnim(c.anim)) continue;
-      const painted = spriteLib.paintedHeight(c.anim) || 60;
+    (h.cast ?? []).forEach((c, i) => {
+      if (!spriteLib.hasAnim(c.anim)) return;
       const root = new Container();
       root.scale.set(0.8);
       const shadow = new Sprite(assets.get('shadow'));
       shadow.anchor.set(0.5, 0.5);
       shadow.alpha = 0.6;
       root.addChild(shadow);
-      const body = new Sprite(spriteLib.frame(c.anim, c.dir ?? 4, 0));
-      // FEET ON THE GROUND (it.104): the cast had the same floating-body bug the
-      // squad did - an officer standing seventy pixels over his own shadow.
-      const fa = spriteLib.footAnchor(c.anim);
-      body.anchor.set(fa.x, fa.y);
-      body.scale.set((c.height ?? 66) / painted / 0.8);
+      const dir = c.dir ?? 4;
+      const body = new Sprite(spriteLib.frame(c.anim, dir, 0));
       body.position.set(0, 2);
       if (c.tint !== undefined) body.tint = c.tint;
       root.addChild(body);
@@ -320,8 +373,13 @@ export class ProcessionScene {
       root.position.set(s.x, s.y);
       root.zIndex = depthKey(c.x + 0.5, c.y + 0.5);
       h.layer.addChild(root);
-      this.cast.push(root);
-    }
+      const fc = spriteLib.anim(c.anim).frameCount;
+      // A phase per figure, dealt from its index: deterministic, and no two
+      // neighbours on the same tick of the loop.
+      const fig: CastFigure = { root, body, anim: c.anim, dir, height: c.height ?? 66, fc, phase: ((i * 0.37) % 1) * (fc / IDLE_FPS), speak: null, x: c.x, y: c.y };
+      this.fitBody(fig, c.anim);
+      this.cast.push(fig);
+    });
     // The procession: the folk, each on the road a beat after the last, and each
     // out of a different sheet - a homecoming of one repeated man is not a crowd.
     {
@@ -381,7 +439,80 @@ export class ProcessionScene {
     if (this.finished || !this.awaiting) return false;
     this.awaiting = false;
     this.h.sayDone?.();
+    this.letGoZoom();
     return true;
+  }
+
+  /** The close look ends: the pin comes off and the zoom eases back (it.115). */
+  private letGoZoom(): void {
+    this.beatFocus = null;
+    this.zoomUntil = Infinity;
+    if (!this.zoomed) return;
+    this.zoomed = false;
+    this.h.zoom?.(null);
+  }
+
+  /**
+   * FEET ON THE GROUND (it.104), for whichever sheet the figure is wearing now:
+   * an idle and an attack clip do not share a painted height or an anchor, so
+   * both are refitted when the clip changes - or the swing would float.
+   */
+  private fitBody(fig: CastFigure, anim: AnimName): void {
+    const painted = spriteLib.paintedHeight(anim) || 60;
+    const fa = spriteLib.footAnchor(anim);
+    fig.body.anchor.set(fa.x, fa.y);
+    fig.body.scale.set(fig.height / painted / 0.8);
+  }
+
+  /** A beat goes up (it.115): the speaker moves, and the camera may look closer. */
+  private stage(beat: SpeechBeat): void {
+    if (beat.anim && spriteLib.hasAnim(beat.anim)) {
+      let fig: CastFigure | undefined = beat.castIndex !== undefined ? this.cast[beat.castIndex] : undefined;
+      if (!fig) {
+        let best = 0.75;
+        for (const c of this.cast) {
+          const d = Math.hypot(c.x - beat.x, c.y - beat.y);
+          if (d < best) {
+            best = d;
+            fig = c;
+          }
+        }
+      }
+      if (fig && !fig.root.destroyed) {
+        fig.speak = { anim: beat.anim, dir: beat.dir ?? fig.dir, fc: spriteLib.anim(beat.anim).frameCount, clock: 0 };
+        this.fitBody(fig, beat.anim);
+      }
+    }
+    if (beat.zoom !== undefined && this.h.zoom) {
+      const at = beat.zoomAt ?? beat;
+      this.beatFocus = { x: at.x + 0.5, y: at.y + 0.5 };
+      this.h.focus(this.beatFocus.x, this.beatFocus.y);
+      this.h.zoom(beat.zoom);
+      this.zoomed = true;
+      // A line nobody waits on lets go when its hold runs out.
+      const waits = beat.wait ?? !!beat.speaker;
+      this.zoomUntil = waits ? Infinity : this.t + (beat.hold ?? 3.4);
+    }
+  }
+
+  /** The cast breathes (it.115): idle loops with a phase each; a spoken clip runs once and falls back. */
+  private animateCast(dt: number): void {
+    for (const c of this.cast) {
+      if (c.root.destroyed) continue;
+      const sp = c.speak;
+      if (sp) {
+        sp.clock += dt;
+        const f = Math.floor(sp.clock * SPEAK_FPS);
+        if (f >= sp.fc) {
+          c.speak = null;
+          this.fitBody(c, c.anim);
+        } else {
+          c.body.texture = spriteLib.frame(sp.anim, sp.dir, f);
+          continue;
+        }
+      }
+      c.body.texture = spriteLib.frame(c.anim, c.dir, Math.floor((this.t + c.phase) * IDLE_FPS) % c.fc);
+    }
   }
 
   private setTitle(main: string, sub: string): void {
@@ -397,8 +528,13 @@ export class ProcessionScene {
     this.t += dt;
     const t = this.t;
     const at = h.at;
-    // The bars close and the camera crosses to the place.
-    if (t < this.walkAt + 1.8) h.focus(at.x + 0.5, at.y + 0.5);
+    // The close look on a line nobody waited for runs out on the clock (it.115).
+    if (t >= this.zoomUntil) this.letGoZoom();
+    // The bars close and the camera crosses to the place - unless a beat holds
+    // the camera on a face (it.115), which outranks both the gate and the road.
+    const pinned = this.beatFocus;
+    if (pinned) h.focus(pinned.x, pinned.y);
+    else if (t < this.walkAt + 1.8) h.focus(at.x + 0.5, at.y + 0.5);
     if (h.carts.length) {
       // 1.3 - 3.4 s: the carts tremble, then fall.
       if (t >= 1.3 && !this.toppled) {
@@ -432,9 +568,11 @@ export class ProcessionScene {
       while (!this.awaiting && this.said < speech.length && t >= speech[this.said].t) {
         const beat = speech[this.said++];
         h.say(beat);
+        this.stage(beat);
         if (beat.wait ?? !!beat.speaker) this.awaiting = true;
       }
     }
+    this.animateCast(dt);
     // The procession walks the route; the camera drifts with its head.
     let head: Walker | null = null;
     for (const w of this.walkers) {
@@ -558,7 +696,7 @@ export class ProcessionScene {
       } else this.leadSpot.alpha = Math.max(0, this.leadSpot.alpha - dt * 0.8);
     }
     if (this.mouthSpot) this.mouthSpot.alpha = 0.3 + Math.sin(this.t * 1.7) * 0.06;
-    if (t >= this.walkAt + 1.8 && this.camSet) h.focus(this.camX, this.camY);
+    if (!pinned && t >= this.walkAt + 1.8 && this.camSet) h.focus(this.camX, this.camY);
     // Gold light along the road as they pass.
     this.glintClock += dt;
     if (t >= this.walkAt && this.glintClock > 0.35) {
@@ -575,6 +713,7 @@ export class ProcessionScene {
     if (t >= this.endAt && spoken && !this.finished) {
       this.finished = true;
       this.overlay.classList.remove('show');
+      this.letGoZoom();
       h.release();
       window.setTimeout(() => this.overlay.remove(), 700);
       h.onDone();
@@ -598,15 +737,24 @@ export class ProcessionScene {
     return out;
   }
 
-  /** Tear the procession down (the world is rebuilt right after). */
+  /**
+   * Tear the procession down (the world is rebuilt right after). Instant, and
+   * complete (it.115): a scene killed mid-line gives the zoom back, drops its
+   * pin, and takes the letterbox and titles down in the same call - no fade,
+   * no timer, nothing left for the next floor to find.
+   */
   destroy(): void {
     this.ac.abort();
+    this.letGoZoom();
     this.leadSpot?.destroy();
     this.mouthSpot?.destroy();
     if (!this.h.keepWalkers) for (const w of this.walkers) w.root.destroy({ children: true });
     this.walkers.length = 0;
-    for (const c of this.cast) c.destroy({ children: true });
+    for (const c of this.cast) if (!c.root.destroyed) c.root.destroy({ children: true });
     this.cast.length = 0;
+    this.overlay.classList.remove('show', 'titled');
+    this.title.textContent = '';
+    this.sub.textContent = '';
     this.overlay.remove();
     this.finished = true;
   }

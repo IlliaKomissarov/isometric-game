@@ -34,23 +34,58 @@ export interface FolkSheet {
   height: number;
 }
 /**
- * THE TAPROOM'S REGULARS (it.99). These four wander in circles, which reads as
- * drinkers moving between tables indoors and as aimless milling out on the street -
- * so they are kept to the inn, and the town gets bodies of its own below.
+ * THE TAPROOM'S REGULARS (it.99, put back it.115). These four wander in
+ * circles, which reads as drinkers moving between tables indoors and as
+ * aimless milling out on the street - so they are kept to the inn. it.114
+ * swapped two of them for the labourer and the fencer and the owner asked,
+ * loudly, why the lurkers in the tavern had been replaced. They are the
+ * original four again: the Villager_01 body, the peasant, the merchant's
+ * rig and the poacher. (Two of them are pixel sheets - the taproom is the one
+ * room where the owner wants THESE people, not the separation rule.)
  */
 export const TAVERN_FOLK: ReadonlyArray<FolkSheet> = [
   { anim: 'folk_walk', feet: true, height: 56 },
+  { anim: 'villager_walk', feet: false, height: 58 },
+  { anim: 'merchant_walk', feet: false, height: 58 },
   { anim: 'poacher_walk', feet: true, height: 58 },
-  { anim: 'cit_labourer_walk', feet: true, height: 58 },
-  { anim: 'duelist_walk', feet: true, height: 58 },
 ];
 /**
- * THE TOWN'S OWN PEOPLE (it.99). Five civilians composited from the layered pack -
- * a bearded farmer, a porter, a robed monk, a goodwife and a maid - so a street is
- * a crowd of different people instead of the taproom's four regulars milling about
- * outdoors. They are drawn small, so they stand a shade under the taproom's folk.
+ * TWO TOWNS, SEPARATED FOR REAL (it.115).
+ *
+ * it.114 split the folk into "street" and "market" rosters and still left the
+ * pixel citizens walking the old quarter beside the smooth vendors and guards -
+ * "I still see low-poly NPCs next to high-poly ones". The rule is STRICT now
+ * and it is by SHEET, not by district name:
+ *
+ *   SMOOTH_FOLK  the pre-rendered bodies (ten-to-sixteen-frame turntables):
+ *                the labourer, his blue-grey re-dye the carter, the Villager_01
+ *                body and the poacher. They walk the OLD QUARTER, the MARKET
+ *                WARD, the open country past the gates - everywhere the
+ *                vendors (smooth), the guards (smooth) and the keeper (smooth)
+ *                stand. The armoured women of the duelist pack and the
+ *                halberdier are NOT townsfolk and walk no street at all.
+ *   PIXEL_FOLK   the chunky 34x60 composited citizens, the peasant and the
+ *                merchant's rig. No street of the city: the eastern quarter
+ *                borders the old one and keeps a smooth innkeeper, so it walks
+ *                the smooth roster too. The pixel side is OSCAR'S BANK - the
+ *                riverside farm, whose household are pixel citizens and whose
+ *                walkers and near anglers are drawn to match (`RIVER_FOLK`).
+ *                The taproom is the one room that mixes, by the owner's word:
+ *                its four regulars are `TAVERN_FOLK`, exactly.
+ *
+ * `trader_walk` is a pixel re-dye too, but it is ONE man's livery (the
+ * merchant out of the manor closet, it.111) and is not dealt to a roster;
+ * `isPixelSheet` still classes it with the pixel side.
  */
-export const STREET_FOLK: ReadonlyArray<FolkSheet> = [
+export const SMOOTH_FOLK: ReadonlyArray<FolkSheet> = [
+  // THE LABOURER (it.99): the one genuine eight-direction civilian in the packs -
+  // a bare-armed man in a rust tunic, and the same man in a colder blue-grey re-dye.
+  { anim: 'cit_labourer_walk', feet: true, height: 58 },
+  { anim: 'cit_carter_walk', feet: true, height: 58 },
+  { anim: 'folk_walk', feet: true, height: 56 },
+  { anim: 'poacher_walk', feet: true, height: 58 },
+];
+export const PIXEL_FOLK: ReadonlyArray<FolkSheet> = [
   { anim: 'cit_farmer_walk', feet: true, height: 57 },
   { anim: 'cit_porter_walk', feet: true, height: 57 },
   { anim: 'cit_monk_walk', feet: true, height: 58 },
@@ -60,24 +95,19 @@ export const STREET_FOLK: ReadonlyArray<FolkSheet> = [
   { anim: 'merchant_walk', feet: false, height: 58 },
 ];
 /**
- * TWO TOWNS IN ONE STREET (it.114). The owner's complaint: some citizens look
- * "too high-quality and modern" beside the others. They do - the sheets above
- * are chunky 34x60 pixel art at four frames, and the labourer, the carter and
- * the Villager_01 body are smooth ten-to-sixteen-frame renders. Nothing is
- * deleted; they are SEPARATED. The pixel folk keep the old quarter and the
- * burnt east; the smooth bodies walk the Market Ward, the taproom and the open
- * country past the gates, where the pre-rendered trees and steadings are
- * their own kind.
+ * OSCAR'S BANK (it.115): the riverside farm is the pixel household's own, so its
+ * walkers are the five composited citizens (the peasant and the merchant's rig
+ * are drawn too small to stand beside them).
  */
-export const MARKET_FOLK: ReadonlyArray<FolkSheet> = [
-  // THE LABOURER (it.99): the one genuine eight-direction civilian in the packs -
-  // a bare-armed man in a rust tunic, and the same man in a colder blue-grey re-dye.
-  { anim: 'cit_labourer_walk', feet: true, height: 58 },
-  { anim: 'cit_carter_walk', feet: true, height: 58 },
-  { anim: 'folk_walk', feet: true, height: 56 },
-  { anim: 'duelist_walk', feet: true, height: 58 },
-  { anim: 'halberd_walk', feet: true, height: 60 },
-];
+export const RIVER_FOLK: ReadonlyArray<FolkSheet> = PIXEL_FOLK.slice(0, 5);
+/** The pixel side of the line, by sheet name (the trader's livery included). */
+const PIXEL_SHEETS: ReadonlySet<string> = new Set([...PIXEL_FOLK.map((f) => f.anim), 'trader_walk']);
+export function isPixelSheet(anim: string): boolean {
+  return PIXEL_SHEETS.has(anim);
+}
+/** THE OLD NAMES (it.114) still compile: both the old quarter's roster and the ward's are the smooth one now. */
+export const STREET_FOLK: ReadonlyArray<FolkSheet> = SMOOTH_FOLK;
+export const MARKET_FOLK: ReadonlyArray<FolkSheet> = SMOOTH_FOLK;
 /** Coats, aprons and cloaks: a colour per walker, multiplied into the scene's light. */
 const FOLK_COATS: readonly number[] = [0xffffff, 0xe8d0b0, 0xc8d8e8, 0xd8c8e0, 0xe0d8b0, 0xc0d8c0, 0xf0d0c0, 0xd0d0d8];
 /**
@@ -100,9 +130,42 @@ const FOLK_SPACING = 0.92;
 const FOLK_PERSONAL = 1.45;
 /** How hard a neighbour bends a walker's heading (0 = none, 1 = straight away). */
 const FOLK_AVOID = 0.75;
+/**
+ * THE HERO HAS RIGHT OF WAY (it.115). "NPCs constantly crash into each other
+ * and block paths": a walker whose road the hero is standing on, or who is
+ * about to walk into the hero, STOPS - for up to `HERO_WAIT` seconds - and
+ * shuffles half a tile to the side of its heading, away from the hero, so
+ * the way is open. If the hero is still there when the wait runs out, the
+ * errand is dropped and a new one found from wherever the walker stands.
+ * `HERO_YIELD` is how close, in tiles, to the walker or to the point a step
+ * ahead of it on its path.
+ */
+const HERO_YIELD = 0.7;
+const HERO_WAIT = 1.2;
+const SIDESTEP = 0.45; // tiles moved aside while yielding
+const SIDESTEP_SPEED = 0.9; // tiles / s
+/**
+ * BLOCKED IS NOT STANDING (it.115). A walker whose feet have not moved for
+ * `STUCK_LIMIT` seconds while it was supposed to be walking - two of them
+ * head-on in a lane, one pinned against a cask by a neighbour's shove - drops
+ * its road and paths again from where it is, instead of shoving for ever.
+ */
+const STUCK_LIMIT = 2;
+/** Row width of the `dests` key: wider than any floor in the game. */
+const DEST_W = 1024;
 const GUARD_IDLE = 'poacher_idle';
 /** The gatekeeper wears the guard's mail (it.87). */
 const KEEPER_IDLE = 'guard_idle';
+/**
+ * THE VENDORS ARE SMOOTH TOO (it.115). The armourer used to be drawn on
+ * `merchant_walk` and the alchemist on `villager_walk` - both pixel sheets -
+ * behind stalls in districts whose every walker is a smooth render. The
+ * armourer wears the carter's blue-grey now (tinted by the ward if it asks),
+ * the alchemist the Villager_01 body dyed violet. The old sheets are the
+ * fallback when the new ones are not resident.
+ */
+const MERCHANT_BODY = 'cit_carter_walk';
+const ALCHEMIST_BODY = 'folk_walk';
 
 /**
  * AMBIENT CHATTER (it.91): a word or two over a head now and then. Tiny
@@ -155,6 +218,9 @@ export const RIVER_WORDS = [
   'Stay and rest. Nobody on this bank will ask you a thing.',
 ];
 
+/** LORD MILK on her yard (it.115): a word to whoever is passing. */
+export const MILK_WORDS = ['Guard up.', 'Again. Slower.', 'The dummies are waiting.', 'Feet, then blade.', 'Talk to me if you want the yard.', 'Shield first.'];
+
 export const TAVERN_WORDS = ['Another round.', 'Long day.', 'Good stew tonight.', 'Cheers.', 'Warm in here.', 'Heard the news?', 'One more, then home.'];
 
 export interface VillagerOptions {
@@ -170,6 +236,36 @@ export interface VillagerOptions {
   keeperAnim?: string;
   /** THE PEOPLE OF THIS PLACE (it.99): which bodies walk here. Defaults to the taproom's. */
   sheets?: ReadonlyArray<FolkSheet>;
+  /**
+   * DOORWAYS ARE NOT FOR STANDING IN (it.115): tiles (an inn's door, a
+   * house's threshold, a gateway) no walker picks as the end of an errand,
+   * nor any tile within one step of them.
+   */
+  keepClear?: ReadonlyArray<{ x: number; y: number }>;
+  /**
+   * PEOPLE WHO STAND (it.115): named bodies on an idle loop - LORD MILK on the
+   * training ground is the first. They breathe on their own sheet's idle, face
+   * where they are told, cast a shadow, and the walkers steer round them.
+   */
+  figures?: ReadonlyArray<StandingFigure>;
+}
+
+/** A named body standing at its post on its own idle sheet (it.115). */
+export interface StandingFigure {
+  /** Tile (the body stands on its centre). */
+  x: number;
+  y: number;
+  anim: AnimName;
+  /** Painted height on screen, px (the hero is 56). */
+  height: number;
+  /** Canonical facing: 0 E, 2 N, 4 W, 6 S (screen). */
+  dir: number;
+  /** A dye multiplied into the scene light (white: none). */
+  tint?: number;
+  /** Idle frames per second. */
+  fps?: number;
+  /** A bank of words over the head now and then (none: silent). */
+  words?: string[];
 }
 
 interface Bubble {
@@ -275,7 +371,53 @@ interface Villager {
   bubble: Bubble;
   /** THE WAY (it.92): tile centres to walk through, the next first. */
   path: Array<{ x: number; y: number }>;
+  /** Seconds left standing aside for the hero (it.115); 0 when walking normally. */
+  yield: number;
+  /** The sidestep taken while yielding: a unit heading and the distance still to go. */
+  sideX: number;
+  sideY: number;
+  sideLeft: number;
+  /** Seconds the feet have not moved while the walker was meant to be walking. */
+  stuck: number;
+  /** The destination tile this walker holds (`dests`), or -1 (it.115: no two share one). */
+  dest: number;
+  /** How far the current waypoint was at the top of the frame (the stuck test, it.115). */
+  gap: number;
+  /** Whether the feet moved under the walker's own power this frame (walk frames or the stand). */
+  moving: boolean;
 }
+
+interface Figure {
+  root: Container;
+  body: Sprite;
+  spec: StandingFigure;
+  scale: number;
+  clock: number;
+  x: number;
+  y: number;
+  bubble: Bubble;
+}
+
+/** A hero's feet, as the walkers see them (it.115). */
+export interface HeroFeet {
+  x: number;
+  y: number;
+}
+
+/**
+ * EVERY DISTRICT SEES EVERY OTHER (it.115). The old quarter, the market ward
+ * and the eastern quarter are three `Villagers`, and their streets meet: a
+ * walker of one used to walk straight through a walker of the other, because
+ * each only knew its own. The live instances are listed here and the steering
+ * and the shoulder pass read all of them.
+ */
+const LIVE = new Set<Villagers>();
+/** Closer than this to a body that never moves, a walker is pushed out (it.115). */
+const FIXED_SPACING = 0.95;
+/** The radius a walker steers out of round a body that never moves. */
+const FIXED_PERSONAL = 1.6;
+/** How strongly a walker keeps to its own right of an oncoming body. */
+const KEEP_RIGHT = 0.9;
 
 interface Guard {
   body: Sprite;
@@ -295,8 +437,21 @@ export class Villagers {
   private alchemist: { body: Sprite; clock: number; scale: number; bubble: Bubble; x: number; y: number } | null = null;
   private readonly opts: VillagerOptions;
   private readonly keeperAnim: AnimName;
+  /** The vendors' sheets, as drawn (it.115). */
+  private merchantAnim: AnimName = MERCHANT_BODY;
+  private alchemistAnim: AnimName = ALCHEMIST_BODY;
   /** The object layer these people live in, kept so more can be taken in later (it.104). */
   private readonly layer: Container;
+  /** Destination tiles currently held by a walker (it.115): `y * DEST_W + x`. */
+  private readonly dests = new Set<number>();
+  /** The bodies that never move (vendors, sentries, the keeper): the walkers steer round them too (it.115). */
+  private readonly fixed: Array<{ x: number; y: number }> = [];
+  /** Their tiles, which no errand's road crosses (`y * DEST_W + x`). */
+  private readonly fixedTiles = new Set<number>();
+  /** The standing, named bodies (it.115). */
+  private readonly figures: Figure[] = [];
+  /** The heroes' feet this frame (it.115): errands avoid them, walkers yield to them. */
+  private heroes: ReadonlyArray<HeroFeet> = [];
 
   constructor(
     layer: Container,
@@ -321,7 +476,12 @@ export class Villagers {
     const sheets = (opts.sheets ?? TAVERN_FOLK).filter((f) => spriteLib.hasAnim(f.anim));
     if (sheets.length) {
       for (let i = 0; i < count; i++) {
-        const p = this.randomTile();
+        // Set down on a free verge; a patch with none left (a small room, a
+        // crowded yard) takes any open tile, and a patch with no open tile at
+        // all takes nobody (it.115).
+        const p = this.randomTile() ?? this.anyOpenTile();
+        if (!p) break;
+        this.dests.add(Math.floor(p.y) * DEST_W + Math.floor(p.x)); // Held while they stand on it.
         // Deal the bodies round rather than rolling them, so no street is all one man.
         const sheet = sheets[i % sheets.length];
         const sPainted = spriteLib.paintedHeight(sheet.anim) || 50;
@@ -343,14 +503,18 @@ export class Villagers {
         body.position.set(0, 2);
         root.addChild(body);
         layer.addChild(root);
-        this.folk.push({ root, body, anim: sheet.anim, scale, fc: spriteLib.anim(sheet.anim).frameCount, coat: FOLK_COATS[(i * 3 + 1) % FOLK_COATS.length], x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10, bubble: makeBubble(layer, 2 + Math.random() * 10), path: [] });
+        this.folk.push({ root, body, anim: sheet.anim, scale, fc: spriteLib.anim(sheet.anim).frameCount, coat: FOLK_COATS[(i * 3 + 1) % FOLK_COATS.length], x: p.x, y: p.y, tx: p.x, ty: p.y, pause: Math.random() * 3, dir: 6, walkClock: 0, idleClock: Math.random() * 10, bubble: makeBubble(layer, 2 + Math.random() * 10), path: [], yield: 0, sideX: 0, sideY: 0, sideLeft: 0, stuck: 0, dest: Math.floor(p.y) * DEST_W + Math.floor(p.x), gap: 0, moving: false });
       }
     }
-    if (merchantAt && spriteLib.hasAnim('merchant_walk')) {
-      const mp = spriteLib.paintedHeight('merchant_walk') || 57;
+    // THE ARMOURER (it.115): the carter's smooth body behind the stall; the merchant's pixel rig only if the carter is not resident.
+    const MERCH: AnimName = spriteLib.hasAnim(MERCHANT_BODY) ? MERCHANT_BODY : 'merchant_walk';
+    if (merchantAt && spriteLib.hasAnim(MERCH)) {
+      this.merchantAnim = MERCH;
+      const mp = spriteLib.paintedHeight(MERCH) || 57;
       const mscale = 62 / mp;
-      const body = new Sprite(spriteLib.frame('merchant_walk', 6, 0));
-      body.anchor.set(0.5, 0.86);
+      const body = new Sprite(spriteLib.frame(MERCH, 6, 0));
+      const fa = MERCH === MERCHANT_BODY ? spriteLib.footAnchor(MERCH) : { x: 0.5, y: 0.86 };
+      body.anchor.set(fa.x, fa.y);
       body.scale.set(mscale);
       const s = worldToScreen(merchantAt.x + 0.5, merchantAt.y + 0.5, this.scratch);
       body.position.set(s.x, s.y + 2);
@@ -358,14 +522,17 @@ export class Villagers {
       if (tints.merchant) body.tint = tints.merchant;
       layer.addChild(body);
       this.merchant = { body, clock: 0, scale: mscale, bubble: makeBubble(layer, 4 + Math.random() * 8), x: merchantAt.x + 0.5, y: merchantAt.y + 0.5 };
+      this.fixed.push({ x: this.merchant.x, y: this.merchant.y });
     }
-    // The ALCHEMIST (it.49): the peasant body in violet, not the merchant's twin.
-    const ALCH = spriteLib.hasAnim('villager_walk') ? 'villager_walk' : 'merchant_walk';
+    // The ALCHEMIST (it.49): a body in violet, not the merchant's twin. IT.115: the smooth Villager_01 body, the peasant only as a fallback.
+    const ALCH: AnimName = spriteLib.hasAnim(ALCHEMIST_BODY) ? ALCHEMIST_BODY : spriteLib.hasAnim('villager_walk') ? 'villager_walk' : 'merchant_walk';
     if (alchemistAt && spriteLib.hasAnim(ALCH)) {
+      this.alchemistAnim = ALCH;
       const mp = spriteLib.paintedHeight(ALCH) || 57;
       const mscale = 62 / mp;
       const body = new Sprite(spriteLib.frame(ALCH, 6, 0));
-      body.anchor.set(0.5, 0.86);
+      const fa = ALCH === ALCHEMIST_BODY ? spriteLib.footAnchor(ALCH) : { x: 0.5, y: 0.86 };
+      body.anchor.set(fa.x, fa.y);
       body.scale.set(mscale);
       body.tint = tints.alchemist ?? 0xb8a0ff; // Violet robes: the alchemist (the scribe's are ice-blue).
       const s = worldToScreen(alchemistAt.x + 0.5, alchemistAt.y + 0.5, this.scratch);
@@ -373,6 +540,7 @@ export class Villagers {
       body.zIndex = depthKey(alchemistAt.x + 0.5, alchemistAt.y + 0.5);
       layer.addChild(body);
       this.alchemist = { body, clock: 0.9, scale: mscale, bubble: makeBubble(layer, 6 + Math.random() * 8), x: alchemistAt.x + 0.5, y: alchemistAt.y + 0.5 };
+      this.fixed.push({ x: this.alchemist.x, y: this.alchemist.y });
     }
     if (spriteLib.hasAnim(GUARD_IDLE)) {
       const gp = spriteLib.paintedHeight(GUARD_IDLE) || 60;
@@ -386,6 +554,7 @@ export class Villagers {
         body.zIndex = depthKey(at.x + 0.5, at.y + 0.5);
         layer.addChild(body);
         this.guards.push({ body, clock: Math.random() * 3, x: at.x + 0.5, y: at.y + 0.5, bubble: makeBubble(layer, 8 + Math.random() * 10) });
+        this.fixed.push({ x: at.x + 0.5, y: at.y + 0.5 });
       }
     }
     if (keeperAt && spriteLib.hasAnim(this.keeperAnim)) {
@@ -404,7 +573,61 @@ export class Villagers {
       body.zIndex = depthKey(keeperAt.x + 0.5, keeperAt.y + 0.5);
       layer.addChild(body);
       this.keeper = { body, clock: 0.4, x: keeperAt.x + 0.5, y: keeperAt.y + 0.5, bubble: makeBubble(layer, 3 + Math.random() * 6) };
+      this.fixed.push({ x: this.keeper.x, y: this.keeper.y });
     }
+    // PEOPLE WHO STAND (it.115): feet from the sheet's painted bounds, a shadow, an idle loop.
+    for (const spec of opts.figures ?? []) {
+      if (!spriteLib.hasAnim(spec.anim)) continue;
+      const painted = spriteLib.paintedHeight(spec.anim) || 60;
+      const scale = spec.height / painted;
+      const root = new Container();
+      const shadow = new Sprite(assets.get('shadow'));
+      shadow.anchor.set(0.5, 0.5);
+      shadow.alpha = 0.65;
+      shadow.scale.set(0.9);
+      root.addChild(shadow);
+      const body = new Sprite(spriteLib.frame(spec.anim, spec.dir, 0));
+      const fa = spriteLib.footAnchor(spec.anim);
+      body.anchor.set(fa.x, fa.y);
+      body.scale.set(scale);
+      body.position.set(0, 2);
+      root.addChild(body);
+      const x = spec.x + 0.5;
+      const y = spec.y + 0.5;
+      const s = worldToScreen(x, y, this.scratch);
+      root.position.set(s.x, s.y);
+      root.zIndex = depthKey(x, y);
+      layer.addChild(root);
+      this.figures.push({ root, body, spec, scale, clock: Math.random() * 2, x, y, bubble: makeBubble(layer, 5 + Math.random() * 8) });
+      this.fixed.push({ x, y });
+    }
+    for (const f of this.fixed) this.fixedTiles.add(Math.floor(f.y) * DEST_W + Math.floor(f.x));
+    LIVE.add(this);
+  }
+
+  /** The first open tile of the patch, scanning from its centre outwards (it.115). */
+  private anyOpenTile(): { x: number; y: number } | null {
+    const cx = this.area.x + Math.floor(this.area.w / 2);
+    const cy = this.area.y + Math.floor(this.area.h / 2);
+    const R = Math.max(this.area.w, this.area.h);
+    for (let r = 0; r <= R; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const gx = cx + dx;
+          const gy = cy + dy;
+          if (!this.isWalkable(gx, gy) || this.dests.has(gy * DEST_W + gx) || this.fixedTiles.has(gy * DEST_W + gx)) continue;
+          return { x: gx + 0.5, y: gy + 0.5 };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** A named standing body's feet (it.115), for the interaction and the harness. */
+  figureAt(anim: AnimName): { x: number; y: number } | null {
+    const f = this.figures.find((g) => g.spec.anim === anim);
+    return f ? { x: f.x, y: f.y } : null;
   }
 
   /** Every head's place (it.92): the folk, the vendors, the keeper - so a roof or a trunk in front of them ghosts. */
@@ -415,7 +638,24 @@ export class Villagers {
     if (this.alchemist) out.push({ x: this.alchemist.x, y: this.alchemist.y });
     for (const g of this.guards) out.push({ x: g.x, y: g.y });
     if (this.keeper) out.push({ x: this.keeper.x, y: this.keeper.y });
+    for (const f of this.figures) out.push({ x: f.x, y: f.y });
     return out;
+  }
+
+  /** The walkers alone (it.115, for the harness): where they are and what they are doing. */
+  walkers(): Array<{ x: number; y: number; anim: string; state: 'walk' | 'yield' | 'stand' }> {
+    return this.folk.map((v) => ({ x: v.x, y: v.y, anim: v.anim, state: v.pause > 0 ? 'stand' : v.yield > 0 ? 'yield' : 'walk' }));
+  }
+
+  /** Every sheet drawn by this district (it.115, the separation audit). */
+  sheets(): string[] {
+    const out = new Set<string>(this.folk.map((v) => v.anim));
+    for (const f of this.figures) out.add(f.spec.anim);
+    if (this.merchant) out.add(this.merchantAnim);
+    if (this.alchemist) out.add(this.alchemistAnim);
+    if (this.guards.length) out.add(GUARD_IDLE);
+    if (this.keeper) out.add(this.keeperAnim);
+    return [...out];
   }
 
   /** The keeper's tile centre (it.91): where a word bubble or a portrait looks for them. */
@@ -423,19 +663,53 @@ export class Villagers {
     return this.keeper ? { x: this.keeper.x, y: this.keeper.y } : null;
   }
 
-  private randomTile(): { x: number; y: number } {
-    // THE STREETS (it.92): three strolls in four end on a street tile, so the folk are seen on the roads.
+  /**
+   * WHERE AN ERRAND ENDS (it.92; it.115). The folk still WALK the streets -
+   * the road is how the path-finder gets them anywhere - but an errand no
+   * longer ENDS in one: three in four end on a VERGE (an open tile beside a
+   * street), so somebody stopped for a chat is stood at the roadside and not
+   * in the hero's way. No errand ends on a tile another walker holds, or on
+   * or beside a doorway (`keepClear`). Null when nothing qualifies.
+   */
+  private randomTile(): { x: number; y: number } | null {
     const roads = this.opts.roads;
     const W = this.opts.mapWidth ?? 0;
-    const wantRoad = !!roads && W > 0 && Math.random() < 0.75;
-    for (let i = 0; i < 60; i++) {
+    const hasRoads = !!roads && W > 0;
+    const onRoad = (x: number, y: number): boolean => hasRoads && x >= 0 && y >= 0 && x < W && !!roads![y * W + x];
+    const wantVerge = hasRoads && Math.random() < 0.75;
+    const clear = this.opts.keepClear;
+    for (let i = 0; i < 80; i++) {
       const gx = this.area.x + Math.floor(Math.random() * this.area.w);
       const gy = this.area.y + Math.floor(Math.random() * this.area.h);
       if (!this.isWalkable(gx, gy)) continue;
-      if (wantRoad && i < 50 && !roads![gy * W + gx]) continue;
+      if (this.dests.has(gy * DEST_W + gx) || this.fixedTiles.has(gy * DEST_W + gx)) continue;
+      if (clear && clear.some((d) => Math.abs(d.x - gx) <= 1 && Math.abs(d.y - gy) <= 1)) continue;
+      // Not beside anybody who never moves, and not where a hero stands (it.115).
+      if (this.fixed.some((f) => Math.abs(f.x - gx - 0.5) < 1.6 && Math.abs(f.y - gy - 0.5) < 1.6)) continue;
+      if (this.heroes.some((h) => Math.hypot(h.x - gx - 0.5, h.y - gy - 0.5) < 2)) continue;
+      if (hasRoads && i < 70) {
+        if (onRoad(gx, gy)) continue; // never stop IN the street
+        if (wantVerge && !(onRoad(gx + 1, gy) || onRoad(gx - 1, gy) || onRoad(gx, gy + 1) || onRoad(gx, gy - 1))) continue;
+      }
       return { x: gx + 0.5, y: gy + 0.5 };
     }
-    return { x: this.area.x + this.area.w / 2, y: this.area.y + this.area.h / 2 };
+    return null;
+  }
+
+  /** Give a walker's held destination back (it.115). */
+  private release(v: Villager): void {
+    if (v.dest >= 0) this.dests.delete(v.dest);
+    v.dest = -1;
+  }
+
+  /** Drop the errand and stand a moment; the next one is found from here (it.115). */
+  private giveUp(v: Villager, wait: number): void {
+    this.release(v);
+    v.path.length = 0;
+    v.tx = v.x;
+    v.ty = v.y;
+    v.pause = wait;
+    v.stuck = 0;
   }
 
   /**
@@ -473,6 +747,7 @@ export class Villagers {
         const nx = x + dx;
         const ny = y + dy;
         if (!inBox(nx, ny) || !this.isWalkable(nx, ny)) continue;
+        if (this.fixedTiles.has(ny * DEST_W + nx)) continue; // Nobody's road runs through a vendor (it.115).
         const nk = key(nx, ny);
         if (prev[nk] !== -1) continue;
         prev[nk] = k;
@@ -551,141 +826,280 @@ export class Villagers {
       pause: 0.5 + Math.random() * 3.5,
       dir: 6, walkClock: 0, idleClock: Math.random() * 10,
       bubble: makeBubble(this.layer, 3 + Math.random() * 10), path: [],
+      yield: 0, sideX: 0, sideY: 0, sideLeft: 0, stuck: 0, dest: -1, gap: 0, moving: false,
     });
     return true;
   }
 
-  update(dt: number, tint: (x: number, y: number) => number): void {
+  /**
+   * A NEW ERRAND (it.92; it.115): a held, free destination, a road to it that
+   * does not open by walking through a hero, and the old destination given
+   * back. False when nothing was found (the walker stands a moment longer).
+   */
+  private newErrand(v: Villager): boolean {
+    for (let tries = 0; tries < 5; tries++) {
+      const t = this.randomTile();
+      if (!t) continue;
+      if (Math.hypot(t.x - v.x, t.y - v.y) < 2) continue;
+      const path = this.findPath(Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y));
+      if (!path || !path.length) continue;
+      // The first steps of the road must not run through a hero's feet.
+      if (this.heroes.some((h) => path.slice(0, 3).some((n) => Math.hypot(n.x - h.x, n.y - h.y) < 0.8))) continue;
+      this.release(v);
+      v.dest = Math.floor(t.y) * DEST_W + Math.floor(t.x);
+      this.dests.add(v.dest);
+      v.path = path;
+      v.tx = path[0].x;
+      v.ty = path[0].y;
+      v.stuck = 0;
+      v.gap = Math.hypot(v.tx - v.x, v.ty - v.y);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * IS A HERO IN THIS WALKER'S WAY (it.115)? Near the walker itself, near the
+   * point a step ahead of it on its heading, or standing on its next waypoint.
+   * Returns that hero, or null.
+   */
+  private heroInWay(v: Villager, walking: boolean): HeroFeet | null {
+    for (const h of this.heroes) {
+      const hx = h.x - v.x;
+      const hy = h.y - v.y;
+      const d = Math.hypot(hx, hy);
+      if (d < HERO_YIELD) return h;
+      if (!walking) continue;
+      const dx = v.tx - v.x;
+      const dy = v.ty - v.y;
+      const dl = Math.hypot(dx, dy) || 1;
+      const ux = dx / dl;
+      const uy = dy / dl;
+      if (hx * ux + hy * uy <= 0) continue; // Behind: the walker is leaving it.
+      if (Math.hypot(v.x + ux * 0.9 - h.x, v.y + uy * 0.9 - h.y) < HERO_YIELD) return h;
+      if (Math.hypot(v.tx - h.x, v.ty - h.y) < 0.55 && d < 2.5) return h;
+    }
+    return null;
+  }
+
+  /** Stand aside: to the side of the heading that is away from the hero, if that ground is open. */
+  private startYield(v: Villager, h: HeroFeet): void {
+    v.yield = HERO_WAIT;
+    const dx = v.tx - v.x;
+    const dy = v.ty - v.y;
+    const dl = Math.hypot(dx, dy);
+    // A standing walker (or one on its waypoint) simply backs away from the hero.
+    let px = dl > 0.05 ? -dy / dl : v.x - h.x;
+    let py = dl > 0.05 ? dx / dl : v.y - h.y;
+    const pl = Math.hypot(px, py) || 1;
+    px /= pl;
+    py /= pl;
+    if (px * (v.x - h.x) + py * (v.y - h.y) < 0) {
+      px = -px;
+      py = -py;
+    }
+    const open = (sx: number, sy: number): boolean => this.isWalkable(Math.floor(v.x + sx * SIDESTEP), Math.floor(v.y + sy * SIDESTEP));
+    if (open(px, py)) {
+      v.sideX = px;
+      v.sideY = py;
+      v.sideLeft = SIDESTEP;
+    } else if (open(-px, -py) && Math.hypot(v.x - px * SIDESTEP - h.x, v.y - py * SIDESTEP - h.y) >= HERO_YIELD) {
+      v.sideX = -px;
+      v.sideY = -py;
+      v.sideLeft = SIDESTEP;
+    } else v.sideLeft = 0;
+  }
+
+  /** Every walker of every live district but this one (it.115). */
+  private *neighbours(v: Villager): Generator<Villager> {
+    for (const vs of LIVE) for (const o of vs.folk) if (o !== v) yield o;
+  }
+
+  update(dt: number, tint: (x: number, y: number) => number, heroes: ReadonlyArray<HeroFeet> = []): void {
+    this.heroes = heroes;
     for (const v of this.folk) {
-      if (v.pause > 0) {
-        v.pause -= dt;
+      v.moving = false;
+      const walking = v.pause <= 0;
+      const threat = heroes.length ? this.heroInWay(v, walking && v.yield <= 0) : null;
+      if (v.yield > 0 || (threat && (walking || Math.hypot(threat.x - v.x, threat.y - v.y) < HERO_YIELD))) {
+        // ---- THE HERO HAS RIGHT OF WAY (it.115) ------------------------------
+        if (v.yield <= 0 && threat) this.startYield(v, threat);
+        v.yield -= dt;
         v.idleClock += dt;
-        if (v.pause <= 0) {
-          // A new errand: somewhere in the district, by the streets (it.92).
-          let path: Array<{ x: number; y: number }> | null = null;
-          for (let tries = 0; tries < 4 && !path; tries++) {
-            const t = this.randomTile();
-            if (Math.hypot(t.x - v.x, t.y - v.y) < 2) continue;
-            path = this.findPath(Math.floor(v.x), Math.floor(v.y), Math.floor(t.x), Math.floor(t.y));
-          }
-          if (path && path.length) {
-            v.path = path;
-            v.tx = path[0].x;
-            v.ty = path[0].y;
-          } else v.pause = 0.8 + Math.random() * 1.5;
-        }
-      } else {
-        const dx = v.tx - v.x;
-        const dy = v.ty - v.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 0.12) {
-          v.path.shift();
-          if (v.path.length) {
-            v.tx = v.path[0].x;
-            v.ty = v.path[0].y;
-          } else v.pause = 1.2 + Math.random() * 3.5;
-        } else {
-          const step = Math.min(dist, WALK_SPEED * dt);
-          // ---- GIVE WAY (it.107) -------------------------------------------
-          // A repulsion off every neighbour inside `FOLK_PERSONAL`, weighted by
-          // how far inside it they are, blended into the heading BEFORE the step
-          // is taken. This is what stops two walkers meeting at all; the
-          // positional pass below is only the backstop for what steering cannot
-          // solve (someone pinned against a wall by two others).
-          let ux = dx / dist;
-          let uy = dy / dist;
-          let sx = 0;
-          let sy = 0;
-          for (const o of this.folk) {
-            if (o === v) continue;
-            const ox = v.x - o.x;
-            const oy = v.y - o.y;
-            const od = Math.hypot(ox, oy);
-            if (od >= FOLK_PERSONAL) continue;
-            if (od < 1e-4) {
-              // Exactly on top of one another: split on a fixed axis so the
-              // degenerate case always resolves the same way.
-              sx += v.x < o.x ? -1 : 1;
-              continue;
-            }
-            const push = (FOLK_PERSONAL - od) / FOLK_PERSONAL;
-            sx += (ox / od) * push;
-            sy += (oy / od) * push;
-          }
-          const sl = Math.hypot(sx, sy);
-          if (sl > 1e-4) {
-            const w = FOLK_AVOID * Math.min(1.4, sl);
-            ux += (sx / sl) * w;
-            uy += (sy / sl) * w;
-            const n = Math.hypot(ux, uy) || 1;
-            ux /= n;
-            uy /= n;
-          }
-          const nx = v.x + ux * step;
-          const ny = v.y + uy * step;
-          // The way was open when it was found; if a tile shut since, stand a moment and think again.
+        if (v.sideLeft > 0) {
+          const m = Math.min(v.sideLeft, SIDESTEP_SPEED * dt);
+          const nx = v.x + v.sideX * m;
+          const ny = v.y + v.sideY * m;
           if (this.isWalkable(Math.floor(nx), Math.floor(ny))) {
             v.x = nx;
             v.y = ny;
-            v.walkClock += step * CYCLES_PER_TILE;
-            v.dir = stableDir(dx / dist, dy / dist, v.dir);
-          } else if (this.isWalkable(Math.floor(v.x + ux * step), Math.floor(v.y))) {
-            // Slide along whatever is in the way rather than stopping dead: a
-            // walker bent into a fence by a neighbour used to give up and stand.
-            v.x += ux * step;
-            v.walkClock += step * CYCLES_PER_TILE;
-          } else if (this.isWalkable(Math.floor(v.x), Math.floor(v.y + uy * step))) {
-            v.y += uy * step;
-            v.walkClock += step * CYCLES_PER_TILE;
-          } else {
-            v.path.length = 0;
-            v.pause = 0.6 + Math.random() * 1.2;
-          }
+            v.sideLeft -= m;
+            v.walkClock += m * CYCLES_PER_TILE;
+            v.moving = true;
+            v.dir = stableDir(v.sideX, v.sideY, v.dir);
+          } else v.sideLeft = 0;
         }
+        if (v.yield <= 0) {
+          v.yield = 0;
+          const still = heroes.length ? this.heroInWay(v, walking) : null;
+          if (still) {
+            // Still there: this road is not happening. Stand a beat and find another.
+            this.giveUp(v, 0.3 + Math.random() * 0.6);
+          } else if (!walking) {
+            v.pause = Math.max(v.pause, 0.2);
+          }
+          v.gap = Math.hypot(v.tx - v.x, v.ty - v.y);
+          v.stuck = 0;
+        }
+        continue;
       }
+      if (!walking) {
+        v.pause -= dt;
+        v.idleClock += dt;
+        if (v.pause <= 0 && !this.newErrand(v)) v.pause = 0.8 + Math.random() * 1.5;
+        continue;
+      }
+      const dx = v.tx - v.x;
+      const dy = v.ty - v.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 0.12) {
+        v.path.shift();
+        if (v.path.length) {
+          v.tx = v.path[0].x;
+          v.ty = v.path[0].y;
+          v.gap = Math.hypot(v.tx - v.x, v.ty - v.y);
+        } else v.pause = 1.2 + Math.random() * 3.5;
+        continue;
+      }
+      v.gap = dist;
+      const step = Math.min(dist, WALK_SPEED * dt);
+      // ---- GIVE WAY (it.107, it.115) ---------------------------------------
+      // A repulsion off every neighbour inside `FOLK_PERSONAL` - the walkers of
+      // every district, and the bodies that never move - weighted by how far
+      // inside it they are, blended into the heading BEFORE the step is taken.
+      // A body AHEAD also bends the walker to its own right (it.115): two people
+      // meeting head-on used to push straight back at each other and stall; now
+      // each passes on its own right, which is the other's left, and they part.
+      let ux = dx / dist;
+      let uy = dy / dist;
+      let sx = 0;
+      let sy = 0;
+      const feel = (ox: number, oy: number, radius: number, weight: number): void => {
+        const rx = v.x - ox;
+        const ry = v.y - oy;
+        const od = Math.hypot(rx, ry);
+        if (od >= radius) return;
+        if (od < 1e-4) {
+          sx += 1;
+          return;
+        }
+        const push = ((radius - od) / radius) * weight;
+        sx += (rx / od) * push;
+        sy += (ry / od) * push;
+        const ahead = -(rx * ux + ry * uy) / od; // cos of the angle to the body, 1 = dead ahead
+        if (ahead > 0.3) {
+          sx += -uy * push * KEEP_RIGHT * ahead;
+          sy += ux * push * KEEP_RIGHT * ahead;
+        }
+      };
+      for (const o of this.neighbours(v)) feel(o.x, o.y, FOLK_PERSONAL, 1);
+      for (const vs of LIVE) for (const f of vs.fixed) feel(f.x, f.y, FIXED_PERSONAL, 1.2);
+      const sl = Math.hypot(sx, sy);
+      if (sl > 1e-4) {
+        const w = FOLK_AVOID * Math.min(1.4, sl);
+        ux += (sx / sl) * w;
+        uy += (sy / sl) * w;
+        const n = Math.hypot(ux, uy) || 1;
+        ux /= n;
+        uy /= n;
+      }
+      // Never steer backwards along the road: that is how two walkers dance.
+      if (ux * dx + uy * dy < 0) {
+        const px = -dy / dist;
+        const py = dx / dist;
+        const side = ux * px + uy * py >= 0 ? 1 : -1;
+        ux = px * side;
+        uy = py * side;
+      }
+      const nx = v.x + ux * step;
+      const ny = v.y + uy * step;
+      if (this.isWalkable(Math.floor(nx), Math.floor(ny))) {
+        v.x = nx;
+        v.y = ny;
+      } else if (this.isWalkable(Math.floor(v.x + ux * step), Math.floor(v.y))) {
+        // Slide along whatever is in the way rather than stopping dead.
+        v.x += ux * step;
+      } else if (this.isWalkable(Math.floor(v.x), Math.floor(v.y + uy * step))) {
+        v.y += uy * step;
+      } else {
+        this.giveUp(v, 0.6 + Math.random() * 1.2);
+        continue;
+      }
+      v.walkClock += step * CYCLES_PER_TILE;
+      v.moving = true;
+      v.dir = stableDir(dx / dist, dy / dist, v.dir);
     }
     // NO TWO OF THEM IN THE SAME PLACE (it.102). Every villager walks an A* road
     // of its own and none of them knew about the others, so two who took the same
-    // corner - or who were both set down on a small reclaimed patch, which is what
-    // the forest's clearings and the taken fields are - stood inside one another
-    // and read as a single body with a rendering fault. One shoulder pass, in list
-    // order, over at most a dozen people: the same rule the squad and the
-    // processions use, so a crowd behaves the same way everywhere.
-    // IT.107: twice, not once. One pass moves each of a pair half the overlap,
-    // which for two people set down on the same tile leaves them still touching;
-    // a second pass finishes it in the same frame instead of over several.
+    // corner stood inside one another and read as a single body with a rendering
+    // fault. IT.107: twice, not once. IT.115: against every district's walkers
+    // (each district moves only its own, so a pair across two moves half each),
+    // and against the bodies that never move (the walker takes the whole push).
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i < this.folk.length; i++) {
         const a = this.folk[i];
-        for (let j = i + 1; j < this.folk.length; j++) {
-          const b = this.folk[j];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          let d = Math.hypot(dx, dy);
-          if (d >= FOLK_SPACING) continue;
-          if (d === 0) {
-            // Perfectly stacked: pick a fixed axis off their list order, so the
-            // pair always separates instead of dividing by zero and staying put.
-            dx = i < j ? -1 : 1;
-            dy = 0;
-            d = 1;
+        for (const vs of LIVE) {
+          const own = vs === this;
+          for (let j = own ? i + 1 : 0; j < vs.folk.length; j++) {
+            const b = vs.folk[j];
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let d = Math.hypot(dx, dy);
+            if (d >= FOLK_SPACING) continue;
+            if (d === 0) {
+              dx = own ? -1 : 1;
+              dy = 0;
+              d = 1;
+            }
+            const push = (FOLK_SPACING - d) / 2;
+            const ux = dx / d;
+            const uy = dy / d;
+            if (this.isWalkable(Math.floor(a.x - ux * push), Math.floor(a.y - uy * push))) {
+              a.x -= ux * push;
+              a.y -= uy * push;
+            }
+            if (own && this.isWalkable(Math.floor(b.x + ux * push), Math.floor(b.y + uy * push))) {
+              b.x += ux * push;
+              b.y += uy * push;
+            }
           }
-          const push = (FOLK_SPACING - d) / 2;
-          const ux = dx / d;
-          const uy = dy / d;
-          if (this.isWalkable(Math.floor(a.x - ux * push), Math.floor(a.y - uy * push))) {
-            a.x -= ux * push;
-            a.y -= uy * push;
-          }
-          if (this.isWalkable(Math.floor(b.x + ux * push), Math.floor(b.y + uy * push))) {
-            b.x += ux * push;
-            b.y += uy * push;
+          for (const f of vs.fixed) {
+            const dx = a.x - f.x;
+            const dy = a.y - f.y;
+            const d = Math.hypot(dx, dy);
+            if (d >= FIXED_SPACING) continue;
+            const ux = d > 1e-4 ? dx / d : 1;
+            const uy = d > 1e-4 ? dy / d : 0;
+            const push = FIXED_SPACING - d;
+            if (this.isWalkable(Math.floor(a.x + ux * push), Math.floor(a.y + uy * push))) {
+              a.x += ux * push;
+              a.y += uy * push;
+            }
           }
         }
       }
     }
+    // BLOCKED IS NOT STANDING (it.115): no ground made on the waypoint for
+    // `STUCK_LIMIT` seconds of walking - drop the road and find another.
     for (const v of this.folk) {
-      const walking = v.pause <= 0;
+      if (v.pause > 0 || v.yield > 0) continue;
+      const gap = Math.hypot(v.tx - v.x, v.ty - v.y);
+      if (v.gap - gap < WALK_SPEED * dt * 0.3) v.stuck += dt;
+      else v.stuck = Math.max(0, v.stuck - dt * 2);
+      if (v.stuck > STUCK_LIMIT) this.giveUp(v, 0.4 + Math.random() * 0.8);
+    }
+    for (const v of this.folk) {
+      const walking = v.moving;
       const frame = walking ? Math.floor(v.walkClock * v.fc) : 0;
       v.body.texture = spriteLib.frame(v.anim, v.dir, frame);
       v.body.scale.y = (v.scale / 0.8) * (walking ? 1 : 1 + Math.sin(v.idleClock * 1.6) * 0.015);
@@ -715,6 +1129,13 @@ export class Villagers {
         g.body.tint = tint(g.x, g.y);
         tickBubble(g.bubble, dt, guardWords, g.body.position.x, g.body.position.y - 66, g.body.zIndex);
       }
+    }
+    for (const f of this.figures) {
+      f.clock += dt;
+      const fc = spriteLib.anim(f.spec.anim).frameCount;
+      f.body.texture = spriteLib.frame(f.spec.anim, f.spec.dir, Math.floor(f.clock * (f.spec.fps ?? 8)) % fc);
+      f.body.tint = mulTint(tint(f.x, f.y), f.spec.tint ?? 0xffffff);
+      tickBubble(f.bubble, dt, f.spec.words, f.root.position.x, f.root.position.y - f.spec.height - 10, f.root.zIndex);
     }
     if (this.keeper && spriteLib.hasAnim(this.keeperAnim)) {
       const k = this.keeper;
@@ -747,5 +1168,11 @@ export class Villagers {
     this.keeper?.body.destroy();
     this.keeper?.bubble.node.destroy({ children: true });
     this.keeper = null;
+    for (const f of this.figures) {
+      f.root.destroy({ children: true });
+      f.bubble.node.destroy({ children: true });
+    }
+    this.figures.length = 0;
+    LIVE.delete(this);
   }
 }

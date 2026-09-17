@@ -25,13 +25,15 @@
  */
 
 import { AFFIXES, foldAffixes, affixLine, rollAffixes, type AffixKey, type AffixRoll } from './affixes';
-import { ITEMS, RARITY_AFFIX_COUNT, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, type ItemDef, type Rarity, type UniqueEffect } from './catalog';
-import { RAVEN_ITEMS, foodsOfTier, gearBases } from './registry';
+import { ITEMS, RARITY_AFFIX_COUNT, RARITY_MULT, RARITY_ORDER, RARITY_WEIGHT, turntableFor, type ItemDef, type Rarity, type UniqueEffect } from './catalog';
+import { ALES, CURIO_DRINKS, CURIO_ORES, CURIO_POTIONS, CURIO_SCROLLS, RAVEN_ITEMS, foodsOfTier, gearBases } from './registry';
 import { ENCHANTS, ENCHANT_KEYS, effectAdjective, effectLine, type Effect } from './effects';
 import { PASSIVE_BY_ID } from '@/systems/SkillTree';
 
 // The registry joins the catalog once, at load.
 for (const def of RAVEN_ITEMS) ITEMS[def.id] = def;
+// ...and every flat sprite takes its generated turntable (it.115).
+for (const def of Object.values(ITEMS)) def.spin ??= turntableFor(def.sprite);
 
 /** Power at an item level: 1.08 per level above the first. */
 export function powerScale(ilvl: number): number {
@@ -282,17 +284,24 @@ export function rollGear(rand: () => number, ilvl: number, opts: RollOptions & {
 /** A TOWN CHEST (it.92, food since it.114): a draught, a bite, a scrap, now and then a plain piece - never a trophy. */
 export function rollMinorItem(rand: () => number, ilvl: number): string {
   const kind = rand();
-  if (kind < 0.4) return rollDraught(rand, ilvl);
-  if (kind < 0.7) return rollFood(rand, ilvl);
+  if (kind < 0.36) return rollDraught(rand, ilvl);
+  if (kind < 0.64) return rollFood(rand, ilvl);
+  if (kind < 0.74) return rollCurioScroll(rand);
   if (kind < 0.9) return rollMaterial(rand, ilvl);
   return rollGear(rand, Math.max(1, ilvl - 1), { weights: { common: 70, uncommon: 30, rare: 0, epic: 0, legendary: 0, mythic: 0 } });
 }
 
 /**
  * FOOD ON THE FLOOR (it.114): snacks mostly, a meal a third of the time, a
- * feast rarely - and a little more often the deeper the floor.
+ * feast rarely - and a little more often the deeper the floor. One find in
+ * five is a DRINK instead (it.115): an ale, or any of the 95 other bottles
+ * and tins of the bake, so every one of them turns up in the crypt.
  */
 export function rollFood(rand: () => number, ilvl: number): string {
+  if (rand() < 0.2) {
+    if (rand() < 0.3) return ALES[Math.floor(rand() * ALES.length)].id;
+    return CURIO_DRINKS[Math.floor(rand() * CURIO_DRINKS.length)].id;
+  }
   const r = rand();
   const feast = 0.08 + Math.min(0.12, ilvl / 400);
   const tier = r < feast ? 'feast' : r < feast + 0.32 ? 'meal' : 'snack';
@@ -317,8 +326,30 @@ export function rollChestGold(rand: () => number, ilvl: number, grand = false): 
 /** The chance a slain foe leaves coins. */
 export const FOE_GOLD_CHANCE = 0.35;
 
-/** Materials fall too (it.78): scraps mostly, dust sometimes, an essence rarely. */
+/**
+ * A SCROLL OR A TOME OF THE BAKE (it.115): one of the 109 curio scrolls,
+ * read for a brew (items/curios).
+ */
+export function rollCurioScroll(rand: () => number): string {
+  return CURIO_SCROLLS[Math.floor(rand() * CURIO_SCROLLS.length)].id;
+}
+
+/**
+ * AN ORE (it.115): one of the 54 painted rocks, smelted from the pack. The
+ * shallow floors give the scrap and dust ores; essence ores from depth V
+ * (iLvl 9), the alloy ores from depth XII (iLvl 23).
+ */
+export function rollOre(rand: () => number, ilvl: number): string {
+  const pool = CURIO_ORES.filter((d) => {
+    const m = d.use?.smelt?.material;
+    return m === 'alloy_shard' ? ilvl >= 23 : m === 'essence' ? ilvl >= 9 : true;
+  });
+  return pool[Math.floor(rand() * pool.length)].id;
+}
+
+/** Materials fall too (it.78): scraps mostly, dust sometimes, an essence rarely - and one find in four is an ORE (it.115). */
 export function rollMaterial(rand: () => number, ilvl: number): string {
+  if (rand() < 0.25) return rollOre(rand, ilvl);
   const tier = 1 + Math.floor(ilvl / 25);
   const r = rand();
   if (r < 0.7) return `iron_scrap#${1 + Math.floor(rand() * 2 * tier)}`;
@@ -326,8 +357,14 @@ export function rollMaterial(rand: () => number, ilvl: number): string {
   return 'essence#1';
 }
 
-/** A draught: healing mostly, mana often, the rarer brews as the depths grow. */
+/**
+ * A draught: healing mostly, mana often, the rarer brews as the depths grow.
+ * One in four is an ALCHEMIST'S CURIO (it.115) - any of the bake's other 156
+ * flasks - and the five picked flasks turn up from depth III.
+ */
 export function rollDraught(rand: () => number, ilvl: number): string {
+  if (rand() < 0.25) return CURIO_POTIONS[Math.floor(rand() * CURIO_POTIONS.length)].id;
+  if (ilvl >= 5 && rand() < 0.08) return ['hunters_antidote', 'potion_frostward', 'potion_void', 'potion_focus', 'acid_flask'][Math.floor(rand() * 5)];
   const r = rand();
   const deep = ilvl >= 9;
   if (r < 0.42) return 'health_potion';
@@ -354,6 +391,8 @@ export function rollDrop(rand: () => number, ilvl: number, luck?: number): strin
   if (kind < 0.12) return rollFood(rand, ilvl);
   if (kind < 0.38) return rollDraught(rand, ilvl);
   if (kind < 0.52) return rollMaterial(rand, ilvl);
+  // CURIO SCROLLS (it.115): one gear roll in twelve is a scroll or tome of the bake instead.
+  if (rand() < 0.08) return rollCurioScroll(rand);
   // RECIPE SCROLLS (it.80): one gear drop in twenty-five from depth II on.
   const depth = 1 + Math.floor((ilvl - 1) / 2);
   if (depth >= 2 && rand() < 0.04) {

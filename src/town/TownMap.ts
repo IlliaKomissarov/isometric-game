@@ -199,6 +199,8 @@ export type TownPropKind =
   | 'cellardoor'
   | 'cellarup'
   | 'cellargirl'
+  /** LORD MILK (it.115): the master of the training ground, a person on her post (drawn by Villagers). */
+  | 'lordmilk'
   // THE FARMLANDS (it.100): the crop, the fires in it, and the roads not yet built.
   | 'farmcrop'
   | 'fieldfire'
@@ -402,6 +404,27 @@ export interface InnLayout {
   hall: Room;
 }
 
+/**
+ * THE GILDED STAG'S GROUND (it.115), fitted by hand on Bleed's render
+ * (`scripts/bake-stag.py`). Tile coordinates are relative to the south corner
+ * of the gabled hall - the single's anchor - so tile (-1, -1) is the one just
+ * behind that corner. The hall is three tiles across its gable and six deep;
+ * the porch wing runs three tiles east of it with its south wall on y = -3;
+ * the recess in front of the wing holds the casks (x 0), the porch and the
+ * stair (y -3), and the stair's foot, which is the door (`STAG_DOOR`). The
+ * drawn cart stands east of the stair. `STAG_BOX` bounds it all.
+ */
+export const STAG_SOLID: ReadonlyArray<readonly [number, number]> = [
+  ...[-3, -2, -1].flatMap((x) => [-6, -5, -4, -3, -2, -1].map((y) => [x, y] as const)),
+  ...[0, 1, 2].flatMap((x) => [-6, -5, -4].map((y) => [x, y] as const)),
+  [0, -1], [0, -2], [0, -3], [1, -3], [2, -3],
+  [3, -4], [4, -4], [3, -3],
+];
+export const STAG_BOX = { x: -3, y: -6, w: 8, h: 6 } as const;
+export const STAG_DOOR = { x: 2, y: -2 } as const;
+/** The cellar door drawn at the foot of the hall's gable (it.115): the back door, seen from the lane. */
+export const STAG_CELLAR = { x: -2, y: 0 } as const;
+
 /** THE EASTERN QUARTER (it.91): how the barricade stands when the town is built. */
 export type EastState = 'sealed' | 'open' | 'cleared';
 
@@ -535,6 +558,7 @@ export const PROP_FOOTPRINT: Readonly<Record<TownPropKind, PropFootprint>> = {
   innkeeper: F(1, 1, 'full'),
   barkeep: F(1, 1, 'full'),
   cellargirl: F(1, 1, 'full'),
+  lordmilk: F(1, 1, 'full'),
   oscar: F(1, 1, 'full'),
   oscarkin: F(1, 1, 'full'),
   angler: F(1, 1, 'full'),
@@ -620,7 +644,7 @@ export const ROAD_OK: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'house', 'tavern', 'tavern2', 'guildhall', 'manor', 'smithy', 'barracks', 'watchtower', 'stall', 'ruin', 'tent', 'siege', 'ruingate',
   'fence', 'pillar', 'gate', 'gatebar', 'barricade', 'arenagate', 'gateway',
   'board', 'notice', 'trainpost', 'quarry', 'townroad', 'farmroad', 'riverroad', 'fieldroad', 'bridgegate', 'manordoor', 'manorout', 'manordown', 'vaultup', 'citygate',
-  'merchant', 'alchemist', 'arenamaster', 'guard', 'jeweler', 'scribe', 'bowyer', 'gatekeeper', 'innkeeper', 'barkeep', 'cellargirl', 'oscar', 'oscarkin', 'angler', 'merchantman',
+  'merchant', 'alchemist', 'arenamaster', 'guard', 'jeweler', 'scribe', 'bowyer', 'gatekeeper', 'innkeeper', 'barkeep', 'cellargirl', 'lordmilk', 'oscar', 'oscarkin', 'angler', 'merchantman',
   'stash', 'forge', 'campfire', 'chest',
   'well', // a well stands in a square: the market's, the east quarter's yard
 ]);
@@ -638,7 +662,7 @@ export const PAINT_OK: ReadonlySet<TownPropKind> = new Set<TownPropKind>([
   'fence', 'gate', 'gatebar', 'arenagate', 'signpost', 'pentagram',
   'ruingate', // the dungeon gate's arch: its opening is the threshold
   // A person drawn by Villagers may be laid on open ground (the riverside's anglers, the smith and his kin).
-  'merchant', 'alchemist', 'arenamaster', 'guard', 'jeweler', 'scribe', 'bowyer', 'gatekeeper', 'innkeeper', 'barkeep', 'cellargirl', 'oscar', 'oscarkin', 'angler', 'merchantman',
+  'merchant', 'alchemist', 'arenamaster', 'guard', 'jeweler', 'scribe', 'bowyer', 'gatekeeper', 'innkeeper', 'barkeep', 'cellargirl', 'lordmilk', 'oscar', 'oscarkin', 'angler', 'merchantman',
 ]);
 
 /**
@@ -713,9 +737,10 @@ export function claimProp(c: RoadCtx, props: TownProp[], p: TownProp): TownProp 
     p.y = at.y;
   }
   props.push(p);
+  const open = p.open;
   for (let y = p.y; y < p.y + f.h; y++)
     for (let x = p.x; x < p.x + f.w; x++)
-      if (x >= 0 && y >= 0 && x < c.width && y < c.height) {
+      if (x >= 0 && y >= 0 && x < c.width && y < c.height && !(open && open.some((t) => t.x === x && t.y === y))) {
         c.grid[y * c.width + x] = TILE_BLOCKED;
         if (c.claimed) c.claimed[y * c.width + x] = 1;
       }
@@ -792,6 +817,14 @@ export interface TownProp {
   variant?: string;
   /** Mirror the sprite (it.87): a gate across a corridor running the other way. */
   flip?: boolean;
+  /** A wall piece on the camera's side of a room (it.115): drawn cut down to wainscot height, or full height for a doorway. */
+  near?: boolean;
+  /**
+   * GROUND INSIDE THE BOX (it.115): tiles of the footprint the building does
+   * not stand on - the Gilded Stag's stair recess, where its door is. They stay
+   * walkable; `claimProp` and the footprint audit skip them.
+   */
+  open?: ReadonlyArray<{ x: number; y: number }>;
   /** A fractional nudge within the tile, in tiles (it.96: the inn's furniture is placed by hand). */
   ox?: number;
   oy?: number;
@@ -851,7 +884,8 @@ export interface TownLayout {
   /** THE GATEKEEPER (it.87): the sentry at the eastern road who hands out the forest's first errand. */
   gatekeeper?: { x: number; y: number };
   /** THE TRAINING GROUND (it.90): the sign at the yard, and the mark the party is placed on. */
-  training?: { post: { x: number; y: number }; mark: { x: number; y: number } };
+  /** The yard (it.90): the sign, the mark the party stands on, and LORD MILK's post (it.115). */
+  training?: { post: { x: number; y: number }; mark: { x: number; y: number }; milk?: { x: number; y: number } };
   /** The ward's folk wander here. */
   wander2: Room;
   /** The ward gate's sentries. */
@@ -1110,10 +1144,15 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   decal({ kind: 'signpost', x: 13, y: 15 });
   for (const [x, y] of [[9, 13], [13, 13], [15, 17], [20, 19]] as const) placeLamp('torch', x, y);
 
-  // The tavern (NE of the square): 5×4, a stone stair and a table outside.
-  clearFor(35, 9, 5, 4, 1);
-  block({ kind: 'tavern', x: 35, y: 9, w: 5, h: 4, variant: 'tavern_a' });
-  decal({ kind: 'stairs_stone', x: 37, y: 13 });
+  // The tavern (NE of the square), a table outside.
+  // A REAL VIEW OF IT (it.115): the old single was a flat FRONT elevation
+  // stood on a diamond, so its walls met the ground nowhere the hero could
+  // read. It is Bleed's alehouse seen from the south-west now (`tav_b`, the
+  // model the Gilded Stag is cut from, from its other side): the long wall
+  // is four tiles down y, the porched gable three across x, and the handcart
+  // before the porch takes the tile it is drawn on (x 36, y 13).
+  clearFor(35, 9, 3, 5, 1);
+  block({ kind: 'tavern', x: 35, y: 9, w: 3, h: 5, variant: 'tav_b', open: [{ x: 35, y: 13 }, { x: 37, y: 13 }] });
   block({ kind: 'table_chairs', x: 40, y: 12 });
   block({ kind: 'barrels_stacked', x: 34, y: 12 });
   block({ kind: 'supports', x: 33, y: 9 });
@@ -1303,7 +1342,7 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   decal({ kind: 'potions', x: 39, y: 67 });
   block({ kind: 'crates_wood', x: 22, y: 65 });
   block({ kind: 'rack', x: 26, y: 73 });
-  block({ kind: 'cart', x: 33, y: 77, w: 2, h: 1 });
+  block({ kind: 'cart', x: 33, y: 77, w: 2, h: 1, variant: 'cart_1' }); // Bleed's handcart (it.115).
   block({ kind: 'jar', x: 22, y: 68, variant: 'jar_a' });
   block({ kind: 'jar', x: 39, y: 68, variant: 'jar_b' });
   block({ kind: 'box', x: 27, y: 66, variant: 'box_a' });
@@ -1326,8 +1365,17 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   block({ kind: 'dummy', x: 14, y: 73, variant: 'dummy_a' });
   block({ kind: 'dummy', x: 17, y: 74, variant: 'dummy_b' });
   block({ kind: 'dummy', x: 15, y: 75, variant: 'dummy_a' });
-  const training = { post: { x: 16, y: 70 }, mark: { x: 16, y: 72 } };
+  // LORD MILK (it.115) holds the yard from its north-west edge, between the
+  // barricade and the dummies, facing them - off the lane in from the plaza,
+  // so nobody walks through her, and in sight of the mark the party lands on.
+  const training: { post: { x: number; y: number }; mark: { x: number; y: number }; milk?: { x: number; y: number } } = { post: { x: 16, y: 70 }, mark: { x: 16, y: 72 } };
   if (!tryBlock({ kind: 'trainpost', x: training.post.x, y: training.post.y }, KIND_DIRT)) decal({ kind: 'trainpost', x: training.post.x, y: training.post.y });
+  for (const at of [{ x: 14, y: 71 }, { x: 13, y: 72 }, { x: 18, y: 71 }]) {
+    if (tryBlock({ kind: 'lordmilk', x: at.x, y: at.y }, KIND_DIRT)) {
+      training.milk = at;
+      break;
+    }
+  }
   block({ kind: 'rack', x: 16, y: 69 });
   block({ kind: 'barrels_stacked', x: 12, y: 73 });
   placeLamp('torch', 19, 75);
@@ -1404,22 +1452,35 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   // floor (`scenes/Inn.ts`), entered at the door tile in the south face.
   // THE DOOR IS THE THRESHOLD (it.114): the tile just outside the south face,
   // not a tile carved out of the building. The inn is solid to its wall.
-  const tavern = { x: 74, y: 46, w: 6, h: 5 };
-  const door = { x: tavern.x + 2, y: tavern.y + tavern.h };
+  // THE BUILDING STANDS WHERE IT IS DRAWN (it.115). The old single was a
+  // render with no door on any face the camera sees, drawn a tile and a half
+  // north of a 6x5 box - the hero walked under its back half and "entered" a
+  // blank wall. It is Bleed's tavern now, the view whose stair comes down the
+  // SOUTH face into a recess between the gabled hall and the porch wing; the
+  // box is the fitted ground (`STAG_SOLID`), the recess stays open, and the
+  // door is the tile at the stair's foot. It is the same tile as before, so
+  // the lane and the cobble in front of it did not move.
+  const door = { x: 76, y: 51 };
+  const stagAt = { x: door.x - STAG_DOOR.x, y: door.y - STAG_DOOR.y };
+  const tavern = { x: stagAt.x + STAG_BOX.x, y: stagAt.y + STAG_BOX.y, w: STAG_BOX.w, h: STAG_BOX.h };
+  const stagOpen: Array<{ x: number; y: number }> = [];
+  for (let ly = STAG_BOX.y; ly < STAG_BOX.y + STAG_BOX.h; ly++)
+    for (let lx = STAG_BOX.x; lx < STAG_BOX.x + STAG_BOX.w; lx++)
+      if (!STAG_SOLID.some(([sx, sy]) => sx === lx && sy === ly)) stagOpen.push({ x: stagAt.x + lx, y: stagAt.y + ly });
   clearFor(tavern.x, tavern.y, tavern.w, tavern.h, 1);
-  block({ kind: 'tavern2', x: tavern.x, y: tavern.y, w: tavern.w, h: tavern.h });
+  block({ kind: 'tavern2', x: tavern.x, y: tavern.y, w: tavern.w, h: tavern.h, open: stagOpen });
   grid[idx(door.x, door.y)] = TILE_FLOOR;
   tileKind[idx(door.x, door.y)] = KIND_COBBLE;
   grid[idx(door.x, door.y + 1)] = TILE_FLOOR;
   tileKind[idx(door.x, door.y + 1)] = KIND_DIRT;
+  // (Legacy anchors from the it.92 in-town hall; the rooms live on the inn's own floor now.)
   const keeperInn = { x: tavern.x + 1, y: tavern.y + 1 };
   const bed = { x: tavern.x + 4, y: tavern.y + 1 };
   const roomStash = { x: tavern.x + 4, y: tavern.y + 3 };
   const roomForge = { x: tavern.x + 1, y: tavern.y + 3 };
-  block({ kind: 'barrels_stacked', x: tavern.x + tavern.w, y: tavern.y + 3 });
-  block({ kind: 'cart', x: tavern.x - 2, y: tavern.y + 4, w: 2, h: 1 });
-  placeLamp('lamp', door.x + 2, door.y + 2);
-  placeLamp('lamp', door.x - 2, door.y + 2);
+  // The drawn cart and casks are the building's own; the lamps light the recess and the hall's gable.
+  placeLamp('lamp', door.x + 3, door.y + 1);
+  placeLamp('lamp', stagAt.x - 4, stagAt.y);
   // THE RUINED ROWS: shells of houses along every street, heaps where
   // houses were, wall stubs, columns, the fallen in the streets, embers
   // still breathing in a few cellars.
@@ -1452,9 +1513,12 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   block({ kind: 'smithy', x: 90, y: 50, w: 3, h: 3 });
   clearFor(70, 18, 4, 4, 1);
   block({ kind: 'barracks', x: 70, y: 18, w: 4, h: 4 });
-  house(68, 44, 'house_e');
-  house(82, 50, 'house_f');
-  house(98, 55, 'house_g');
+  // THE HOUSES THAT STOOD ARE RENDERS NOW (it.115): house_e/f/g were nearest-
+  // filtered pixel singles beside the smooth inn and ruins; the polyy village's
+  // three-tile houses stand on the same footprints.
+  house(68, 44, 'bld_timber_frame_house_a');
+  house(82, 50, 'bld_bakery_b');
+  house(98, 55, 'bld_apothecary_a');
   house(96, 30, 'house_h', 4, 4); // The tall house: solid to its wall, its threshold on the lane (it.114).
   // Heaps and stubs where the fire went through.
   for (const [x, y, v] of [[74, 24, 'heap_a'], [90, 28, 'heap_b'], [84, 30, 'heap_c'], [78, 54, 'heap_d'], [100, 38, 'heap_e'], [88, 52, 'heap_a'], [76, 40, 'heap_c'], [104, 44, 'heap_b'], [92, 66, 'heap_d'], [84, 64, 'heap_e']] as const) {
@@ -1567,7 +1631,7 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   // seals nothing (tryBlock).
   tryBlock({ kind: 'bench', x: 27, y: 23, w: 2, h: 1, variant: 'bench_a' }, KIND_COBBLE);
   tryBlock({ kind: 'bench', x: 32, y: 23, w: 2, h: 1, variant: 'bench_b' }, KIND_COBBLE);
-  tryBlock({ kind: 'cart', x: 27, y: 20, w: 2, h: 1 }, KIND_COBBLE);
+  tryBlock({ kind: 'cart', x: 27, y: 20, w: 2, h: 1, variant: 'cart_5' }, KIND_COBBLE);
   tryBlock({ kind: 'statue', x: 33, y: 45, variant: 'statue_b' }, KIND_COBBLE);
   tryBlock({ kind: 'jar', x: 28, y: 19, variant: 'jar_a' }, KIND_COBBLE);
   tryBlock({ kind: 'box', x: 19, y: 15, variant: 'box_a' });
@@ -1893,7 +1957,7 @@ export function assertFootprints(layout: TownLayout): string[] {
     if (f.block === 'none') continue;
     for (let y = p.y; y < p.y + f.h; y++)
       for (let x = p.x; x < p.x + f.w; x++) {
-        if (!inside(x, y)) continue;
+        if (!inside(x, y) || p.open?.some((t) => t.x === x && t.y === y)) continue;
         if (grid[y * width + x] === TILE_FLOOR && !PAINT_OK.has(p.kind)) out.push(`${p.kind}@${p.x},${p.y} stands on walkable ground at ${x},${y}`);
         if (road && road[y * width + x] && !ROAD_OK.has(p.kind)) out.push(`${p.kind}@${p.x},${p.y} stands in a street at ${x},${y}`);
       }

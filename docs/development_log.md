@@ -1,5 +1,72 @@
 # Development Log
 
+## 2026-09-17 (iteration 115) - The owner's list: everything it.114 got wrong
+
+The owner played it.114 and sent back a long list. This iteration answers it
+line by line; five tracks ran in parallel over one tree.
+
+### Items and the HUD
+- **Hunger is gone.** Food heals over three seconds; a meal pours MIGHT, a feast
+  STONE SKIN and HASTE (`FOOD_TIER`). The gauge, the label by the hero and the
+  save field are removed.
+- **Every cell turns.** `itemIconHtml` draws the item's turntable strip as a
+  CSS-stepped background, clipped to one frame (`.inv-spin`); flat icons sway
+  (`.inv-turn`). The whole `items inventory and drop` folder is baked
+  (`bake-items.py` curios: 156 potions, 109 scrolls, 54 ores, every drink
+  turning; all 50 dishes; the rest of the Arsenal) - 758 items, 695 turning.
+  Ores smelt into materials. Item singles load behind the menu, not before it.
+- **Drops** are fitted to one box; `ui/LootNote` shows "E · LOOT <name> (kind)"
+  by the nearest one and "TOOK ..." after.
+- A **GOLD** label on the purse; the red vignette clears on every rising;
+  notices are held while a dialogue, a cutscene or its speech box is up.
+
+### Creatures
+- **Feet on the floor.** `scripts/calibrate-feet.py` writes `feetY` (and
+  `feetFrames` for falls) per clip; `SpriteLibrary`, `Enemy`, the squad and the
+  corpses anchor per clip, so a swing or a death no longer floats the body.
+  Re-run it after any creature bake.
+- Sizes from the tallest of idle/walk/attack; the crypt widow was boss-sized.
+- Facing-row fixes for eight packs (`DIR_ROW_FIX`); the bestiary faces the
+  camera with slower idles.
+- **The menagerie** is a showroom: bodies stand on their own spots beside the
+  hero, with a picker in the bestiary's style (78 bodies, shelves, search) and
+  a dock of clips.
+- Human voices (`vMan`/`vWoman`, `bake-voices.py`) for the company, the watch,
+  the general and the chief; monsters keep theirs.
+- The cheat menu's foes rise in view with a notice; sheets prewarm on hover.
+
+### The crypt
+- Kept the stone set and fixed why it looked bad: wall pieces are fogged by
+  the floor tiles they face (`Lighting.registerPiece`) and stay drawn, dark,
+  once seen; rooms get knee-high south/east walls; arches only in one-tile
+  openings; props kept off doorways and stairs (`dev/cryptAudit.ts`, 0 issues
+  on 1-20, the arenas and the quarry).
+- Arenas: the stair descends on V/X/XV and no rift rises; XX has no stair and
+  the rift. The sigil burns out with the last foe. No gargoyle in the depths.
+
+### The town and the tavern
+- Walkers yield to the hero, re-path when stuck, never share a destination.
+- Smooth and pixel people are never in one view (the taproom's original four
+  lurkers are back by the owner's word); the armoured women left the streets.
+- **Lord Milk** holds the training ground and runs the tutorial.
+- The Gilded Stag: a new bake with its stair on the south side, footprint fitted
+  to the drawing, strip-sorted so nobody walks under it; entry mats on every
+  way in. Inside, the door is in the south wall; the barkeep asks for the cellar
+  at once and the hero walks to its door.
+
+### The open country
+- The overworld ground kinds are registered at last (15-21, with long grass,
+  wildflowers and poppies), colour-matched and feathered (`GroundBlend`).
+- The riverside: a mud margin, reeds, lily pads, nine farmsteads.
+- The battlefield ends at a wall with the eastern road through its arch,
+  barricaded; two **ballistae** fire bolts beside the catapults.
+
+### Scenes
+- A spoken beat can zoom the camera (`Camera.setCineZoom`) and play a clip on
+  its speaker; the general, Brack, the stragglers, Oscar and Ordway are looked
+  at closely, and foes breathe through a held scene. T takes the party to the
+  town's spawn stone from anywhere.
+
 ## 2026-09-17 (iteration 114) - The graphics update: twenty-one gigabytes of art, and everything it touched
 
 The owner dropped 21 GB of new art under `public/assets/graphics update/` -

@@ -31,7 +31,7 @@ import { Viewport } from '@/engine/Viewport';
 import { animsForKind, Enemy, ENEMY_TYPES, PHASE_DIE_TICKS, PHASE_RISE_TICKS, type EnemyKind } from '@/entities/Enemy';
 import { EnemyPool } from '@/entities/EnemyPool';
 import { animsForHero, ARCHETYPES, Player, PLAYER_DEATH_TICKS } from '@/entities/Player';
-import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, generateArenaMap, generateDungeon, planHearths, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
+import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, generateArenaMap, generateDungeon, doorwayApproaches, planHearths, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
 import { SkillSystem } from '@/systems/Skills';
 import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
@@ -41,6 +41,7 @@ import { AFFIXES, FROST_AURA_RADIUS, levelHpScale, LOOTER_KINDS } from '@/entiti
 import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
+import { auditCrypt, type AuditProp } from '@/dev/cryptAudit';
 import { SceneManager } from '@/scenes/SceneManager';
 import { CombatSystem } from '@/systems/Combat';
 import { InventorySystem } from '@/systems/Inventory';
@@ -69,14 +70,15 @@ import { CampCraftingUI } from '@/ui/CampCrafting';
 import { CodexUI } from '@/ui/Codex';
 import type { EquipmentSlot } from '@/network/Serialization';
 import { DamageTextSystem } from '@/render/DamageText';
-import { spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
+import { dirIndexFromFacing, spriteLib, uiAssetUrl, type AnimName } from '@/render/SpriteLibrary';
 import { ChestSystem } from '@/systems/Chests';
 import { CheatMenuUI } from '@/ui/CheatMenu';
 import { MenagerieUI } from '@/ui/Menagerie';
 import { ToastUI } from '@/ui/Toast';
-import { Puppet } from '@/render/Puppet';
-import { allCostumes, costumeAnims, type Costume } from '@/render/costumes';
+import { Puppet, type ModelAct } from '@/render/Puppet';
+import { allCostumes, CAST_COSTUMES, costumeAnims, discoverCostumes, type Costume } from '@/render/costumes';
 import { itemIconHtml, itemIconTexture } from '@/ui/itemIcons';
+import { clearLootNote, lootPromptHtml, noteLoot, placeLootNote } from '@/ui/LootNote';
 import { lerpVec, vec2 } from '@/utils/Vec2';
 import { worldToScreen } from '@/utils/iso';
 import { mulberry32, randInt } from '@/utils/rng';
@@ -91,7 +93,7 @@ import { buildFieldLayout } from '@/scenes/Battlefield';
 import { buildManorLayout, buildVaultLayout } from '@/scenes/Manor';
 import { RiverWater } from '@/render/RiverWater';
 import { placeTownProps, type Interactable, type Occluder, type TownDressing } from '@/town/TownProps';
-import { buildForestLayout, bareLayout } from '@/scenes/Forest';
+import { buildForestLayout, bareLayout, KIND_OW_FOREST } from '@/scenes/Forest';
 import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scenes/Mines';
 import { CrtFilter } from '@/render/CrtFilter';
 import { asDifficultyId, DIFFICULTIES, DIFFICULTY_KEY, DIFFICULTY_ORDER, difficulty, readPreferredDifficulty, SPAWN_WARD_TICKS, type DifficultyId } from '@/core/Difficulty';
@@ -100,7 +102,7 @@ import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/Tuto
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
-import { MARKET_FOLK, RECLAIMED_WORDS, REFUGEE_WORDS, RIVER_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers } from '@/town/Villagers';
+import { MARKET_FOLK, MILK_WORDS, RECLAIMED_WORDS, REFUGEE_WORDS, RIVER_FOLK, RIVER_WORDS, setBubblesHidden, STREET_FOLK, TAVERN_WORDS, TOWN_WORDS, Villagers, type StandingFigure } from '@/town/Villagers';
 import { CineDialogue } from '@/ui/CineDialogue'; // THE CORNER WORD (it.102).
 import { Squad, SQUAD_ANIMS } from '@/systems/Squad';
 import { CampHeroes } from '@/town/CampHeroes';
@@ -108,7 +110,7 @@ import { VFX_ANIMS, VfxSystem, type VfxHandle } from '@/render/Vfx';
 import { fxAlert, fxBossDeath, fxBuff, fxCatapultImpact, fxCrit, fxDeathBurst, fxHit, fxLevelUp, fxPickupGold, fxPickupRare, fxWarp } from '@/render/effects';
 import { SkillTreeUI } from '@/ui/SkillTree';
 import { CharacterSheetUI } from '@/ui/CharacterSheet';
-import { BestiaryUI } from '@/ui/Bestiary';
+import { BestiaryUI, MAN_KINDS } from '@/ui/Bestiary';
 import { GoreSystem } from '@/render/Gore';
 import { hasLineOfSight } from '@/utils/los';
 import { PARTY_COLORS, PARTY_COLOR_CSS, PARTY_MAX, type LinkState, type MemberInfo, type SnapshotPayload } from '@/net/PeerNet';
@@ -164,6 +166,8 @@ interface World {
   /** Sealed boss arena floor (it.28): stairs hidden until every foe falls. */
   isArena: boolean;
   arenaCleared: boolean;
+  /** The wardens' sigil turning on an arena floor (it.115: it burns out with the last foe). */
+  arenaSigil: { stop: () => void } | null;
   /** Boss-floor chamber rect (it.29): stepping inside INSTANTLY teleports
    *  into the arena — no stair/ladder interaction. Null elsewhere. */
   arenaThreshold: { x: number; y: number; w: number; h: number } | null;
@@ -210,6 +214,8 @@ interface World {
     destroyDressing: () => void;
     /** THE SIEGE ENGINES (it.110): wind one back and let it go at a tile. */
     fireSiege: TownDressing['fireSiege'];
+    /** THE BOLT SLIDES BACK (it.115): the taproom's cellar door opens where the hero stands. */
+    unbolt: TownDressing['unbolt'];
   } | null;
   /** Roster spawn indexes killed on this floor (FloorMemory). */
   killed: Set<number>;
@@ -509,6 +515,17 @@ async function boot(): Promise<void> {
      */
     (['field_mud', 'field_churn', 'field_gore', 'field_road', 'field_grass'] as const).forEach((name, i) => {
       const kind = KIND_FIELD_MUD + i;
+      for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${kind}_${v}`, spriteLib.single(`${name}_${v}`));
+      if (spriteLib.hasSingle(`${name}_0`)) assets.registerTexture(`floor_town_${kind}`, spriteLib.single(`${name}_0`));
+    });
+    /**
+     * THE OVERWORLD'S OWN GROUND (it.115): leaf litter, moss, gravel, wet mud, long
+     * grass and two flower beds, kinds 15..21 past the field's 14 (`scenes/Forest.ts` owns the numbers).
+     * Registered here by index like every other kind; until this ran the outdoor
+     * painters saw `owGround()` false and laid nothing.
+     */
+    (['ow_forest', 'ow_moss', 'ow_gravel', 'ow_mud', 'ow_meadow', 'ow_flowers', 'ow_poppies'] as const).forEach((name, i) => {
+      const kind = KIND_OW_FOREST + i;
       for (let v = 0; v < 4; v++) if (spriteLib.hasSingle(`${name}_${v}`)) assets.registerTexture(`floor_town_${kind}_${v}`, spriteLib.single(`${name}_${v}`));
       if (spriteLib.hasSingle(`${name}_0`)) assets.registerTexture(`floor_town_${kind}`, spriteLib.single(`${name}_0`));
     });
@@ -1099,8 +1116,6 @@ async function boot(): Promise<void> {
     // anything renders; buildWorld fetches the floor's roster itself.
     await spriteLib.ensure([...roster.flatMap((m) => animsForHero(m.cls)), ...animsForHero('warrior')]);
 
-    /** THE BELLY (it.114): hunger read off a save before its inventory system exists. */
-    const savedHunger = new Map<Player, number>();
     /** RESTORE (it.39): the sheet, the bags, the worn gear. */
     const applyHeroSave = (p: Player, ps: PlayerSave): void => {
       p.level = ps.level;
@@ -1119,11 +1134,6 @@ async function boot(): Promise<void> {
       });
       for (const [k, v] of Object.entries(ps.materials ?? {})) if (v > 0) p.addMaterial(k, v);
       if (ps.belt) p.belt = [ps.belt[0] ?? null, ps.belt[1] ?? null];
-      // THE BELLY (it.114): the system may not exist yet on a load; it is applied again once it does.
-      if (ps.hunger !== undefined) {
-        savedHunger.set(p, ps.hunger);
-        InventorySystem.of(p)?.setHunger(ps.hunger);
-      }
       for (const k of ps.recipes ?? []) p.recipes.add(k);
       for (const id of ps.backpack) if (itemDef(id)) p.addItem(id);
       for (const { itemId } of ps.equipped) {
@@ -1714,10 +1724,19 @@ async function boot(): Promise<void> {
           const healed = world.combat.heal(p.id, Math.round(p.hpMax * fraction));
           if (healed > 0 && p === player) updateOrb();
         },
-        eat: (def, hunger) => {
+        eat: (def, tier) => {
           if (p !== player) return;
-          world.dmgText.show(p.pos.x, p.pos.y - 0.9, `${def.name.toUpperCase()} · +${hunger} HUNGER`, 'crit');
+          // A DISH (it.115): its name and what it pours - a meal's might, a feast's stone and haste.
+          const buff = tier === 'feast' ? ' · STONE SKIN · HASTE' : tier === 'meal' ? ' · MIGHT' : '';
+          world.dmgText.show(p.pos.x, p.pos.y - 0.9, `${def.name.toUpperCase()}${buff}`, 'crit');
           world.ambience.burst(p.pos.x, p.pos.y, 0xe0a458, 8);
+        },
+        // AN ORE (it.115): smelted into the pouch - the loot line says what it became.
+        smelted: (def, material, count) => {
+          if (p !== player) return;
+          noteLoot(def, 'SMELTED', `→ ${count} ${itemDef(material)?.name ?? material}`);
+          audio.sfx('pickup');
+          world.ambience.burst(p.pos.x, p.pos.y, 0xffb347, 10);
         },
         heal: (fraction) => {
           const healed = world.combat.heal(p.id, Math.round(p.hpMax * fraction));
@@ -1769,8 +1788,6 @@ async function boot(): Promise<void> {
       return inv;
     };
     const inventories: Array<InventorySystem | null> = party.map((s) => (s ? makeInventory(s.player, s.slot) : null));
-    // THE BELLY, RESTORED (it.114): a save applied before the systems existed left its hunger here.
-    for (const s of party) if (s) { const h = savedHunger.get(s.player); if (h !== undefined) InventorySystem.of(s.player)?.setHunger(h); }
     if (pendingLocal) inventories[localSlot] = makeInventory(pendingLocal.player, localSlot); // The HUD binds before the JOIN lands.
     const stateSync = new StateSyncSystem(inputQueue);
     const inventoryUI = new InventoryUI(player, inputQueue, 0, buildPaperdollFrames);
@@ -2184,6 +2201,10 @@ async function boot(): Promise<void> {
       // the only knob that reaches every sprite on the floor at once, and it costs
       // nothing - the tint is already computed per tile every frame.
       if (isFarm || isRiver || isField) lighting.revealAll();
+      // THE SEALED HALL IS SEEN WHOLE (it.115): an arena is one room with the doors
+      // shut behind the hero; its walls stand dark from the first frame instead
+      // of appearing a ring at a time around the torch.
+      if (isArena) lighting.revealAll();
       const goldPiles = isPlace ? [] : placeProps(dungeon, viewport, lighting, ambience, hearths);
       // Gold already scooped on a remembered floor stays gone.
       if (memory) {
@@ -2258,7 +2279,10 @@ async function boot(): Promise<void> {
             : isMines
               ? { hidden: true, at: { x: 1, y: 1 } } // The quarry has no stair (a wall tile no one can touch): the way home is the teleporter after the hall (it.85).
             : isArena
-              ? { hidden: true, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
+              ? // THE ARENA'S STAIR (it.115): stands in plain sight at the hall's east end,
+                // sealed until the warden falls. Depth XX and the quarry have nothing
+                // below them: their stair is never drawn, the teleporter is the way out.
+                { hidden: floorNum >= MAX_DEPTH || isMinesArena, at: { x: arenaRoom.x + arenaRoom.w - 3, y: arenaRoom.y + Math.floor(arenaRoom.h / 2) } }
               : isColiseum
                 ? { hidden: true, at: { x: 1, y: 1 } } // No stair in the trial (it.53).
                 : undefined,
@@ -2268,7 +2292,7 @@ async function boot(): Promise<void> {
       const loot = new LootSystem(viewport, seed);
       loot.ilvl = ilvlForDepth(Math.max(1, floorLevel)); // What this floor drops (it.78; the forest and the quarry at the hero's depth, it.85).
       const chests = new ChestSystem(viewport, lighting, loot, seed);
-      if (!isArena && !isPlace) chests.place(dungeon, [stairs, ...(minesPlan?.keys ?? [])]); // The arena floors stay clean; a chest never sits on a key (it.85).
+      if (!isArena && !isPlace) chests.place(dungeon, [...[-1, 0, 1].flatMap((dy) => [-1, 0, 1].map((dx) => ({ x: stairs.x + dx, y: stairs.y + dy }))), ...(minesPlan?.keys ?? []), ...goldPiles.map((g) => ({ x: Math.floor(g.x), y: Math.floor(g.y) })), ...doorwayApproaches(dungeon)]); // Nor beside the stair, on a gold pile, or in a way in (it.115). // The arena floors stay clean; a chest never sits on a key (it.85).
       // LOOTABLE CHESTS (it.92): the districts' small chests, on the layout's spots, the opened ones remembered by the save.
       if (layout?.chests) for (const c of layout.chests) if (!townChestOpened(floorNum, c.x, c.y)) chests.spawnAt(c.x, c.y, false, true);
       // THE KEYS (it.85): ground items in their side rooms; a taken key stays taken.
@@ -2394,7 +2418,7 @@ async function boot(): Promise<void> {
           const anim = spriteLib.anim(packSprite.death);
           const frames = anim.frames[enemy.renderDir] ?? anim.frames[0];
           const corpse = new Sprite(frames[frames.length - 1]);
-          corpse.anchor.set(0.5, packSprite.anchorY);
+          corpse.anchor.set(0.5, enemy.corpseAnchorY()); // It.115: the calibrated lying row, not a hand-set standing anchor - no corpse hovers.
           corpse.scale.set(enemy.bodyScale);
           corpse.position.set(s.x, s.y + 2);
           viewport.groundLayer.addChild(corpse);
@@ -2621,9 +2645,10 @@ async function boot(): Promise<void> {
       // A remembered-cleared arena (it.58): no stair — the teleporter rises on the first tick.
       // RITUAL CIRCLES (it.48): the wardens' sigil marks BOSS floors only —
       // the arena's heart and the seal room on depths V / X / XV / XX.
-      if (isArena) {
+      let arenaSigil: { stop: () => void } | null = null;
+      if (isArena && !arenaAlreadyCleared) {
         const room = dungeon.rooms[0];
-        vfx.play('vfx_pentagram', room.x + room.w / 2, room.y + room.h / 2, { loop: true, fps: 8, scale: 1.6, depthBias: -60, alpha: 0.85 });
+        arenaSigil = vfx.play('vfx_pentagram', room.x + room.w / 2, room.y + room.h / 2, { loop: true, fps: 8, scale: 1.6, depthBias: -60, alpha: 0.85 });
       } else if (bossSigil) {
         vfx.play('vfx_pentagram', bossSigil.x, bossSigil.y, { loop: true, fps: 7, scale: 1.35, depthBias: -60, alpha: 0.85 });
       }
@@ -2645,6 +2670,16 @@ async function boot(): Promise<void> {
         // AMBIENT CHATTER (it.91): every peaceful head in town speaks a word now and then.
         // THE STREETS (it.92): the folk walk the district's roads, path-found, and keep to them three times in four.
         const streets = { roads: layout.road, mapWidth: layout.map.width };
+        // DOORWAYS ARE NOT FOR STANDING IN (it.115): no errand ends on a threshold.
+        const doorways = [
+          layout.gate, layout.arenaGate, ...layout.gateways, ...layout.houses.map((h) => h.door ?? { x: h.x + Math.floor(h.w / 2), y: h.y + h.h }),
+          ...(layout.east ? [layout.east.door] : []), ...(layout.training ? [layout.training.post] : []),
+        ];
+        // LORD MILK (it.115): the fencer on her post at the yard, on her own idle, facing the dummies.
+        const milkAt = isHub ? layout.training?.milk : undefined;
+        const yardFigures: StandingFigure[] = milkAt && layout.training
+          ? [{ x: milkAt.x, y: milkAt.y, anim: 'duelist_idle', height: 62, dir: dirIndexFromFacing(layout.training.mark.x - milkAt.x - 0.5, layout.training.mark.y + 2 - milkAt.y), fps: 8, words: MILK_WORDS }]
+          : [];
         const villagers = isForest
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, forestSafe ? 6 : 0, null, layout.guards, null, {}, null, { chatter: forestSafe ? TOWN_WORDS : undefined, sheets: MARKET_FOLK }) // A cleared forest keeps folk and sentries (it.87).
           : isCellar
@@ -2657,13 +2692,13 @@ async function boot(): Promise<void> {
             // people strolling through an ambush reads as a farm with no ambush.
             // THE WATCH ON THE BRIDGE (it.110) are this floor's SENTRIES, and are
             // stood up whichever state the farm is in: the crossing is the city's.
-            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, layout.guards, null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: MARKET_FOLK })
+            ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, riverSafe ? 5 : 0, null, layout.guards, null, {}, null, { chatter: riverSafe ? RIVER_WORDS : undefined, sheets: RIVER_FOLK }) // Oscar's bank walks with his household (it.115).
           : isField || isManor || isVault
             // ACROSS THE RIVER (it.110): nobody lives on any of these three.
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 0, null, [], null)
           : isInn
             ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 5, null, [], null, {}, layout.inn?.keeper ?? null, { chatter: TAVERN_WORDS, keeperAnim: 'folk_walk', keeperTint: 0xe8d8b8 })
-            : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets });
+            : new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander, 9, layout.merchant, [...layout.guards, layout.arenaMaster], layout.alchemist, {}, layout.gatekeeper ?? null, { chatter: TOWN_WORDS, sheets: STREET_FOLK, ...streets, keepClear: doorways, figures: yardFigures });
         // THE MARKET WARD (it.84): its own folk, the jeweler in gold, the scribe in ice-blue, the bowyer a ranger, two sentries at the gate.
         const villagers2 = isForest || isInn || isCellar || isFarm || isRiver || isField || isManor || isVault
           ? new Villagers(viewport.objectLayer, scene.isWalkable, layout.wander2, 0, null, [], null)
@@ -2703,6 +2738,7 @@ async function boot(): Promise<void> {
           update: dressing.update,
           destroyDressing: dressing.destroy,
           fireSiege: dressing.fireSiege,
+          unbolt: dressing.unbolt,
         };
       }
       if (isMenagerie && coliseumState) {
@@ -2833,6 +2869,7 @@ async function boot(): Promise<void> {
               ambience.bloodSpray(x, y, undefined, undefined, 16);
               vfx.play('vfx_bloodburst', x, y, { scale: 1.15, lift: 14, fps: 30, additive: false });
               audio.sfx('gore');
+              audio.enemyVoice('die', 0.97, 'vMan'); // A guard goes down crying like a man (it.115).
             },
             onRose: (x, y) => {
               vfx.play('vfx_ring', x, y, { scale: 0.7, flat: true, fps: 20, tint: 0x8fc4ff, alpha: 0.85 });
@@ -2853,6 +2890,7 @@ async function boot(): Promise<void> {
                 if (took && at) {
                   ambience.bloodSpray(at.x, at.y, undefined, undefined, 9);
                   dmgText.show(at.x, at.y - 1.1, String(Math.round(amount)), 'enemy');
+                  if (Math.random() < 0.35) audio.enemyVoice('hurt', 1.02, 'vMan'); // The watch bleeds in a man's voice (it.115).
                 }
                 return took;
               },
@@ -2880,8 +2918,10 @@ async function boot(): Promise<void> {
       // (it.48): a rebuilt depth I (back from town) no longer grows a second
       // portal-looking stone beside the arrival spot.
       tutorial.setZones([]); // A rebuilt floor carries no stale zones (it.48).
+      let waystoneAt: { x: number; y: number } | null = null; // For the crypt audit (it.115).
       if (floorNum === 1 && !memory) {
         const waystone = placeWaystone(dungeon, viewport, lighting, ambience);
+        waystoneAt = waystone;
         tutorial.setZones([
           {
             id: 'move',
@@ -2911,6 +2951,25 @@ async function boot(): Promise<void> {
         ]);
       } else {
         tutorial.setZones([]);
+      }
+
+      // THE CRYPT'S GEOMETRY AUDIT (it.115, DEV): every prop on its own open
+      // tile, every torch on a wall, no doorway blocked, every wall piece on
+      // wall. The result rides `window.__cryptAudit`; a breach warns.
+      if (import.meta.env.DEV && !isPlace && !isHub && !isColiseum) {
+        const auditProps: AuditProp[] = hearths.map((h) => ({ kind: 'hearth', x: h.x, y: h.y, solid: true }));
+        goldPiles.forEach((g) => auditProps.push({ kind: 'gold', x: Math.floor(g.x), y: Math.floor(g.y) }));
+        const stairsDrawn = !layout && !isMines && !isColiseum && !(isArena && (floorNum >= MAX_DEPTH || isMinesArena));
+        if (stairsDrawn && !isPortalFloor) auditProps.push({ kind: 'stairs', x: stairs.x, y: stairs.y });
+        if (waystoneAt) auditProps.push({ kind: 'waystone', x: waystoneAt.x, y: waystoneAt.y, solid: false });
+        for (let id = 1; ; id++) {
+          const c = chests.getChest(id);
+          if (!c) break;
+          auditProps.push({ kind: 'chest', x: Math.floor(c.x), y: Math.floor(c.y), solid: true });
+        }
+        const audit = auditCrypt(dungeon, auditProps, scene.torchSpots);
+        (window as unknown as { __cryptAudit: unknown }).__cryptAudit = { floor: floorNum, arena: isArena, ...audit };
+        if (audit.issues.length) console.warn(`[cryptAudit] depth ${floorNum}${isArena ? ' arena' : ''}: ${audit.issues.length} issue(s)`, audit.issues);
       }
 
       // The party joins this floor's stage at its entrance (it.59: spread around it).
@@ -3072,18 +3131,15 @@ async function boot(): Promise<void> {
         manor: manorBuilt?.manor ?? null,
         vault: vaultBuilt?.vault ?? null,
         chief: chiefBody,
+        arenaSigil,
       };
     };
 
     const destroyWorld = (w: World): void => {
       w.unsubscribe();
       // A costume belongs to the sand it was put on (it.114).
-      if (puppet) {
-        puppet.destroy();
-        puppet = null;
-        wornCostumeId = null;
-        player.container.renderable = true;
-      }
+      clearShowcase(); // The display models belong to the sand they stood on (it.115).
+      showcaseOrigin = null;
       if (w.coliseum?.menagerie) menagerieUI.close();
       // A SCENE DIES WITH ITS FLOOR (it.114b): a jump out from under a running
       // cutscene (the harness, the sheet) left its bars and its speech box on
@@ -3176,7 +3232,6 @@ async function boot(): Promise<void> {
         goldCollected: p.goldCollected,
         materials: Object.fromEntries(p.materials),
         belt: [...p.belt],
-        hunger: InventorySystem.of(p)?.hunger ?? 100, // it.114
         recipes: [...p.recipes],
       };
     };
@@ -3248,6 +3303,13 @@ async function boot(): Promise<void> {
       bossLoot = null;
       destroyWorld(old);
       interactHint?.classList.remove('show', 'dim'); // No floating chips survive a floor.
+      clearLootNote();
+      // THE BARS LIFT WITH THE FLOOR (it.115): `cine` is only re-toggled on town frames, so a jump out of a
+      // running scene left the whole HUD (and the loot prompt) hidden on the next floor.
+      document.body.classList.remove('cine');
+      // ...and the speaker's box goes with it (it.115): a scene cut short by a jump left its last line up.
+      document.getElementById('cine-speak')?.classList.remove('show', 'waits', 'foe');
+      Enemy.platesOff = false;
       Enemy.platesOff = false; // nor a cutscene's plate blackout (it.103)
       pendingInteract = null;
       // A stale "on the stairs" flag from the old floor must never fire on
@@ -3713,86 +3775,182 @@ async function boot(): Promise<void> {
         tutorial.notify('coliseum', 'The Trial Coliseum: waves pour from the four gates. Between waves you have fifteen seconds to loot and drink. T abandons the trial.');
       }, 'the trial coliseum');
     /**
-     * THE MENAGERIE (it.114). The owner asked for "a separate mode where I can
-     * select ANY mob or NPC and run around as them in a test arena". It is the
-     * coliseum's sand with no waves: the hero is still the hero in the
-     * simulation - the same collider, movement and actions - and a PUPPET
-     * (`render/Puppet`) draws another creature's sheets over the hero's
-     * interpolated position, reading the hero's state each frame. Nothing in
-     * the sim knows a costume is on. The picker lists every costume with the
-     * label and source folder the owner can quote back.
+     * THE MENAGERIE (it.114, reworked it.115). The coliseum's sand with no
+     * waves. It.114 drew the picked creature OVER the hero; the owner: "they
+     * attach right onto my hero skin and overlap each other". Now the hero is
+     * the hero, and every picked body is a DISPLAY MODEL (`render/Puppet`) on
+     * its own marked spot: rows in front of the hero, each spot as wide as the
+     * body it holds, rows as deep as their tallest body, so nothing overlaps.
+     * The dock plays any clip on one body or on all of them.
      */
-    let puppet: Puppet | null = null;
-    let wornCostumeId: string | null = null;
+    const showcase: Puppet[] = [];
+    let showcaseFocus: string | null = null;
+    let showcaseOrigin: { x: number; y: number } | null = null;
     const foeCostumes = (): Costume[] =>
       (Object.keys(ENEMY_TYPES) as EnemyKind[])
         .filter((k) => ENEMY_TYPES[k].sprite && !ENEMY_TYPES[k].passive)
-        .map((k) => {
+        .map((k): Costume => {
           const d = ENEMY_TYPES[k];
           const sp = d.sprite!;
           return {
             id: k,
+            kind: k,
             label: d.name,
-            source: `${sp.walk.replace(/_[a-z]+$/, '')}_* sheets · kind ${k}`,
+            source: `${sp.walk.replace(/_[a-z]+$/, '')}_* sheets`,
             group: isBossKind(k) ? 'boss' : 'foe',
+            shelf: isBossKind(k) ? 'warden' : MAN_KINDS.has(k) ? 'man' : 'host',
+            baseHeight: k.startsWith('boss') ? 128 : 56,
+            tint: sp.tint,
             idle: sp.idle ?? sp.walk,
             walk: sp.walk,
             attack: sp.attack,
-            death: sp.death,
+            death: sp.death === sp.idle ? undefined : sp.death,
             hit: sp.hitAnim,
             heightMult: sp.heightMult,
-            ownShadow: sp.ownShadow !== true ? false : true,
+            ownShadow: sp.ownShadow === true,
             stride: sp.stride,
-          } as Costume;
+          };
         });
-    const menagerieCostumes = (): Costume[] => [...foeCostumes(), ...allCostumes()];
-    const wearCostume = async (id: string | null): Promise<void> => {
-      wornCostumeId = id;
-      if (puppet) {
-        puppet.destroy();
-        puppet = null;
+    let costumeCache: Costume[] | null = null;
+    const menagerieCostumes = (): Costume[] => {
+      if (costumeCache) return costumeCache;
+      // A drop costume that IS a kind now (the drake, the treant...) is folded into the kind: one card, the drop's extras and pack name.
+      const foes = foeCostumes();
+      const rest = allCostumes().filter((c) => {
+        const twin = CAST_COSTUMES.includes(c) ? undefined : foes.find((f) => f.idle === c.idle || f.id === c.id); // The hero rigs stay their own cards.
+        if (!twin) return true;
+        twin.extras = { ...c.extras, ...twin.extras };
+        twin.source = `${c.source} · ${twin.source}`;
+        return false;
+      });
+      const known = [...foes, ...rest].filter((c) => spriteLib.knows(c.idle) && spriteLib.knows(c.walk));
+      const found = discoverCostumes(spriteLib.animNames(), (n) => spriteLib.entry(n)?.dirCount ?? 0, known);
+      costumeCache = [...known, ...found];
+      return costumeCache;
+    };
+    /** Deal the bodies into rows in front of the hero (screen-up from where he arrived). */
+    const layoutShowcase = (): void => {
+      const o = showcaseOrigin;
+      if (!o) return;
+      // THE FREE STAGE (it.115): the rows fill the screen between the picker on
+      // the left, the icon bar on the right and the dock below, at the zoom the
+      // player has - so nothing stands behind a panel. World px = screen / zoom.
+      const z = Math.max(0.3, world.camera.currentZoom);
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const panel = document.getElementById('menagerie')?.getBoundingClientRect();
+      const dockEl = document.getElementById('menagerie-dock')?.getBoundingClientRect();
+      const leftPx = panel && panel.width && vw > 900 ? panel.right + 20 : 20;
+      const rightPx = vw - 100;
+      const floorPx = dockEl && dockEl.height ? dockEl.top - 40 : vh - 170;
+      const ROW_W = Math.max(200, (rightPx - leftPx) / z);
+      const shiftX = ((leftPx + rightPx) / 2 - vw / 2) / z;
+      const GAP = 18;
+      let rowY = -(floorPx - vh / 2) / z; // World px above the hero of the first row's feet (negative = below him).
+      let row: Puppet[] = [];
+      const flush = (): void => {
+        if (!row.length) return;
+        // The hero is not a body on show: a row that crosses his height leaves a
+        // gap where he stands (he is at stage x = -shiftX).
+        const tallRow = Math.max(...row.map((m) => m.heightPx));
+        const crossesHero = rowY < 66 && rowY + tallRow * 0.9 > -14;
+        const heroX = -shiftX;
+        const total = row.reduce((w, m) => w + Math.max(56, m.widthPx) + GAP, -GAP);
+        let x = -total / 2;
+        for (const m of row) {
+          const w = Math.max(56, m.widthPx);
+          if (crossesHero && x < heroX + 34 && x + w > heroX - 34) x = heroX + 34 + GAP / 2;
+          const sx = x + w / 2;
+          // Screen (sx, -rowY) -> world: sx = (wx - wy) * 32, sy = (wx + wy) * 16.
+          const u = (sx + shiftX) / 32;
+          const v = -rowY / 16;
+          m.place(o.x + (u + v) / 2, o.y + (v - u) / 2);
+          x += w + GAP;
+        }
+        const tallest = Math.max(...row.map((m) => m.heightPx));
+        rowY += Math.max(60, tallest * 0.75) + 26;
+        row = [];
+      };
+      let used = 0;
+      for (const m of showcase) {
+        const w = Math.max(56, m.widthPx) + GAP;
+        if (row.length && used + w > ROW_W) {
+          flush();
+          used = 0;
+        }
+        row.push(m);
+        used += w;
       }
-      player.container.renderable = true;
-      if (!id) return;
-      const cst = menagerieCostumes().find((c) => c.id === id);
-      if (!cst) return;
-      await spriteLib.ensure(costumeAnims(cst));
-      if (!alive || wornCostumeId !== id || !world.coliseum?.menagerie) return;
-      if (!spriteLib.hasAnim(cst.idle) || !spriteLib.hasAnim(cst.walk)) {
-        tutorial.say(`${cst.label}: its sheets are not in the atlas yet.`);
+      flush();
+      for (const m of showcase) m.setFocus(m.costume.id === showcaseFocus);
+    };
+    const clearShowcase = (): void => {
+      for (const m of showcase) m.destroy();
+      showcase.length = 0;
+      showcaseFocus = null;
+    };
+    const targets = (): Puppet[] => (showcaseFocus ? showcase.filter((m) => m.costume.id === showcaseFocus) : showcase);
+    const toggleShowcase = async (id: string): Promise<void> => {
+      const at = showcase.findIndex((m) => m.costume.id === id);
+      if (at >= 0) {
+        showcase[at].destroy();
+        showcase.splice(at, 1);
+        if (showcaseFocus === id) showcaseFocus = null;
+        layoutShowcase();
+        menagerieUI.refresh();
         return;
       }
-      puppet = new Puppet(cst);
-      world.viewport.objectLayer.addChild(puppet.container);
-      player.container.renderable = false;
-      world.vfx.play('vfx_burst', player.pos.x, player.pos.y, { scale: 1.3, tint: 0xc0a0ff });
+      const cst = menagerieCostumes().find((c) => c.id === id);
+      if (!cst || !world.coliseum?.menagerie) return;
+      if (showcase.length >= 36) {
+        toast.show({ kind: 'warn', title: 'THE SAND IS FULL', sub: 'thirty-six bodies at once - take one off first', key: 'menagerie-full' });
+        return;
+      }
+      await spriteLib.ensure(costumeAnims(cst)).catch(() => undefined);
+      if (!alive || !world.coliseum?.menagerie || showcase.some((m) => m.costume.id === id)) return;
+      if (!spriteLib.hasAnim(cst.idle)) {
+        toast.show({ kind: 'warn', title: cst.label.toUpperCase(), sub: 'its sheets are not in the atlas', key: 'menagerie-miss' });
+        return;
+      }
+      if (!showcase.length) showcaseOrigin = { x: player.pos.x, y: player.pos.y }; // The first body deals the stage around the hero (where the camera is).
+      const model = new Puppet(cst, player.pos.x, player.pos.y);
+      world.viewport.objectLayer.addChild(model.container);
+      showcase.push(model);
+      showcaseFocus = id;
+      layoutShowcase();
+      world.vfx.play('vfx_burst', model.x, model.y, { scale: 1.1, tint: 0xc0a0ff });
       audio.sfx('portal');
+      menagerieUI.refresh();
     };
     const menagerieUI = new MenagerieUI({
       costumes: menagerieCostumes,
-      wear: (id) => void wearCostume(id),
-      extras: () => puppet?.extras ?? [],
-      play: (extra) => {
-        if (!puppet) return;
-        if (extra === '__death') {
-          const c = puppet.costume;
-          if (c.death) puppet.play(c.death, 1.4);
-        } else if (extra === '__hit') {
-          const c = puppet.costume;
-          if (c.hit) puppet.play(c.hit, 0.4);
-        } else puppet.play(extra, 1.3);
+      placed: () => showcase.map((m) => m.costume.id),
+      focused: () => showcaseFocus,
+      toggle: (id) => void toggleShowcase(id),
+      focus: (id) => {
+        showcaseFocus = id;
+        for (const m of showcase) m.setFocus(m.costume.id === id);
       },
+      act: (act) => {
+        for (const m of targets()) m.play(act);
+      },
+      rotate: (step) => {
+        for (const m of targets()) m.rotate(step);
+      },
+      faceCamera: () => {
+        for (const m of targets()) m.faceCamera();
+      },
+      clear: clearShowcase,
+      extras: () => (showcaseFocus ? (showcase.find((m) => m.costume.id === showcaseFocus)?.extras ?? []) : []),
+      hasClip: (act) => targets().some((m) => m.has(act as ModelAct)),
       summon: () => {
-        const id = wornCostumeId;
-        if (!id || !(id in ENEMY_TYPES)) {
-          tutorial.say('Only a creature that is a KIND in the bestiary can be summoned; the drop\'s new bodies get theirs as they are wired in.');
-          return;
-        }
-        void spriteLib.ensure(animsForKind(id as EnemyKind)).then(() => {
+        const kind = showcase.find((m) => m.costume.id === showcaseFocus)?.costume.kind as EnemyKind | undefined;
+        if (!kind || !ENEMY_TYPES[kind]) return;
+        void spriteLib.ensure(animsForKind(kind)).then(() => {
           if (!alive || !world.coliseum?.menagerie) return;
           const c = world.coliseum;
-          for (const [dx, dy] of [[2, 2], [-2, 2], [2, -2]] as const) {
-            if (world.scene.isWalkable(c.center.x + dx, c.center.y + dy)) world.enemies.spawn(id as EnemyKind, c.center.x + dx + 0.5, c.center.y + dy + 0.5, Math.max(1, player.level));
+          for (const [dx, dy] of [[4, 4], [5, 3], [3, 5]] as const) {
+            if (world.scene.isWalkable(c.center.x + dx, c.center.y + dy)) world.enemies.spawn(kind, c.center.x + dx + 0.5, c.center.y + dy + 0.5, Math.max(1, player.level));
           }
         });
       },
@@ -3802,12 +3960,17 @@ async function boot(): Promise<void> {
       },
     });
     subs.push(() => {
-      puppet?.destroy();
-      puppet = null;
+      clearShowcase();
       menagerieUI.destroy();
     });
-    /** Onto the sand with the gates shut; `wear` puts a costume on straight away. */
-    const enterMenagerie = (wear: string | null): void =>
+    /** Onto the sand with the gates shut; `show` puts a body on its spot straight away. */
+    const enterMenagerie = (show: string | null): void => {
+      if (world.coliseum?.menagerie) {
+        // Already here (the bestiary's SHOW ON THE SAND): just add the body.
+        menagerieUI.open();
+        if (show && !showcase.some((m) => m.costume.id === show)) void toggleShowcase(show);
+        return;
+      }
       withFade(async () => {
         await preloadFloor(MENAGERIE_FLOOR, 'menagerie');
         captureFloor();
@@ -3822,12 +3985,14 @@ async function boot(): Promise<void> {
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         minimap.markDirty();
         updateOrb();
+        clearShowcase();
+        showcaseOrigin = { x: player.pos.x, y: player.pos.y };
         menagerieUI.open();
-        menagerieUI.setWorn(wear);
-        void wearCostume(wear);
+        if (show) void toggleShowcase(show);
         world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE MENAGERIE', 'crit');
-        tutorial.notify('menagerie', 'The menagerie: pick any body on the left and walk the sand as it. WASD moves, Space strikes the dummies, T raises the way home.');
+        tutorial.notify('menagerie', 'The menagerie: pick bodies on the left - each takes its own spot on the sand. The bar below plays their clips; T raises the way home.');
       }, 'the menagerie');
+    };
     /** Home from the sand — no return rift, the trial is over. */
     const leaveColiseum = (): void =>
       withFade(async () => {
@@ -3971,24 +4136,68 @@ async function boot(): Promise<void> {
       spawnFoe: (kindName, count, level) => {
         const kind = kindName as EnemyKind;
         if (!ENEMY_TYPES[kind]) return;
-        void spriteLib.ensure(animsForKind(kind)).then(() => {
+        /*
+         * THE SUMMONS SHOWS ITSELF (it.115). The owner: "why isn't the enemy
+         * spawn from the cheat menu working?" It was - a foe appeared two tiles
+         * out with the only flash on the HERO, closed the gap in half a second
+         * and stood behind him; a sheet that failed to stream in (a rejected
+         * `ensure`) spawned nothing at all, silently. Now the bodies come up
+         * three to five tiles out on the camera's side of the hero, spread a
+         * tile apart, each climbing out of its own ring of dust; a line on the
+         * screen names what came and at what level; and a load failure still
+         * spawns (the rig falls back) and says so.
+         */
+        const def = ENEMY_TYPES[kind];
+        const summon = (loaded: boolean): void => {
           if (!alive) return;
           const px = Math.floor(player.pos.x);
           const py = Math.floor(player.pos.y);
-          // The nearest open tiles two out from the hero, dealt round the ring.
-          const spots: Array<{ x: number; y: number }> = [];
-          for (let r = 2; r <= 4 && spots.length < count; r++)
-            for (let dy = -r; dy <= r && spots.length < count; dy++)
-              for (let dx = -r; dx <= r && spots.length < count; dx++) {
-                if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-                if (world.scene.isWalkable(px + dx, py + dy)) spots.push({ x: px + dx, y: py + dy });
-              }
-          for (let i = 0; i < count; i++) {
-            const s = spots[i % Math.max(1, spots.length)] ?? { x: px + 2, y: py };
-            world.enemies.spawn(kind, s.x + 0.5, s.y + 0.5, level);
+          const spots: Array<{ x: number; y: number; w: number }> = [];
+          for (let dy = -5; dy <= 5; dy++)
+            for (let dx = -5; dx <= 5; dx++) {
+              const r = Math.max(Math.abs(dx), Math.abs(dy));
+              if (r < 3 || !world.scene.isWalkable(px + dx, py + dy)) continue;
+              // Screen-down is +x+y: prefer the tiles in front of the camera, then the near ring.
+              spots.push({ x: px + dx, y: py + dy, w: r * 2 - (dx + dy) * 0.8 + Math.random() * 0.5 });
+            }
+          spots.sort((p, q) => p.w - q.w);
+          const picked: Array<{ x: number; y: number }> = [];
+          for (const sp of spots) {
+            if (picked.length >= count) break;
+            if (picked.some((o) => Math.max(Math.abs(o.x - sp.x), Math.abs(o.y - sp.y)) < 2)) continue;
+            picked.push(sp);
           }
-          world.vfx.play('vfx_burst', player.pos.x, player.pos.y, { scale: 1.2, tint: 0xa040c0 });
-        });
+          for (const sp of spots) {
+            if (picked.length >= count) break;
+            if (!picked.includes(sp)) picked.push(sp);
+          }
+          if (!picked.length) picked.push({ x: px, y: py + 1 });
+          for (let i = 0; i < count; i++) {
+            const sp = picked[i % picked.length];
+            const e = world.enemies.spawn(kind, sp.x + 0.5, sp.y + 0.5, level);
+            riseFromSand(e, 36);
+            world.vfx.play('vfx_burst', sp.x + 0.5, sp.y + 0.5, { scale: 1.1, tint: 0xa040c0 });
+          }
+          toast.show({
+            kind: loaded ? 'info' : 'warn',
+            title: `SUMMONED · ${count} × ${def.name.toUpperCase()}`,
+            sub: loaded ? `level ${level} · ${kind}` : `level ${level} · ${kind} · its sheets did not load, it wears the fallback`,
+            key: `summon:${kind}`,
+          });
+        };
+        const sheets = animsForKind(kind);
+        if (!sheets.every((n) => spriteLib.hasAnim(n))) {
+          toast.show({ kind: 'info', title: `SUMMONING · ${def.name.toUpperCase()}`, sub: 'its sheets are streaming in - a moment', key: `summon:${kind}` });
+          world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 0.9, flat: true, fps: 22, tint: 0xa040c0, alpha: 0.9 });
+        }
+        spriteLib.ensure(sheets).then(
+          () => summon(true),
+          () => summon(false),
+        );
+      },
+      prewarmFoe: (kindName) => {
+        const kind = kindName as EnemyKind;
+        if (ENEMY_TYPES[kind]) void spriteLib.ensure(animsForKind(kind)).catch(() => undefined);
       },
       quests: () => ({ defs: CHEAT_QUESTS, state: { ...quests } }),
       setQuest: (key, value) => {
@@ -4361,6 +4570,8 @@ async function boot(): Promise<void> {
           return;
         }
         if (seat.player === player) {
+          // THE LOOT LINE (it.115): what was taken, and what kind of thing it is.
+          if (keyDef) noteLoot(keyDef);
           const rare = ['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '');
           audio.sfx(rare ? 'rarePickup' : 'pickup');
           if (rare) fxPickupRare(world.vfx, seat.player.pos.x, seat.player.pos.y); // it.114
@@ -4400,7 +4611,7 @@ async function boot(): Promise<void> {
           world.dmgText.show(entity.pos.x, entity.pos.y - 1.4, 'THE FORM FALLS — SOMETHING STIRS…', 'crit');
           return;
         }
-        if (entity === world.boss) audio.sfx('bossDie');
+        if (entity === world.boss) audio.sfx(isHumanVoice(entity.def.kind) ? 'bossDieMan' : 'bossDie'); // A general dies a man (it.115).
         else {
           const v = voiceProfile(entity.def.kind);
           audio.enemyVoice('die', v.pitch, v.bank);
@@ -4515,6 +4726,8 @@ async function boot(): Promise<void> {
           });
           if (remaining === 0) {
             world.arenaCleared = true;
+            world.arenaSigil?.stop(); // The sigil burns out with the last foe (it.115).
+            world.arenaSigil = null;
             town.markBossCleared(); // The merchants restock on a warden's fall (it.78).
             const w = world;
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
@@ -4577,6 +4790,7 @@ async function boot(): Promise<void> {
       player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
       player.hp = player.hpMax;
       player.action = 'idle';
+      vignetteEl?.classList.remove('dead', 'hurt'); // The blood drains off the glass (it.115): the solo rising never cleared it.
       // THE SPAWN WARD (it.89): five seconds in which no blow can land.
       player.wardTicks = SPAWN_WARD_TICKS;
       world.lighting.updateVisibility(world.dungeon.spawn.x, world.dungeon.spawn.y);
@@ -4604,7 +4818,7 @@ async function boot(): Promise<void> {
       hero.action = 'idle';
       hero.actionTicks = 0;
       hero.wardTicks = SPAWN_WARD_TICKS; // THE SPAWN WARD (it.89), the party too.
-      if (hero === player) vignetteEl?.classList.remove('dead'); // The blood drains off the glass (it.114).
+      if (hero === player) vignetteEl?.classList.remove('dead', 'hurt'); // The blood drains off the glass (it.114; the last blow's flash too, it.115).
       world.ambience.burst(hero.pos.x, hero.pos.y, 0xffd98a, 18);
       if (hero === player) {
         world.lighting.updateVisibility(Math.floor(hero.pos.x), Math.floor(hero.pos.y));
@@ -4693,8 +4907,20 @@ async function boot(): Promise<void> {
     const raiseArenaTeleporter = (): void => {
       const w = world;
       if (!w.isArena || w.victoryPortal) return;
-      // THE TELEPORTER (it.58): every arena's only way out rises at its heart —
-      // no stair. Depths V / X / XV descend; depth XX asks home-or-crown.
+      // THE STAIR OPENS (it.115): depths V / X / XV leave by the stair that has
+      // stood at the hall's east end all fight - no teleporter beside it.
+      if (floor < MAX_DEPTH) {
+        const st = w.stairs;
+        w.ambience.burst(st.x + 0.5, st.y + 0.5, 0xffd9a0, 24);
+        w.ambience.playGlint(st.x + 0.5, st.y + 0.5);
+        w.dmgText.show(st.x + 0.5, st.y + 0.2, 'THE WARDEN FALLS · THE STAIR OPENS', 'crit');
+        tutorial.notify('arenaStair', 'The warden is down. Take the spoils, then take the stair at the far end of the hall to go deeper.');
+        audio.sfx('gateOpen');
+        audio.setBossMusic(false);
+        return;
+      }
+      // THE TELEPORTER (it.58): depth XX and the quarry have nothing below; their
+      // way out rises at the arena's heart. Depth XX asks home-or-crown.
       const room = w.dungeon.rooms[0];
       const px = room.x + Math.floor(room.w / 2);
       const py = room.y + Math.floor(room.h / 2);
@@ -4715,10 +4941,16 @@ async function boot(): Promise<void> {
      * `atGate` walks the party out of the passage they actually used (it.98) instead
      * of dropping them in the middle of the old quarter, half the town from it.
      */
-    const goHome = (atGate?: 'forest' | 'farm' | 'river'): void =>
+    const goHome = (atGate?: 'forest' | 'farm' | 'river' | 'spawn'): void =>
       withFade(async () => {
         await preloadFloor(0, 'hub');
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
+        // THE TELEPORT LANDS AT THE SPAWN (it.115): from the forest, the fields,
+        // the river, the inn - the same stone a portal out of the crypt uses.
+        if (atGate === 'spawn') {
+          enterTown(true);
+          return;
+        }
         enterTown(false);
         if (atGate) {
           const gw = world.town?.layout.gateways.find((g) => g.dest === atGate);
@@ -4972,8 +5204,13 @@ async function boot(): Promise<void> {
           lines: ['You did it. The streets are ours again.', 'Two hundred gold (200), the bow and the sword - they\'re yours. And the back room, for as long as you want it: a bed, and a chest the guild warded. Leave anything in it and you can take it out of any stash anywhere - your friends too.'],
           choices: [{ label: 'THANK YOU', sub: 'the gold, the bow, the sword, and the key to the room', value: 'reward' }],
         });
-        if (v === 'reward') inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'reward' });
-        return;
+        if (v !== 'reward') return;
+        inputQueue.enqueue({ type: 'QUEST', playerId: localSlot, id: 'east', step: 'reward' });
+        // THE CELLAR IS ASKED FOR AT ONCE (it.115): the same conversation goes on
+        // to the second errand, after a beat for the key to turn and the room to
+        // be rebuilt under the panel.
+        await new Promise<void>((r) => later(r, 1600));
+        if (!alive) return;
       }
       // ---- THE CELLAR (it.97): her second errand, and her thanks for it ----
       const cel = quests.cellar ?? 'new';
@@ -4983,7 +5220,7 @@ async function boot(): Promise<void> {
           lines: [
             'Sit down, you\'ve earned a drink. On the house.',
             'Ah. That\'s the trouble - every bottle I have is down in the cellar, and I have not been down there since the looters left. Something else went down after them. I can hear it through the boards at night.',
-            'I gave you the bow and the sword. Go down and see what it is, and bring my stock back up. I\'m not proud about it - I am frightened of that stair.',
+            'I gave you the bow and the sword. Go down and see what it is, and bring my stock back up. The cellar door is in the west wall, past the tables, down by the south corner. I\'m not proud about it - I am frightened of that stair.',
           ],
           choices: [
             { label: 'I\'LL GO DOWN', sub: 'he unbolts the back door', value: 'go' },
@@ -4996,7 +5233,7 @@ async function boot(): Promise<void> {
       if (cel === 'active') {
         await dialogue.open({
           ...who,
-          lines: ['The back door\'s open. Mind the dark down there - I never got round to lighting it properly.'],
+          lines: ['The back door\'s open - west wall, down by the south corner. Mind the dark down there - I never got round to lighting it properly.'],
           choices: [{ label: 'UNDERSTOOD', value: 'ok' }],
         });
         return;
@@ -5059,6 +5296,9 @@ async function boot(): Promise<void> {
         world.lighting.setSceneLight(false);
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
       },
+      // THE SCENE LOOKS CLOSER (it.115): a beat's zoom, routed to the camera, which
+      // remembers the player's own wheel setting and eases back to it on null.
+      zoom: (level: number | null): void => world.camera.setCineZoom(level),
     };
     const startReclaim = (): void => {
       const t = world.town;
@@ -5341,19 +5581,26 @@ async function boot(): Promise<void> {
      */
     const applyCellarStep = (step: string): void => {
       if (step === 'accept') {
-        if (quests.east !== 'done' || (quests.cellar ?? 'new') !== 'new' || floor !== INN_FLOOR) return;
+        // THE KEEPER ASKS AT ONCE (it.115): the cellar no longer waits on the quarter.
+        if ((quests.cellar ?? 'new') !== 'new' || floor !== INN_FLOOR) return;
         quests.cellar = 'active';
         saveNow();
         audio.sfx('gateOpen');
-        withFade(async () => {
-          await preloadFloor(INN_FLOOR, 'inn');
-          if (!swapWorld(() => buildWorld(INN_FLOOR, 'inn'))) return;
-          const at = world.town?.layout.inn?.cellarDoor;
-          if (at) placeParty(at.x + 2.5, at.y + 0.5, world.scene.isWalkable);
-          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-          minimap.markDirty();
-          tutorial.say('The back door is open. Whatever is in his cellar, it is between you and the drink.');
-        }, 'the bolt slides back');
+        // THE HERO WALKS THERE (it.115): no fade, no rebuilt room, no warp. The
+        // bolt slides back on the door where it stands - leaf, word, light and
+        // mat - and the party, still at the bar, walks to it.
+        const door = world.town?.layout.inn?.cellarDoor;
+        const opened = world.town?.unbolt() ?? false;
+        // The layout says so too, as a rebuilt room would (the minimap, the save, the harness read it).
+        const innNow = world.town?.layout.inn;
+        if (innNow) innNow.cellarOpen = true;
+        for (const q of world.town?.layout.props ?? []) if (q.kind === 'innwall' && q.variant === 'inn_door_w_shut') q.variant = 'inn_door_w_open';
+        if (door) {
+          world.dmgText.show(door.x + 1, door.y - 0.8, 'THE BOLT SLIDES BACK', 'crit');
+          world.ambience.burst(door.x + 1, door.y + 0.5, 0xffc070, 14);
+        }
+        if (!opened) world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
+        tutorial.say('The back door is unbolted - the west wall, past the tables, by the south corner. Whatever is in his cellar, it is between you and the drink.');
         return;
       }
       if (step !== 'rescue' || quests.cellar !== 'active' || floor !== CELLAR_FLOOR) return;
@@ -5433,6 +5680,8 @@ async function boot(): Promise<void> {
     };
     /** CAPTAIN ORDWAY: the watch's own mail, in the officer's paler dye (it.102). */
     const officerPortrait = (): HTMLCanvasElement | null => faceOf('guard_idle', 0xfff0c8) ?? keeperPortrait();
+    /** LORD MILK (it.115): the fencer who holds the training ground and runs the yard. */
+    const milkPortrait = (): HTMLCanvasElement | null => faceOf('duelist_idle', 0xfff0e0, 6) ?? keeperPortrait();
     /** THE GENERAL of the free company - his own rig, in the company's red. */
     const generalPortrait = (): HTMLCanvasElement | null => faceOf('captain_idle', 0xd8887a, 0);
     /** The ward's own people, for the pleading at the muster. */
@@ -5440,9 +5689,13 @@ async function boot(): Promise<void> {
       // The carter's own sheet crops to a hooded head that reads as a black
       // square in a 58 px box, so the porter stands in for him (it.102): the
       // corner box is the only place a civilian's FACE is ever seen this large.
-      const sheets: AnimName[] = ['cit_goodwife_walk', 'cit_farmer_walk', 'cit_maid_walk', 'cit_labourer_walk', 'cit_porter_walk', 'cit_monk_walk'];
-      const dyes = [0xf0dcc0, 0xe0d0a8, 0xd8c8e0, 0xd0c0a0, 0xe8dcc8, 0xe8d8b8];
-      return faceOf(sheets[which % sheets.length], dyes[which % dyes.length]);
+      // ONE STYLE PER FRAME (it.115): the crowd these voices come out of is the
+      // smooth folk and the smooth spectators, so the faces are theirs too - the
+      // pixel citizens' heads in the box read as a different game.
+      const sheets: Array<[AnimName, number]> = [['folk_walk', 6], ['cit_labourer_walk', 6], ['crowd_m3', 0], ['poacher_walk', 6], ['cit_carter_walk', 6], ['crowd_m4', 0]];
+      const dyes = [0xf0dcc0, 0xe0d0a8, 0xffffff, 0xd0c0a0, 0xe8dcc8, 0xe8d8b8];
+      const [anim, dir] = sheets[which % sheets.length];
+      return faceOf(anim, dyes[which % dyes.length], dir);
     };
     const goFarm = (): void => goPlace(FARM_FLOOR, 'out to the fields');
     /** THE RIVER GATE (it.106): through the chain, onto the water meadow. */
@@ -5488,7 +5741,7 @@ async function boot(): Promise<void> {
      * of the scene when the dialogue opens on him a beat later.
      */
     const startRally = (): void => {
-      if (reclaim || !world.town) return;
+      if (reclaim || !world.town || floor !== 0 || transitioning) return; // The town itself only (it.115).
       const yard = world.town.layout.training?.mark ?? { x: 16, y: 72 };
       const from = { x: 24, y: 69 };
       const route = [{ x: 21, y: 70 }, { x: 19, y: 71 }, { x: yard.x + 2, y: yard.y + 1 }];
@@ -5547,12 +5800,12 @@ async function boot(): Promise<void> {
         // low and south of the yard so a shout never lands on the title, and the
         // box carries the part a shout across a square cannot.
         speech: [
-          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'THERE IS NO BREAD IN THE MARKET', speaker: 'MERRAN OSK', role: 'goodwife of the Old Quarter', portrait: folkPortrait(0) },
+          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'THERE IS NO BREAD IN THE MARKET', speaker: 'MERRAN OSK', role: 'cooper of the Old Quarter', portrait: folkPortrait(0) },
           { t: 2.1, x: yard.x + 4, y: yard.y + 4, text: 'MY CHILDREN HAVE NOT EATEN IN THREE DAYS', speaker: 'HALDIS THE CARTER', role: 'of the market road', portrait: folkPortrait(4) },
           { t: 3.3, x: yard.x - 5, y: yard.y + 5, text: 'THEY ARE BURNING THE FIELDS WHILE WE STAND HERE', speaker: 'BREN FIELDER', role: 'driven off his own acre', portrait: folkPortrait(1) },
           { t: 4.5, x: yard.x + 2, y: yard.y + 6, text: 'TAKE THE FARMLANDS BACK!', speaker: 'THE WARD', role: 'the whole training ground, at once', portrait: folkPortrait(2) },
           { t: 5.6, x: yard.x - 3, y: yard.y - 2, text: 'STAND BACK. STAND BACK - HE WILL SPEAK.', speaker: 'SERJEANT BRAY', role: 'of the city watch', portrait: keeperPortrait() },
-          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'THE WATCH WILL MARCH. I NEED A SWORD I CAN TRUST.', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait(), hold: 4.2 },
+          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'THE WATCH WILL MARCH. I NEED A SWORD I CAN TRUST.', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait(), hold: 4.2, zoom: 2.2, anim: 'guard_attack', dir: 4 },
         ],
         keepWalkers: true,
         hold: 8,
@@ -5577,8 +5830,11 @@ async function boot(): Promise<void> {
      * Plays on a FRESH run only (no save, no party, not the menagerie).
      */
     const startArrival = (): void => {
-      if (reclaim || !world.town) return;
-      const yard = world.town.layout.training?.mark ?? { x: 16, y: 72 };
+      // Only on the town itself (it.115): a hero who left in the first beat must not meet the yard's scene in the inn.
+      if (reclaim || !world.town || floor !== 0 || transitioning || !world.town.layout.training) return;
+      const yard = world.town.layout.training.mark;
+      // LORD MILK SPEAKS FROM HER POST (it.115): the word floats over her, and the close-up finds her.
+      const milk = world.town.layout.training?.milk ?? { x: yard.x + 2, y: yard.y + 2 };
       lightTheWayIn({ x: yard.x, y: yard.y }, [{ x: yard.x + 3, y: yard.y + 2 }, { x: yard.x - 3, y: yard.y - 2 }]);
       reclaim = new ProcessionScene({
         layer: world.viewport.objectLayer,
@@ -5594,8 +5850,8 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.2, x: yard.x + 2, y: yard.y + 2, text: 'NEW BLOOD. THE YARD IS YOURS - THE DUMMIES DO NOT HIT BACK.', speaker: 'SIR HAM', role: 'of the city watch', portrait: keeperPortrait(), hold: 3.5 },
-          { t: 2.6, x: yard.x + 2, y: yard.y + 2, text: 'READ THE SIGN. THE CRYPT GATE IS SOUTH, AND IT WAITS.', speaker: 'SIR HAM', role: 'of the city watch', portrait: keeperPortrait(), hold: 3.5 },
+          { t: 1.2, x: milk.x, y: milk.y, text: 'NEW BLOOD. I AM LORD MILK, AND THIS YARD IS MINE. THE DUMMIES DO NOT HIT BACK - I DO.', speaker: 'LORD MILK', role: 'master of the training ground', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
+          { t: 2.6, x: milk.x, y: milk.y, text: 'COME AND TALK TO ME WHEN YOU WANT THE YARD. THE CRYPT GATE IS UP IN THE OLD QUARTER, AND IT WAITS.', speaker: 'LORD MILK', role: 'master of the training ground', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
         ],
         hold: 3.5,
         ...cineFocusHooks,
@@ -5604,7 +5860,7 @@ async function boot(): Promise<void> {
           reclaim?.destroy();
           reclaim = null;
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-          toast.show({ kind: 'lore', title: 'THE TRAINING GROUND', sub: 'Press E at the sign by the dummies to learn the yard. It pays a hundred gold.', ms: 9000 });
+          toast.show({ kind: 'lore', title: 'LORD MILK · THE TRAINING GROUND', sub: 'Walk up to Lord Milk and press E to learn the yard. It pays a hundred gold.', ms: 9000 });
         },
       });
     };
@@ -5642,10 +5898,10 @@ async function boot(): Promise<void> {
         // The company's word is read in RED in the corner box (it.102), so the one
         // scene on this floor spoken by the enemy is never taken for the city's.
         speech: [
-          { t: 1.0, x: g.x, y: g.y, text: 'BURN IT. BURN EVERY ROW.', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true },
+          { t: 1.0, x: g.x, y: g.y, text: 'BURN IT. BURN EVERY ROW.', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, zoom: 2.2, anim: 'captain_attack', dir: 0 },
           { t: 2.4, x: g.x + 2, y: g.y + 2, text: 'THE CITY EATS ASHES THIS WINTER', speaker: 'A COMPANY SERJEANT', role: 'on the burning rows', portrait: faceOf('captain_idle', 0xb87068, 0), foe: true },
-          { t: 3.8, x: g.x, y: g.y, text: 'ANY FARMER STILL BREATHING - PUT HIM AGAINST THE WALL', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true },
-          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'AND IF THE WATCH COMES, LET THEM COME', speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, hold: 4 },
+          { t: 3.8, x: g.x, y: g.y, text: 'ANY FARMER STILL BREATHING - PUT HIM AGAINST THE WALL', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, zoom: 2.2, anim: 'captain_attack', dir: 0 },
+          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'AND IF THE WATCH COMES, LET THEM COME', speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, hold: 4, zoom: 2.2, zoomAt: { x: g.x, y: g.y }, castIndex: 0, anim: 'captain_attack', dir: 0 },
         ],
         hold: 6,
         ...cineFocusHooks,
@@ -5659,7 +5915,7 @@ async function boot(): Promise<void> {
           // for real, so it is not pinned across the whole march west (it.101).
           world.bossSeen = false;
           document.getElementById('boss-bar')?.classList.remove('show');
-          audio.sfx('bossHorn');
+          audio.sfx('warHorn'); // The company's horn, answered by men (it.115).
         },
       });
     };
@@ -5748,7 +6004,7 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(), // THE PAGE IS TURNED (it.103).
         speech: [
-          { t: 1.2, x: mid.x, y: mid.y, text: 'THAT WAS FOUGHT, NOT BRAWLED', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'on the taken ground', portrait: officerPortrait() },
+          { t: 1.2, x: mid.x, y: mid.y, text: 'THAT WAS FOUGHT, NOT BRAWLED', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'on the taken ground', portrait: officerPortrait(), zoom: 2.2 },
           { t: 3.0, x: (route[2] ?? mid).x, y: (route[2] ?? mid).y, text: 'THE ROWS ARE OURS AGAIN', speaker: 'BREN FIELDER', role: 'back on his own acre', portrait: folkPortrait(1) },
           { t: 5.0, x: (route[3] ?? mid).x, y: (route[3] ?? mid).y, text: 'WE CAN SOW BEFORE THE FROST', speaker: 'MERRAN OSK', role: 'of the Old Quarter', portrait: folkPortrait(0) },
           { t: 7.0, x: (route[4] ?? mid).x, y: (route[4] ?? mid).y, text: 'THERE WILL BE BREAD BY THE WEEK’S END', speaker: 'HALDIS THE CARTER', role: 'with the first cart out', portrait: folkPortrait(4), hold: 4.2 },
@@ -5826,7 +6082,7 @@ async function boot(): Promise<void> {
           world.dmgText.show(gen.pos.x, gen.pos.y - 1.9, GENERAL_LINES[generalLine % GENERAL_LINES.length], 'crit');
           generalLine++;
           world.ambience.burst(player.pos.x, player.pos.y, 0xff6a4a, 16);
-          audio.sfx('bossHorn');
+          audio.sfx('warHorn'); // Varrick shouts; no keeper roars (it.115).
         }
       }
       if (farmWonTicks === 0) return; // the victory scene is on
@@ -5949,11 +6205,11 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THE REST OF IT, FARMER. ALL OF IT.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true },
-          { t: 2.5, x: o.x, y: o.y, text: 'There is nothing left. You have had the season already.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait() },
-          { t: 4.0, x: r.bandits[1].x, y: r.bandits[1].y, text: 'THEN WE TAKE THE BOAT, AND THE GIRL CARRIES IT DOWN —', speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true },
-          { t: 5.6, x: r.bandits[2].x, y: r.bandits[2].y, text: 'WAIT. WAIT — THAT IS THE ONE FROM THE FIELDS.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'seeing who walked in', portrait: banditPortrait(), foe: true },
-          { t: 7.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THAT IS THE ONE WHO PUT VARRICK IN THE DIRT. TAKE THEM — ALL THREE AT ONCE!', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, hold: 3 },
+          { t: 1.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THE REST OF IT, FARMER. ALL OF IT.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, zoom: 2.2 , anim: 'poacher_attack' },
+          { t: 2.5, x: o.x, y: o.y, text: 'There is nothing left. You have had the season already.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), zoom: 2.2 },
+          { t: 4.0, x: r.bandits[1].x, y: r.bandits[1].y, text: 'THEN WE TAKE THE BOAT, AND THE GIRL CARRIES IT DOWN —', speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, zoom: 2.2 },
+          { t: 5.6, x: r.bandits[2].x, y: r.bandits[2].y, text: 'WAIT. WAIT — THAT IS THE ONE FROM THE FIELDS.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'seeing who walked in', portrait: banditPortrait(), foe: true, zoom: 2.2 },
+          { t: 7.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THAT IS THE ONE WHO PUT VARRICK IN THE DIRT. TAKE THEM — ALL THREE AT ONCE!', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, hold: 3, zoom: 2.2 , anim: 'poacher_attack' },
         ],
         hold: 4,
         ...cineFocusHooks,
@@ -5969,7 +6225,7 @@ async function boot(): Promise<void> {
           world.enemies.forEachActive((e) => {
             if (e.hp > 0 && e.action !== 'dead') e.aiState = 'chase';
           });
-          audio.sfx('bossHorn');
+          audio.sfx('warHorn'); // Three men rushing (it.115).
           world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THEY COME AT ONCE', 'crit');
         },
       });
@@ -6002,10 +6258,10 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: o.x, y: o.y, text: 'You came through that gate at the right hour. An hour later and there would have been nothing here worth thanking you for.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait() },
-          { t: 3.2, x: r.kin[0] ? r.kin[0].x : o.x, y: r.kin[0] ? r.kin[0].y : o.y, text: 'He would not give them the boat. He would not give them anything.', speaker: 'OSCAR’S WIFE', role: 'at the barn wall', portrait: faceOf('cit_goodwife_walk', 0xd8c8e0, 2) },
-          { t: 5.2, x: o.x, y: o.y, text: 'Take this. My grandfather carried the river trade under the old charter, and the seal is still good — the watch on the far bank will honour it.', crit: true, speaker: 'OSCAR', role: 'putting the seal in your hand', portrait: oscarPortrait() },
-          { t: 7.4, x: o.x, y: o.y, text: 'Show it to the watch on the span up the track and they will let you over. What is on the far side is not my business, and I would not go looking. And there is a bed and a fire here for you whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4 },
+          { t: 1.0, x: o.x, y: o.y, text: 'You came through that gate at the right hour. An hour later and there would have been nothing here worth thanking you for.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), zoom: 2.2 },
+          { t: 3.2, x: r.kin[0] ? r.kin[0].x : o.x, y: r.kin[0] ? r.kin[0].y : o.y, text: 'He would not give them the boat. He would not give them anything.', speaker: 'OSCAR’S WIFE', role: 'at the barn wall', portrait: faceOf('cit_goodwife_walk', 0xd8c8e0, 2), zoom: 2.2 },
+          { t: 5.2, x: o.x, y: o.y, text: 'Take this. My grandfather carried the river trade under the old charter, and the seal is still good — the watch on the far bank will honour it.', crit: true, speaker: 'OSCAR', role: 'putting the seal in your hand', portrait: oscarPortrait(), zoom: 2.2 },
+          { t: 7.4, x: o.x, y: o.y, text: 'Show it to the watch on the span up the track and they will let you over. What is on the far side is not my business, and I would not go looking. And there is a bed and a fire here for you whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4, zoom: 2.2 },
         ],
         hold: 5,
         ...cineFocusHooks,
@@ -6418,11 +6674,11 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: c.x, y: c.y, text: 'Sit down, all of you. It has only brought a sword.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'not looking up', portrait: chiefPortrait(), foe: true },
-          { t: 3.1, x: c.x, y: c.y, text: 'You have come a long way to stand in my light, and you never once asked the only question that matters in this room. Not whether you can. Whether you are WORTH the trouble of stopping.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true },
-          { t: 5.9, x: c.x, y: c.y, text: 'Let me do the sum, since nobody else here can count. Mail — sound. Blade — good steel, wants an edge. Boots: Harl has been whining about boots since the ford. Teeth, if the city is still buying them. That is the whole of you, and I have added it twice.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'pricing the room', portrait: chiefPortrait(), foe: true },
-          { t: 9.2, x: c.x, y: c.y, text: 'You are waiting for the part where I offer you the door. There is no door. There has not been a door since you crossed my bridge — there has only ever been how far in you got before somebody had to fetch a cloth.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true },
-          { t: 12.2, x: c.x, y: c.y, text: 'On your feet, gentlemen. And mind the wine on your way past — it is older than this house and worth a great deal more than any of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3 },
+          { t: 1.0, x: c.x, y: c.y, text: 'Sit down, all of you. It has only brought a sword.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'not looking up', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 3.1, x: c.x, y: c.y, text: 'You have come a long way to stand in my light, and you never once asked the only question that matters in this room. Not whether you can. Whether you are WORTH the trouble of stopping.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 5.9, x: c.x, y: c.y, text: 'Let me do the sum, since nobody else here can count. Mail — sound. Blade — good steel, wants an edge. Boots: Harl has been whining about boots since the ford. Teeth, if the city is still buying them. That is the whole of you, and I have added it twice.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'pricing the room', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 9.2, x: c.x, y: c.y, text: 'You are waiting for the part where I offer you the door. There is no door. There has not been a door since you crossed my bridge — there has only ever been how far in you got before somebody had to fetch a cloth.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 12.2, x: c.x, y: c.y, text: 'On your feet, gentlemen. And mind the wine on your way past — it is older than this house and worth a great deal more than any of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3, zoom: 2.2 },
         ],
         hold: 6,
         ...cineFocusHooks,
@@ -6438,7 +6694,7 @@ async function boot(): Promise<void> {
           world.enemies.forEachActive((e) => {
             if (e.hp > 0 && e.action !== 'dead') e.aiState = 'chase';
           });
-          audio.sfx('bossHorn');
+          audio.sfx('warHorn'); // The hall is men (it.115).
           world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE HALL COMES UP AT ONCE', 'crit');
         },
       });
@@ -6498,10 +6754,10 @@ async function boot(): Promise<void> {
         sayDone: () => cineSpeak.clear(),
         speech: [
           { t: 1.2, x: c.x, y: c.y, text: 'Is that \u2014 is that Brack? Did he go down? I know what that man sounds like going down. I have been waiting nine days to hear it.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
-          { t: 4.0, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me alive because my brother can be written to. They were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait() },
-          { t: 6.6, x: q.x, y: q.y, text: 'And every night one of them came and opened that door and asked me had I reconsidered. Pay, he said, or we walk you down to the basement and let the thing that lives in it have the argument instead.', crit: true, speaker: 'THE MERCHANT', role: 'not looking at the west wall', portrait: merchantPortrait() },
-          { t: 9.4, x: q.x, y: q.y, text: 'They were not bluffing. They took the boy down there on the fourth night. I heard the bar go on afterwards and I did not hear him again.', crit: true, speaker: 'THE MERCHANT', role: 'quietly', portrait: merchantPortrait() },
-          { t: 12.0, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise. My shop is in the city over the east road \u2014 the day that gate opens you drink for nothing in it.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait(), hold: 4 },
+          { t: 4.0, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me alive because my brother can be written to. They were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait(), zoom: 2.2 },
+          { t: 6.6, x: q.x, y: q.y, text: 'And every night one of them came and opened that door and asked me had I reconsidered. Pay, he said, or we walk you down to the basement and let the thing that lives in it have the argument instead.', crit: true, speaker: 'THE MERCHANT', role: 'not looking at the west wall', portrait: merchantPortrait(), zoom: 2.2 },
+          { t: 9.4, x: q.x, y: q.y, text: 'They were not bluffing. They took the boy down there on the fourth night. I heard the bar go on afterwards and I did not hear him again.', crit: true, speaker: 'THE MERCHANT', role: 'quietly', portrait: merchantPortrait(), zoom: 2.2 },
+          { t: 12.0, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise. My shop is in the city over the east road \u2014 the day that gate opens you drink for nothing in it.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait(), hold: 4, zoom: 2.2 },
         ],
         hold: 7,
         ...cineFocusHooks,
@@ -6677,13 +6933,63 @@ async function boot(): Promise<void> {
     const SIEGE_BLAST = 3.2;
     /** How much of a body a siege stone takes: a fraction, so it scales itself. */
     const SIEGE_BITE = 0.75;
+    /**
+     * A BALLISTA BOLT LANDS (it.115). Not a blast: one body, the nearest to the
+     * mark, takes most of itself and is thrown back along the bolt's line; a
+     * spray of splinters and dust where it struck, and a hard crack.
+     */
+    const BOLT_REACH = 18;
+    const BOLT_RADIUS = 1.6;
+    const BOLT_BITE = 0.9;
+    const boltLands = (hx: number, hy: number, fromX: number, fromY: number): void => {
+      const cx = hx + 0.5;
+      const cy = hy + 0.5;
+      let dx = cx - fromX;
+      let dy = cy - fromY;
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len;
+      dy /= len;
+      fxHit(world.vfx, cx, cy, dx, dy, true);
+      world.ambience.burst(cx, cy, 0x9a8a70, 18);
+      world.ambience.burst(cx, cy, 0xc8a878, 10);
+      world.ambience.impactFlash(cx, cy, 0xe8f0ff, 1.2);
+      world.camera.addKick(4);
+      audio.sfx('boltImpact');
+      let hit: Enemy | null = null;
+      let near = BOLT_RADIUS;
+      world.enemies.forEachActive((e) => {
+        if (e.hp <= 0 || e.action === 'dead') return;
+        const d = Math.hypot(e.pos.x - cx, e.pos.y - cy);
+        if (d > near) return;
+        near = d;
+        hit = e;
+      });
+      const struck = hit as Enemy | null;
+      if (!struck) {
+        world.dmgText.show(cx, cy - 1, 'THE BOLT BURIES ITSELF', 'miss');
+        return;
+      }
+      fxCrit(world.vfx, struck.pos.x, struck.pos.y);
+      audio.sfx('arrowHit');
+      later(() => audio.sfx('gore'), 40);
+      world.combat.dealDamage({
+        sourceId: player.id,
+        targetId: struck.id,
+        amount: Math.max(30, Math.round(struck.hpMax * BOLT_BITE)),
+        knockX: dx,
+        knockY: dy,
+        knockDist: 1.6,
+        forceStagger: true,
+      });
+    };
     const workEngine = (it: Interactable): void => {
       const t = world.town;
       if (!t || floor !== FIELD_FLOOR) return;
       if (player.hp <= 0 || transitioning || reclaim) return;
+      const bolt = it.machine === 'ballista';
       let markX = NaN;
       let markY = NaN;
-      let best = SIEGE_REACH;
+      let best = bolt ? BOLT_REACH : SIEGE_REACH;
       world.enemies.forEachActive((e) => {
         if (e.hp <= 0 || e.action === 'dead') return;
         if (!world.lighting.isVisible(Math.floor(e.pos.x), Math.floor(e.pos.y))) return;
@@ -6700,6 +7006,10 @@ async function boot(): Promise<void> {
       }
       const started = t.fireSiege(it.id, markX, markY, (hx, hy) => {
         if (floor !== FIELD_FLOOR) return; // the floor went out from under the shot
+        if (bolt) {
+          boltLands(hx, hy, it.x, it.y);
+          return;
+        }
         const cx = hx + 0.5;
         const cy = hy + 0.5;
         /**
@@ -6740,10 +7050,15 @@ async function boot(): Promise<void> {
         else audio.sfx('gore');
       });
       if (!started) {
-        tutorial.say('The windlass is still coming back round. Give it a moment.');
+        tutorial.say(bolt ? 'The crew is still cranking the string back. Give it a moment.' : 'The windlass is still coming back round. Give it a moment.');
         return;
       }
-      audio.sfx('gateIron');
+      if (bolt) {
+        // The string goes with a slap and the windlass pawls start clicking back.
+        audio.sfx('bow');
+        later(() => audio.sfx('bolt'), 60);
+        later(() => audio.sfx('gateIron'), 420);
+      } else audio.sfx('gateIron');
       world.dmgText.show(it.x, it.y - 1.8, 'LOOSE!', 'crit');
     };
 
@@ -7091,7 +7406,9 @@ async function boot(): Promise<void> {
               // ACROSS THE RIVER (it.110): a portal home from any of the three
               // floors past the bridge puts the hero back at the RIVER GATE, which
               // is the mouth of the road they went out by.
-              goHome(floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : floor === RIVER_FLOOR || floor === FIELD_FLOOR || floor === MANOR_FLOOR || floor === VAULT_FLOOR ? 'river' : undefined);
+              // A ROAD SIGN walks the party home by its own gate; the menu's RETURN
+              // (it.115: `n: 1`) is a teleport and lands at the spawn stone, like T.
+              goHome(cmd.n === 1 ? 'spawn' : floor === FOREST_FLOOR ? 'forest' : floor === FARM_FLOOR ? 'farm' : floor === RIVER_FLOOR || floor === FIELD_FLOOR || floor === MANOR_FLOOR || floor === VAULT_FLOOR ? 'river' : undefined);
             } else if (cmd.to === 'floor' && cmd.n !== undefined) {
               chat?.system(`Leader fast-travelling to depth ${ROMAN[cmd.n - 1] ?? cmd.n}. Warping party...`);
               jumpToFloor(cmd.n);
@@ -7108,8 +7425,7 @@ async function boot(): Promise<void> {
         for (const mv of world.movements) mv?.applyCommands(commands);
         world.combat.applyCommands(commands);
         for (const inv of inventories) inv?.apply(commands);
-        // THE BELLY (it.114): hunger only falls on the crypt's depths; the town and the places feed a hero for free.
-        for (const inv of inventories) inv?.tickHunger(floor >= 1 && floor <= MAX_DEPTH);
+        for (const inv of inventories) inv?.tick(); // A dish heals in slices (it.114).
         for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
         town.apply(commands); // Buy / sell / stash (it.39).
         crafting.apply(commands); // The camp forge (it.78).
@@ -7170,8 +7486,13 @@ async function boot(): Promise<void> {
             if (cmd.playerId === localSlot) leaderOnlyNote();
             continue;
           }
-          if (world.town) world.dmgText.show(player.pos.x, player.pos.y - 1, 'YOU ARE HOME', 'miss');
-          else if (world.coliseum) {
+          if (floor === 0) world.dmgText.show(player.pos.x, player.pos.y - 1, 'YOU ARE HOME', 'miss');
+          else if (world.town) {
+            // THE WAY HOME FROM ANYWHERE (it.115): the forest, the fields, the
+            // river, the inn - T brings the party back to the town's spawn.
+            if (transitioning) break;
+            goHome('spawn');
+          } else if (world.coliseum) {
             // T (it.56): the teleporter rises at the centre; a second T while it stands leaves at once.
             if (world.coliseum.exit) leaveColiseum();
             else {
@@ -7211,7 +7532,7 @@ async function boot(): Promise<void> {
         if (!cineHold) {
           state.forEach((entity) => entity.update(dt));
           world.enemies.separate();
-        }
+        } else world.enemies.forEachActive((e) => e.breathe(dt)); // The speakers breathe through the scene (it.115).
         // FROST-TOUCHED AURAS (it.53): a chilled hero inside three tiles of a frost champion.
         world.enemies.forEachActive((e) => {
           if (e.affix !== 'frost' || e.hp <= 0) return;
@@ -7239,7 +7560,10 @@ async function boot(): Promise<void> {
         }
         if (world.coliseum) updateColiseum();
         // A remembered-cleared arena (it.58): the teleporter stands from the first tick.
-        if ((world.isArena || world.mines) && world.arenaCleared && !world.victoryPortal && !transitioning) {
+        // THE STAIRS, NOT THE RIFT (it.115): a cleared arena leaves by its own stair
+        // now; only the quarry (which has no stair) and depth XX (which has no
+        // deeper) raise the teleporter.
+        if ((world.isArena || world.mines) && world.arenaCleared && !world.victoryPortal && !transitioning && arenaTeleporterIn === 0 && (world.mines || floor >= MAX_DEPTH)) {
           const room = world.dungeon.rooms[0];
           world.victoryPortal = world.mines ? { x: world.mines.boss.x, y: world.mines.boss.y } : { x: room.x + Math.floor(room.w / 2), y: room.y + Math.floor(room.h / 2) };
           spawnTeleporterAt(world.victoryPortal.x, world.victoryPortal.y);
@@ -7396,11 +7720,14 @@ async function boot(): Promise<void> {
           emptyArenaTicks = breathing === 0 ? emptyArenaTicks + 1 : 0;
           if (emptyArenaTicks >= 45) {
             world.arenaCleared = true;
+            world.arenaSigil?.stop(); // The sigil burns out with the last foe (it.115).
+            world.arenaSigil = null;
             town.markBossCleared(); // The merchants restock on a warden's fall (it.78).
-            world.stairs.sprite.renderable = true;
-            world.lighting.registerProp(world.stairs.x, world.stairs.y, world.stairs.sprite);
-            world.ambience.burst(world.stairs.x + 0.5, world.stairs.y + 0.5, 0xffd9a0, 20);
-            tutorial.notify('arenaopen', 'Nothing left breathes here. The way down opens.');
+            // The stair already stands (it.115); depth XX and the quarry raise their teleporter above.
+            if (floor < MAX_DEPTH) {
+              world.ambience.burst(world.stairs.x + 0.5, world.stairs.y + 0.5, 0xffd9a0, 20);
+              tutorial.notify('arenaopen', 'Nothing left breathes here. The way down opens.');
+            }
           }
         }
 
@@ -7414,8 +7741,10 @@ async function boot(): Promise<void> {
             pendingArena = true; // Fallback portal (the seal itself).
           } else if (world.isArena && !world.arenaCleared) {
             tutorial.notify('bossgate', 'The arena is sealed. Nothing leaves while anything inside still breathes.');
+          } else if (world.isArena && floor < MAX_DEPTH) {
+            pendingDescend = true; // THE STAIR WORKS (it.115): the arena's stair goes down to the next depth.
           } else if (world.isArena) {
-            // Arenas leave only through the teleporter (it.58): the hidden stair is inert.
+            // Depth XX's arena: nothing deeper; the rift at the centre is the way out.
           } else if (floor >= MAX_DEPTH) {
             // Depth XX arena cleared, the Hollow King fallen: conquered.
             if (!victoryShown) {
@@ -7439,15 +7768,8 @@ async function boot(): Promise<void> {
         const timeSec = now / 1000;
 
         state.forEach((entity) => entity.syncRender(alpha));
-        // THE MENAGERIE (it.114): the costume rides the hero's interpolated state.
-        if (puppet) {
-          puppet.update(
-            { pos: player.pos, prevPos: player.prevPos, facing: player.facing, action: player.action, actionTicks: player.actionTicks, attackTicks: player.weaponProfile.windupTicks + player.weaponProfile.recoverTicks },
-            alpha,
-            frameDt,
-            world.lighting.getTintAt(player.pos.x, player.pos.y, 0.35),
-          );
-        }
+        // THE MENAGERIE (it.115): the display models play their clips, lit where they stand.
+        for (const m of showcase) m.update(frameDt, world.lighting.getTintAt(m.x, m.y, 0.35), world.camera.currentZoom);
         lerpVec(cameraFocus, player.prevPos, player.pos, alpha);
         // THE RECLAIMING (it.91): the camera crosses to the gate and back on its own clock.
         if (cineFocus || cineBlend) {
@@ -7548,6 +7870,11 @@ async function boot(): Promise<void> {
         } else {
           waveHud.classList.remove('show');
         }
+        // THE LOOT LINE (it.115) rides over the hero too.
+        {
+          const lp = world.camera.worldToCanvas(player.pos.x, player.pos.y, buffScratch);
+          placeLootNote(lp.x, lp.y, world.camera.currentZoom);
+        }
         // OVERHEAD LEVEL-UP BANNER (it.50): rides above the hero while it shows.
         {
           const banner = document.getElementById('levelup-banner');
@@ -7556,11 +7883,6 @@ async function boot(): Promise<void> {
             banner.style.left = `${Math.round(bp.x)}px`;
             banner.style.top = `${Math.round(bp.y - 150 * world.camera.currentZoom)}px`;
           }
-        }
-        // THE HUNGER LABEL BY THE HERO (it.114).
-        {
-          const hp = world.camera.worldToCanvas(player.pos.x, player.pos.y, buffScratch);
-          statusFrame.trackHero(hp.x, hp.y, world.camera.currentZoom, !reclaim?.running && player.action !== 'dead');
         }
 
         // The hero's warm halo rides his interpolated position, breathing gently.
@@ -7607,7 +7929,20 @@ async function boot(): Promise<void> {
         if (townPrompt && Math.min(chestD, grabD) <= townPrompt.d) townPrompt = null; // ties go to loot, as the key does
         if (nearChest && townPrompt) nearChest = null;
         world.town?.setPromptAt(townPrompt ? townPrompt.x : null, townPrompt?.y);
-        if (interactHint && townPrompt) {
+        // THE LOOT PROMPT (it.115): the nearest item in reach is named with its kind - ties go to loot, as the key does.
+        const grabDef = grab && !townPrompt && grabD <= chestD && world.lighting.isVisible(Math.floor(grab.x), Math.floor(grab.y)) ? itemDef(grab.itemId) : undefined;
+        if (interactHint && grab && grabDef) {
+          const html = lootPromptHtml(grabDef);
+          if (lastHintHtml !== html) {
+            lastHintHtml = html;
+            interactHint.innerHTML = html;
+          }
+          const p = world.camera.worldToCanvas(grab.x, grab.y, pickRingScratch);
+          interactHint.style.left = `${Math.round(p.x)}px`;
+          interactHint.style.top = `${Math.round(p.y - 48 * world.camera.currentZoom)}px`;
+          interactHint.classList.remove('dim'); // A name is small; it stays readable in a fight.
+          interactHint.classList.add('show');
+        } else if (interactHint && townPrompt) {
           const p = world.camera.worldToCanvas(townPrompt.x, townPrompt.y, pickRingScratch);
           interactHint.style.left = `${Math.round(p.x)}px`;
           interactHint.style.top = `${Math.round(p.y - townPrompt.lift)}px`;
@@ -7684,9 +8019,11 @@ async function boot(): Promise<void> {
 
         if (world.town) {
           const t = world.town;
-          t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
-          t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
-          t.villagers3?.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8));
+          // THE HERO HAS RIGHT OF WAY (it.115): the walkers see every living hero's feet.
+          const heroFeet = liveSeats().filter((s) => s.player.hp > 0).map((s) => ({ x: s.player.pos.x, y: s.player.pos.y }));
+          t.villagers.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8), heroFeet);
+          t.villagers2.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8), heroFeet);
+          t.villagers3?.update(frameDt, (x, y) => world.lighting.getTintAt(x, y, 0.8), heroFeet);
           // THE CITY'S OWN (it.100): drawn between the ticks they were moved on,
           // and lit by the field they are standing in.
           world.squad?.draw(alpha, (x, y) => world.lighting.getTintAt(x, y, 0.85));
@@ -7821,20 +8158,40 @@ async function boot(): Promise<void> {
             const spr = o.sprite;
             const w = spr.width;
             const h = spr.height;
-            const left = spr.position.x - w * spr.anchor.x + w * 0.12;
-            const right = left + w * 0.76;
+            // A SLICED BUILDING (it.115) knows its front face per column: a body is
+            // behind it only where its own x + y is short of that face, so it
+            // needs no inset rect - it is measured edge to edge.
+            const front = o.frontAt;
+            const inset = front ? 0 : 0.12;
+            const left = spr.position.x - w * spr.anchor.x + w * inset;
+            const right = left + w * (1 - inset * 2);
             const top = spr.position.y - h * spr.anchor.y;
             const bottom = top + h * 0.9;
-            let behind = o.depth > heroDepth && hs.x > left && hs.x < right && hs.y - 30 > top && hs.y - 30 < bottom;
-            if (!behind) for (const b of bodies) if (o.depth > b.depth && b.x > left && b.x < right && b.y - 30 > top && b.y - 30 < bottom) { behind = true; break; }
+            const isBehind = (bx: number, by: number, depth: number): boolean =>
+              (front ? depth / 16 < front(bx) - 0.05 : o.depth > depth) && bx > left && bx < right && by - 30 > top && by - 30 < bottom;
+            let ghostX = Number.NaN;
+            let behind = isBehind(hs.x, hs.y, heroDepth);
+            if (behind) ghostX = hs.x;
+            else for (const b of bodies) if (isBehind(b.x, b.y, b.depth)) { behind = true; ghostX = b.x; break; }
             // INSIDE (it.40): standing in a cottage's door column — the roof
             // and front wall drop to a ghost so the room reads.
-            const inside = heroTx >= o.tiles.x && heroTx < o.tiles.x + o.tiles.w && heroTy >= o.tiles.y && heroTy < o.tiles.y + o.tiles.h;
+            const inside = !front && heroTx >= o.tiles.x && heroTx < o.tiles.x + o.tiles.w && heroTy >= o.tiles.y && heroTy < o.tiles.y + o.tiles.h;
             // A TREE IS A GHOST (it.88): whatever stands behind a trunk reads through it.
             // UNDER THE CANOPY (it.114): on a tile the crown hangs over, behind the trunk, the hero is hidden even when the body point misses the sprite's inset rect.
             const under = !!o.canopy && o.depth > heroDepth && heroTx >= o.canopy.x && heroTx < o.canopy.x + o.canopy.w && heroTy >= o.canopy.y && heroTy < o.canopy.y + o.canopy.h;
             const target = inside ? 0.2 : behind || under ? (o.tree ? 0.12 : 0.38) : 1;
             spr.alpha += (target - spr.alpha) * k;
+            if (o.parts) {
+              // THE CUTAWAY FOLLOWS THE BODY (it.115): only the strips round whoever is
+              // behind the building thin out, in a soft band; the rest of it stands.
+              if (!Number.isNaN(ghostX)) o.ghostX = ghostX;
+              const gx = o.ghostX ?? 0;
+              for (const q of o.parts) {
+                const d = Math.abs(q.position.x + q.width / 2 - gx);
+                const f = Math.max(0, Math.min(1, 1 - (d - 70) / 90));
+                q.alpha = 1 - (1 - spr.alpha) * f;
+              }
+            }
           }
           if (t.stashSprite && spriteLib.hasSingle('stash_open')) {
             t.stashSprite.texture = spriteLib.single(stashUI.isOpen ? 'stash_open' : 'stash_closed');
@@ -7869,7 +8226,7 @@ async function boot(): Promise<void> {
           const phased = !!boss.def.nextPhase || boss.phase > 1;
           if (!world.bossSeen && (world.isArena || entityVisible(boss.pos.x, boss.pos.y))) {
             world.bossSeen = true;
-            audio.sfx('bossHorn'); // The war horn: a keeper has seen you.
+            audio.sfx(isHumanVoice(boss.def.kind) ? 'warHorn' : 'bossHorn'); // The war horn: a keeper has seen you (a man's men yell, it.115).
           }
           if (world.bossSeen && bossBar && bossBarFill) {
             const nameEl = document.getElementById('boss-bar-name');
@@ -7958,7 +8315,7 @@ async function boot(): Promise<void> {
       fit.addById(id, { maxW: 0.94, maxH: 0.92, minScale: 0.8, base: 'translate(-50%, -50%)', responsive: true });
     }
     const charSheetUI = new CharacterSheetUI(player);
-    const bestiaryUI = new BestiaryUI(player);
+    const bestiaryUI = new BestiaryUI(player, { tryOut: (kind) => enterMenagerie(kind) }); // SHOW ON THE SAND (it.115).
     /**
      * THE TRAINING GROUND (it.90): the interactive tutorial over the live
      * game. Its hooks are the only thing it knows about the run.
@@ -8002,7 +8359,8 @@ async function boot(): Promise<void> {
       warpToYard: () => {
         const t = world.town?.layout.training;
         if (!t) return;
-        TutorialSystem.yardPost = { x: t.post.x + 0.5, y: t.post.y + 0.5 };
+        // She is the one the INTERACT card points at (it.115); the sign when she has no post.
+        TutorialSystem.yardPost = t.milk ? { x: t.milk.x + 0.5, y: t.milk.y + 0.5 } : { x: t.post.x + 0.5, y: t.post.y + 0.5 };
         placeParty(t.mark.x + 0.5, t.mark.y + 0.5, world.scene.isWalkable);
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         minimap.markDirty();
@@ -8012,6 +8370,7 @@ async function boot(): Promise<void> {
         return { x: g.x + 0.5, y: g.y + 0.5 };
       },
       heroFrames: () => (spriteLib.loaded ? classPreviewFrames(chosenClass) : null),
+      mentor: () => ({ name: 'LORD MILK', role: 'master of the training ground', portrait: milkPortrait() }), // She runs the yard (it.115).
       className: () => chosenClass,
       viewport: () => ({ w: screenLayout.state.w, h: screenLayout.state.h }),
       onFinish: () => {
@@ -8034,9 +8393,10 @@ async function boot(): Promise<void> {
     const offerTraining = async (): Promise<void> => {
       if (tutor.isRunning) return;
       const v = await dialogue.open({
-        speaker: 'THE TRAINING GROUND',
-        role: 'a sign by the dummies',
-        lines: ['A yard to practise in: moving, fighting, skills, potions, the pack, the forge. It takes a couple of minutes.'],
+        speaker: 'LORD MILK',
+        role: 'master of the training ground',
+        portrait: milkPortrait(),
+        lines: ['My yard. Moving, fighting, skills, potions, the pack, the forge - I will walk you through the lot. It takes a couple of minutes, and the first time through pays a hundred gold.'],
         choices: [
           { label: 'START TRAINING', sub: 'the yard walks you through it', value: 'go' },
           { label: 'NOT NOW', value: 'stay' },
@@ -8612,7 +8972,7 @@ async function boot(): Promise<void> {
       const devTravel = jumpTo;
       Object.defineProperty(window, '__game', {
         configurable: true,
-        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, menagerie: enterMenagerie, wear: wearCostume, get puppet() { return puppet; }, toast, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, INN_FLOOR, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
+        get: () => ({ state, player, loop, audio, skills, sprites: spriteLib, runMenus, travel: devTravel, menagerie: enterMenagerie, showcase: { models: showcase, toggle: toggleShowcase, costumes: menagerieCostumes }, toast, townSystem: town, shopUI, stashUI, craftUI, codexUI, noticeUI, dialogue, quests, difficulty, tutor, crafting, get reclaim() { return reclaim; }, lootersAlive, INN_FLOOR, get deepestFloor() { return deepestFloor; }, saveNow, portalReturn, floors, ...world, floor, party, queue: inputQueue, net, lockstep, chat, localSlot, leaderSlot, goHome, get cull() { return cullStats; }, setCull: (on: boolean) => { cullOn = on; if (!on) for (const l of [world.viewport.groundLayer, world.viewport.objectLayer]) for (const c of l.children) c.renderable = true; } }),
       });
     }
 
@@ -8632,7 +8992,7 @@ async function boot(): Promise<void> {
       slot,
       stash: () => (hardcoreOver ? { items: [], gold: 0 } : { items: [...town.stash.items], gold: town.stash.gold }), // A spent life takes the stash with it (it.89).
       save: saveNow,
-      returnToTown: () => inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town' }),
+      returnToTown: () => inputQueue.enqueue({ type: 'WARP', playerId: localSlot, to: 'town', n: 1 }),
       destroy: () => {
         if (!alive) return;
         alive = false;
@@ -8728,7 +9088,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // THE MARKET WARD (it.84): the standing brazier, the guild banner, the gateway light.
   // THE EASTERN QUARTER (it.91): the looters' sheets, the villager coat (the innkeeper), the fallen in the streets (the death sheets).
   // THE MUSTER (it.101): the standing crowd on the training yard rides the coliseum's spectator sheets.
-  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS, ...COIN_ANIMS];
+  if (mode === 'hub') return [...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), 'folk_walk', 'merchant_walk', 'villager_walk', 'poacher_idle', 'guard_idle', 'duelist_idle', 'campfire', 'torch', 'brazier_stand', 'banner', 'gateway', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', 'crowd_m0', 'crowd_m1', 'crowd_m2', 'crowd_m3', 'crowd_m4', 'crowd_m5', 'crowd_m6', 'crowd_m7', ...animsForKind('bandit'), ...animsForKind('brigand'), ...VFX_ANIMS, ...COIN_ANIMS];
   // THE GILDED STAG (it.96): the folk, the keeper's coat, the hearth's fire and the wall torches.
   if (mode === 'inn') return ['folk_walk', 'villager_walk', 'merchant_walk', 'poacher_walk', 'campfire', 'torch', 'inn_fire', 'inn_torch', 'cellar_girl', 'knight_idle', 'mage_idle', 'ranger_idle', 'rogue_idle', ...VFX_ANIMS, ...COIN_ANIMS];
   // THE FARMLANDS (it.100): the company, the city's guards, the fires and the folk who come back.
@@ -8745,7 +9105,8 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   // river bridge. The family is drawn from the STREET_FOLK sheets, so they come
   // in with the rest rather than as a special case.
   if (mode === 'river') {
-    const out = new Set<string>(['torch', 'campfire', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'guard_idle', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
+    // IT.115: the street roster is smooth now; Oscar's household and his bank's walkers are `RIVER_FOLK`.
+    const out = new Set<string>(['torch', 'campfire', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'guard_idle', 'poacher_idle', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...RIVER_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of RIVER_AMBUSH) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
@@ -8759,7 +9120,7 @@ function animsForFloor(floor: number, mode: FloorMode): string[] {
   if (mode === 'field' || mode === 'manor') {
     // THE ENGINES (it.112) come in with the floor: `siege_engine` is eight
     // facings of a stacked catapult and `siege_wreck` the same machine down.
-    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', 'siege_engine', 'siege_wreck', 'catapult_idle', 'catapult_throw', 'catapult_load', 'catapult_wreck', 'catapult_stone', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
+    const out = new Set<string>(['torch', 'campfire', 'inn_fire', 'inn_torch', 'brazier_stand', 'gateway', 'banner', 'folk_walk', 'merchant_walk', 'trader_walk', 'guard_death', 'poacher_death', 'captain_death', 'siege_engine', 'siege_wreck', 'catapult_idle', 'catapult_throw', 'catapult_load', 'catapult_wreck', 'catapult_stone', 'ballista_idle', 'ballista_shoot', ...STREET_FOLK.map((f) => f.anim), ...MARKET_FOLK.map((f) => f.anim), ...VFX_ANIMS, ...COIN_ANIMS]);
     for (const k of [...FIELD_POOL, 'mercenary' as EnemyKind, 'chief' as EnemyKind]) for (const a of animsForKind(k)) out.add(a);
     return [...out];
   }
@@ -8850,7 +9211,13 @@ function installCursor(canvas: HTMLCanvasElement): void {
   document.head.appendChild(style);
 }
 
-/** Per-species voice: pitch + the HORROR bank that speaks for it (it.25). */
+/** A man or a woman (it.115): speaks a human voice family, so never a roar. */
+function isHumanVoice(kind: EnemyKind): boolean {
+  const bank = voiceProfile(kind).bank;
+  return bank === 'vMan' || bank === 'vWoman';
+}
+
+/** Per-species voice: pitch + the HORROR bank (or, it.115, the human family) that speaks for it (it.25). */
 function voiceProfile(kind: EnemyKind): { pitch: number; bank: string } {
   switch (kind) {
     case 'zombie': return { pitch: 0.9, bank: 'hZombie' };
@@ -8860,15 +9227,30 @@ function voiceProfile(kind: EnemyKind): { pitch: number; bank: string } {
     case 'wolf': return { pitch: 0.95, bank: 'hGrowl' };
     case 'lizard': return { pitch: 1.2, bank: 'hHiss' };
     case 'skelMage': return { pitch: 0.9, bank: 'hMoan' };
-    case 'guard': return { pitch: 1.05, bank: 'hGrunt' };
-    case 'bandit': return { pitch: 1.15, bank: 'hGrunt' }; // Men, not monsters (it.91).
-    case 'brigand': return { pitch: 1.0, bank: 'hGrunt' };
+    // HUMANS SOUND HUMAN (it.115): every man and woman below speaks a human
+    // family ('vMan' / 'vWoman': pain, battle yell, death cry - AudioManager);
+    // until now they grunted through `Monster_grunt`, died through the ghost
+    // scream, and the poacher fell through to the wardens' roar.
+    case 'guard': return { pitch: 0.95, bank: 'vMan' }; // The Crypt Sentinel is a man with a halberd.
+    case 'bandit': return { pitch: 1.1, bank: 'vMan' }; // Men, not monsters (it.91).
+    case 'brigand': return { pitch: 1.0, bank: 'vMan' };
+    case 'poacher': return { pitch: 1.08, bank: 'vMan' };
+    case 'halberdier': return { pitch: 0.94, bank: 'vMan' };
+    case 'reaper': return { pitch: 0.9, bank: 'vMan' }; // A caped killer, not a ghost (was the ghost moan).
+    case 'archer': return { pitch: 1.0, bank: 'vWoman' }; // The ranger sheet is a woman.
+    case 'duelist': return { pitch: 1.05, bank: 'vWoman' }; // The company's fencer - she.
+    case 'dummy': case 'dummyB': return { pitch: 1, bank: 'silent' }; // Straw does not roar (it.115).
+    case 'spider': return { pitch: 1.1, bank: 'hHiss' }; // Was the wardens' roar.
+    case 'orc': return { pitch: 1.15, bank: 'hGrunt' }; // Was the wardens' roar.
     case 'graveGuard': return { pitch: 0.95, bank: 'hGrunt' };
     case 'skeleton': return { pitch: 1.12, bank: 'hGrunt' };
-    case 'archer': return { pitch: 1.18, bank: 'hGrunt' };
     case 'fallen': return { pitch: 1.25, bank: 'hGrunt' };
     case 'shaman': return { pitch: 1.0, bank: 'hGrunt' };
     case 'bossEmber': return { pitch: 0.9, bank: 'hHiss' }; // The serpent.
+    // MEN ARE MEN (it.115): the company and its officers fell through to the wardens' roar.
+    case 'mercenary': return { pitch: 1.03, bank: 'vMan' };
+    case 'general': return { pitch: 0.88, bank: 'vMan' };
+    case 'chief': return { pitch: 0.92, bank: 'vMan' };
     // THE NEW FLESH (it.114).
     case 'redWidow': case 'boneWidow': case 'venomWidow': case 'tealSpider': return { pitch: 1.2, bank: 'hHiss' };
     case 'wyrm': case 'drake': return { pitch: 0.95, bank: 'hHiss' };
@@ -8877,8 +9259,8 @@ function voiceProfile(kind: EnemyKind): { pitch: number; bank: string } {
     case 'apexPredator': case 'apexStalker': return { pitch: 0.85, bank: 'hGrowl' };
     case 'markedGhoul': case 'corpse': case 'fleshGolem': return { pitch: 0.9, bank: 'hZombie' };
     case 'orcBrute': return { pitch: 0.75, bank: 'hGrunt' };
-    case 'orcSpearman': case 'orcWarrior': case 'halberdier': case 'duelist': return { pitch: 1.05, bank: 'hGrunt' };
-    case 'reaper': return { pitch: 1.0, bank: 'hMoan' };
+    case 'orcSpearman': return { pitch: 1.05, bank: 'hGrunt' }; // Orcs are beasts, not men.
+    case 'orcWarrior': return { pitch: 1.15, bank: 'hGrunt' };
     case 'treant': case 'gargoyle': return { pitch: 0.7, bank: 'hMoan' };
     default: return { pitch: 0.8, bank: 'hRoar' }; // Wardens ROAR.
   }
@@ -8890,11 +9272,11 @@ function kindPoolFor(floor: number): EnemyKind[] {
   return floor === 1
     ? ['fallen', 'fallen', 'skeleton', 'skeleton', 'zombie']
     : floor <= 3
-      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc', 'spider', 'redWidow', 'corpse', 'markedGhoul', 'gargoyle']
+      ? ['fallen', 'skeleton', 'skeleton', 'zombie', 'archer', 'ahoul', 'ahoul', 'orc', 'orc', 'spider', 'redWidow', 'corpse', 'markedGhoul']
       : floor <= 5
-        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher', 'spider', 'redWidow', 'corpse', 'markedGhoul', 'orcSpearman', 'gargoyle']
+        ? ['fallen', 'skeleton', 'zombie', 'archer', 'guard', 'guard', 'ahoul', 'shaman', 'orc', 'poacher', 'spider', 'redWidow', 'corpse', 'markedGhoul', 'orcSpearman']
         : floor <= 9
-          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher', 'spider', 'redWidow', 'markedGhoul', 'orcSpearman', 'orcBrute', 'creeper', 'gargoyle']
+          ? ['skeleton', 'zombie', 'archer', 'guard', 'wolf', 'wolf', 'ahoul', 'shaman', 'shaman', 'graveGuard', 'shambler', 'shambler', 'orc', 'poacher', 'spider', 'redWidow', 'markedGhoul', 'orcSpearman', 'orcBrute', 'creeper']
           : floor <= 14
             ? ['zombie', 'archer', 'guard', 'wolf', 'frostWolf', 'frostWolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'orcBrute', 'creeper', 'reaper', 'fleshGolem']
             : ['zombie', 'archer', 'guard', 'wolf', 'lizard', 'lizard', 'shaman', 'skelMage', 'skelMage', 'graveGuard', 'graveGuard', 'shambler', 'hydra', 'drake', 'drake', 'reaper', 'fleshGolem', 'apexPredator', 'apexStalker']; // THE NEW FLESH (it.114).

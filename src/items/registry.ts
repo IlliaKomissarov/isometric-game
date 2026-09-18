@@ -18,7 +18,7 @@
  * add affixes and an enchantment.
  */
 
-import { FOOD_TIER, type FoodTier, type ItemDef, type WeaponKind } from './catalog';
+import { FOOD_TIER, consumableValue, type FoodTier, type ItemDef, type WeaponKind } from './catalog';
 import { ENCHANTS, type Effect } from './effects';
 import { CURIOS } from './curios';
 import type { EquipmentSlot } from '@/network/Serialization';
@@ -455,20 +455,26 @@ export const RECIPES: ItemDef[] = Object.values(ENCHANTS).map((r, i) => {
  * short brew - MIGHT or HASTE for six seconds - on the brews' one-second
  * cooldown, cheap, and they turn in the cell like every other bottle.
  */
-const ale = (key: string, name: string, brew: 'might' | 'haste', desc: string): ItemDef => ({
-  id: `ale_${key}`,
-  name,
-  slot: 'consumable',
-  rarity: 'common',
-  sprite: `item_drink_${key}`,
-  spin: `spin_drink_${key}`,
-  value: 18,
-  use: brew === 'might' ? { might: 6 * 60 } : { haste: 6 * 60 },
-  color: brew === 'might' ? 0xe0803a : 0x7fd67f,
-  desc,
-});
+const ale = (key: string, name: string, brew: 'might' | 'haste', desc: string): ItemDef => {
+  // A SWIG IS HALF A DRAUGHT (it.117): an eighteen-gold tin used to pour the
+  // whole of a 120-gold Draught of Haste's speed. Same six seconds, half the
+  // strength, and the price off the one curve (`consumableValue`).
+  const use: NonNullable<ItemDef['use']> = brew === 'might' ? { might: 6 * 60, mightMult: 1.12 } : { haste: 6 * 60, hasteMult: 1.15 };
+  return {
+    id: `ale_${key}`,
+    name,
+    slot: 'consumable',
+    rarity: 'common',
+    sprite: `item_drink_${key}`,
+    spin: `spin_drink_${key}`,
+    value: consumableValue(use, 'common', { brewWeight: 0.5 }),
+    use,
+    color: brew === 'might' ? 0xe0803a : 0x7fd67f,
+    desc,
+  };
+};
 export const ALES: ItemDef[] = [
-  ale('016_griffin', 'Griffin Ale', 'might', 'A brown ale under a griffin seal. A quarter more damage for six seconds, then the taste of it for an hour.'),
+  ale('016_griffin', 'Griffin Ale', 'might', 'A brown ale under a griffin seal. A tenth more damage for six seconds, then the taste of it for an hour.'),
   ale('017_dragon', "Dragon's Breath Stout", 'might', 'Black, thick, and it bites back. Might for six seconds.'),
   ale('019_wolfsun', 'Wolfsun Mead', 'haste', 'Honey mead of the hill folk. Thirty percent faster on your feet for six seconds.'),
   ale('021_starforge', 'Starforge Porter', 'might', 'The smiths drink it at the end of the shift. Might for six seconds.'),

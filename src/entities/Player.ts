@@ -370,8 +370,8 @@ export class Player extends Entity {
   /** Unspent skill points (1 at birth, +1 per level). */
   skillPoints = 1;
   readonly unlockedSkills = new Set<string>();
-  /** Hotbar 1–4: learned skill ids (null = empty). */
-  readonly loadout: Array<string | null> = [null, null, null, null];
+  /** The action bar, keys 1–8 (it.117, four before it): a learned skill id, a consumable as `item:<base>`, or null. */
+  readonly loadout: Array<string | null> = [null, null, null, null, null, null, null, null];
   readonly passives = new Set<string>();
 
   /**
@@ -683,17 +683,31 @@ export class Player extends Entity {
     return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(b);
   }
 
-  /** Attack animation: the class rig's set (warrior keeps weapon flavor). */
+  /**
+   * Attack animation: the class rig's set (warrior keeps weapon flavor).
+   *
+   * VARIETY (it.117). The knight owns three melee clips — `knight_melee`,
+   * `knight_melee2` and the great-weapon flourish `knight_spin` — and was
+   * playing ONE of them per weapon, for ever: a great weapon spun on every
+   * single swing, everything else alternated two. The rotation now reads as a
+   * combo: two ordinary swings and then a heavier third, with the flourish
+   * taking the finisher's place. Nothing here touches timing — every clip is
+   * paced across the same windup+recover window (`syncKnight`), so the strike
+   * frame lands on exactly the tick `WEAPON_TIMING` says it does.
+   */
   private attackAnim(): AnimName {
     const rig = this.heroRig;
     const profile = this.weaponProfile;
     if (profile.ranged) return rig.rangedAttack ?? rig.attacks[0];
-    if (rig.attacks[0] === 'knight_melee') {
-      // The knight's weapon-flavored swings (great weapons spin!).
+    if (rig.attacks[0] === 'knight_melee' && spriteLib.hasAnim('knight_spin')) {
       const id = this.getEquipped('mainHand');
-      if (id === 'doombringer' || id === 'gravecleaver' || profile.kind === 'polearm') {
-        return 'knight_spin';
-      }
+      const great = id === 'doombringer' || id === 'gravecleaver' || profile.kind === 'polearm';
+      // A great weapon still spins — that IS its flavour — but every other
+      // blow is an overhand cut, so the flourish reads as a flourish again.
+      // Lighter steel keeps its two swings and lands the spin as the third.
+      if (great) return this.swingVariant % 2 === 0 ? 'knight_spin' : 'knight_melee2';
+      if (this.swingVariant % 3 === 2) return 'knight_spin';
+      return rig.attacks[this.swingVariant % rig.attacks.length];
     }
     return rig.attacks[this.swingVariant % rig.attacks.length];
   }
@@ -1045,14 +1059,36 @@ export class Player extends Entity {
     this.shadow.alpha = 0.6 + 0.4 * Math.min(1, stretch - 0.6);
   }
 
-  /** Slash arc VFX (frame-based decay; positioned ahead of the body). */
+  /**
+   * Slash arc VFX (frame-based decay; positioned ahead of the body).
+   *
+   * THE ARC OF THE SWING (it.117).
+   *
+   * The arc used to be one sprite at one place at one angle, every blow, for
+   * every class. The rigs that own only one attack clip — mage, ranger and
+   * rogue all do; only the knight was baked with three — had no way to tell
+   * one swing from the next. The arc now follows the SAME three-beat rhythm
+   * the knight's clips do: a high cut from the right, a low return from the
+   * left, then a wide finisher across the body. It costs nothing, breaks no
+   * timing (the arc is pure render, flashed at the strike frame), and it is
+   * what makes a rogue's flurry stop looking like one frame on loop.
+   */
   private syncSlash(): void {
     if (this.slashFrames > 0) {
       this.slashFrames--;
       this.slash.visible = true;
       this.slash.alpha = this.slashFrames / SLASH_FRAMES;
-      this.slash.position.set(14, -22);
-      this.slash.rotation = 0.15;
+      const beat = this.swingVariant % 3;
+      if (beat === 0) {
+        this.slash.position.set(14, -26);
+        this.slash.rotation = 0.15;
+      } else if (beat === 1) {
+        this.slash.position.set(-12, -16); // The return, from the other hand.
+        this.slash.rotation = -2.6;
+      } else {
+        this.slash.position.set(4, -22); // The finisher sweeps across.
+        this.slash.rotation = 1.35;
+      }
     } else {
       this.slash.visible = false;
     }

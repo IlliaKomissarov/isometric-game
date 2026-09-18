@@ -73,7 +73,10 @@ export function fxCrit(vfx: VfxSystem, x: number, y: number): void {
  */
 export function fxHit(vfx: VfxSystem, x: number, y: number, dx: number, dy: number, heavy = false): void {
   const rot = screenAngle(dx, dy);
-  vfx.play(heavy ? 'fx_impact_dir_b' : 'fx_impact_dir_a', x, y, { scale: heavy ? 0.8 : 0.9, lift: 20, rotation: rot, overlay: true, tint: 0xfff4e0 });
+  // it.117: `fx_impact_dir_b` is a 134 px streak — at 0.8 it was twice the
+  // width of the body it lands on. 0.62 still reads as force, and you can see
+  // who took it.
+  vfx.play(heavy ? 'fx_impact_dir_b' : 'fx_impact_dir_a', x, y, { scale: heavy ? 0.62 : 0.9, lift: 20, rotation: rot, overlay: true, tint: 0xfff4e0 });
   vfx.play('fx_splat_dir_a', x, y, { scale: 1.1, lift: 18, rotation: rot, tint: 0xd02020 });
   if (heavy) vfx.play('fx_impact_c', x, y, { scale: 0.55, lift: 20, overlay: true, alpha: 0.8 });
 }
@@ -94,16 +97,36 @@ export function fxLevelUp(vfx: VfxSystem, x: number, y: number): void {
 
 /** Healing: the green-white swirl climbing the body with a sparkle after it. */
 export function fxHeal(vfx: VfxSystem, x: number, y: number): void {
-  vfx.play('fx_heal', x, y, { scale: 0.85, lift: 22, overlay: true });
+  vfx.play('fx_heal', x, y, { scale: 0.62, lift: 22, overlay: true }); // it.117: a 96 px sheet on a 53 px body.
   vfx.later(0.3, () => vfx.play('fx_sparkle_c', x, y, { scale: 1.0, lift: 30, overlay: true, tint: 0xc0ffd0 }));
 }
 
 export type BuffKind = 'haste' | 'stone' | 'might' | 'ward';
-const BUFF_STRIP: Record<BuffKind, 'fx_haste' | 'fx_defense_up' | 'fx_attack_up' | 'fx_magic_barrier'> = {
-  haste: 'fx_haste',
-  stone: 'fx_defense_up',
-  might: 'fx_attack_up',
-  ward: 'fx_magic_barrier',
+
+/**
+ * WHAT A BUFF LOOKS LIKE, AND HOW BIG (it.117).
+ *
+ * The strips are not the same size and were all being drawn at one scale, so
+ * the biggest of them swallowed the hero. A painted hero stands ≈53 px at
+ * zoom 1 (a tile is 64×32), and the rule that comes out of that is:
+ *
+ *   A SYMBOL — a clock, a mark, anything you read rather than feel — belongs
+ *   ABOVE the head, ~26 px tall. `fx_haste` is a clock face 126×119 px; at
+ *   the old 0.6 it painted 76 px across the archer's chest, which is the
+ *   "gigantic clock face" on a speed buff. It is a good animation, so it is
+ *   kept — at 0.22 (28 px) and lifted clear of the head, where a clock over
+ *   someone's head means what it always has.
+ *
+ *   AN AURA — light gathering on the body — belongs ON the body, ~50 px,
+ *   which for the 128 px `fx_attack_up` / `fx_defense_up` sheets is ~0.40.
+ *
+ * `size` is the aura; the opening flash is drawn a quarter larger.
+ */
+const BUFF_FX: Record<BuffKind, { strip: 'fx_haste' | 'fx_defense_up' | 'fx_attack_up' | 'fx_magic_barrier'; scale: number; lift: number; fps: number; symbol: boolean }> = {
+  haste: { strip: 'fx_haste', scale: 0.22, lift: 58, fps: 14, symbol: true },
+  stone: { strip: 'fx_defense_up', scale: 0.4, lift: 22, fps: 12, symbol: false },
+  might: { strip: 'fx_attack_up', scale: 0.4, lift: 22, fps: 12, symbol: false },
+  ward: { strip: 'fx_magic_barrier', scale: 1.15, lift: 22, fps: 24, symbol: false },
 };
 
 /**
@@ -112,17 +135,20 @@ const BUFF_STRIP: Record<BuffKind, 'fx_haste' | 'fx_defense_up' | 'fx_attack_up'
  * the buff's ticks run out.
  */
 export function fxBuff(vfx: VfxSystem, kind: BuffKind, getPos: () => { x: number; y: number }): VfxHandle {
-  const strip = BUFF_STRIP[kind];
+  const fx = BUFF_FX[kind];
   const p = getPos();
-  vfx.play(strip, p.x, p.y, { scale: kind === 'ward' ? 1.6 : 0.8, lift: 20, overlay: true });
-  return vfx.playFollowing(strip, getPos, { scale: kind === 'ward' ? 1.3 : 0.6, lift: 20, loop: true, alpha: 0.55, overlay: true, fps: kind === 'ward' ? 24 : 12 });
+  vfx.play(fx.strip, p.x, p.y, { scale: fx.scale * 1.25, lift: fx.lift, overlay: true });
+  // A symbol stays legible (it is read); an aura sits back under the body.
+  return vfx.playFollowing(fx.strip, getPos, { scale: fx.scale, lift: fx.lift, loop: true, alpha: fx.symbol ? 0.8 : 0.55, overlay: true, fps: fx.fps });
 }
 
 // ---- pickups -----------------------------------------------------------
 
 /** Gold scooped: coins fly. */
 export function fxPickupGold(vfx: VfxSystem, x: number, y: number): void {
-  vfx.play('fx_coin_burst', x, y, { scale: 0.7, lift: 12, overlay: true });
+  // it.117: a 123 px sheet at 0.7 threw an 86 px shower of coins off a purse
+  // the size of a fist. Half that is a handful of gold, which is what it is.
+  vfx.play('fx_coin_burst', x, y, { scale: 0.42, lift: 12, overlay: true });
 }
 
 /** A rare find: the treasure burst with a sparkle on top. */
@@ -157,7 +183,15 @@ export function fxSpawnShadow(vfx: VfxSystem, x: number, y: number): void {
   vfx.play('fx_warp_c', x, y, { scale: 0.7, lift: 18, tint: 0xb090e0, alpha: 0.9 });
 }
 
-/** The "!" over a foe's head when it notices the hero. */
-export function fxAlert(vfx: VfxSystem, x: number, y: number, lift = 54): void {
-  vfx.play('fx_alert', x, y, { scale: 0.38, lift: lift - 10, overlay: true }); // Half the it.114 size: a mark over the head, not a banner (it.115).
+/**
+ * The "!" over a foe's head when it notices the hero.
+ *
+ * The strip is 39×74 px. it.114 drew it at full size — a banner as tall as the
+ * foe; it.115 halved it to 0.38 (15×28 px). Smaller still in it.117 at 0.26
+ * (10×19 px): a punctuation mark above the head, the size the "!" would be if
+ * the foe had said it. It is a cue, and a cue that reads at a glance without
+ * covering the body it belongs to is doing its whole job.
+ */
+export function fxAlert(vfx: VfxSystem, x: number, y: number, lift = 66): void {
+  vfx.play('fx_alert', x, y, { scale: 0.26, lift, overlay: true });
 }

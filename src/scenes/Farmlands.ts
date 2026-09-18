@@ -45,6 +45,7 @@
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
 import { claimProp, claims, footprintOf, KIND_DIRT, KIND_FARM_ASH, KIND_GRASS, type FarmLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { scatterChests } from '@/systems/Chests';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout, carriageVariant, groundPainter, KIND_OW_FLOWERS, KIND_OW_FOREST, KIND_OW_GRAVEL, KIND_OW_MEADOW, KIND_OW_MOSS, KIND_OW_MUD, KIND_OW_POPPIES, mushroomVariant, rocksVariant, smallPiece, tileHash, tuftVariant } from './Forest';
 
@@ -511,6 +512,32 @@ export function buildFarmLayout(seed: number, won = false): { layout: TownLayout
     { x: 20, y: 37 },
     { x: 7, y: 15 },
   ];
+  /**
+   * AND THE CORNERS (it.117). The eight above are the yards and the road's
+   * verges - the ones a player walks past. `scatterChests` reads the finished
+   * grid for tiles with the belt, a barn or a barricade on two or three sides
+   * and nothing standing in front of them, which is where a player who bothers
+   * to look behind things is paid for it. Seeded off this floor's seed.
+   */
+  {
+    const standing = new Uint8Array(W * H);
+    for (const p of props) {
+      if (!claims(p)) continue;
+      const f = footprintOf(p);
+      for (let yy = p.y; yy < p.y + f.h; yy++) for (let xx = p.x; xx < p.x + f.w; xx++) if (inside(xx, yy)) standing[idx(xx, yy)] = 1;
+    }
+    const walk = (x: number, y: number): boolean => isFloor(x, y) && !standing[idx(x, y)];
+    for (const c of scatterChests({
+      width: W,
+      height: H,
+      free: (x, y) => walk(x, y) && !road[idx(x, y)],
+      open: walk,
+      avoid: [...chestSpots, ENTRY, HOME],
+      count: 6,
+      apart: 9,
+      seed,
+    })) chestSpots.push(c);
+  }
 
   // ---- nothing may be walled into a pocket ------------------------------
   {

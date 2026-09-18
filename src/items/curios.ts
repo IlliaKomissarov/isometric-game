@@ -10,25 +10,52 @@
  *
  *   DRINKS (95 more than the ten ALES)   a swig: small, cheap, common
  *   POTIONS (156)  "<Name> Tonic/Philter/..."  a lesser draught, uncommon
- *   SCROLLS (the rolled and unrolled ones)     read for a longer brew
- *   TOMES                                      a scroll's brew, half again
+ *   SCROLLS (the rolled ones)                  a RITE (it.117)
+ *   TOMES                                      a greater rite (it.117)
  *   ORES (54)      smelted from the pack into the crafting pouch
  *
- *   brew     drink            potion            scroll          tome
- *   heal     12% life         30% life          25% life        38% life
- *   mana     20% resource     40% resource      35%             50%
- *   elixir   8% + 12%         20% + 25%         15% + 20%       22% + 30%
- *   haste    HASTE 6 s        HASTE 6 s         HASTE 8 s       HASTE 12 s
- *   might    MIGHT 6 s        MIGHT 6 s         MIGHT 8 s       MIGHT 12 s
- *   stone    STONE 6 s        STONE 6 s         STONE 8 s       STONE 12 s
+ *   brew     drink            potion
+ *   heal     12% life         30% life
+ *   mana     20% resource     40% resource
+ *   elixir   8% + 12%         20% + 25%
+ *   haste    HASTE 6 s        HASTE 6 s
+ *   might    MIGHT 6 s        MIGHT 6 s
+ *   stone    STONE 6 s        STONE 6 s
  *
  * They run on the draughts' cooldowns (a heal-bearing curio shares the
  * five-second healing one), ride the belt, and turn in every cell. Where
  * they come from: `items/instance` rolls them into foe drops, chests and
  * the town chests; the alchemist, the scribe and the tavern stock a few.
+ *
+ * THE RITES (it.117). Until this iteration the hundred and nine scrolls and
+ * tomes were potions in paper: the same brew a bottle poured, weaker, for
+ * twice the gold. Nobody read one, and the owner was right to call them
+ * inert. Every scroll and every tome is now a RITE - one reading, one real
+ * skill out of the tree, cast by `systems/Skills` itself (the same code,
+ * the same strips, the same sound), for ANY class, with no resource spent
+ * and no cooldown to wait out but the paper in your hand:
+ *
+ *   a skill that LASTS     scroll 2.2x the numbers · 4x the length
+ *                          tome   3.0x             · 6x
+ *   a skill that BURSTS    scroll 3.5x the numbers (there is no length)
+ *                          tome   5.0x
+ *
+ * A scroll of War Cry is therefore forty seconds of +35% damage where the
+ * warrior's own cast gives ten; a tome of Firewall burns for thirty-six
+ * seconds at triple damage. That is what a hundred and forty gold buys.
+ *
+ * THE ART PICKS THE RITE. The bake read a BREW from the colour of every
+ * seal, and the colour is the promise on the paper: red mends and steadies,
+ * blue is arcane, green is swift, orange is wrath, grey wards, violet is
+ * the knife in the dark. Inside a family the key's own hash picks which
+ * rite, so a given scroll is the same scroll in every run and on every
+ * peer. Red and blue seals keep their draught as well as their rite - a
+ * mending scroll is still a bandage - so nothing the old table promised is
+ * taken away.
  */
 
-import type { ItemDef, Rarity } from './catalog';
+import { consumableValue, type ItemDef, type Rarity } from './catalog';
+import { SKILL_BY_ID } from '@/systems/SkillTree';
 import { GEN_DRINKS, GEN_ORES, GEN_POTIONS, GEN_SCROLLS, type CurioBrew } from './curios.gen';
 
 type Use = NonNullable<ItemDef['use']>;
@@ -57,9 +84,10 @@ function brewWords(use: Use): string {
   const parts: string[] = [];
   if (use.heal) parts.push(`restores ${pct(use.heal)} of your life`);
   if (use.resource) parts.push(`${use.heal ? 'and ' : 'restores '}${pct(use.resource)} of your mana or stamina`);
-  if (use.haste) parts.push(`makes you thirty percent faster for ${use.haste / 60} seconds`);
-  if (use.might) parts.push(`pours a quarter more damage for ${use.might / 60} seconds`);
-  if (use.stone) parts.push(`turns four tenths of every blow for ${use.stone / 60} seconds`);
+  // THE NUMBERS ARE THE ITEM'S OWN (it.117): a swig pours half a draught's brew and says so.
+  if (use.haste) parts.push(`makes you ${Math.round(((use.hasteMult ?? 1.3) - 1) * 100)} percent faster for ${use.haste / 60} seconds`);
+  if (use.might) parts.push(`pours ${Math.round(((use.mightMult ?? 1.25) - 1) * 100)} percent more damage for ${use.might / 60} seconds`);
+  if (use.stone) parts.push(`turns ${Math.round((use.stoneFrac ?? 0.4) * 100)} percent of every blow for ${use.stone / 60} seconds`);
   return parts.join(' ');
 }
 
@@ -67,6 +95,52 @@ const BREW_COLOR: Record<CurioBrew, number> = { heal: 0xc83030, mana: 0x4a6ad8, 
 const POTION_NOUN: Record<CurioBrew, string> = { heal: 'Tonic', mana: 'Philter', elixir: 'Elixir', haste: 'Quickdraught', might: 'Warbrew', stone: 'Stonewater' };
 const DRINK_NOUN: Record<'can' | 'bottle' | 'soda', string> = { can: 'Ale', bottle: 'Brew', soda: 'Cordial' };
 const SCROLL_WORD: Record<CurioBrew, string> = { heal: 'mending', mana: 'clarity', elixir: 'renewal', haste: 'swiftness', might: 'fury', stone: 'warding' };
+
+/**
+ * WHICH RITE A SEAL CARRIES (it.117): the colour of the art, then the key's
+ * hash inside the family. Every id here is a real `systems/SkillTree` skill.
+ */
+const RITES: Record<CurioBrew, readonly string[]> = {
+  heal: ['stoneskin', 'warcry'],
+  mana: ['intellect', 'frostnova', 'fireball'],
+  elixir: ['poison', 'vanish', 'flurry'],
+  haste: ['shadowstep', 'multishot', 'rain'],
+  might: ['whirlwind', 'charge', 'fireball', 'firewall'],
+  stone: ['stoneskin', 'trap', 'frostnova'],
+};
+
+/**
+ * A RITE'S TWO KNOBS (it.117), and which one a skill gets. A skill that LASTS
+ * - a buff, a burning wall, a rain, a planted trap - is bought for its
+ * LENGTH: the scroll doubles its numbers and holds it four times as long (a
+ * tome six). A skill that happens at once - a comet, a whirlwind, a charge,
+ * a volley - has no length to stretch, so the paper buys RAW FORCE instead:
+ * three and a half times the skill's own, or five from a tome. Both are
+ * priced by `consumableValue` off power x root(stretch), so the two kinds
+ * cost roughly the same for roughly the same worth.
+ */
+const LASTING = new Set(['warcry', 'stoneskin', 'intellect', 'shadowstep', 'poison', 'vanish', 'firewall', 'trap', 'rain']);
+export const RITE_SCROLL = { power: 2.2, stretch: 4 } as const;
+export const RITE_TOME = { power: 3, stretch: 6 } as const;
+export const RITE_SCROLL_BURST = { power: 3.5, stretch: 1 } as const;
+export const RITE_TOME_BURST = { power: 5, stretch: 1 } as const;
+
+/** What a scroll or a tome of this rite carries. */
+function riteOf(skill: string, tome: boolean): { skill: string; power: number; stretch: number } {
+  const k = LASTING.has(skill) ? (tome ? RITE_TOME : RITE_SCROLL) : tome ? RITE_TOME_BURST : RITE_SCROLL_BURST;
+  return { skill, power: k.power, stretch: k.stretch };
+}
+
+/**
+ * The rite's own words, for the card. The NUMBERS are not repeated here -
+ * `statLine` already prints "Casts <skill> at N% power - Mx as long" above
+ * this line, and saying it twice reads like a stutter (it.117).
+ */
+function riteWords(skill: string, stretch: number): string {
+  const def = SKILL_BY_ID[skill];
+  if (!def) return '';
+  return `works ${def.name} — ${def.hint.toLowerCase()} — ${stretch > 1 ? 'far past what a caster holds it' : 'far past what a caster can put behind it'}`;
+}
 
 /** A stable pick from a key (so a potion's rarity never moves between loads). */
 function hash(key: string): number {
@@ -78,8 +152,17 @@ function hash(key: string): number {
 /** THE TEN ALES keep their hand-written entries in the registry; the rest of the drinks are these. */
 const ALE_KEYS = new Set(['016_griffin', '017_dragon', '019_wolfsun', '021_starforge', '047_ambercrown', '048_knightshield', '050_bloodorange', '055_emeraldforest', '061_bronzerune', '063_druidwoodland']);
 
+/**
+ * A SWIG IS HALF A DRAUGHT (it.117). A common tin used to pour the SAME
+ * thirty percent of speed a 120-gold Draught of Haste pours, for six seconds
+ * against its eight, at sixteen gold - the cheapest power in the game. The
+ * brews stay, at half strength, and the price comes off the one curve
+ * (`consumableValue`), which is what makes the ladder monotone.
+ */
+const SWIG: Pick<Use, 'hasteMult' | 'mightMult' | 'stoneFrac'> = { hasteMult: 1.15, mightMult: 1.12, stoneFrac: 0.2 };
+
 export const CURIO_DRINKS: ItemDef[] = GEN_DRINKS.filter(([key]) => !ALE_KEYS.has(key)).map(([key, title, vessel, brew]) => {
-  const use = brewUse(brew, 0.12, 0.2, 6);
+  const use: Use = { ...brewUse(brew, 0.12, 0.2, 6), ...SWIG };
   return {
     id: `drink_${key}`,
     name: `${title} ${DRINK_NOUN[vessel]}`,
@@ -87,7 +170,7 @@ export const CURIO_DRINKS: ItemDef[] = GEN_DRINKS.filter(([key]) => !ALE_KEYS.ha
     rarity: 'common',
     sprite: `item_drink_${key}`,
     spin: `spin_drink_${key}`,
-    value: 16,
+    value: consumableValue(use, 'common', { brewWeight: 0.5 }),
     use,
     color: BREW_COLOR[brew],
     desc: `A ${vessel === 'can' ? 'tin of tavern ale' : vessel === 'soda' ? 'stoppered cordial' : 'bottle of house brew'} with the ${title} mark. A swig ${brewWords(use)}.`,
@@ -106,7 +189,9 @@ export const CURIO_POTIONS: ItemDef[] = GEN_POTIONS.map(([key, title, brew]) => 
     rarity,
     sprite: `item_potion_${key}`,
     spin: `spin_potion_${key}`,
-    value: rare ? 70 : 45,
+    // PRICED ON THE CURVE (it.117): a flask that heals three tenths no longer
+    // costs half again what the Healing Potion asks for half a life.
+    value: consumableValue(use, rarity),
     use,
     color: BREW_COLOR[brew],
     desc: `An alchemist's curio in a ${title.toLowerCase()} flask. It ${brewWords(use)}.`,
@@ -115,8 +200,12 @@ export const CURIO_POTIONS: ItemDef[] = GEN_POTIONS.map(([key, title, brew]) => 
 
 export const CURIO_SCROLLS: ItemDef[] = GEN_SCROLLS.map(([key, title, form, brew]) => {
   const tome = form === 'tome';
-  const k = tome ? 1.5 : 1;
-  const use = brewUse(brew, 0.25 * k, 0.35 * k, tome ? 12 : 8);
+  const family = RITES[brew];
+  const { skill, power, stretch } = riteOf(family[hash(`rite_${key}`) % family.length], tome);
+  // A RED OR A BLUE SEAL IS STILL A BANDAGE (it.117): the rite, and the draught it always poured.
+  const restore: Use = brew === 'heal' ? { heal: tome ? 0.38 : 0.25 } : brew === 'mana' ? { resource: tome ? 0.5 : 0.35 } : brew === 'elixir' ? { heal: tome ? 0.22 : 0.15, resource: tome ? 0.3 : 0.2 } : {};
+  const use: Use = { ...restore, cast: { skill, power, stretch } };
+  const restored = brewWords(restore);
   return {
     id: `scroll_${key}`,
     name: `${title} ${tome ? 'Tome' : 'Scroll'}`,
@@ -124,10 +213,12 @@ export const CURIO_SCROLLS: ItemDef[] = GEN_SCROLLS.map(([key, title, form, brew
     rarity: tome ? 'rare' : 'uncommon',
     sprite: `item_scroll_${key}`,
     spin: `spin_scroll_${key}`,
-    value: tome ? 110 : 60,
+    // THE PRICE OF PAPER (it.117): a rite is a class skill any class may read,
+    // at twice or thrice its force and four or six times its length, once.
+    value: consumableValue(use, tome ? 'rare' : 'uncommon'),
     use,
     color: BREW_COLOR[brew],
-    desc: `${tome ? 'A tome' : 'A scroll'} of ${SCROLL_WORD[brew]}, sealed with the ${title.toLowerCase()} device. Read it: it ${brewWords(use)}.`,
+    desc: `${tome ? 'A tome' : 'A scroll'} of ${SCROLL_WORD[brew]}, sealed with the ${title.toLowerCase()} device. Read it once: it ${riteWords(skill, stretch)}${restored ? `, and ${restored}` : ''}. Any hand may read it; it costs no mana.`,
   };
 });
 

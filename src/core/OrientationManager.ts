@@ -281,8 +281,9 @@ export class OrientationManager {
     // into the thumb cluster's top face on a 932x430 phone; four across, two
     // down, ends above it.
     const barForm: BarForm = padH > 0 ? 'grid2' : tier === 'micro' || h < 420 || (touch && orientation === 'landscape' && h < 480) ? 'grid4' : 'row';
-    // Eight entries since it.82 (the journal joined).
-    const barW = barForm === 'row' ? 8 * barSize + 7 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
+    // Ten entries since it.117 (the chart and the log joined — a thumb has
+    // neither an M nor a G, and those were the two panels it could not reach).
+    const barW = barForm === 'row' ? 10 * barSize + 9 * 6 : barForm === 'grid4' ? 4 * barSize + 3 * 6 : 2 * barSize + 6;
 
     // THE CHART (it.67): 4:3, per tier. A micro handset has no room for it.
     // 96 px on the browser-bars landscape (it.69): 112 reached into the fight's middle band.

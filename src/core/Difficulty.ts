@@ -126,8 +126,16 @@ export const DIFFICULTIES: Record<DifficultyId, DifficultySpec> = {
 
 export const DIFFICULTY_ORDER: DifficultyId[] = ['tourist', 'easy', 'medium', 'hard', 'hardcore'];
 
-/** Five seconds at 60 Hz: the spawn ward every mode grants a risen delver. */
-export const SPAWN_WARD_TICKS = 300;
+/**
+ * EIGHT seconds at 60 Hz: the spawn ward every mode grants a risen delver.
+ *
+ * It.89 gave five, which is about as long as it takes to read the death sheet,
+ * find the cursor and work out which way the fight is — a delver who rose near
+ * a pack was often hit before the ward had bought them a single decision.
+ * Raised to eight in it.117, alongside a rising point that is no longer allowed
+ * to be inside the pack at all (`risePoint` in main).
+ */
+export const SPAWN_WARD_TICKS = 480;
 
 /** The picker's remembered choice. */
 export const DIFFICULTY_KEY = 'iso-arpg-difficulty';

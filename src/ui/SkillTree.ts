@@ -19,7 +19,7 @@
  */
 
 import { eventBus } from '@/core/EventBus';
-import type { InputQueue } from '@/core/InputQueue';
+import { ACTION_SLOTS, type InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
 import { uiAssetUrl } from '@/render/SpriteLibrary';
@@ -37,6 +37,9 @@ import {
 } from '@/systems/SkillTree';
 import type { ClassArchetype } from '@/network/Serialization';
 import { keepScroll } from './keepScroll';
+import { actionItemBase } from '@/systems/Inventory';
+import { itemDef } from '@/items/instance';
+import { itemIconHtml } from './itemIcons';
 
 const CLASS_TITLE: Record<ClassArchetype, string> = { warrior: 'WARRIOR', mage: 'MAGE', ranger: 'RANGER', rogue: 'ROGUE' };
 
@@ -145,9 +148,10 @@ export class SkillTreeUI {
             const state = learned ? 'learned' : check?.ok ? 'ready' : 'locked';
             const badge = `${def.tier}/${tierCount}`;
             const tip = tooltip(state, badge, def.name, def.hint, cost, check?.reason, tierLevel(def.tier));
+            // EIGHT HOTKEYS (it.117): the node offers every one of them.
             const picker =
               learned
-                ? `<div class="st-slots">${[0, 1, 2, 3]
+                ? `<div class="st-slots">${Array.from({ length: ACTION_SLOTS }, (_, i) => i)
                     .map((i) => `<button class="st-slot${slot === i ? ' lit' : ''}" data-equip="${def.id}" data-slot="${i}" title="Set hotkey ${i + 1}">${i + 1}</button>`)
                     .join('')}</div>`
                 : '';
@@ -201,16 +205,22 @@ export class SkillTreeUI {
           </div>`;
       })
       .join('');
-    const bar = [0, 1, 2, 3]
+    const bar = Array.from({ length: ACTION_SLOTS }, (_, i) => i)
       .map((i) => {
         const id = p.loadout[i];
-        const def = id ? CLASS_SKILLS[own].concat(...CLASS_ORDER.map((c) => CLASS_SKILLS[c])).find((d) => d.id === id) : null;
-        const inner = def
-          ? def.icon
-            ? `<img src="${uiAssetUrl(`skills/${def.icon}.png`)}" alt="${def.name}">`
-            : `<span>${def.glyph}</span>`
-          : '<span class="st-empty">—</span>';
-        return `<button class="st-bar-slot${this.picking ? ' target' : ''}" data-barslot="${i}" title="${def ? def.name : 'empty'}"><kbd>${i + 1}</kbd>${inner}</button>`;
+        // A SLOT MAY HOLD AN ITEM (it.117): the tree shows what rides there and
+        // leaves it alone — consumables are filed from the inventory (I).
+        const base = actionItemBase(id);
+        const item = base ? itemDef(base) : undefined;
+        const def = id && !base ? CLASS_SKILLS[own].concat(...CLASS_ORDER.map((c) => CLASS_SKILLS[c])).find((d) => d.id === id) : null;
+        const inner = item
+          ? itemIconHtml(item)
+          : def
+            ? def.icon
+              ? `<img src="${uiAssetUrl(`skills/${def.icon}.png`)}" alt="${def.name}">`
+              : `<span>${def.glyph}</span>`
+            : '<span class="st-empty">—</span>';
+        return `<button class="st-bar-slot${this.picking ? ' target' : ''}${item ? ' st-bar-item' : ''}" data-barslot="${i}" title="${item ? `${item.name} — assigned in the inventory (I)` : def ? def.name : 'empty'}"><kbd>${i + 1}</kbd>${inner}</button>`;
       })
       .join('');
     this.panel.innerHTML = `
@@ -223,7 +233,7 @@ export class SkillTreeUI {
       </div>
       <div class="st-synergy">Your class path casts at <b>+${Math.round((SYNERGY.power - 1) * 100)}% power</b>, <b>${Math.round((1 - SYNERGY.cooldown) * 100)}% shorter cooldowns</b>, and every hit inflicts <b>${SYNERGY_STATUS[own]}</b>. Other paths cost two points a rank.</div>
       <div class="st-cols">${cols}</div>
-      <div class="st-bar">${bar}<span class="st-bar-note">${this.picking ? 'Choose a hotkey for the selected skill' : 'Learned skills go on the hotbar: pick 1 · 2 · 3 · 4 on the node, or click a learned skill then a slot'}</span></div>`;
+      <div class="st-bar">${bar}<span class="st-bar-note">${this.picking ? 'Choose a hotkey for the selected skill' : 'Learned skills go on the hotbar: pick a key on the node, or click a learned skill then a slot'}</span></div>`;
 
     const closeBtn = this.panel.querySelector<HTMLElement>('[data-close]');
     closeBtn?.addEventListener('mouseenter', () => audio.sfx('uiHover'));

@@ -15,7 +15,8 @@
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type Room } from '@/scenes/DungeonGenerator';
 import { assets } from '@/core/AssetManager';
-import { claimProp, KIND_COBBLE, KIND_DIRT, KIND_GRASS, sweepRoads, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { claimProp, claims, footprintOf, KIND_COBBLE, KIND_DIRT, KIND_GRASS, sweepRoads, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { scatterChests } from '@/systems/Chests';
 import { mulberry32 } from '@/utils/rng';
 
 export const FOREST_W = 56;
@@ -453,7 +454,35 @@ export function buildForestLayout(seed: number, safe = false): ForestLayout {
   const layout = bareLayout(map, props, 'THE DARK FOREST');
   // LOOTABLE CHESTS (it.92): one in three of the clearings, off the road.
   layout.chests = [];
-  for (const c of [{ x: 12, y: 15 }, { x: 28, y: 26 }, { x: 43, y: 21 }]) {
+  const chestSpots: Array<{ x: number; y: number }> = [{ x: 12, y: 15 }, { x: 28, y: 26 }, { x: 43, y: 21 }];
+  /**
+   * AND OFF THE ROAD (it.117). Three chests on a floor the hero walks the whole
+   * length of is three chests on the way through; a wood is the one place a
+   * player expects to be rewarded for leaving the path. `scatterChests` reads
+   * the finished grid for open ground with the timber on two or three sides and
+   * nothing standing in front of it - a hollow among the trunks, seen from the
+   * road, reached by stepping off it. Seeded off the floor's seed.
+   */
+  {
+    const standing = new Uint8Array(W * H);
+    for (const q of props) {
+      if (!claims(q)) continue;
+      const f = footprintOf(q);
+      for (let yy = q.y; yy < q.y + f.h; yy++) for (let xx = q.x; xx < q.x + f.w; xx++) if (inside(xx, yy)) standing[idx(xx, yy)] = 1;
+    }
+    const walk = (x: number, y: number): boolean => inside(x, y) && grid[idx(x, y)] === TILE_FLOOR && !standing[idx(x, y)];
+    for (const c of scatterChests({
+      width: W,
+      height: H,
+      free: (x, y) => walk(x, y) && !way[idx(x, y)],
+      open: walk,
+      avoid: [...chestSpots, entry, townRoad, quarry],
+      count: 6,
+      apart: 8,
+      seed,
+    })) chestSpots.push(c);
+  }
+  for (const c of chestSpots) {
     if (grid[idx(c.x, c.y)] !== TILE_FLOOR) continue; // A clearing counts as road here; the spots are its edges, off the way through.
     grid[idx(c.x, c.y)] = TILE_BLOCKED;
     layout.chests.push(c);

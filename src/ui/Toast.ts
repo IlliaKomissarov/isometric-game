@@ -31,14 +31,23 @@ export interface ToastSpec {
   key?: string;
 }
 
-const MAX_STACK = 4;
-const MIN_MS = 5000;
-const MAX_MS = 14000;
+/**
+ * COMPACT, AND SKIPPABLE (it.117). The it.114 notice was a 520 px slab that
+ * stacked four deep, held for up to fourteen seconds and could only be got
+ * rid of by hitting it — which on a 412 px phone meant a quest turning over
+ * took most of the lower screen and stayed there through the next fight. It
+ * is now a 380 px strip, three deep, five and a half seconds at the outside,
+ * with a visible cross; ESCAPE clears the whole stack at once, and a tap
+ * anywhere on a notice clears that one.
+ */
+const MAX_STACK = 3;
+const MIN_MS = 2600;
+const MAX_MS = 5500;
 
-/** How long a line needs on screen: a slow reader at ~180 words a minute, plus a beat to notice it. */
+/** How long a line needs on screen: a quick reader, plus a beat to notice it. */
 export function readTime(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(MIN_MS, Math.min(MAX_MS, 1800 + words * 340));
+  return Math.max(MIN_MS, Math.min(MAX_MS, 1400 + words * 190));
 }
 
 const GLYPH: Record<ToastKind, string> = {
@@ -62,7 +71,7 @@ const CSS = `
   gap: 8px;
   z-index: 58;
   pointer-events: none;
-  width: min(520px, calc(100vw - 32px));
+  width: min(380px, calc(100vw - 32px));
 }
 body.input-touch #toast-stack { bottom: calc(150px + var(--hud-inset, 0px)); }
 body.cine #toast-stack, body:not(.in-run) #toast-stack { display: none; }
@@ -70,11 +79,11 @@ body.cine #toast-stack, body:not(.in-run) #toast-stack { display: none; }
   pointer-events: auto;
   cursor: pointer;
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 26px 1fr 14px;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 9px 16px 9px 12px;
+  padding: 6px 10px 6px 8px;
   color: #efe6d2;
   background: linear-gradient(180deg, rgba(24, 19, 30, 0.96), rgba(10, 8, 13, 0.96));
   border: 1px solid #5a4a30;
@@ -103,31 +112,46 @@ body.cine #toast-stack, body:not(.in-run) #toast-stack { display: none; }
 .toast-glyph {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 1px solid rgba(200, 165, 88, 0.45);
   background: radial-gradient(circle at 50% 35%, rgba(200, 165, 88, 0.22), rgba(0, 0, 0, 0.2) 70%);
   color: #ffd070;
-  font-size: 16px;
+  font-size: 13px;
   overflow: hidden;
 }
-.toast-glyph img { width: 26px; height: 26px; object-fit: contain; image-rendering: pixelated; }
+.toast-glyph img { width: 20px; height: 20px; object-fit: contain; image-rendering: pixelated; }
 .toast-title {
   font-family: 'Cinzel', serif;
-  font-size: 12.5px;
-  letter-spacing: 0.16em;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: #ffd070;
   text-shadow: 0 1px 2px #000, 0 0 10px rgba(200, 165, 88, 0.25);
 }
 .toast-sub {
   font-family: 'Crimson Pro', Georgia, serif;
-  font-size: 14px;
-  line-height: 1.25;
+  font-size: 12.5px;
+  line-height: 1.2;
   color: #d9cfbb;
-  margin-top: 2px;
+  margin-top: 1px;
+  /* Two lines at the outside: a notice is a headline, not a page (it.117). */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
+/* THE CROSS (it.117): the notice always SHOWS that it can be got rid of. */
+.toast-x {
+  align-self: start;
+  font-family: 'Cinzel', serif;
+  font-size: 11px;
+  line-height: 1;
+  color: #6f6450;
+  text-align: right;
+}
+.toast:hover .toast-x { color: #ffd070; }
 .toast-bar {
   position: absolute;
   left: 10px;
@@ -153,9 +177,14 @@ body.cine #toast-stack, body:not(.in-run) #toast-stack { display: none; }
 .toast.k-warn::before, .toast.k-warn::after { background: #c8443a; box-shadow: 0 0 8px rgba(200, 68, 58, 0.6); }
 .toast.k-lore { border-color: #5a4a6a; }
 .toast.k-lore .toast-title { color: #d8c8f0; }
-body.tier-micro .toast, body.tier-compact .toast { padding: 7px 12px 7px 9px; grid-template-columns: 28px 1fr; }
-body.tier-micro .toast-title, body.tier-compact .toast-title { font-size: 11px; }
-body.tier-micro .toast-sub, body.tier-compact .toast-sub { font-size: 12.5px; }
+body.tier-micro .toast, body.tier-compact .toast { padding: 5px 8px 5px 6px; grid-template-columns: 22px 1fr 12px; gap: 6px; }
+body.tier-micro .toast-title, body.tier-compact .toast-title { font-size: 9.5px; letter-spacing: 0.1em; }
+body.tier-micro .toast-sub, body.tier-compact .toast-sub { font-size: 11.5px; -webkit-line-clamp: 2; }
+body.tier-micro .toast-glyph, body.tier-compact .toast-glyph { width: 22px; height: 22px; font-size: 11px; }
+body.tier-micro #toast-stack, body.tier-compact #toast-stack { width: min(300px, calc(100vw - 24px)); gap: 5px; }
+/* THE WORD AND THE LESSON COME FIRST (it.115/it.117): a notice is held while
+   either is up, and hidden outright if one opens while it is on screen. */
+body.dialogue-open #toast-stack, body.tutorial-on #toast-stack { opacity: 0; pointer-events: none; }
 `;
 
 /**
@@ -199,6 +228,21 @@ export class ToastUI {
     window.setTimeout(() => this.flush(), 80);
   };
   private readonly poll: number;
+  /**
+   * ESCAPE CLEARS THE STACK (it.117). Capture phase, so it beats the pause
+   * sheet's own ESCAPE — but only when there is something to clear, and only
+   * after `ui/panelShell` has had its turn (a window on screen owns the key).
+   * A notice that cannot be skipped is not a notice, it is an obstacle.
+   */
+  private readonly onKey = (e: KeyboardEvent): void => {
+    // The system bar opens the pause sheet by DISPATCHING an Escape; that one
+    // is synthetic and must reach the sheet, not stop here at the notices.
+    if (e.code !== 'Escape' || e.repeat || !e.isTrusted) return;
+    if (!this.live.size && !this.held.length) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    this.clear();
+  };
 
   constructor() {
     if (!document.getElementById('toast-css')) {
@@ -211,6 +255,7 @@ export class ToastUI {
     this.root.id = 'toast-stack';
     document.body.appendChild(this.root);
     document.addEventListener(DIALOGUE_CLOSED_EVENT, this.onClosed);
+    window.addEventListener('keydown', this.onKey, { capture: true });
     this.poll = window.setInterval(() => this.flush(), FLUSH_POLL_MS);
   }
 
@@ -253,6 +298,7 @@ export class ToastUI {
     el.innerHTML =
       `<div class="toast-glyph">${icon}</div>` +
       `<div><div class="toast-title">${escapeHtml(spec.title)}</div>${spec.sub ? `<div class="toast-sub">${escapeHtml(spec.sub)}</div>` : ''}</div>` +
+      `<div class="toast-x" aria-hidden="true">&#10005;</div>` +
       `<i class="toast-bar" style="animation-duration:${ms}ms"></i>`;
     el.addEventListener('click', () => this.dismiss(el));
     this.root.appendChild(el);
@@ -280,6 +326,7 @@ export class ToastUI {
 
   destroy(): void {
     document.removeEventListener(DIALOGUE_CLOSED_EVENT, this.onClosed);
+    window.removeEventListener('keydown', this.onKey, { capture: true } as EventListenerOptions);
     window.clearInterval(this.poll);
     this.held.length = 0;
     for (const t of this.live.values()) window.clearTimeout(t);

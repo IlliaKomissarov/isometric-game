@@ -267,7 +267,7 @@ export class CodexUI {
     const affixes = AFFIX_KEYS.map((k) => {
       const a = AFFIXES[k];
       const vals = a.values.map((v) => (a.fmt === 'pct' ? pct(v) : a.fmt === 'pctps' ? `${(v * 100).toFixed(1)}%/s` : String(v))).join(' · ');
-      return `<tr><td><b>${a.name}</b> <i>(${a.kind})</i></td><td>${a.line.replace('{v}', '<em>v</em>')}</td><td>${vals}${a.flat ? ' <i>× the level’s power</i>' : ''}</td></tr>`;
+      return `<tr><td><b>${a.name}</b> <i>(${a.kind})</i></td><td>${a.line.replace('{v}', '<em>v</em>')}</td><td>${vals}${a.flat ? ' <i>× the level\'s power</i>' : ''}</td></tr>`;
     }).join('');
     const l40 = Math.pow(1.08, 39).toFixed(1);
     return `

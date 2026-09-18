@@ -200,7 +200,58 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       document.body.appendChild(cell);
       const img = cell.querySelector('img');
       check('an item cell turns (inv-spin animates)', !!img && getComputedStyle(img).animationName === 'inv-spin', img ? getComputedStyle(img).animationName : 'no img');
+      // A TURNING CELL NEVER TILES OR SPLITS (it.117). The shop row sets the
+      // `background` SHORTHAND for its vignette, which used to reset
+      // `background-repeat` and `background-position` on the spin cell: the
+      // one-row strip tiled down the box and the item came apart, top at the
+      // bottom. Every background longhand is inline now; this proves it in the
+      // very panel that broke, at the size that panel uses.
+      const row = document.createElement('div');
+      row.className = 'town-panel';
+      row.innerHTML = `<div class="tp-row">${itemIconHtml(ITEMS.health_potion)}</div>`;
+      document.body.appendChild(row);
+      const shopImg = row.querySelector('img')!;
+      const cs = getComputedStyle(shopImg);
+      const box = shopImg.getBoundingClientRect();
+      check('a shop-row cell does not tile (no repeat, border-box origin)', cs.backgroundRepeat === 'no-repeat' && cs.backgroundOrigin === 'border-box' && cs.backgroundClip === 'border-box', `${cs.backgroundRepeat} / ${cs.backgroundOrigin} / ${cs.backgroundClip}`);
+      check('a shop-row cell is square, so the turntable is not skewed', Math.abs(box.width - box.height) < 0.6, `${box.width.toFixed(1)}x${box.height.toFixed(1)}`);
+      row.remove();
       cell.remove();
+    }
+    {
+      /**
+       * NOTHING IN THE TABLES IS INERT (it.117). The owner's complaint was
+       * that scrolls "are supposed to do something but in fact do nothing".
+       * Every item the game can hand a player must now EQUIP, HEAL, RESTORE,
+       * BUFF, CAST A RITE, FEED, SMELT, TEACH, OPEN A GATE or OPEN A RIFT -
+       * or be a declared crafting MATERIAL. Anything else is dead weight and
+       * fails here by name.
+       */
+      const { ITEMS: ALL } = await import('@/items/catalog');
+      const { SKILL_BY_ID } = await import('@/systems/SkillTree');
+      const EQUIPPABLE = new Set(['mainHand', 'offHand', 'head', 'torso', 'legs', 'cloak', 'ring']);
+      const inert: string[] = [];
+      for (const d of Object.values(ALL)) {
+        if (EQUIPPABLE.has(d.slot)) {
+          // A worn piece must actually change a number.
+          if ((d.minDamage ?? 0) > 0 || (d.armor ?? 0) > 0 || d.bonus || d.innate || d.uniqueOnly) continue;
+          inert.push(d.id);
+          continue;
+        }
+        if (d.slot === 'material') continue; // Declared crafting stock.
+        const u = d.use;
+        if (!u) {
+          inert.push(d.id);
+          continue;
+        }
+        const does = !!(u.heal || u.resource || u.haste || u.might || u.stone || u.portal || u.recipe || u.key || u.food || u.smelt || u.cast);
+        if (!does) inert.push(d.id);
+      }
+      check('nothing in the item tables is inert', inert.length === 0, `${inert.length}: ${inert.slice(0, 10).join()}`);
+      // Every rite names a real skill, and a tome is stronger and longer than a scroll.
+      const rites = Object.values(ALL).filter((d) => d.use?.cast);
+      const badRite = rites.filter((d) => !SKILL_BY_ID[d.use!.cast!.skill]).map((d) => d.id);
+      check('every scroll and tome casts a real skill, far above the skill own numbers', rites.length >= 100 && badRite.length === 0 && rites.every((d) => d.use!.cast!.stretch >= 4 ? d.use!.cast!.power >= 2 : d.use!.cast!.power >= 3), `${rites.length} rites, bad: ${badRite.slice(0, 5).join()}`);
     }
     /**
      * THE ARRIVAL (it.114). A fresh hero now starts at the training ground and
@@ -214,9 +265,10 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       const gg = game();
       const yard = gg.town?.layout?.training?.mark;
       check('a fresh hero stands at the training ground', !!yard && Math.hypot(gg.player.pos.x - (yard.x + 0.5), gg.player.pos.y - (yard.y + 1.5)) < 3, `hero ${gg.player.pos.x.toFixed(1)},${gg.player.pos.y.toFixed(1)} yard ${yard?.x},${yard?.y}`);
-      const turned = readScene();
-      check('the arrival plays and the sentry speaks twice', turned >= 2, `${turned} lines turned`);
-      check('the arrival ends and the town is the hero own again', !game().reclaim);
+      // IT.117: arriving is quiet - a word over her head and a notice, never a
+      // cutscene that takes the camera and waits for a page turn.
+      check('arriving in town opens no cutscene', !game().reclaim && !document.querySelector('#dialogue-panel.open'));
+      check('the yard is offered without taking the screen', !document.body.classList.contains('cine'));
     }
     /**
      * THE FOG OF WAR IS BACK (it.109). it.107 defaulted `omniscient` on and took
@@ -1539,12 +1591,13 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       await wait(450);
       (document.querySelector('#death-menu [data-act=respawn]') as HTMLElement | null)?.click();
       g.loop.step(2);
-      check('rising grants a five-second ward', p.wardTicks > 280 && p.wardTicks <= 300 && p.hp === p.hpMax, `${p.wardTicks}`);
+      // IT.117: the ward is eight seconds now (480 ticks), not five.
+      check('rising grants the spawn ward', p.wardTicks > 440 && p.wardTicks <= 480 && p.hp === p.hpMax, `${p.wardTicks}`);
       const warded = blowOnHero(foes[2].id, 50);
       check('a blow breaks on the ward', warded === 0 && p.hp === p.hpMax, `${warded}`);
       check('the ward is on the buff bar', p.activeBuffs().some((b: { id: string }) => b.id === 'ward'));
-      g.loop.step(301);
-      check('the ward fades after five seconds', p.wardTicks === 0, `${p.wardTicks}`);
+      g.loop.step(481);
+      check('the ward fades when its eight seconds are up', p.wardTicks === 0, `${p.wardTicks}`);
       const after = blowOnHero(foes[2].id, 50);
       check('a blow lands once the ward has faded', after > 0, `${after}`);
       p.hp = p.hpMax;
@@ -1553,7 +1606,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
       g.codexUI.open('combat');
       await wait(40);
       const cx = document.getElementById('codex')?.textContent ?? '';
-      check('the journal prints the dark\'s measure', /TOURIST/.test(cx) && /HARDCORE/.test(cx) && /5 seconds/.test(cx));
+      check('the journal prints the dark\'s measure', /TOURIST/.test(cx) && /HARDCORE/.test(cx) && /8 seconds/.test(cx));
       key('KeyH');
       await wait(40);
       g.quests.forest = questBefore;
@@ -1758,6 +1811,7 @@ export async function runQa(opts: { seed?: number; cls?: Cls; deep?: boolean } =
         warp(east.door.x, east.door.y + 1);
         g.queue.enqueue({ type: 'PICKUP_NEAREST', playerId: 0 });
         g.loop.step(3);
+        driveRender(400); // The banner is written on a RENDER frame (it.117): drive one before reading it.
         check('the inn\'s door is barred while the looters hold the quarter', g.floor === 0 && /barred/i.test(document.getElementById('hint-banner')?.textContent ?? ''), document.getElementById('hint-banner')?.textContent ?? '');
       }
       check('four gateways stand shut past the ruins', g.town.layout.gateways.filter((w: { x: number }) => w.x >= 60).length === 4 && g.town.layout.gateways.filter((w: { x: number; y: number }) => w.x >= 60).every((w: { x: number; y: number }) => !g.scene.isWalkable(w.x, w.y)));

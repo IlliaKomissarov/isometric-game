@@ -47,6 +47,7 @@
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL } from '@/scenes/DungeonGenerator';
 import { claimProp, claims, footprintOf, KIND_FIELD_CHURN, KIND_FIELD_GORE, KIND_FIELD_GRASS, KIND_FIELD_MUD, KIND_FIELD_ROAD, type FieldLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { scatterChests } from '@/systems/Chests';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout } from './Forest';
 
@@ -680,6 +681,33 @@ export function buildFieldLayout(seed: number): { layout: TownLayout; field: Fie
     { x: 49, y: 20 }, { x: 58, y: 31 }, { x: 25, y: 45 }, { x: 44, y: 46 },
     { x: 61, y: 21 }, { x: 15, y: 29 },
   ];
+  /**
+   * AND THE CORNERS OF IT (it.117). The ten above are the field itself - the
+   * ground the fighting crossed. These are what is left in the lee of things:
+   * behind a fallen ballista, inside the elbow of a barricade, in the gap
+   * between the manor wall and the wood. `scatterChests` takes tiles with two
+   * or three blocked sides and nothing standing in front of them, so a chest is
+   * tucked away and still on screen. Seeded off the floor's seed.
+   */
+  {
+    const standing = new Uint8Array(W * H);
+    for (const p of props) {
+      if (!claims(p)) continue;
+      const f = footprintOf(p);
+      for (let yy = p.y; yy < p.y + f.h; yy++) for (let xx = p.x; xx < p.x + f.w; xx++) if (inside(xx, yy)) standing[idx(xx, yy)] = 1;
+    }
+    const walk = (x: number, y: number): boolean => isFloor(x, y) && !standing[idx(x, y)];
+    for (const c of scatterChests({
+      width: W,
+      height: H,
+      free: (x, y) => walk(x, y) && !onRoad[idx(x, y)],
+      open: walk,
+      avoid: [...chestSpots, ENTRY, HOME],
+      count: 6,
+      apart: 9,
+      seed,
+    })) chestSpots.push(c);
+  }
 
   // ---- nothing may be walled into a pocket -------------------------------
   {

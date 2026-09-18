@@ -1170,9 +1170,57 @@ export class AudioManager {
    *
    * It rides the AMBIENCE bus, so the player's ambience slider and the modal
    * duck both own it for free.
+   *
+   * IT.117 — "WAY TOO LOUD; IT'S ANNOYING". Three things were wrong with it, and
+   * all three are the same mistake: a bed was written as if it were a sound
+   * effect.
+   *
+   *   1. LEVEL. The mix gain was 0.5, which measured (analyser on the node, in
+   *      the running game) at 0.038 RMS against 0.048 for the whole music bus -
+   *      i.e. the river was within a couple of dB of the score, for ever, with
+   *      no dynamics at all. A bed sits UNDER the score. `RIVER_MIX` is 0.17.
+   *   2. BRIGHTNESS. Half the loudness of broadband noise is in the 2-5 kHz
+   *      band the ear is most sensitive to, and the upper layer sat at 1.75 kHz
+   *      with nothing above it rolled off - so the river read as hiss. The
+   *      upper layer is quieter and the whole bed now goes through one lowpass,
+   *      which turns hiss into rush.
+   *   3. THE LOOP. `noiseBuffer` is half a second long, so looping it put a
+   *      2 Hz chuff under everything. Water has no period; the river gets its
+   *      own four-second buffer, and the two layers read it at different rates
+   *      so even that never lands on itself.
+   *
+   * AND IT HAS A DISTANCE (it.117). `setRiverNearness` is driven from the render
+   * loop with how close the hero is to the water: at the jetty it is a river, in
+   * the north field it is a rumour. One `setTargetAtTime` every few frames.
    */
   private riverNodes: AudioNode[] = [];
   private riverGain: GainNode | null = null;
+  /** The river's own long noise loop - built once, only if a river is ever heard. */
+  private riverNoise: AudioBuffer | null = null;
+  /** 0..1 from the render loop: how close the hero stands to the water. */
+  private riverNear = 1;
+  /** The mix the river sits at when the hero is ON the bank. */
+  private static readonly RIVER_MIX = 0.17;
+
+  /**
+   * How loud the river should be right now, given how near the water the hero is
+   * and whether a modal owns the screen. Called every few frames; a no-op unless
+   * the target actually moved, so it costs a compare on most of them.
+   */
+  setRiverNearness(near: number): void {
+    const k = Math.max(0, Math.min(1, near));
+    if (Math.abs(k - this.riverNear) < 0.02) return;
+    this.riverNear = k;
+    this.applyRiverLevel();
+  }
+
+  private applyRiverLevel(): void {
+    const g = this.riverGain;
+    if (!g || !this.ctx) return;
+    // A floor of 0.18 so the water is never truly gone on a floor named for it.
+    const target = AudioManager.RIVER_MIX * (0.18 + 0.82 * this.riverNear) * (this.ducked ? 0.25 : 1);
+    g.gain.setTargetAtTime(target, this.ctx.currentTime, 0.5);
+  }
 
   setRiver(on: boolean): void {
     if (on && this.riverGain) return;
@@ -1202,21 +1250,39 @@ export class AudioManager {
       }
       return;
     }
-    if (!this.ctx || !this.noiseBuffer) return;
+    if (!this.ctx) return;
     try {
       const ctx = this.ctx;
+      // FOUR SECONDS OF NOISE (it.117), built the first time a river is heard and
+      // kept: half a second of it, looped, is a 2 Hz chuff the ear locks onto.
+      if (!this.riverNoise) {
+        const len = Math.floor(ctx.sampleRate * 4);
+        this.riverNoise = ctx.createBuffer(1, len, ctx.sampleRate);
+        const d = this.riverNoise.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      }
       const out = ctx.createGain();
       out.gain.value = 0;
+      // ONE LOWPASS OVER THE WHOLE BED (it.117): moving water heard across a
+      // meadow has no top end. This is the difference between rush and hiss.
+      const roof = ctx.createBiquadFilter();
+      roof.type = 'lowpass';
+      roof.frequency.value = 2100;
+      roof.Q.value = 0.5;
+      roof.connect(out);
       out.connect(this.ambGain);
-      const nodes: AudioNode[] = [];
+      const nodes: AudioNode[] = [roof];
       // Two layers: the body of the current, and the break over the shingle.
-      for (const [freq, q, gain, lfoHz, sweep] of [
-        [420, 0.7, 0.5, 0.07, 140],
-        [1750, 0.9, 0.22, 0.11, 520],
+      // `rate` reads the same buffer at different speeds, so the two layers
+      // never repeat together.
+      for (const [freq, q, gain, lfoHz, sweep, rate] of [
+        [420, 0.7, 0.5, 0.07, 140, 1],
+        [1500, 0.9, 0.12, 0.11, 380, 0.83],
       ] as const) {
         const src = ctx.createBufferSource();
-        src.buffer = this.noiseBuffer;
+        src.buffer = this.riverNoise;
         src.loop = true;
+        src.playbackRate.value = rate;
         const band = ctx.createBiquadFilter();
         band.type = 'bandpass';
         band.frequency.value = freq;
@@ -1229,14 +1295,16 @@ export class AudioManager {
         const lfoAmt = ctx.createGain();
         lfoAmt.gain.value = sweep;
         lfo.connect(lfoAmt).connect(band.frequency);
-        src.connect(band).connect(lvl).connect(out);
+        src.connect(band).connect(lvl).connect(roof);
         src.start();
         lfo.start();
         nodes.push(src, lfo, band, lvl, lfoAmt);
       }
-      out.gain.setTargetAtTime(0.5, ctx.currentTime, 1.2); // fade the river up
       this.riverGain = out;
       this.riverNodes = nodes;
+      this.riverNear = 1;
+      // Fade the river up to wherever the hero is standing.
+      out.gain.setTargetAtTime(AudioManager.RIVER_MIX * (this.ducked ? 0.25 : 1), ctx.currentTime, 1.2);
     } catch (err) {
       console.warn('[audio] river bed unavailable', err);
     }
@@ -1247,6 +1315,7 @@ export class AudioManager {
     if (this.ducked === on) return;
     this.ducked = on;
     this.applyMusic();
+    this.applyRiverLevel(); // it.117: the river is a bed too, and ducks with the rest.
   }
 
   private applyMusic(): void {
@@ -1269,8 +1338,20 @@ export class AudioManager {
     const duckMul = this.ducked ? 0.25 : 1;
     const targets: Record<Exclude<MusicState, 'none'>, number> = { menu: 0, town: 0, dungeon: 0, boss: 0, victory: 0, forest: 0, mines: 0, death: 0, gameover: 0, battle: 0 };
     if (this.musicState !== 'none') targets[this.musicState] = duckMul;
-    // ONE BED UNDER EACH ZONE (it.89): the dungeon recording under the crypt, the cave under the quarry, silence under the forest.
-    const ambTarget = (this.musicState === 'dungeon' ? 0.55 : this.musicState === 'mines' ? 0.5 : this.musicState === 'boss' ? 0.16 : this.musicState === 'battle' ? 0.14 : this.musicState === 'death' ? 0.2 : 0) * duckMul;
+    /**
+     * ONE BED UNDER EACH ZONE (it.89): the dungeon recording under the crypt,
+     * the cave under the quarry, silence under the forest and the town.
+     *
+     * IT.117 TOOK 2 dB OFF THE CRYPT. Measured on the running game with an
+     * analyser on each bus: the crypt's bed sat at 0.029 RMS against 0.038 for
+     * the whole score - two decibels under the music, for ever, with none of the
+     * music's dynamics. That is the same mistake the river was making, one step
+     * quieter. 0.42 puts it about four and a half decibels down, which is still
+     * plainly there under a quiet passage and no longer arm-wrestling the drums.
+     * The others were measured and left alone: the quarry's cave is already 17 dB
+     * under its music and the field's thin bed 11 dB under its drums.
+     */
+    const ambTarget = (this.musicState === 'dungeon' ? 0.42 : this.musicState === 'mines' ? 0.5 : this.musicState === 'boss' ? 0.16 : this.musicState === 'battle' ? 0.14 : this.musicState === 'death' ? 0.2 : 0) * duckMul;
     if (this.ambEl && ambTarget > 0) {
       const bed = encodeURI(this.musicState === 'mines' ? AMBIENT_BED : DUNGEON_BED); // the field's thin bed is the dungeon recording, well under the drums
       if (!this.ambEl.src.endsWith(bed.split('/').pop() ?? '')) {

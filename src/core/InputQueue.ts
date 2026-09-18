@@ -15,6 +15,15 @@
 
 import type { EquipmentSlot } from '@/network/Serialization';
 
+/**
+ * THE ACTION BAR (it.117): eight slots on keys 1–8, up from the four of
+ * it.32. A slot holds a learned SKILL (cast by `systems/Skills`) or a
+ * CONSUMABLE (`item:<base>`, used by `systems/Inventory`) — both ride the
+ * same `SKILL` command, and each system ignores the other's slots. The two
+ * belt keys Q and R sit beside them and are their own command.
+ */
+export const ACTION_SLOTS = 8;
+
 /** All player intents. Must stay JSON-serializable for network transport. */
 /** THE COUNTERS (it.48, it.84): the old quarter's two and the Market Ward's three. */
 export type Vendor = 'armorer' | 'alchemist' | 'jeweler' | 'scribe' | 'bowyer' | 'tavern';
@@ -34,8 +43,10 @@ export type InputCommand =
   | { type: 'OPEN_CHEST'; playerId: number; chestId: number }
   | { type: 'EQUIP'; playerId: number; backpackIndex: number }
   | { type: 'UNEQUIP'; playerId: number; slot: EquipmentSlot }
-  /** Active skill hotkeys 1–4 (it.32): cast the class skill in `slot`. */
+  /** Action hotkeys 1–8 (it.32, eight of them it.117): cast the skill — or use the item — in `slot`. */
   | { type: 'SKILL'; playerId: number; slot: number }
+  /** THE QUICK SLOTS (it.117): park a consumable base on action slot `slot`, or clear it. */
+  | { type: 'SET_ACTION'; playerId: number; slot: number; item: string | null }
   | { type: 'UNLOCK_SKILL'; playerId: number; id: string }
   | { type: 'UNLOCK_PASSIVE'; playerId: number; id: string }
   | { type: 'EQUIP_SKILL'; playerId: number; slot: number; id: string | null }

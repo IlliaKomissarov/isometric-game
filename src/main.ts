@@ -22,7 +22,7 @@ import { MAP_H, MAP_W, MAX_DEPTH, PALETTE, TILE_W } from '@/core/config';
 import { eventBus, type GameEvents } from '@/core/EventBus';
 import { GameLoop } from '@/core/GameLoop';
 import { InputBindings } from '@/core/InputBindings';
-import { InputQueue, type InputCommand } from '@/core/InputQueue';
+import { ACTION_SLOTS, InputQueue, type InputCommand } from '@/core/InputQueue';
 import { state } from '@/core/StateManager';
 import { Ambience } from '@/engine/Ambience';
 import { Camera } from '@/engine/Camera';
@@ -37,7 +37,7 @@ import { CLASS_SKILLS, skillCost } from '@/systems/SkillTree';
 import { LeaderboardUI } from '@/ui/LeaderboardPanel';
 import { StatsManager } from '@/systems/StatsManager';
 import { dressColiseum, generateColiseumMap, type ColiseumMap } from '@/scenes/Coliseum';
-import { AFFIXES, FROST_AURA_RADIUS, levelHpScale, LOOTER_KINDS } from '@/entities/Enemy';
+import { AFFIXES, BOSS_HEIGHT, FROST_AURA_RADIUS, levelHpScale, LOOTER_KINDS, MOB_HEIGHT } from '@/entities/Enemy';
 import type { ClassArchetype } from '@/network/Serialization';
 import type { GoldPile } from '@/scenes/Props';
 import { placeProps, placeStairs, placeWaystone } from '@/scenes/Props';
@@ -64,7 +64,7 @@ import { ITEMS, overlayTextureFor, statLine, type ItemDef } from '@/items/catalo
 import { ilvlForDepth, itemDef, powerScale, rollGear } from '@/items/instance';
 import { CraftingEngine } from '@/systems/Crafting';
 import { StatusSystem } from '@/systems/Status';
-import { QUAFF_COOLDOWN, quaffCategory } from '@/systems/Inventory';
+import { QUAFF_COOLDOWN, actionItemBase, quaffCategory } from '@/systems/Inventory';
 import { decodeItemId } from '@/items/instance';
 import { CampCraftingUI } from '@/ui/CampCrafting';
 import { CodexUI } from '@/ui/Codex';
@@ -87,7 +87,7 @@ import { GateFx, ProcessionScene, type SpeechBeat } from '@/town/Reclaim';
 import { buildInnLayout } from '@/scenes/Inn';
 import { buildCellarLayout } from '@/scenes/Cellar';
 import { buildFarmLayout } from '@/scenes/Farmlands';
-import { buildRiversideLayout } from '@/scenes/Riverside';
+import { buildRiversideLayout, riverNearnessAt } from '@/scenes/Riverside';
 // ACROSS THE RIVER (it.110): the battlefield, the manor's hall, and its cellar.
 import { buildFieldLayout } from '@/scenes/Battlefield';
 import { buildManorLayout, buildVaultLayout } from '@/scenes/Manor';
@@ -98,7 +98,7 @@ import { MINES_H, MINES_W, planMines, type MineDoor, type MineKey } from '@/scen
 import { CrtFilter } from '@/render/CrtFilter';
 import { asDifficultyId, DIFFICULTIES, DIFFICULTY_KEY, DIFFICULTY_ORDER, difficulty, readPreferredDifficulty, SPAWN_WARD_TICKS, type DifficultyId } from '@/core/Difficulty';
 import { DialogueUI } from '@/ui/Dialogue';
-import { shouldAutoStart, TutorialSystem, type PanelKind } from '@/tutorial/TutorialSystem';
+import { shouldAutoStart, TutorialSystem, type Lesson, type PanelKind } from '@/tutorial/TutorialSystem';
 import { unthrottledTimeout } from '@/core/workerTimer';
 import type { TownMap } from '@/town/TownMap';
 import { NoticeBoardUI } from '@/ui/NoticeBoard';
@@ -117,6 +117,10 @@ import { PARTY_COLORS, PARTY_COLOR_CSS, PARTY_MAX, type LinkState, type MemberIn
 import { CATCH_UP_STEPS, Lockstep } from '@/net/Lockstep';
 import { ClientStateSync, HostStateSync, encodeAllEnemies, type SyncWorld } from '@/net/StateSync';
 import { ChatUI } from '@/ui/Chat';
+// THE SHELL, THE TRACKER AND THE QUIET HUD (it.117).
+import { anyPanelOpen, registerPanel } from '@/ui/panelShell';
+import { QuestTrackerUI, trackedFrom } from '@/ui/QuestTracker';
+import { idleFade } from '@/ui/idleFade';
 import { CoopLobbyUI, type CoopStart } from '@/ui/CoopLobby';
 import { TitleScreen } from '@/ui/TitleScreen';
 import { LoadingScreen } from '@/ui/LoadingScreen';
@@ -126,7 +130,7 @@ import { haptics } from '@/core/Haptics';
 import { uiIdleFrame } from '@/render/animUtil';
 /** The screen layout, reachable inside `buildWorld`, where `layout` names a town plan. */
 const screenLayout = layout;
-import { touchControls, fullscreenButton } from '@/ui/TouchControls';
+import { touchControls, fullscreenButton, type TouchSkill } from '@/ui/TouchControls';
 import { StatusFrame } from '@/ui/StatusFrame';
 import { SystemBar } from '@/ui/SystemBar';
 import { fit } from '@/ui/FitScaler';
@@ -1086,7 +1090,20 @@ async function boot(): Promise<void> {
     let pendingIdBase: number | null = coop?.snapshot ? coop.snapshot.idBase : null;
     /** The party's opening stash (what a late joiner replays from). */
     const startStash: StashState = coop ? { items: [...coop.stash.items], gold: coop.stash.gold } : { items: [], gold: 0 };
-    const chat = coop ? new ChatUI({ send: (text) => net?.chat(text) }) : null;
+    /**
+     * THE LOG (it.117). It was a co-op-only chat box and therefore switched
+     * off for most players; it is now the run's record in every mode. In a
+     * party the line goes to the party; alone it becomes a personal note, so
+     * the same ENTER does the same visible thing either way.
+     */
+    const chat: ChatUI = new ChatUI({
+      send: (text) => {
+        if (coop) net?.chat(text);
+        else chat.note(text);
+      },
+      isParty: () => !!coop,
+    });
+    chat.setParty(!!coop);
     /** A hero revives beside the floor's entrance ten seconds after falling (co-op only). */
     const COOP_REVIVE_TICKS = 600;
     const ownStash: StashState = loaded?.stash ?? { items: [], gold: 0 };
@@ -1131,8 +1148,14 @@ async function boot(): Promise<void> {
       for (const id of ps.passives) p.passives.add(id);
       for (const [k, v] of Object.entries(ps.bestiary ?? {})) p.bestiary.set(k, { seen: v.seen, killed: v.killed });
       p.goldCollected = ps.goldCollected ?? 0;
+      // THE ACTION BAR (it.117): four entries on an older save, eight on a new
+      // one, and an entry may be a consumable (`item:<base>`) as well as a
+      // skill. Each is validated on its own terms and anything the hero no
+      // longer has a right to is dropped; the rest of the eight stay empty.
       ps.loadout.forEach((id, i) => {
-        p.loadout[i] = id && p.unlockedSkills.has(id) ? id : null;
+        if (i >= p.loadout.length) return;
+        const base = actionItemBase(id);
+        p.loadout[i] = id && (base ? !!itemDef(base) : p.unlockedSkills.has(id)) ? id : null;
       });
       for (const [k, v] of Object.entries(ps.materials ?? {})) if (v > 0) p.addMaterial(k, v);
       if (ps.belt) p.belt = [ps.belt[0] ?? null, ps.belt[1] ?? null];
@@ -1300,13 +1323,55 @@ async function boot(): Promise<void> {
         if (noteText) pl.note.alpha = 0.6 + 0.4 * Math.sin(performance.now() / 250);
       }
     };
-    /** Aim (it.33, per seat since it.59): the mouse in solo; the seat's AIM stream in co-op. */
+    /**
+     * A LIVE POINTER (it.117). A cursor the player has not touched for this
+     * long is furniture, not an aim: it is where the mouse happened to be
+     * lying when they put a hand on the keyboard. Every aimed thing used to
+     * fire at it regardless — "I play without a mouse and my spells cast at an
+     * idle cursor" is exactly this constant missing.
+     */
+    const AIM_LIVE_MS = 4000;
+    /**
+     * True while the player is actually driving the pointer (solo only; co-op
+     * aim is a synced stream). Two signals, and both have to agree:
+     *   · the pointer moved or clicked inside the last `AIM_LIVE_MS`, and
+     *   · no MOVEMENT key has been pressed since it last did — a hand on WASD
+     *     is a hand off the mouse, and that is the clearest statement of
+     *     intent the game gets.
+     */
+    const pointerIsLive = (): boolean =>
+      lastMouse.seen && performance.now() - lastMouse.t <= AIM_LIVE_MS && lastMouse.t > lastMouse.keyAt;
+    /** The cursor's world point, whether or not it is live. */
+    const cursorWorldPoint = (): { x: number; y: number } | null =>
+      lastMouse.seen ? world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2()) : null;
+    /**
+     * THE RAW POINTER AIM (it.117): a unit vector toward the LIVE cursor, or
+     * null. Target acquisition reads this one — never `aimFor`, which now
+     * consults the acquired target and would loop straight back.
+     */
+    const rawAimFor = (p: Player): { x: number; y: number } | null => {
+      const w = coop ? (seatOf(p)?.aim ?? null) : pointerIsLive() ? cursorWorldPoint() : null;
+      if (!w) return null;
+      const dx = w.x - p.pos.x;
+      const dy = w.y - p.pos.y;
+      const len = Math.hypot(dx, dy);
+      return len > 0.2 ? { x: dx / len, y: dy / len } : null;
+    };
+    /**
+     * Aim (it.33, per seat since it.59): the mouse in solo; the seat's AIM
+     * stream in co-op. IT.117 puts the ACQUIRED FOE between the live cursor
+     * and the parked one: a hand on the keyboard aims at what the hero has
+     * locked, a hand on the mouse still aims wherever it points.
+     */
     const aimWorldPoint = (p: Player): { x: number; y: number } | null => {
       if (coop) {
         const seat = seatOf(p);
         return seat?.aim ? { x: seat.aim.x, y: seat.aim.y } : null;
       }
-      return lastMouse.seen ? world.camera.pointerToWorld(lastMouse.x, lastMouse.y, vec2()) : null;
+      if (pointerIsLive()) return cursorWorldPoint();
+      const locked = world.combat?.acquiredFor(p) ?? null;
+      if (locked) return { x: locked.pos.x, y: locked.pos.y };
+      return cursorWorldPoint();
     };
     const aimFor = (p: Player): { x: number; y: number } => {
       const w = aimWorldPoint(p);
@@ -1698,7 +1763,7 @@ async function boot(): Promise<void> {
             openExitTeleporter();
             audio.setBossMusic(false);
             audio.sfx('victory');
-            tutorial.notify('coliseumDone', 'The crowd roars. Open the coliseum chest, then step onto the teleporter at the centre to go home.');
+            tutorial.notify('coliseumDone', 'The crowd roars. Open the chest, then take the teleporter at the centre to go home.');
           } else {
             c.phase = 'intermission';
             c.timer = 15 * 60;
@@ -1719,12 +1784,27 @@ async function boot(): Promise<void> {
     let pendingInteract: number | null = null;
     /** THE BEDSIDE (it.92): the bed the hero is walking to, to lie on when there. */
     let pendingRest: number | null = null;
+    /**
+     * THE YARD POURS (it.117). While Lord Milk's lesson is running nothing the
+     * hero drinks or eats is taken off them: the owner's note was that learning
+     * to heal cost him his actual draughts. The healing, the brews and the
+     * cooldown all still happen, so the mechanic is taught whole - only the
+     * ledger is spared. `tutorRunning` is a forward reference because the
+     * inventory is built long before the tutorial is (see `tutor`, below).
+     */
+    let tutorRunning = (): boolean => false;
     const makeInventory = (p: Player, slot: number): InventorySystem => {
       const inv = new InventorySystem(p, {
+        free: () => p === player && tutorRunning(),
         // FOOD (it.114): a dish heals in slices, and says what it was.
         feed: (fraction) => {
           const healed = world.combat.heal(p.id, Math.round(p.hpMax * fraction));
-          if (healed > 0 && p === player) updateOrb();
+          // A DISH HEALS IN SLICES (it.114) and each slice is now SEEN (it.117):
+          // the same green sweep the draught gets, so food reads as healing.
+          if (healed > 0 && p === player) {
+            beatLife();
+            updateOrb();
+          }
         },
         eat: (def, tier) => {
           if (p !== player) return;
@@ -1732,6 +1812,14 @@ async function boot(): Promise<void> {
           const buff = tier === 'feast' ? ' · STONE SKIN · HASTE' : tier === 'meal' ? ' · MIGHT' : '';
           world.dmgText.show(p.pos.x, p.pos.y - 0.9, `${def.name.toUpperCase()}${buff}`, 'crit');
           world.ambience.burst(p.pos.x, p.pos.y, 0xe0a458, 8);
+          /**
+           * THE BITE (it.117). Warmer and slower than the quaff: crumbs off the
+           * board, a low amber ring that settles rather than snaps, and a
+           * zoom punch a feast earns and a snack does not.
+           */
+          world.vfx.play('vfx_ring', p.pos.x, p.pos.y, { scale: tier === 'snack' ? 0.6 : 0.85, flat: true, fps: 18, tint: 0xffc070 });
+          world.ambience.sparks(p.pos.x, p.pos.y, 0, -1, tier === 'snack' ? 5 : 9, 0xffd9a0);
+          if (tier !== 'snack') world.camera.zoomPunch(0.016, 200);
         },
         // AN ORE (it.115): smelted into the pouch - the loot line says what it became.
         smelted: (def, material, count) => {
@@ -1746,13 +1834,40 @@ async function boot(): Promise<void> {
           if (healed > 0) {
             world.dmgText.show(p.pos.x, p.pos.y - 0.3, `+${healed}`, 'miss');
             world.ambience.burst(p.pos.x, p.pos.y, 0xd83030, 10);
+            /**
+             * THE QUAFF (it.117). A draught used to be a number and ten dark
+             * flecks. It is now a beat: the flask's own splash at the hero's
+             * feet, a ring of crimson light climbing off them, a lift of hot
+             * sparks, and the smallest punch of zoom - and the life gauge in
+             * the corner sweeps green as it fills, so the eye is told where
+             * the thing that happened landed. All pooled, all render-side.
+             */
+            world.vfx.play('vfx_splash', p.pos.x, p.pos.y, { scale: 0.75, fps: 22, tint: 0xd8404a, overlay: true });
+            world.vfx.play('vfx_ring', p.pos.x, p.pos.y, { scale: 0.85, flat: true, fps: 24, tint: 0xff6a6a });
+            world.ambience.sparks(p.pos.x, p.pos.y, 0, -1, 9, 0xff9aa0);
+            if (p === player) {
+              world.camera.zoomPunch(0.018, 190);
+              beatLife();
+            }
           }
           if (p === player) updateOrb();
         },
         restore: (fraction) => {
+          const before = p.resource;
           p.resource = Math.min(p.resourceMax, p.resource + p.resourceMax * fraction);
           if (p === player) audio.sfx('potion');
           world.ambience.burst(p.pos.x, p.pos.y, 0x6f86b8, 10);
+          // THE OTHER DRAUGHT (it.117): the same beat in the resource's colour -
+          // arcane blue for mana, the stamina gauge's own for a warrior.
+          if (p.resource > before) {
+            const cool = p.resourceName === 'MANA' ? 0x6f9cff : 0x5fd8a0;
+            world.vfx.play('vfx_splash', p.pos.x, p.pos.y, { scale: 0.7, fps: 22, tint: cool, overlay: true });
+            world.ambience.sparks(p.pos.x, p.pos.y, 0, -1, 8, cool);
+            if (p === player) {
+              hudBeat('#status-frame .sf-res', 'beat', 700);
+              updateOrb();
+            }
+          }
         },
         buff: (kind, ticks) => {
           if (p !== player) return;
@@ -1771,6 +1886,11 @@ async function boot(): Promise<void> {
           world.dmgText.show(p.pos.x, p.pos.y - 1.1, `RECIPE LEARNED · ${key.toUpperCase()}`, 'crit');
           tutorial.notify('recipe', 'A recipe learned — lay it on a weapon at the camp forge (ENCHANT).');
         },
+        // A RITE OFF A SCROLL (it.117): the seat's own skill system works it —
+        // the skill's real code, its strips and its sound, at the scroll's
+        // power and length. Every seat has one, so the paper is spent on every
+        // peer alike and the stream stays in lockstep.
+        rite: (skill, power, stretch) => skillSystems[slot]?.castRite(skill, power, stretch) ?? false,
         refuse: (reason) => {
           if (p !== player) return;
           audio.sfx('uiBack');
@@ -1800,6 +1920,9 @@ async function boot(): Promise<void> {
     // call site has to guard against a half-built frame.
     const statusFrame = new StatusFrame(player, () => classPreviewFrames(player.archetype));
     const systemBar = new SystemBar();
+    // THE QUIET HUD (it.117): the rail, the chart and the sheet dim after a
+    // few seconds of stillness on a touch screen, and come back on a breath.
+    idleFade.start();
 
     let pendingDescend = false;
     let pendingArena = false;
@@ -1865,6 +1988,39 @@ async function boot(): Promise<void> {
 
     /** Health changed: the corner plate is the sole readout (it.66). */
     const updateOrb = (): void => statusFrame.update();
+    /**
+     * THE SMALL ACTIONS ARE FELT (it.117).
+     *
+     * The gauges have eased toward their value since it.81, so a draught has
+     * always FILLED smoothly - what it never did was say that anything had
+     * happened. A potion, a dish, a gold pile and a level all changed a number
+     * and moved a bar, and read exactly like the passive regeneration that also
+     * changes a number and moves a bar.
+     *
+     * One class, for the length of one beat, on an element the HUD already has.
+     * The stylesheet (index.html, "the small actions are felt") animates only
+     * `opacity` and `transform` on a pseudo-element, so the compositor owns the
+     * whole thing and the game thread pays two class writes and a timer. The
+     * reflow read is what restarts an animation that is still running - it
+     * happens when the hero drinks, not every frame.
+     */
+    const beatTimers = new Map<string, number>();
+    const hudBeat = (sel: string, cls: string, ms = 700): void => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (!el) return;
+      const key = `${sel}|${cls}`;
+      const prev = beatTimers.get(key);
+      if (prev !== undefined) window.clearTimeout(prev);
+      el.classList.remove(cls);
+      void el.offsetWidth; // restart it even if the last beat is still playing
+      el.classList.add(cls);
+      beatTimers.set(key, window.setTimeout(() => el.classList.remove(cls), ms));
+    };
+    /** The life gauge answers a mend: a sweep of green and one pulse on the plate. */
+    const beatLife = (): void => {
+      hudBeat('#status-frame .sf-hp', 'beat', 700);
+      hudBeat('#status-frame', 'mend', 720);
+    };
     const updateDepth = (): void => {
       // THE FOREST AND THE QUARRY (it.85) carry their names, not a depth.
       const place = floor === FOREST_FLOOR ? 'THE DARK FOREST' : floor === MINES_FLOOR ? 'THE QUARRY MINES' : floor === INN_FLOOR ? 'THE GILDED STAG' : floor === CELLAR_FLOOR ? 'THE CELLAR' : floor === FARM_FLOOR ? 'THE FARMLANDS' : floor === RIVER_FLOOR ? 'THE RIVERSIDE FARM' : floor === FIELD_FLOOR ? 'THE BATTLEFIELD' : floor === MANOR_FLOOR ? 'THE MANOR' : floor === VAULT_FLOOR ? 'THE MANOR CELLAR' : null;
@@ -2339,6 +2495,24 @@ async function boot(): Promise<void> {
         });
         return best;
       };
+      /**
+       * ACQUISITION query (it.117): EVERY foe the hero may legitimately lock
+       * on to — the same sight gate `findNearestEnemy` uses, but a list, so
+       * `CombatSystem.acquire` can weigh distance, aim and line of fire
+       * against each other instead of being handed one answer.
+       */
+      const visibleEnemies = (x: number, y: number, range: number): Entity[] => {
+        const out: Entity[] = [];
+        enemiesRef?.forEachActive((enemy) => {
+          if (enemy.hp <= 0 || enemy.action === 'dead') return;
+          if (Math.hypot(enemy.pos.x - x, enemy.pos.y - y) > range) return;
+          if (coop) {
+            if (!hasLineOfSight(Math.floor(x), Math.floor(y), Math.floor(enemy.pos.x), Math.floor(enemy.pos.y), scene.isOpaque)) return;
+          } else if (!lighting.isVisible(Math.floor(enemy.pos.x), Math.floor(enemy.pos.y))) return;
+          out.push(enemy);
+        });
+        return out;
+      };
       /** COLLISION query: pure simulation — projectiles ignore fog entirely. */
       const findEnemyAt = (x: number, y: number, radius: number): Entity | null => {
         let best: Entity | null = null;
@@ -2357,6 +2531,10 @@ async function boot(): Promise<void> {
       combat.godMode = cheatState.god; // Cheats survive the floor transition.
       // Untargeted swings aim at the mouse cursor (it.33) — per seat since it.59.
       combat.aimDir = aimFor;
+      // AUTO-TARGET (it.117): the sight list it picks from, and the live
+      // pointer that breaks ties (null when nobody is driving one).
+      combat.visibleEnemies = visibleEnemies;
+      combat.rawAim = rawAimFor;
       // AoE cleave sweep: every living enemy in range (fog-independent sim).
       combat.enemiesNear = (x, y, r) => {
         const out: Entity[] = [];
@@ -2391,6 +2569,22 @@ async function boot(): Promise<void> {
         projectiles.spawn(opts);
       };
       const dmgText = new DamageTextSystem(viewport.ambienceLayer);
+      /**
+       * "BLOCKED" (it.117). A shot the scenery ate with nothing behind it used
+       * to vanish without a word, and the player kept loosing into a barrel.
+       * The tag is deliberately quiet: only the hero's OWN shots, at most one
+       * a second, drawn on the obstruction itself so the eye goes to what is
+       * in the way. Auto-targeting already refuses to lock a foe behind cover,
+       * so this only ever fires on a shot the player aimed by hand.
+       */
+      let blockedNoteAt = -1e9; // Render-side throttle only — never read by the sim.
+      projectiles.onBlocked = (bx, by, faction) => {
+        const now = performance.now();
+        if (faction !== 'player' || now - blockedNoteAt < 900) return;
+        blockedNoteAt = now;
+        dmgText.show(bx, by - 0.4, 'BLOCKED', 'miss');
+        ambience.puff(bx, by);
+      };
 
       /**
        * PERMANENT battlefield memory: the death animation's final frame stays
@@ -2485,8 +2679,19 @@ async function boot(): Promise<void> {
               toHit,
             });
           },
-          // Rogue Vanish (it.32): a hidden player cannot be seen or hunted.
-          isPlayerHidden: (self) => combat.nearestPlayer(self.pos.x, self.pos.y)?.stealthed ?? false,
+          /**
+           * Rogue Vanish (it.32): a hidden player cannot be seen or hunted.
+           * THE DEAD ARE NOT HUNTED EITHER (it.117). `nearestPlayer` falls back
+           * to "the first hero anywhere" so the AI always has a point to think
+           * about — which meant that with the party down, every body still had
+           * perfect sight of the corpse, the lost-sight timer never ran, and
+           * the pack chased for ever. A fallen hero is unseeable: the chase
+           * bleeds out and nothing re-engages without real line of sight.
+           */
+          isPlayerHidden: (self) => {
+            const p = combat.nearestPlayer(self.pos.x, self.pos.y);
+            return !p || p.action === 'dead' || p.hp <= 0 || p.stealthed;
+          },
           // Hollow King at half health: two Ember Wretches claw out of the floor.
           summonMinions: (x, y) => {
             audio.sfx('summon');
@@ -3046,7 +3251,16 @@ async function boot(): Promise<void> {
       minimap.setWorld(dungeon, lighting, stairs);
       // THE MARKS (it.85): keys, gates, the keeper and the way home — each only once its tile is explored.
       minimap.setMarkers(() => {
-        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe' | 'quest'; always?: boolean }> = [];
+        const out: Array<{ x: number; y: number; kind: 'key' | 'door' | 'door-open' | 'boss' | 'portal' | 'foe' | 'quest' | 'gate'; always?: boolean; label?: string }> = [];
+        /**
+         * THE WAYS OUT, NAMED (it.117). The town's gateways were on no chart at
+         * all: a player who wanted the woods had to remember which arch it was.
+         * Each is an arch mark carrying its own label, drawn once its tile has
+         * been walked past, and the labels only appear on the expanded sheet.
+         */
+        if (isHub && layout) {
+          for (const gw of layout.gateways) out.push({ x: gw.x, y: gw.y, kind: 'gate', label: gw.label });
+        }
         /**
          * THE WAY TO THE RIVER (it.108). The fields being taken is what unchains
          * the river gate, and the gate is on the FAR side of the eastern quarter
@@ -3057,13 +3271,13 @@ async function boot(): Promise<void> {
          */
         if (isHub && quests.farm === 'done' && quests.river !== 'done') {
           const gate = layout?.gateways.find((gw) => gw.dest === 'river');
-          if (gate) out.push({ x: gate.x, y: gate.y, kind: 'quest', always: true });
+          if (gate) out.push({ x: gate.x, y: gate.y, kind: 'quest', always: true, label: 'THE RIVER GATE' });
         }
         if (minesPlan) {
           for (const k of minesPlan.keys) if (k.uid >= 0 && loot.getItem(k.uid)) out.push({ x: k.x, y: k.y, kind: 'key' });
           for (const d of minesPlan.doors) out.push({ x: d.x, y: d.y, kind: d.open ? 'door-open' : 'door' });
-          if (!world.arenaCleared) out.push({ x: minesPlan.boss.x, y: minesPlan.boss.y, kind: 'boss' }); // The seal (it.88).
-          if (world.victoryPortal) out.push({ x: world.victoryPortal.x, y: world.victoryPortal.y, kind: 'portal' });
+          if (!world.arenaCleared) out.push({ x: minesPlan.boss.x, y: minesPlan.boss.y, kind: 'boss', label: 'THE SEAL' }); // The seal (it.88).
+          if (world.victoryPortal) out.push({ x: world.victoryPortal.x, y: world.victoryPortal.y, kind: 'portal', label: 'THE WAY HOME' });
         }
         // THE EASTERN QUARTER (it.91): every looter a red pip while the errand is open; the inn's door once it is cleared.
         const east = isHub ? layout?.east : undefined;
@@ -3374,7 +3588,7 @@ async function boot(): Promise<void> {
       townVisits++;
       town.restockIfDue(baseSeed, deepestFloor, state.tick);
       // FAST TRAVEL HINT (it.48): back from the depths, the DEPTHS menu is the quick way down.
-      if (deepestFloor > 0) tutorial.notify('fastTravel', 'Back in town — press L to open DEPTHS and fast-travel to any floor you have reached.');
+      if (deepestFloor > 0) tutorial.notify('fastTravel', 'Back in town. Press L to jump to any depth you have reached.');
       minimap.markDirty();
       saveNow();
     };
@@ -3418,18 +3632,35 @@ async function boot(): Promise<void> {
 
     // MOUSE AIM TRACKING (it.33): skills cast toward the cursor's world
     // point — the last known pointer position feeds the aim vector.
-    const lastMouse = { x: window.innerWidth / 2, y: window.innerHeight / 2, seen: false };
-    app.canvas.addEventListener(
-      'pointermove',
-      (e: PointerEvent) => {
-        lastMouse.x = e.offsetX;
-        lastMouse.y = e.offsetY;
-        lastMouse.seen = true;
+    // `t` (it.117) is WHEN it last moved: a cursor nobody has touched for a
+    // couple of seconds stops counting as an aim (see `pointerIsLive`).
+    const lastMouse = { x: window.innerWidth / 2, y: window.innerHeight / 2, seen: false, t: -1e9, keyAt: -1e9 };
+    const notePointer = (e: PointerEvent): void => {
+      lastMouse.x = e.offsetX;
+      lastMouse.y = e.offsetY;
+      lastMouse.seen = true;
+      lastMouse.t = performance.now();
+    };
+    app.canvas.addEventListener('pointermove', notePointer, { signal: ac.signal });
+    // A click is a hand on the mouse too, even without a millimetre of travel.
+    app.canvas.addEventListener('pointerdown', notePointer, { signal: ac.signal });
+    /**
+     * A HAND ON THE KEYBOARD (it.117). A movement key says, plainer than any
+     * timer can, that the player is not steering with the mouse — so the
+     * cursor stops counting as an aim until it moves again (`pointerIsLive`).
+     * Movement keys ONLY: a mouse player pressing 1 for a skill is still
+     * aiming with the mouse, and must keep aiming with it.
+     */
+    const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+    window.addEventListener(
+      'keydown',
+      (e: KeyboardEvent) => {
+        if (MOVE_KEYS.has(e.code)) lastMouse.keyAt = performance.now();
       },
       { signal: ac.signal },
     );
 
-    // --- ACTIVE SKILLS (it.32): hotkeys 1–4, wired to the CURRENT floor ----
+    // --- ACTIVE SKILLS (it.32): hotkeys 1–8 (it.117), wired to the CURRENT floor ----
     // ONE SKILL SYSTEM PER SEAT (it.59): the HUD binds to the local hero's.
     const makeSkills = (hero: Player, slot: number): SkillSystem => new SkillSystem({
       player: hero,
@@ -3533,10 +3764,22 @@ async function boot(): Promise<void> {
       Enemy.onBossDeathFrame = null;
     });
 
-    // Skill bar DOM (it.41): one slot per HOTBAR entry — rebuilt whenever
-    // the tree changes the loadout. Empty slots point at the tree (K).
-    const skillSlotEls: Array<{ root: HTMLElement; cd: HTMLElement; num: HTMLElement }> = [];
-    const lastSkillCd: number[] = [0, 0, 0, 0];
+    /**
+     * THE ACTION BAR (it.41; EIGHT SLOTS AND THE BELT BESIDE THEM, it.117).
+     *
+     * A slot holds a learned SKILL or a CONSUMABLE parked there from the
+     * inventory (`Player.loadout[i]` = `item:<base>`, see systems/Inventory);
+     * either way the key sends one `SKILL` command and the two systems take
+     * their own. Q and R close the row with their key caps, their counts and
+     * their cooldown veils, on the desktop bar and on the thumb cluster.
+     *
+     * ONE BUILDER DRAWS ALL TEN, IN ONE ORDER: [Q] [1..8] [R]. Until now
+     * `buildSkillBar` emptied `#skill-bar` and only a later `belt:changed` put
+     * Q and R back, so every skill change silently dropped the belt off the
+     * HUD until the next draught was assigned.
+     */
+    const skillSlotEls: Array<{ root: HTMLElement; cd: HTMLElement; num: HTMLElement; base: string | null; count: HTMLElement | null }> = [];
+    const lastSkillCd: number[] = Array.from({ length: ACTION_SLOTS }, () => 0);
     const skillBar = document.getElementById('skill-bar');
     // TOWN PORTAL button (it.43): the built-in free way home, beside the hotbar.
     const tpButton = document.createElement('button');
@@ -3546,35 +3789,72 @@ async function boot(): Promise<void> {
     tpButton.title = 'Town Portal (T) — a rift home, free, 12 s cooldown';
     tpButton.addEventListener('click', () => inputQueue.enqueue({ type: 'TOWN_PORTAL', playerId: 0 }));
     document.body.appendChild(tpButton);
-    // THE BELT ON THE BAR (it.80): Q and R beside the skills, with the count and the cooldown.
+    /** A cell holding a consumable: the icon, the key cap, how many are left, the cooldown veil. */
+    const itemCellHtml = (def: ItemDef, cap: string, note: string): string =>
+      `<div class="skill-glyph has-icon">${itemIconHtml(def, 'skill-icon', 'skill-icon')}</div><div class="skill-flash"></div><div class="skill-key">${cap}</div>` +
+      `<div class="skill-cost belt-count">0</div><div class="skill-cd"></div><div class="skill-cd-num"></div>` +
+      `<div class="skill-tip"><b>${def.name}</b><span>${cap} · ${note}</span><p>${statLine(def)}</p></div>`;
+    /** An empty cell: the rune, the key cap, and what to do about it. */
+    const emptyCellHtml = (cap: string, title: string, line: string, body: string, rune = '\u{1F512}'): string =>
+      `<div class="skill-glyph skill-empty"><span class="skill-lock" aria-hidden="true">${rune}</span></div><div class="skill-flash"></div><div class="skill-key">${cap}</div>` +
+      `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
+      `<div class="skill-tip skill-tip-locked"><b>${title}</b><span>${line}</span><p>${body}</p></div>`;
+    /**
+     * THE BELT FLANKS THE BAR (it.80, its place settled it.117): Q at the far
+     * LEFT end of the row and R at the far RIGHT, with the eight action slots
+     * between them - the owner's own layout. Each keeps its key cap, its count
+     * and its cooldown veil.
+     */
     const beltEls: Array<{ root: HTMLElement; count: HTMLElement; cd: HTMLElement; icon: string } | null> = [null, null];
-    const buildBelt = (): void => {
-      if (!skillBar) return;
-      for (const old of skillBar.querySelectorAll('.belt-slot')) old.remove();
-      for (let i = 0; i < 2; i++) {
-        const base = player.belt[i];
-        const def = base ? itemDef(base) : undefined;
-        const slot = document.createElement('div');
-        slot.className = `skill-slot belt-slot${def ? '' : ' empty'}`;
-        slot.innerHTML = def
-          ? `<div class="skill-glyph has-icon">${itemIconHtml(def, 'skill-icon', 'skill-icon')}</div><div class="skill-key">${i === 0 ? 'Q' : 'R'}</div><div class="skill-cost belt-count">0</div><div class="skill-cd"></div><div class="skill-cd-num"></div><div class="skill-tip"><b>${def.name}</b><span>${i === 0 ? 'Q' : 'R'} · assign in the inventory (▾)</span><p>${statLine(def)}</p></div>`
-          : `<div class="skill-glyph skill-empty"><span class="skill-lock" aria-hidden="true">◈</span></div><div class="skill-key">${i === 0 ? 'Q' : 'R'}</div><div class="skill-cd"></div><div class="skill-cd-num"></div><div class="skill-tip skill-tip-locked"><b>Empty</b><span>${i === 0 ? 'Q' : 'R'} has no draught</span><p>Open the inventory (I) and press ▾ beside the key to choose one.</p></div>`;
-        slot.addEventListener('click', () => inputQueue.enqueue({ type: 'USE_QUICK', playerId: 0, kind: i === 0 ? 'health' : 'mana' }));
-        skillBar.appendChild(slot);
-        beltEls[i] = def ? { root: slot, count: slot.querySelector('.belt-count') as HTMLElement, cd: slot.querySelector('.skill-cd') as HTMLElement, icon: def.icon ?? def.art ?? '' } : null;
-      }
+    const beltCell = (i: number): HTMLElement => {
+      const base = player.belt[i];
+      const def = base ? itemDef(base) : undefined;
+      const cap = i === 0 ? 'Q' : 'R';
+      const slot = document.createElement('div');
+      slot.className = `skill-slot belt-slot belt-slot-${cap.toLowerCase()}${def ? '' : ' empty'}`;
+      slot.dataset.belt = String(i); // A drop target for the inventory's drag (it.117).
+      slot.innerHTML = def
+        ? itemCellHtml(def, cap, 'drag one here, or assign in the inventory (I)')
+        : emptyCellHtml(cap, 'Empty', `${cap} has no draught`, 'Open the inventory (I) and drag a draught, dish or scroll onto this key — or press ▾ beside it.', '◈');
+      slot.addEventListener('click', () => inputQueue.enqueue({ type: 'USE_QUICK', playerId: 0, kind: i === 0 ? 'health' : 'mana' }));
+      beltEls[i] = def ? { root: slot, count: slot.querySelector('.belt-count') as HTMLElement, cd: slot.querySelector('.skill-cd') as HTMLElement, icon: def.icon ?? def.art ?? '' } : null;
+      return slot;
     };
+    /**
+     * THE ROW'S HALF-WIDTH (it.117), published as `--bar-half` for the portal
+     * button that stands beside it: ten cells are twice as wide as the four
+     * the button's old fixed offset was drawn for, and the width changes with
+     * the layout tier. A HIDDEN bar measures zero (a touch screen hides it
+     * outright), so a zero is never published - and the read is repeated a
+     * couple of times a second from `updateSkillHud` rather than every frame,
+     * which is what catches the bar coming back after a layout change.
+     */
+    let lastBarHalf = -1;
+    const publishBarHalf = (): void => {
+      if (!skillBar) return;
+      const w = skillBar.getBoundingClientRect().width;
+      if (w <= 0) return;
+      const half = Math.ceil(w / 2);
+      if (half === lastBarHalf) return;
+      lastBarHalf = half;
+      document.documentElement.style.setProperty('--bar-half', `${half}px`);
+    };
+    /** How much of a consumable's cooldown is still running, 0..1. */
+    const quaffFrac = (def: ItemDef): number => {
+      const cat = def.use ? quaffCategory(def.use) : null;
+      const left = cat ? (player.quaffCd.get(cat) ?? 0) : 0;
+      return cat && left > 0 ? Math.min(1, left / QUAFF_COOLDOWN[cat]) : 0;
+    };
+    const countOf = (base: string): number => player.backpack.filter((x) => decodeItemId(x)?.base === base).length;
     const updateBelt = (): void => {
       const faces: Array<{ icon: string; count: number; cdFrac: number } | null> = [null, null];
       for (let i = 0; i < 2; i++) {
         const base = player.belt[i];
         const def = base ? itemDef(base) : undefined;
         const el = beltEls[i];
-        if (!def) continue;
-        const count = player.backpack.filter((x) => decodeItemId(x)?.base === base).length;
-        const cat = def.use ? quaffCategory(def.use) : null;
-        const left = cat ? (player.quaffCd.get(cat) ?? 0) : 0;
-        const frac = cat && left > 0 ? Math.min(1, left / QUAFF_COOLDOWN[cat]) : 0;
+        if (!def || !base) continue;
+        const count = countOf(base);
+        const frac = quaffFrac(def);
         faces[i] = { icon: itemIconHtml(def, 'tc-draught-icon', 'tc-draught-icon'), count, cdFrac: frac };
         if (!el) continue;
         const n = String(count);
@@ -3586,60 +3866,109 @@ async function boot(): Promise<void> {
       }
       touchControls.setDraughts(faces);
     };
-    subs.push(eventBus.on('belt:changed', () => buildBelt()));
-    const buildSkillBar = (): void => {
+    subs.push(eventBus.on('belt:changed', () => buildBar()));
+    const buildBar = (): void => {
       if (!skillBar) return;
       skillBar.innerHTML = '';
       skillSlotEls.length = 0;
-      skills.skills.forEach((def, i) => {
+      beltEls[0] = null;
+      beltEls[1] = null;
+      const faces: Array<TouchSkill | null> = [];
+      skillBar.appendChild(beltCell(0)); // Q, at the left end of the row.
+      skillBar.appendChild(Object.assign(document.createElement('i'), { className: 'bar-sep' }));
+      for (let i = 0; i < ACTION_SLOTS; i++) {
+        const base = actionItemBase(player.loadout[i]);
+        const idef = base ? itemDef(base) : undefined;
+        const def = idef ? null : skills.skills[i];
+        const cap = String(i + 1);
         const slot = document.createElement('div');
-        slot.className = 'skill-slot' + (def ? (skills.isSynergy(def) ? ' synergy' : '') : ' empty');
-        // Rich hover tooltip (it.33): name, cost, cooldown, description.
-        slot.innerHTML = def
-          ? (def.icon
-              ? `<div class="skill-glyph has-icon"><img class="skill-icon" src="${uiAssetUrl(`skills/${def.icon}.png`)}" alt="${def.name}" draggable="false"></div>`
-              : `<div class="skill-glyph">${def.glyph}</div>`) +
-            `<div class="skill-flash"></div>` +
-            `<div class="skill-key">${i + 1}</div>` +
-            (def.cost > 0 ? `<div class="skill-cost">${def.cost}</div>` : '') +
-            `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
-            `<div class="skill-name">${def.name.toUpperCase()}</div>` +
-            `<div class="skill-tip"><b>${def.name}${skills.isSynergy(def) ? ' · SYNERGY' : ''}</b>` +
-            `<span>${def.cost > 0 ? `${def.cost} ${player.resourceName.toLowerCase()} · ` : ''}${Math.round((def.cd * (skills.isSynergy(def) ? 0.8 : 1)) / 60)}s cooldown</span>` +
-            `<p>${def.hint}</p></div>`
-          : `<div class="skill-glyph skill-empty"><span class="skill-lock" aria-hidden="true">\u{1F512}</span></div><div class="skill-flash"></div><div class="skill-key">${i + 1}</div>` +
-            `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
-            `<div class="skill-tip skill-tip-locked"><b>Locked</b><span>${player.skillPoints > 0 ? `${player.skillPoints} skill point${player.skillPoints === 1 ? '' : 's'} to spend` : 'Requires a skill point'}</span><p>${player.skillPoints > 0 ? 'Press K to open the Skill Tree and learn a skill.' : 'Gain a level, then press K to learn a skill.'}</p></div>`;
+        slot.className = 'skill-slot' + (idef ? ' item-slot' : def ? (skills.isSynergy(def) ? ' synergy' : '') : ' empty');
+        slot.dataset.action = String(i); // A drop target for the inventory's drag (it.117).
+        slot.innerHTML = idef
+          ? itemCellHtml(idef, cap, 'drag another here, or assign in the inventory (I)')
+          : def
+            ? (def.icon
+                ? `<div class="skill-glyph has-icon"><img class="skill-icon" src="${uiAssetUrl(`skills/${def.icon}.png`)}" alt="${def.name}" draggable="false"></div>`
+                : `<div class="skill-glyph">${def.glyph}</div>`) +
+              `<div class="skill-flash"></div>` +
+              `<div class="skill-key">${cap}</div>` +
+              (def.cost > 0 ? `<div class="skill-cost">${def.cost}</div>` : '') +
+              `<div class="skill-cd"></div><div class="skill-cd-num"></div>` +
+              `<div class="skill-name">${def.name.toUpperCase()}</div>` +
+              `<div class="skill-tip"><b>${def.name}${skills.isSynergy(def) ? ' · SYNERGY' : ''}</b>` +
+              `<span>${def.cost > 0 ? `${def.cost} ${player.resourceName.toLowerCase()} · ` : ''}${Math.round((def.cd * (skills.isSynergy(def) ? 0.8 : 1)) / 60)}s cooldown</span>` +
+              `<p>${def.hint}</p></div>`
+            : emptyCellHtml(
+                cap,
+                'Empty',
+                player.skillPoints > 0 ? `${player.skillPoints} skill point${player.skillPoints === 1 ? '' : 's'} to spend` : 'A skill, or anything you drink, eat or read',
+                'Press K to learn a skill and pick this hotkey — or open the inventory (I) and drag a draught, dish or scroll onto this slot.',
+              );
+        slot.addEventListener('click', () => inputQueue.enqueue({ type: 'SKILL', playerId: 0, slot: i }));
         skillBar.appendChild(slot);
         skillSlotEls.push({
           root: slot,
           cd: slot.querySelector('.skill-cd') as HTMLElement,
           num: slot.querySelector('.skill-cd-num') as HTMLElement,
+          base,
+          count: slot.querySelector('.belt-count'),
         });
-      });
-      // THE THUMB CLUSTER SHOWS THE SAME SKILLS (it.67): icon, cost and cooldown.
-      touchControls.setSkills(
-        skills.skills.map((def) => (def ? { name: def.name, icon: def.icon ? uiAssetUrl(`skills/${def.icon}.png`) : null, glyph: def.glyph, cost: def.cost } : null)),
-      );
+        faces.push(
+          idef
+            ? { name: idef.name, icon: null, glyph: '', cost: 0, iconHtml: itemIconHtml(idef, 'tc-draught-icon', 'tc-draught-icon') }
+            : def
+              ? { name: def.name, icon: def.icon ? uiAssetUrl(`skills/${def.icon}.png`) : null, glyph: def.glyph, cost: def.cost }
+              : null,
+        );
+      }
+      skillBar.appendChild(Object.assign(document.createElement('i'), { className: 'bar-sep' }));
+      skillBar.appendChild(beltCell(1)); // R, at the right end of the row.
+      publishBarHalf();
+      // THE THUMB CLUSTER SHOWS THE SAME EIGHT (it.67, eight of them it.117).
+      touchControls.setSkills(faces);
+      updateBelt();
     };
-    buildSkillBar();
-    buildBelt();
-    subs.push(eventBus.on('skills:changed', () => buildSkillBar()));
+    buildBar();
+    subs.push(eventBus.on('skills:changed', () => buildBar()));
 
     // The resource gauge lives on the corner plate (it.66); this keeps the
     // portal button and the cooldown sweeps current.
+    let barHalfClock = 0;
     const updateSkillHud = (): void => {
       statusFrame.update();
+      if (++barHalfClock % 30 === 0) publishBarHalf(); // Twice a second: the row's width for the portal button (it.117).
       const tpNote = tpButton.querySelector('i');
       if (tpNote) tpNote.textContent = world.town ? 'in town' : portalCooldown > 0 ? `${Math.ceil(portalCooldown / 60)}s` : 'ready';
       tpButton.classList.toggle('cooling', portalCooldown > 0 || !!world.town);
-      skills.skills.forEach((def, i) => {
-        const el = skillSlotEls[i];
-        if (!el || !def) return;
+      skillSlotEls.forEach((el, i) => {
+        // AN ITEM SLOT (it.117): how many are left and the draught cooldown it
+        // shares, read exactly the way Q and R read theirs.
+        if (el.base) {
+          const idef = itemDef(el.base);
+          if (!idef) return;
+          const count = countOf(el.base);
+          const frac = quaffFrac(idef);
+          if (el.count) {
+            const n = String(count);
+            if (el.count.textContent !== n) el.count.textContent = n;
+          }
+          el.root.classList.toggle('poor', count === 0);
+          const h = `${Math.round(frac * 100)}%`;
+          if (el.cd.style.height !== h) el.cd.style.height = h;
+          el.root.classList.toggle('cooling', frac > 0);
+          const secs = frac > 0 && idef.use ? (player.quaffCd.get(quaffCategory(idef.use) ?? 'buff') ?? 0) / 60 : 0;
+          const n = secs > 0 ? (secs < 10 ? secs.toFixed(1) : `${Math.ceil(secs)}`) : '';
+          if (el.num.textContent !== n) el.num.textContent = n;
+          touchControls.setCooldown(i, frac, secs, count === 0);
+          return;
+        }
+        const def = skills.skills[i];
+        if (!def) return;
         const cd = skills.cooldowns[i];
         // CAST FLASH (it.40): a cooldown that just started means the skill fired.
         if (cd > 0 && lastSkillCd[i] === 0) {
           haptics.cast();
+          chat.log('use', `Cast ${def.name}.`); // THE LOG (it.117).
           el.root.classList.remove('cast');
           void el.root.offsetWidth;
           el.root.classList.add('cast');
@@ -3777,7 +4106,7 @@ async function boot(): Promise<void> {
         minimap.markDirty();
         updateOrb();
         world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE TRIAL BEGINS', 'crit');
-        tutorial.notify('coliseum', 'The Trial Coliseum: waves pour from the four gates. Between waves you have fifteen seconds to loot and drink. T abandons the trial.');
+        tutorial.notify('coliseum', 'Waves pour from the four gates. Fifteen seconds between them to loot and drink. T abandons the trial.');
       }, 'the trial coliseum');
     /**
      * THE MENAGERIE (it.114, reworked it.115). The coliseum's sand with no
@@ -3995,7 +4324,7 @@ async function boot(): Promise<void> {
         menagerieUI.open();
         if (show) void toggleShowcase(show);
         world.dmgText.show(player.pos.x, player.pos.y - 1.4, 'THE MENAGERIE', 'crit');
-        tutorial.notify('menagerie', 'The menagerie: pick bodies on the left - each takes its own spot on the sand. The bar below plays their clips; T raises the way home.');
+        tutorial.notify('menagerie', 'Pick bodies on the left; each takes a spot on the sand. The bar below plays their clips. T raises the way home.');
       }, 'the menagerie');
     };
     /** Home from the sand — no return rift, the trial is over. */
@@ -4005,7 +4334,7 @@ async function boot(): Promise<void> {
         if (!swapWorld(() => buildWorld(0, 'hub'))) return;
         portalReturn = null;
         stats.save(); // The ledger lands the moment the sand is left (it.55).
-        enterTown(false);
+        enterTown(true); // ...and the party lands on the spawn stone, as every road home does (it.117).
       }, 'back to town');
 
     /** Level-select jump: fade-covered travel to any unlocked depth. */
@@ -4056,7 +4385,6 @@ async function boot(): Promise<void> {
     }
 
     // --- Cheat menu (F1 / `) ------------------------------------------------
-    const portraitFrames: HTMLCanvasElement[] = classPreviewFrames(player.archetype);
     /**
      * JUMP ANYWHERE (it.114). The dev harness had `devTravel`, which knew about
      * the nine places past the town gate; the cheat sheet had its own copy that
@@ -4091,7 +4419,7 @@ async function boot(): Promise<void> {
       { id: INN_FLOOR, label: 'THE GILDED STAG', sub: 'floor 103' },
       { id: CELLAR_FLOOR, label: 'THE CELLAR', sub: 'floor 104' },
       { id: FARM_FLOOR, label: 'THE FARMLANDS', sub: 'floor 105' },
-      { id: RIVER_FLOOR, label: 'THE RIVERSIDE', sub: 'floor 106' },
+      { id: RIVER_FLOOR, label: 'THE RIVERSIDE FARM', sub: 'floor 106' },
       { id: FIELD_FLOOR, label: 'THE BATTLEFIELD', sub: 'floor 107' },
       { id: MANOR_FLOOR, label: 'THE MANOR', sub: 'floor 108' },
       { id: VAULT_FLOOR, label: 'THE VAULT', sub: 'floor 109' },
@@ -4133,12 +4461,18 @@ async function boot(): Promise<void> {
         eventBus.emit('inventory:changed', {});
         audio.sfx(n > 0 ? 'rarePickup' : 'uiClick');
       },
+      setGold: (n) => {
+        player.gold = Math.max(0, Math.floor(n));
+        updateProgressHud();
+        eventBus.emit('inventory:changed', {});
+        audio.sfx('uiClick');
+      },
       places: () => CHEAT_PLACES,
       foes: () =>
         (Object.keys(ENEMY_TYPES) as EnemyKind[])
           .filter((k) => !ENEMY_TYPES[k].passive)
           .map((k) => ({ kind: k, name: ENEMY_TYPES[k].name, boss: isBossKind(k) })),
-      spawnFoe: (kindName, count, level) => {
+      spawnFoe: (kindName, count, level, affix) => {
         const kind = kindName as EnemyKind;
         if (!ENEMY_TYPES[kind]) return;
         /*
@@ -4180,19 +4514,20 @@ async function boot(): Promise<void> {
           for (let i = 0; i < count; i++) {
             const sp = picked[i % picked.length];
             const e = world.enemies.spawn(kind, sp.x + 0.5, sp.y + 0.5, level);
+            if (affix !== 'none') e.setAffix(affix); // ELITE ON DEMAND (it.117): the console picks the aura.
             riseFromSand(e, 36);
             world.vfx.play('vfx_burst', sp.x + 0.5, sp.y + 0.5, { scale: 1.1, tint: 0xa040c0 });
           }
           toast.show({
             kind: loaded ? 'info' : 'warn',
-            title: `SUMMONED · ${count} × ${def.name.toUpperCase()}`,
-            sub: loaded ? `level ${level} · ${kind}` : `level ${level} · ${kind} · its sheets did not load, it wears the fallback`,
+            title: `Summoned · ${count} × ${def.name}`,
+            sub: loaded ? `level ${level}${affix === 'none' ? '' : ` · ${affix}`} · ${kind}` : `level ${level} · ${kind} · its sheets did not load; it wears the fallback`,
             key: `summon:${kind}`,
           });
         };
         const sheets = animsForKind(kind);
         if (!sheets.every((n) => spriteLib.hasAnim(n))) {
-          toast.show({ kind: 'info', title: `SUMMONING · ${def.name.toUpperCase()}`, sub: 'its sheets are streaming in - a moment', key: `summon:${kind}` });
+          toast.show({ kind: 'info', title: `Summoning · ${def.name}`, sub: 'its sheets are streaming in - a moment', key: `summon:${kind}` });
           world.vfx.play('vfx_ring', player.pos.x, player.pos.y, { scale: 0.9, flat: true, fps: 22, tint: 0xa040c0, alpha: 0.9 });
         }
         spriteLib.ensure(sheets).then(
@@ -4208,6 +4543,10 @@ async function boot(): Promise<void> {
       setQuest: (key, value) => {
         if (value === null) delete quests[key];
         else quests[key] = value;
+        saveNow();
+      },
+      clearQuests: () => {
+        for (const key of Object.keys(quests)) delete quests[key];
         saveNow();
       },
       rebuildFloor: () => {
@@ -4253,7 +4592,6 @@ async function boot(): Promise<void> {
           stats: statLine(def),
           iconHtml: itemIconHtml(def, 'cheat-icon', 'cheat-icon-px'),
         })),
-      portraitFrames: () => portraitFrames,
       setLevel: (level) => {
         player.setLevel(level);
         updateOrb();
@@ -4264,20 +4602,39 @@ async function boot(): Promise<void> {
         world.ambience.burst(player.pos.x, player.pos.y, 0xf0d070, 16);
       },
       addSkillPoints: (n) => {
-        player.skillPoints += n;
+        player.skillPoints = Math.max(0, player.skillPoints + n);
         audio.sfx('levelUp');
         eventBus.emit('skills:changed', {});
       },
-      heroInfo: () => ({
-        skillPoints: player.skillPoints,
-        gold: player.gold,
-        level: player.level,
-        xp: player.xp,
-        xpToNext: player.xpToNext(),
-        hpMax: player.hpMax,
-        dmgMin: player.levelDamageMin,
-        dmgMax: player.levelDamageMax,
-      }),
+      setSkillPoints: (n) => {
+        player.skillPoints = Math.max(0, Math.floor(n));
+        audio.sfx('levelUp');
+        eventBus.emit('skills:changed', {});
+      },
+      // THE LIVE STRIP (it.117): one call feeds the console's readout and Hero page.
+      snapshot: () => {
+        let standing = 0;
+        world.enemies.forEachActive((e) => {
+          if (e.hp > 0 && e.action !== 'dead' && !e.def.passive) standing++;
+        });
+        return {
+          place: depthLabel?.textContent ?? '',
+          floor,
+          seed: state.dungeonSeed,
+          x: player.pos.x,
+          y: player.pos.y,
+          hp: player.hp,
+          hpMax: player.hpMax,
+          level: player.level,
+          xp: player.xp,
+          xpToNext: player.xpToNext(),
+          gold: player.gold,
+          skillPoints: player.skillPoints,
+          dmgMin: player.levelDamageMin,
+          dmgMax: player.levelDamageMax,
+          enemies: standing,
+        };
+      },
     });
 
     // --- Cross-floor event wiring (per run) ----------------------------------
@@ -4347,9 +4704,10 @@ async function boot(): Promise<void> {
         else world.camera.addKick(5);
         hurtFlashTimer = 0.15; // A short pulse (it.49), max alpha 0.25 in the stylesheet.
         if (visuals.flash) vignetteEl?.classList.add('hurt');
+        hudBeat('#status-frame .sf-hp', 'bleed', 520); // the wound washes back across the gauge (it.117)
         haptics.hurt(amount / Math.max(1, player.hpMax)); // The glass takes the blow too (it.69).
         updateOrb();
-        tutorial.notify('hurt', 'You bleed. Their heavy blows are telegraphed — step away as they rear back.');
+        tutorial.notify('hurt', 'You bleed. Heavy blows are telegraphed - step away as they rear back.');
       }
     });
 
@@ -4447,6 +4805,7 @@ async function boot(): Promise<void> {
       window.clearTimeout(rewardTimer);
       rewardTimer = window.setTimeout(() => rewardNote.classList.remove('show'), 6500); // 3400 → 6500 (it.114): time to read it.
       toast.show({ kind: 'reward', title: 'REWARD RECEIVED', sub: text, key: 'reward' });
+      chat.log('loot', `Reward received: ${text.toLowerCase()}.`); // THE LOG (it.117).
     };
     /**
      * THE LEDGER WATCHER (it.114). Every quest turns over somewhere in eight
@@ -4459,7 +4818,7 @@ async function boot(): Promise<void> {
       east: 'THE EASTERN QUARTER',
       cellar: 'THE CELLAR',
       farm: 'THE FARMLANDS',
-      river: 'THE RIVERSIDE',
+      river: 'THE RIVERSIDE FARM',
       manor: 'THE MANOR',
       riverPass: "OSCAR'S SEAL",
       merchant: 'THE MERCHANT',
@@ -4487,20 +4846,101 @@ async function boot(): Promise<void> {
         if (!label || before === undefined && now === 'new') continue;
         const taken = now === 'active' || now === 'open' || now === 'heard' || now === 'held';
         const done = now === 'done' || now === 'cleared' || now === 'saved';
-        if (taken) toast.show({ kind: 'quest', title: `QUEST TAKEN · ${label}`, sub: 'The journal keeps the terms. The chart marks the way.', key: `q:${key}` });
-        else if (done) toast.show({ kind: 'quest', title: `QUEST COMPLETE · ${label}`, sub: 'Return to whoever asked, if you have not already.', key: `q:${key}` });
+        // THE NOTICE IS FOR THE MOMENT, THE LOG IS FOR LATER (it.117): both.
+        if (taken) {
+          toast.show({ kind: 'quest', title: `QUEST TAKEN · ${label}`, sub: 'The chart marks the way.', key: `q:${key}` });
+          chat.log('quest', `Quest taken: ${label.toLowerCase()}.`);
+        } else if (done) {
+          toast.show({ kind: 'quest', title: `QUEST COMPLETE · ${label}`, sub: 'Return to whoever asked.', key: `q:${key}` });
+          chat.log('quest', `Quest complete: ${label.toLowerCase()}.`);
+        }
         const road = OPENS[`${key}:${now}`];
-        if (road) toast.show({ kind: 'gate', title: 'A ROAD OPENS', sub: road, key: `road:${key}` });
+        if (road) {
+          toast.show({ kind: 'gate', title: 'A ROAD OPENS', sub: road, key: `road:${key}` });
+          chat.log('quest', road);
+        }
       }
     };
     /** ENEMIES REMAINING (it.88): the forest's tally, in the corner column under the plate. */
     const questHud = document.createElement('div');
     questHud.id = 'quest-hud';
     (document.getElementById('hud-tl') ?? document.body).appendChild(questHud);
+    /**
+     * THE TRACKER (it.117): the standing objective, under the health plate.
+     * The ledger is the truth; `trackedFrom` turns it into the line to show,
+     * and `trackerCounts` is filled by the frame loop for the counted ones.
+     */
+    const trackerCounts: { alive?: number; total?: number } = {};
+    const questTracker = new QuestTrackerUI(() => trackedFrom({ quests, floor, counts: trackerCounts }));
+    /**
+     * THE RUN'S RECORD (it.117). Everything the game already announces in
+     * passing is written to the log as well, so a player can look back at it.
+     * The bus carries most of it; the three it does not (who killed you, a
+     * floor cleared, a skill cast) are logged at the places that know.
+     *
+     * WHO KILLED YOU is tracked here rather than in the sim: `combat:swing`
+     * already names the source of every blow that lands on the hero, so the
+     * last one before the fall IS the killer, and nothing in the simulation
+     * has to carry a field for the benefit of a text line.
+     */
+    let lastHitBy = '';
+    subs.push(
+      eventBus.on('combat:swing', ({ sourceId, targetId, result }) => {
+        if (targetId !== player.id || result === 'miss') return;
+        world.enemies.forEachActive((e) => {
+          if (e.id === sourceId) lastHitBy = e.def.name;
+        });
+      }),
+      eventBus.on('item:pickedUp', ({ itemId }) => {
+        const def = itemDef(itemId);
+        if (def) chat.log('loot', `Found ${def.name}.`);
+      }),
+      eventBus.on('item:used', ({ itemId }) => {
+        const def = itemDef(itemId);
+        if (def) chat.log('use', `Used ${def.name}.`);
+      }),
+      eventBus.on('town:traded', ({ kind, itemId, gold }) => {
+        const def = itemDef(itemId);
+        chat.log('trade', `${kind === 'buy' ? 'Bought' : 'Sold'} ${def?.name ?? itemId} for ${gold} gold.`);
+      }),
+      eventBus.on('craft:result', ({ ok, text }) => chat.log('craft', ok ? text : `Failed: ${text}`)),
+    );
+    /** A floor's name in one phrase, for the log's "cleared" line (it.117). */
+    const floorName = (f: number): string =>
+      f < 0
+        ? 'the Coliseum'
+        : f === 0
+          ? 'the city'
+          : f === FOREST_FLOOR
+            ? 'the forest'
+            : f === MINES_FLOOR
+              ? 'the quarry'
+              : f === CELLAR_FLOOR
+                ? 'the cellar'
+                : f === FARM_FLOOR
+                  ? 'the farmlands'
+                  : f === RIVER_FLOOR
+                    ? 'the riverside farm'
+                    : f === FIELD_FLOOR
+                      ? 'the battlefield'
+                      : f === MANOR_FLOOR
+                        ? 'the manor'
+                        : f === VAULT_FLOOR
+                          ? "the manor's cellar"
+                          : f === INN_FLOOR
+                            ? 'the Gilded Stag'
+                            : `Depth ${ROMAN[f - 1] ?? f}`;
+    /** The killer's name for the log line, then forgotten so it cannot go stale. */
+    const takeKiller = (): string => {
+      const who = lastHitBy;
+      lastHitBy = '';
+      return who;
+    };
     subs.push(() => {
       window.clearTimeout(rewardTimer);
       rewardNote.remove();
       questHud.remove();
+      questTracker.destroy();
       toast.destroy();
     });
     /**
@@ -4535,7 +4975,7 @@ async function boot(): Promise<void> {
     });
 
     on('item:dropped', ({ itemId, x, y }) => {
-      tutorial.notify('loot', screenLayout.state.touch ? 'A treasure has fallen — tap it, or press the open hand beside it.' : 'A treasure has fallen — press E near it, or click to claim it.');
+      tutorial.notify('loot', screenLayout.state.touch ? 'A treasure has fallen. Tap it, or press the open hand beside it.' : 'A treasure has fallen. Press E near it, or click to claim it.');
       // Rare finds announce themselves with the pack's treasure glint.
       if (['rare', 'epic', 'legendary', 'mythic'].includes(itemDef(itemId)?.rarity ?? '')) world.ambience.playGlint(x, y);
     });
@@ -4543,7 +4983,16 @@ async function boot(): Promise<void> {
     // An idle thing in the dark just noticed you (species growl/hiss/moan).
     on('enemy:aggro', ({ entityId }) => {
       const entity = state.getEntity(entityId);
-      if (entity) fxAlert(world.vfx, entity.pos.x, entity.pos.y); // The foe has seen you (it.114).
+      // The foe has seen you (it.114). IT.117: the mark is hung off the BODY's
+      // own height — one fixed lift put it at mid-chest on a warden and
+      // floating above a wretch's head. `singleHeight` covers the marker-drawn
+      // kinds; everything else stands at the mob or boss standard.
+      if (entity instanceof Enemy) {
+        const head = entity.def.singleHeight ?? (entity.isWarden ? BOSS_HEIGHT : MOB_HEIGHT) * (entity.def.sprite?.heightMult ?? 1);
+        fxAlert(world.vfx, entity.pos.x, entity.pos.y, Math.round(head + 10));
+      } else if (entity) {
+        fxAlert(world.vfx, entity.pos.x, entity.pos.y);
+      }
       const v = entity instanceof Enemy ? voiceProfile(entity.def.kind) : { pitch: 1, bank: 'hGrunt' };
       audio.enemyVoice('idle', v.pitch, v.bank);
     });
@@ -4581,7 +5030,7 @@ async function boot(): Promise<void> {
           audio.sfx(rare ? 'rarePickup' : 'pickup');
           if (rare) fxPickupRare(world.vfx, seat.player.pos.x, seat.player.pos.y); // it.114
           tutorial.notify('inv', 'Press I to open your inventory and equip your spoils.');
-          tutorial.notify('journal', 'The JOURNAL (H, or the book on the bar) explains every item, effect and recipe.');
+          tutorial.notify('journal', 'The journal (H, or the book on the bar) explains every item, effect and recipe.');
         } else if (chat) {
           chat.system(`${seat.name} picked up ${itemDef(itemId)?.name ?? itemId}.`);
         }
@@ -4638,6 +5087,12 @@ async function boot(): Promise<void> {
         world.dmgText.show(entity.pos.x, entity.pos.y - 0.5, `+${xpGain} xp`, 'miss');
         if (levelsGained > 0) {
           audio.sfx('levelUp');
+          // A LEVEL LANDS ON ALL THREE GAUGES (it.117): the bar the hero has
+          // been filling for ten minutes empties and refills, and the corner
+          // says so instead of only the banner in the middle of the screen.
+          hudBeat('#status-frame .sf-xp', 'beat', 700);
+          hudBeat('#status-frame .sf-res', 'beat', 700);
+          beatLife();
           world.ambience.burst(player.pos.x, player.pos.y, 0xffd98a, 26);
           world.ambience.playGlint(player.pos.x, player.pos.y);
           world.camera.addShake(0.2);
@@ -4733,6 +5188,7 @@ async function boot(): Promise<void> {
             world.arenaCleared = true;
             world.arenaSigil?.stop(); // The sigil burns out with the last foe (it.115).
             world.arenaSigil = null;
+            chat.log('quest', `Cleared ${floorName(floor)}.`); // THE LOG (it.117).
             town.markBossCleared(); // The merchants restock on a warden's fall (it.78).
             const w = world;
             // Boss last: wait out the collapse + loot beat. Minion last: brief pause.
@@ -4753,14 +5209,21 @@ async function boot(): Promise<void> {
         fallen.player.action = 'dead';
         fallen.player.actionTicks = 0;
         fxDeathBurst(world.vfx, fallen.player.pos.x, fallen.player.pos.y, true); // it.114
+        // THE HUNT ENDS WITH THE HUNTED (it.117): with nobody left standing,
+        // every body forgets the chase on the spot instead of grinding after a
+        // corpse until the hero rises inside the same pack.
+        if (!world.combat.anyHeroAlive()) world.enemies.forEachActive((e) => e.dropAggro());
         if (fallen.player === player) vignetteEl?.classList.add('dead'); // THE BLOODY SCREEN (it.114).
         if (fallen.player === player) {
           inputQueue.enqueue({ type: 'STOP', playerId: localSlot });
           deathNote?.classList.add('show');
+          // THE LOG SAYS WHO (it.117): the notice on screen never did.
+          const killer = takeKiller();
+          chat.log('combat', killer ? `You were killed by ${killer}.` : 'You have fallen.');
           if (!coop) later(() => deathNote?.classList.remove('show'), 6500); // Doubled (it.50); 6.5 s (it.114).
-          else chat?.system('You have fallen. You rise beside the entrance in 10 s.');
+          else chat.system('You have fallen. You rise beside the entrance in 10 s.');
         } else {
-          chat?.system(`${fallen.name} has fallen.`);
+          chat.log('combat', `${fallen.name} has fallen.`);
         }
       }
     });
@@ -4780,7 +5243,7 @@ async function boot(): Promise<void> {
       world.dmgText.show(
         b.pos.x,
         b.pos.y - 1.4,
-        phase === 3 ? 'THE LICH RISES — FINAL FORM!' : 'THE KING RISES IN GRAVE-ARMOR!',
+        phase === 3 ? 'THE LICH RISES — FINAL FORM!' : 'THE KING RISES IN GRAVE-ARMOUR!',
         'crit',
       );
       const nameEl = document.getElementById('boss-bar-name');
@@ -4791,14 +5254,67 @@ async function boot(): Promise<void> {
 
     /** The bed that played before the death sheet's lament (it.89). */
     let musicBeforeDeath = audio.currentMusic;
+    /**
+     * WHERE A DELVER RISES (it.117).
+     *
+     * The rising used to be the floor's entrance, full stop — which on a deep
+     * floor is a two-minute walk back to the fight and on a small one is three
+     * tiles from the pack that just killed you. The body now comes back as
+     * NEAR the place it fell as is safe:
+     *
+     *   · walkable, and a legal stand (body radius, corner-aware);
+     *   · at least RISE_CLEAR tiles from every living foe — never inside the
+     *     pack, even if the pack has forgotten you;
+     *   · the nearest such tile to the fall, searched outward by rings, so the
+     *     hero rises facing the same fight, not across the map;
+     *   · the entrance is the last resort, when nothing within RISE_MAX_BACK
+     *     of the body is clear.
+     */
+    const RISE_CLEAR = 5.5;
+    const RISE_MAX_BACK = 14;
+    const risePoint = (): { x: number; y: number } => {
+      const fell = { x: player.pos.x, y: player.pos.y };
+      const foes: Array<{ x: number; y: number }> = [];
+      world.enemies.forEachActive((e) => {
+        if (e.hp > 0 && e.action !== 'dead' && !e.def.passive) foes.push({ x: e.pos.x, y: e.pos.y });
+      });
+      // Tile CENTRES only: a centre is always a legal stand, so the search
+      // never needs the body-radius test and can never wedge the hero in a
+      // corner the way a free-floating point could.
+      const clear = (gx: number, gy: number, keep: number): boolean => {
+        if (!world.scene.isWalkable(gx, gy)) return false;
+        for (const f of foes) if (Math.hypot(f.x - (gx + 0.5), f.y - (gy + 0.5)) < keep) return false;
+        return true;
+      };
+      const fx = Math.floor(fell.x);
+      const fy = Math.floor(fell.y);
+      // Two passes: the clearance we want, then a tighter one. A sealed arena
+      // can be too small to stand five tiles off a warden, and being close to
+      // the fight with the ward up beats being teleported to the entrance.
+      for (const keep of [RISE_CLEAR, RISE_CLEAR * 0.55]) {
+        for (let r = 0; r <= RISE_MAX_BACK; r++) {
+          for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+              if (r > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // Ring only.
+              if (clear(fx + dx, fy + dy, keep)) return { x: fx + dx + 0.5, y: fy + dy + 0.5 };
+            }
+          }
+        }
+      }
+      return { x: world.dungeon.spawn.x + 0.5, y: world.dungeon.spawn.y + 0.5 };
+    };
     const respawnPlayer = (): void => {
-      player.warpTo(world.dungeon.spawn.x + 0.5, world.dungeon.spawn.y + 0.5);
+      const at = risePoint();
+      player.warpTo(at.x, at.y);
       player.hp = player.hpMax;
       player.action = 'idle';
       vignetteEl?.classList.remove('dead', 'hurt'); // The blood drains off the glass (it.115): the solo rising never cleared it.
-      // THE SPAWN WARD (it.89): five seconds in which no blow can land.
+      // THE SPAWN WARD (it.89, lengthened it.117): seconds in which no blow can land.
       player.wardTicks = SPAWN_WARD_TICKS;
-      world.lighting.updateVisibility(world.dungeon.spawn.x, world.dungeon.spawn.y);
+      // NOTHING IS STILL HUNTING A CORPSE (it.117): the pack forgot the chase
+      // when the hero fell, and re-engages only on a fresh sighting.
+      world.enemies.forEachActive((e) => e.dropAggro());
+      world.lighting.updateVisibility(Math.floor(at.x), Math.floor(at.y));
       world.ambience.burst(player.pos.x, player.pos.y, 0x9fd0ff, 22);
       world.dmgText.show(player.pos.x, player.pos.y - 1.2, `WARDED · ${SPAWN_WARD_TICKS / 60} s`, 'crit');
       audio.sfx('ward');
@@ -5164,7 +5680,7 @@ async function boot(): Promise<void> {
           world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
           minimap.markDirty();
           audio.sfx('gateOpen');
-          tutorial.say('The room at the back is yours. The chest in it is warded - what you leave there you can take from any stash, and your party can reach it too.');
+          tutorial.say('The back room is yours. Its chest is warded: what you leave there comes out of any stash, and your party can reach it.');
         }, 'the key turns');
       }
     };
@@ -5195,7 +5711,7 @@ async function boot(): Promise<void> {
         if (first !== 'next') return;
         const v = await dialogue.open({
           ...who,
-          lines: ['That\'s my inn in there, and they\'re drinking my cellar dry. Clear the quarter - all twenty - and these people can go home.', 'Two hundred gold (200) when it\'s done, and a bow and a sword I\'ve had put away. The militia will move a cart for you.'],
+          lines: ['That\'s my inn in there, and they\'re drinking my cellar dry. Clear the quarter - all twenty - and these people can go home.', 'Two hundred gold (200) when it\'s done, and a bow and a sword I\'ve had put away.'],
           choices: [
             { label: 'I\'LL DO IT', sub: 'the militia moves a cart aside', value: 'go' },
             { label: 'NOT NOW', value: 'stay' },
@@ -5215,7 +5731,7 @@ async function boot(): Promise<void> {
       if (st === 'cleared') {
         const v = await dialogue.open({
           ...who,
-          lines: ['You did it. The streets are ours again.', 'Two hundred gold (200), the bow and the sword - they\'re yours. And the back room, for as long as you want it: a bed, and a chest the guild warded. Leave anything in it and you can take it out of any stash anywhere - your friends too.'],
+          lines: ['You did it. The streets are ours again.', 'Two hundred gold (200), the bow and the sword - yours. And the back room: a bed, and a chest the guild warded. What you leave in it comes out of any stash anywhere.'],
           choices: [{ label: 'THANK YOU', sub: 'the gold, the bow, the sword, and the key to the room', value: 'reward' }],
         });
         if (v !== 'reward') return;
@@ -5232,9 +5748,10 @@ async function boot(): Promise<void> {
         const v = await dialogue.open({
           ...who,
           lines: [
-            'Sit down. From now on anything behind this bar is a quarter off for you - it is the least I can do.',
-            'Though that\'s the trouble - every bottle I have is down in the cellar, and I have not been down there since the looters left. Something else went down after them. I can hear it through the boards at night.',
-            'I gave you the bow and the sword. Go down and see what it is, and bring my stock back up. The cellar door is in the west wall, past the tables, down by the south corner. I\'m not proud about it - I am frightened of that stair.',
+            // IT.117: three paragraphs became two. The panel prints them all at once.
+            'Sit down. Everything behind this bar is a quarter off for you now.',
+            'Which is the trouble - every bottle I have is in the cellar, and I have not been down since the looters left. Something else went down after them. I hear it through the boards at night.',
+            'The cellar door is in the west wall, past the tables. Bring my stock up, and I\'ll not pretend I am brave enough to go with you.',
           ],
           choices: [
             { label: 'I\'LL GO DOWN', sub: 'he unbolts the back door', value: 'go' },
@@ -5249,7 +5766,7 @@ async function boot(): Promise<void> {
       if (cel === 'active') {
         const v = await dialogue.open({
           ...who,
-          lines: ['The back door\'s open - west wall, down by the south corner. Mind the dark down there - I never got round to lighting it properly.'],
+          lines: ['The back door\'s open - west wall, by the south corner. Mind the dark; I never got round to lighting it.'],
           choices: [TAPS, { label: 'UNDERSTOOD', value: 'ok' }],
         });
         openTaps(v);
@@ -5259,8 +5776,8 @@ async function boot(): Promise<void> {
         const v = await dialogue.open({
           ...who,
           lines: [
-            'You brought Sarah up with you. She works my tables - three years now - and I had her down as gone with the rest of them.',
-            'I do not know what to say except thank you. Twice now. The room is yours, the chest is yours, and the quarter off everything at this bar stands for as long as I keep it.',
+            'You brought Sarah up with you. Three years she has worked my tables, and I had her down as gone.',
+            'Thank you. Twice now. The room is yours, the chest is yours, and the quarter off stands as long as I keep this bar.',
           ],
           choices: [TAPS, { label: 'THANKS', value: 'ok' }],
         });
@@ -5467,7 +5984,7 @@ async function boot(): Promise<void> {
         speaker: 'SIR HAM',
         role: 'come up the road with his people',
         portrait: keeperPortrait(),
-        lines: ['All of them? Good work. Here\'s your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever is down there, it isn\'t wolves. The road home is behind you when you want it.'],
+        lines: ['All of them? Good work. Your pay from the guild - a hundred gold (100).', 'The quarry is at the far end of the woods. Whatever is down there, it isn\'t wolves.'],
         choices: [{ label: 'THANKS', value: 'ok' }],
       });
       saveNow();
@@ -5550,8 +6067,8 @@ async function boot(): Promise<void> {
         role: 'of the Gilded Stag',
         portrait: girlPortrait(),
         lines: [
-          'Is it over? Are they dead? I was hiding from the looters in the basement, and then these monsters appeared...',
-          'I was hiding here until you showed up. Thank you for saving me!',
+          'Is it over? I hid from the looters down here, and then these things came.',
+          'I was waiting for the dark to end. Thank you for saving me!',
         ],
         choices: [{ label: '...', sub: 'she presses a purse and a draught into your hand', value: 'ok' }],
       });
@@ -5565,7 +6082,7 @@ async function boot(): Promise<void> {
         portrait: girlPortrait(),
         lines: [
           quests.cellar === 'done'
-            ? 'Thank you. I mean it. I would still be behind those crates if you had not come down.'
+            ? 'Thank you. I would still be behind those crates if you had not come down.'
             : 'Please - do not leave me down here.',
         ],
         choices: [{ label: 'TAKE CARE', value: 'ok' }],
@@ -5619,7 +6136,7 @@ async function boot(): Promise<void> {
           world.ambience.burst(door.x + 1, door.y + 0.5, 0xffc070, 14);
         }
         if (!opened) world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-        tutorial.say('The back door is unbolted - the west wall, past the tables, by the south corner. Whatever is in his cellar, it is between you and the drink.');
+        tutorial.say('The back door is unbolted - west wall, past the tables. Whatever is in the cellar stands between you and the drink.');
         return;
       }
       if (step !== 'rescue' || quests.cellar !== 'active' || floor !== CELLAR_FLOOR) return;
@@ -5676,12 +6193,13 @@ async function boot(): Promise<void> {
     /** The general's next taunt, and the cooldown on his hand. */
     let generalLine = 0;
     let generalCool = 0;
+    // IT.117: a shout over a battlefield, not a shout in capitals.
     const GENERAL_LINES = [
-        'HOLD THE ROWS',
-        'THE CITY STARVES',
-        'BURN IT ALL',
-        'YOU BROUGHT CHILDREN',
-        'NO ONE EATS TONIGHT',
+        'Hold the rows!',
+        'The city starves!',
+        'Burn it all!',
+        'You brought children.',
+        'No one eats tonight.',
     ];
     /**
      * FACES FOR THE CORNER BOX (it.102). One canvas per (sheet, dye), cropped to
@@ -5819,12 +6337,14 @@ async function boot(): Promise<void> {
         // low and south of the yard so a shout never lands on the title, and the
         // box carries the part a shout across a square cannot.
         speech: [
-          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'THERE IS NO BREAD IN THE MARKET', speaker: 'MERRAN OSK', role: 'cooper of the Old Quarter', portrait: folkPortrait(0) },
-          { t: 2.1, x: yard.x + 4, y: yard.y + 4, text: 'MY CHILDREN HAVE NOT EATEN IN THREE DAYS', speaker: 'HALDIS THE CARTER', role: 'of the market road', portrait: folkPortrait(4) },
-          { t: 3.3, x: yard.x - 5, y: yard.y + 5, text: 'THEY ARE BURNING THE FIELDS WHILE WE STAND HERE', speaker: 'BREN FIELDER', role: 'driven off his own acre', portrait: folkPortrait(1) },
-          { t: 4.5, x: yard.x + 2, y: yard.y + 6, text: 'TAKE THE FARMLANDS BACK!', speaker: 'THE WARD', role: 'the whole training ground, at once', portrait: folkPortrait(2) },
-          { t: 5.6, x: yard.x - 3, y: yard.y - 2, text: 'STAND BACK. STAND BACK - HE WILL SPEAK.', speaker: 'SERJEANT BRAY', role: 'of the city watch', portrait: keeperPortrait() },
-          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'THE WATCH WILL MARCH. I NEED A SWORD I CAN TRUST.', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait(), hold: 4.2, zoom: 2.2, anim: 'guard_attack', dir: 4 },
+          // IT.117: a crowd speaks, it does not shout in capitals. The words are
+          // sentence case now; the SPEAKER plate above them keeps the caps.
+          { t: 0.9, x: yard.x - 4, y: yard.y + 4, text: 'There is no bread in the market.', speaker: 'MERRAN OSK', role: 'cooper of the Old Quarter', portrait: folkPortrait(0) },
+          { t: 2.1, x: yard.x + 4, y: yard.y + 4, text: 'My children have not eaten in three days.', speaker: 'HALDIS THE CARTER', role: 'of the market road', portrait: folkPortrait(4) },
+          { t: 3.3, x: yard.x - 5, y: yard.y + 5, text: 'They are burning the fields while we stand here.', speaker: 'BREN FIELDER', role: 'driven off his own acre', portrait: folkPortrait(1) },
+          { t: 4.5, x: yard.x + 2, y: yard.y + 6, text: 'Take the farmlands back!', speaker: 'THE WARD', role: 'the whole training ground, at once', portrait: folkPortrait(2) },
+          { t: 5.6, x: yard.x - 3, y: yard.y - 2, text: 'Stand back. He will speak.', speaker: 'SERJEANT BRAY', role: 'of the city watch', portrait: keeperPortrait() },
+          { t: 6.9, x: yard.x, y: yard.y - 1, text: 'The watch will march. I need a sword I can trust.', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'of the city watch', portrait: officerPortrait(), hold: 4.2, zoom: 2.2, anim: 'guard_attack', dir: 4 },
         ],
         keepWalkers: true,
         hold: 8,
@@ -5841,47 +6361,31 @@ async function boot(): Promise<void> {
     };
 
     /**
-     * THE ARRIVAL (it.114). A new hero used to appear on the cobbles with a
-     * command sheet open and nothing said. Now the bars come down once: the
-     * camera settles on the training ground, the sentry names the place and
-     * the sign, and the hero is standing at the yard when the bars lift - so
-     * the tutorial is the first thing in reach, not the first thing to find.
-     * Plays on a FRESH run only (no save, no party, not the menagerie).
+     * THE ARRIVAL (it.114, quietened it.117).
+     *
+     * It used to be a letterboxed scene: the bars came down on the first
+     * second of a new hero's life, the camera left them for the yard, and LORD
+     * MILK held two WAITED lines in the corner box - a conversation the player
+     * never asked for, before they had taken a step. The owner is right that
+     * nothing should open itself on arrival; her word belongs behind E.
+     *
+     * What is left is the quiet version: the hero already stands at the yard,
+     * one line floats over her head, a ring marks where she is, and the notice
+     * says what she is for. No bars, no zoom, no page to turn - the camera
+     * never leaves the hero, and the player is in control from frame one.
      */
     const startArrival = (): void => {
-      // Only on the town itself (it.115): a hero who left in the first beat must not meet the yard's scene in the inn.
+      // Only on the town itself (it.115): a hero who left in the first beat must not meet the yard's greeting in the inn.
       if (reclaim || !world.town || floor !== 0 || transitioning || !world.town.layout.training) return;
-      const yard = world.town.layout.training.mark;
-      // LORD MILK SPEAKS FROM HER POST (it.115): the word floats over her, and the close-up finds her.
-      const milk = world.town.layout.training?.milk ?? { x: yard.x + 2, y: yard.y + 2 };
-      lightTheWayIn({ x: yard.x, y: yard.y }, [{ x: yard.x + 3, y: yard.y + 2 }, { x: yard.x - 3, y: yard.y - 2 }]);
-      reclaim = new ProcessionScene({
-        layer: world.viewport.objectLayer,
-        ambience: world.ambience,
-        fx: gateFx,
-        carts: [],
-        at: { x: yard.x, y: yard.y },
-        from: { x: yard.x, y: yard.y },
-        route: [{ x: yard.x, y: yard.y }],
-        titles: [['THE OLD QUARTER', 'a town on the mouth of the crypt'], ['THE TRAINING GROUND', 'learn the sword before the dark does']],
-        walkers: 0,
-        isWalkable: cineWalk,
-        say: cineSay,
-        sayDone: () => cineSpeak.clear(),
-        speech: [
-          { t: 1.2, x: milk.x, y: milk.y, text: 'New here? The dummies are for practice - they will not hit back.', speaker: 'Lord Milk', role: 'trainer', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
-          { t: 2.6, x: milk.x, y: milk.y, text: 'Talk to me when you want to learn the basics. The crypt gate is at the top of the old quarter.', speaker: 'Lord Milk', role: 'trainer', portrait: milkPortrait(), hold: 3.5, zoom: 2.2, zoomAt: { x: milk.x + 0.5, y: milk.y + 0.5 } },
-        ],
-        hold: 3.5,
-        ...cineFocusHooks,
-        sfx: (n) => audio.sfx(n),
-        onDone: () => {
-          reclaim?.destroy();
-          reclaim = null;
-          world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
-          toast.show({ kind: 'lore', title: 'THE TRAINING GROUND', sub: 'Walk up to Lord Milk and press E for a short lesson - any time you like. The first one you finish pays 100 gold.', ms: 9000 });
-        },
-      });
+      const t = world.town.layout.training;
+      const milk = t.milk ?? t.post;
+      const at = { x: milk.x + 0.5, y: milk.y + 0.5 };
+      world.lighting.updateVisibility(milk.x, milk.y); // She is lit where she stands, without a scene light.
+      world.dmgText.show(at.x, at.y - 1.9, 'NEW HERE? COME AND I WILL SHOW YOU THE SWORD.', 'crit');
+      world.vfx.play('vfx_ring', at.x, at.y, { scale: 0.85, flat: true, fps: 16, tint: 0xffd898, alpha: 0.8 });
+      world.ambience.burst(at.x, at.y, 0xffd070, 12, { lowEnergy: true });
+      tutorial.say('Lord Milk runs the training ground. Press E at her post for the lesson.');
+      toast.show({ kind: 'lore', title: 'The training ground', sub: 'Press E at Lord Milk for a short lesson. The first one you finish pays 100 gold.', ms: 9000 });
     };
 
     /**
@@ -5917,10 +6421,10 @@ async function boot(): Promise<void> {
         // The company's word is read in RED in the corner box (it.102), so the one
         // scene on this floor spoken by the enemy is never taken for the city's.
         speech: [
-          { t: 1.0, x: g.x, y: g.y, text: 'BURN IT. BURN EVERY ROW.', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, zoom: 2.2, anim: 'captain_attack', dir: 0 },
-          { t: 2.4, x: g.x + 2, y: g.y + 2, text: 'THE CITY EATS ASHES THIS WINTER', speaker: 'A COMPANY SERJEANT', role: 'on the burning rows', portrait: faceOf('captain_idle', 0xb87068, 0), foe: true },
-          { t: 3.8, x: g.x, y: g.y, text: 'ANY FARMER STILL BREATHING - PUT HIM AGAINST THE WALL', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, zoom: 2.2, anim: 'captain_attack', dir: 0 },
-          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'AND IF THE WATCH COMES, LET THEM COME', speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, hold: 4, zoom: 2.2, zoomAt: { x: g.x, y: g.y }, castIndex: 0, anim: 'captain_attack', dir: 0 },
+          { t: 1.0, x: g.x, y: g.y, text: 'Burn it. Burn every row.', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, zoom: 2.2, anim: 'captain_attack', dir: 0 },
+          { t: 2.4, x: g.x + 2, y: g.y + 2, text: 'The city eats ashes this winter.', speaker: 'A COMPANY SERJEANT', role: 'on the burning rows', portrait: faceOf('captain_idle', 0xb87068, 0), foe: true },
+          { t: 3.8, x: g.x, y: g.y, text: 'Any farmer still breathing goes against the wall.', crit: true, speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, zoom: 2.2, anim: 'captain_attack', dir: 0 },
+          { t: 5.2, x: g.x - 2, y: g.y + 2, text: 'And if the watch comes, let them come.', speaker: 'GENERAL VARRICK', role: 'of the free company', portrait: generalPortrait(), foe: true, hold: 4, zoom: 2.2, zoomAt: { x: g.x, y: g.y }, castIndex: 0, anim: 'captain_attack', dir: 0 },
         ],
         hold: 6,
         ...cineFocusHooks,
@@ -5963,7 +6467,7 @@ async function boot(): Promise<void> {
         // player who took the muster and wanted the dummies had no way to them.
         const v = await dialogue.open({
           ...who,
-          lines: ['My men are on the muster ground and the road is open. Go when you are ready - and stay near them, they fight better with someone to follow.'],
+          lines: ['My men are on the muster ground and the road is open. Go when you are ready, and stay near them - they fight better with someone to follow.'],
           choices: [
             { label: 'UNDERSTOOD', value: 'ok' },
             { label: 'THE YARD', sub: 'walk the training ground first', value: 'train' },
@@ -5975,9 +6479,9 @@ async function boot(): Promise<void> {
       const v = await dialogue.open({
         ...who,
         lines: [
-          'You have heard it by now. There is no bread in the market and there will be none next week either.',
+          'There is no bread in the market, and there will be none next week.',
           'A free company came up the marsh path and took the fields. They are burning the crop as they go - not to hold it, just so we cannot have it.',
-          'I am taking every guard I can arm and going out there tonight. I would rather go with you than without you.',
+          'I march tonight with every guard I can arm. I would rather go with you than without you.',
         ],
         choices: [
           { label: 'I WILL COME', sub: 'the squad musters at the marsh gate', value: 'go' },
@@ -6023,10 +6527,10 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(), // THE PAGE IS TURNED (it.103).
         speech: [
-          { t: 1.2, x: mid.x, y: mid.y, text: 'THAT WAS FOUGHT, NOT BRAWLED', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'on the taken ground', portrait: officerPortrait(), zoom: 2.2 },
-          { t: 3.0, x: (route[2] ?? mid).x, y: (route[2] ?? mid).y, text: 'THE ROWS ARE OURS AGAIN', speaker: 'BREN FIELDER', role: 'back on his own acre', portrait: folkPortrait(1) },
-          { t: 5.0, x: (route[3] ?? mid).x, y: (route[3] ?? mid).y, text: 'WE CAN SOW BEFORE THE FROST', speaker: 'MERRAN OSK', role: 'of the Old Quarter', portrait: folkPortrait(0) },
-          { t: 7.0, x: (route[4] ?? mid).x, y: (route[4] ?? mid).y, text: 'THERE WILL BE BREAD BY THE WEEK’S END', speaker: 'HALDIS THE CARTER', role: 'with the first cart out', portrait: folkPortrait(4), hold: 4.2 },
+          { t: 1.2, x: mid.x, y: mid.y, text: 'That was fought, not brawled.', crit: true, speaker: 'CAPTAIN ORDWAY', role: 'on the taken ground', portrait: officerPortrait(), zoom: 2.2 },
+          { t: 3.0, x: (route[2] ?? mid).x, y: (route[2] ?? mid).y, text: 'The rows are ours again.', speaker: 'BREN FIELDER', role: 'back on his own acre', portrait: folkPortrait(1) },
+          { t: 5.0, x: (route[3] ?? mid).x, y: (route[3] ?? mid).y, text: 'We can sow before the frost.', speaker: 'MERRAN OSK', role: 'of the Old Quarter', portrait: folkPortrait(0) },
+          { t: 7.0, x: (route[4] ?? mid).x, y: (route[4] ?? mid).y, text: 'There will be bread by the week\'s end.', speaker: 'HALDIS THE CARTER', role: 'with the first cart out', portrait: folkPortrait(4), hold: 4.2 },
         ],
         keepWalkers: true,
         ...cineFocusHooks,
@@ -6111,7 +6615,7 @@ async function boot(): Promise<void> {
         quests.farm = 'done';
         for (const seat of liveSeats()) seat.player.gold += 250;
         eventBus.emit('inventory:changed', {});
-        showReward('REWARD RECEIVED · 250 GOLD · THE FIELDS ARE THE CITYS');
+        showReward("REWARD RECEIVED · 250 GOLD · THE FIELDS ARE THE CITY'S");
         audio.sfx('questDone');
         world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 30);
         saveNow();
@@ -6148,14 +6652,15 @@ async function boot(): Promise<void> {
             role: 'on the taken ground',
             portrait: officerPortrait(),
             lines: [
-              'That was not a brawl, that was a battle, and you fought it like someone who has read one.',
-              'Two hundred and fifty from the city purse. The carts will be running by morning, and there will be bread in the market by the end of the week.',
-              'Look at it. They are already coming back out to it. The western road is still barricaded, mind - whatever came up it once can come up it again, but that is a worry for another night.',
-              'One more thing. With the company broken there is no reason to keep the RIVER GATE chained - it is on the east side of the old quarter, and the watch have taken the chain off it this morning. There is a farm on the water out past it, and stragglers from that same company went downriver ahead of us. I would look in on it.',
+              // IT.117: four paragraphs in one panel. The panel prints every line
+              // at once, so the pay, the praise and the next errand are three.
+              'That was not a brawl. That was a battle, and you fought it like someone who has read one.',
+              'Two hundred and fifty from the city purse. The carts run by morning.',
+              'And the river gate is unchained - east side of the old quarter. There is a farm on the water past it, and stragglers went downriver ahead of us. Look in on it.',
             ],
             choices: [{ label: 'I WILL GO TO THE RIVER', value: 'ok' }],
           });
-        }, 'the fields are the city’s');
+        }, 'the fields are the city\'s');
         return;
       }
       let alive = 0;
@@ -6224,11 +6729,11 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THE REST OF IT, FARMER. ALL OF IT.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, zoom: 2.2 , anim: 'poacher_attack' },
+          { t: 1.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'The rest of it, farmer. All of it.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, zoom: 2.2 , anim: 'poacher_attack' },
           { t: 2.5, x: o.x, y: o.y, text: 'There is nothing left. You have had the season already.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), zoom: 2.2 },
-          { t: 4.0, x: r.bandits[1].x, y: r.bandits[1].y, text: 'THEN WE TAKE THE BOAT, AND THE GIRL CARRIES IT DOWN —', speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, zoom: 2.2 },
-          { t: 5.6, x: r.bandits[2].x, y: r.bandits[2].y, text: 'WAIT. WAIT — THAT IS THE ONE FROM THE FIELDS.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'seeing who walked in', portrait: banditPortrait(), foe: true, zoom: 2.2 },
-          { t: 7.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'THAT IS THE ONE WHO PUT VARRICK IN THE DIRT. TAKE THEM — ALL THREE AT ONCE!', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, hold: 3, zoom: 2.2 , anim: 'poacher_attack' },
+          { t: 4.0, x: r.bandits[1].x, y: r.bandits[1].y, text: 'Then we take the boat, and the girl carries it down—', speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, zoom: 2.2 },
+          { t: 5.6, x: r.bandits[2].x, y: r.bandits[2].y, text: 'Wait. That is the one from the fields.', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'seeing who walked in', portrait: banditPortrait(), foe: true, zoom: 2.2 },
+          { t: 7.0, x: r.bandits[0].x, y: r.bandits[0].y, text: 'That is the one who put Varrick in the dirt. Take them!', crit: true, speaker: 'A COMPANY STRAGGLER', role: 'in the yard', portrait: banditPortrait(), foe: true, hold: 3, zoom: 2.2 , anim: 'poacher_attack' },
         ],
         hold: 4,
         ...cineFocusHooks,
@@ -6277,10 +6782,10 @@ async function boot(): Promise<void> {
         say: cineSay,
         sayDone: () => cineSpeak.clear(),
         speech: [
-          { t: 1.0, x: o.x, y: o.y, text: 'You came through that gate at the right hour. An hour later and there would have been nothing here worth thanking you for.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), zoom: 2.2 },
-          { t: 3.2, x: r.kin[0] ? r.kin[0].x : o.x, y: r.kin[0] ? r.kin[0].y : o.y, text: 'He would not give them the boat. He would not give them anything.', speaker: 'OSCAR’S WIFE', role: 'at the barn wall', portrait: faceOf('cit_goodwife_walk', 0xd8c8e0, 2), zoom: 2.2 },
+          { t: 1.0, x: o.x, y: o.y, text: 'You came through that gate at the right hour. An hour later and there would be nothing here worth thanking you for.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), zoom: 2.2 },
+          { t: 3.2, x: r.kin[0] ? r.kin[0].x : o.x, y: r.kin[0] ? r.kin[0].y : o.y, text: 'He would not give them the boat. He would not give them anything.', speaker: 'OSCAR\'S WIFE', role: 'at the barn wall', portrait: faceOf('cit_goodwife_walk', 0xd8c8e0, 2), zoom: 2.2 },
           { t: 5.2, x: o.x, y: o.y, text: 'Take this. My grandfather carried the river trade under the old charter, and the seal is still good — the watch on the far bank will honour it.', crit: true, speaker: 'OSCAR', role: 'putting the seal in your hand', portrait: oscarPortrait(), zoom: 2.2 },
-          { t: 7.4, x: o.x, y: o.y, text: 'Show it to the watch on the span up the track and they will let you over. What is on the far side is not my business, and I would not go looking. And there is a bed and a fire here for you whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4, zoom: 2.2 },
+          { t: 7.4, x: o.x, y: o.y, text: 'Show it to the watch on the span and they will let you over. And there is a bed and a fire here whenever you want one.', speaker: 'OSCAR', role: 'of the riverside farm', portrait: oscarPortrait(), hold: 4, zoom: 2.2 },
         ],
         hold: 5,
         ...cineFocusHooks,
@@ -6317,7 +6822,7 @@ async function boot(): Promise<void> {
         quests.riverPass = 'held';
         for (const seat of liveSeats()) seat.player.gold += 150;
         eventBus.emit('inventory:changed', {});
-        showReward('REWARD RECEIVED · 150 GOLD · OSCAR’S SEALED PASS');
+        showReward("REWARD RECEIVED · 150 GOLD · OSCAR'S SEAL");
         audio.sfx('questDone');
         world.ambience.burst(player.pos.x, player.pos.y, 0xffd070, 30);
         saveNow();
@@ -6342,7 +6847,7 @@ async function boot(): Promise<void> {
             lines: [
               'The nets are back in the water and the girl has stopped shaking. That is your doing.',
               'A hundred and fifty is every coin we had buried, and you are having it, so do not start.',
-              'The seal is yours. Rest here when the road gets long — nobody on this bank will ask you a thing.',
+              'The seal is yours. Rest here when the road gets long - nobody on this bank will ask you a thing.',
             ],
             choices: [{ label: 'THE FARM IS SAFE', value: 'ok' }],
           });
@@ -6547,9 +7052,9 @@ async function boot(): Promise<void> {
         await dialogue.open({
           ...who,
           lines: [
-            'Far enough. The span is the city\u2019s and the far bank is under the city\u2019s law, and neither of them is open to whoever walks up.',
-            'We are not being difficult. There was a battle over that ground a week ago and the losers are still on it. Nobody crosses without leave in writing.',
-            'Find someone on this bank with a charter and a seal. There is a family up the track who have had one since their grandfather ran the river trade.',
+            'Far enough. The span is the city\'s, and the far bank is under the city\'s law.',
+            'There was a battle over that ground a week ago and the losers are still on it. Nobody crosses without leave in writing.',
+            'Find a charter and a seal. There is a family up the track who have had one since their grandfather ran the river trade.',
           ],
           choices: [{ label: 'I WILL FIND ONE', value: 'ok' }],
         });
@@ -6562,7 +7067,7 @@ async function boot(): Promise<void> {
           'Unless you have some. Have you?',
         ],
         choices: [
-          { label: 'SHOW OSCAR\u2019S SEALED PASS', value: 'seal' },
+          { label: 'SHOW OSCAR\'S SEAL', value: 'seal' }, // it.117: one name for it everywhere.
           { label: 'NOT YET', value: 'no' },
         ],
       });
@@ -6572,10 +7077,10 @@ async function boot(): Promise<void> {
         ...who,
         role: 'reading the seal',
         lines: [
-          'That is the river charter, and that is the old seal on it. I have not seen one of these since I was a boy.',
-          'It is good. It is good anywhere the city\u2019s writ runs, which as of this month is as far as the bridge and not one step further.',
-          'So: understand what you are walking onto. That is a battlefield, and it is a week old. There are men out there going through the pockets, and there is a house in the middle of it with its windows lit that nobody in this watch can explain.',
-          'The road east past it is barred - the city on the far side has its grate down and is not opening it for anyone. Go and come back. And keep your hand where I can see it on the way through.',
+          // IT.117: four paragraphs in one panel became three.
+          'That is the river charter, and the old seal on it. I have not seen one since I was a boy.',
+          'It is good. Now understand what you are walking onto: a week-old battlefield, men out there going through the pockets, and a house in the middle of it with its windows lit that nobody here can explain.',
+          'The road east past it is barred. Go, and come back. And keep your hand where I can see it.',
         ],
         choices: [{ label: 'OPEN THE GATE', value: 'ok' }],
       });
@@ -6625,7 +7130,7 @@ async function boot(): Promise<void> {
             t: 4.0,
             x: at.x,
             y: at.y,
-            text: 'You hear muffled shouting, roaring laughter, and clinking mugs echoing from inside.',
+            text: 'Shouting, laughter and mugs, muffled through the door.',
             crit: true,
             // Unattributed, so it would drift past on its own: it waits instead,
             // because there is nothing after it and no reason to hurry a reader.
@@ -6694,10 +7199,10 @@ async function boot(): Promise<void> {
         sayDone: () => cineSpeak.clear(),
         speech: [
           { t: 1.0, x: c.x, y: c.y, text: 'Sit down, all of you. It has only brought a sword.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'not looking up', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
-          { t: 3.1, x: c.x, y: c.y, text: 'You have come a long way to stand in my light, and you never once asked the only question that matters in this room. Not whether you can. Whether you are WORTH the trouble of stopping.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
-          { t: 5.9, x: c.x, y: c.y, text: 'Let me do the sum, since nobody else here can count. Mail — sound. Blade — good steel, wants an edge. Boots: Harl has been whining about boots since the ford. Teeth, if the city is still buying them. That is the whole of you, and I have added it twice.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'pricing the room', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
-          { t: 9.2, x: c.x, y: c.y, text: 'You are waiting for the part where I offer you the door. There is no door. There has not been a door since you crossed my bridge — there has only ever been how far in you got before somebody had to fetch a cloth.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
-          { t: 12.2, x: c.x, y: c.y, text: 'On your feet, gentlemen. And mind the wine on your way past — it is older than this house and worth a great deal more than any of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3, zoom: 2.2 },
+          { t: 3.1, x: c.x, y: c.y, text: 'You came a long way to stand in my light, and never asked the only question that matters here. Not whether you can. Whether you are worth the trouble of stopping.', speaker: 'BRACK THE TALLYMAN', role: 'turning a cup on the wood', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 5.9, x: c.x, y: c.y, text: 'Let me do the sum. Mail, sound. Blade, good steel. Boots - Harl has whined about boots since the ford. Teeth, if the city still buys them. That is the whole of you, and I added it twice.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'pricing the room', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 9.2, x: c.x, y: c.y, text: 'You are waiting for the part where I offer you the door. There is no door. There has not been one since you crossed my bridge.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'setting the cup down', portrait: chiefPortrait(), foe: true, zoom: 2.2 },
+          { t: 12.2, x: c.x, y: c.y, text: 'On your feet, gentlemen. And mind the wine on the way past - it is worth a great deal more than any of you.', crit: true, speaker: 'BRACK THE TALLYMAN', role: 'in a house he does not own', portrait: chiefPortrait(), foe: true, hold: 3, zoom: 2.2 },
         ],
         hold: 6,
         ...cineFocusHooks,
@@ -6773,10 +7278,10 @@ async function boot(): Promise<void> {
         sayDone: () => cineSpeak.clear(),
         speech: [
           { t: 1.2, x: c.x, y: c.y, text: 'Is that \u2014 is that Brack? Did he go down? I know what that man sounds like going down. I have been waiting nine days to hear it.', speaker: 'A VOICE BEHIND THE PANELLING', role: 'in the closet behind the high table', portrait: merchantPortrait() },
-          { t: 4.0, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. They kept me alive because my brother can be written to. They were still arguing about the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait(), zoom: 2.2 },
-          { t: 6.6, x: q.x, y: q.y, text: 'And every night one of them came and opened that door and asked me had I reconsidered. Pay, he said, or we walk you down to the basement and let the thing that lives in it have the argument instead.', crit: true, speaker: 'THE MERCHANT', role: 'not looking at the west wall', portrait: merchantPortrait(), zoom: 2.2 },
-          { t: 9.4, x: q.x, y: q.y, text: 'They were not bluffing. They took the boy down there on the fourth night. I heard the bar go on afterwards and I did not hear him again.', crit: true, speaker: 'THE MERCHANT', role: 'quietly', portrait: merchantPortrait(), zoom: 2.2 },
-          { t: 12.0, x: q.x, y: q.y, text: 'Take this. It is what is in my coat and it is not a tenth of what I owe you, and I will not hear otherwise. My shop is in the city over the east road \u2014 the day that gate opens you drink for nothing in it.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait(), hold: 4, zoom: 2.2 },
+          { t: 4.0, x: q.x, y: q.y, text: 'They took me off the east road with two carts and a boy. I am alive because my brother can be written to. They were still arguing the figure this morning.', speaker: 'THE MERCHANT', role: 'out of the closet at last', portrait: merchantPortrait(), zoom: 2.2 },
+          { t: 6.6, x: q.x, y: q.y, text: 'Every night one of them opened that door and asked had I reconsidered. Pay, he said, or we walk you down to the basement and let the thing that lives in it argue instead.', crit: true, speaker: 'THE MERCHANT', role: 'not looking at the west wall', portrait: merchantPortrait(), zoom: 2.2 },
+          { t: 9.4, x: q.x, y: q.y, text: 'They were not bluffing. They took the boy down on the fourth night. I heard the bar go on. I did not hear him again.', crit: true, speaker: 'THE MERCHANT', role: 'quietly', portrait: merchantPortrait(), zoom: 2.2 },
+          { t: 12.0, x: q.x, y: q.y, text: 'Take this. It is what is in my coat, and not a tenth of what I owe you. My shop is over the east road - the day that gate opens, you drink for nothing in it.', crit: true, speaker: 'THE MERCHANT', role: 'emptying his coat', portrait: merchantPortrait(), hold: 4, zoom: 2.2 },
         ],
         hold: 7,
         ...cineFocusHooks,
@@ -6892,9 +7397,9 @@ async function boot(): Promise<void> {
             role: 'in the doorway, going',
             portrait: merchantPortrait(),
             lines: [
-              'Give me a moment before you go. Nine days in a cupboard and my legs have opinions about standing.',
-              'The door in the west wall - the one they had a bench across. That is where they said they would put me if my brother would not pay. Whatever is down there, they were frightened enough of it to keep it as a threat.',
-              'Take a light. Take two. And when the eastern gate opens \u2014 ask anyone on the street for the man with the two carts. That is me. You drink for nothing in my shop.',
+              'A moment before you go. Nine days in a cupboard and my legs have opinions about standing.',
+              'The door in the west wall, the one with the bench across it - that is where they said they would put me. Whatever is down there frightened even them.',
+              'Take a light. Take two. And when the eastern gate opens, ask for the man with the two carts. You drink for nothing in my shop.',
             ],
             choices: [{ label: 'GO CAREFULLY', value: 'ok' }],
           });
@@ -6920,8 +7425,7 @@ async function boot(): Promise<void> {
         portrait: merchantPortrait(),
         lines: [
           'Nine days in a cupboard listening to men eat. I will never look at a roast the same way.',
-          'They kept the bar on that west door and asked me every night whether I had reconsidered the price. The alternative was the stair behind it. They were not a careful sort of people and even they would not go down.',
-          'When the east gate opens, come and find me. Free draughts, for as long as I am behind the counter.',
+          'When the east gate opens, come and find me. Free draughts, as long as I am behind the counter.',
         ],
         choices: [{ label: 'FAREWELL', value: 'ok' }],
       });
@@ -7128,7 +7632,7 @@ async function boot(): Promise<void> {
     let partyHudClock = 0;
     const coopWait = document.createElement('div');
     coopWait.id = 'coop-wait';
-    coopWait.innerHTML = '<div class="cw-box"><b>WAITING FOR THE PARTY</b><span></span></div>';
+    coopWait.innerHTML = '<div class="cw-box"><b>Waiting for the party</b><span></span></div>';
     if (coop) document.body.appendChild(coopWait);
     const updatePartyHud = (dt: number): void => {
       partyHudClock += dt;
@@ -7159,13 +7663,13 @@ async function boot(): Promise<void> {
         const span = coopWait.querySelector('span');
         if (show && title && span) {
           if (catching) {
-            title.textContent = 'CATCHING UP WITH THE PARTY';
+            title.textContent = 'Catching up with the party';
             span.textContent = `${Math.round(lockstep.replayProgress * 100)}% of the delve so far`;
           } else if (hostOut) {
-            title.textContent = 'RECONNECTING';
+            title.textContent = 'Reconnecting';
             span.textContent = 'reaching the Party Leader again…';
           } else {
-            title.textContent = 'WAITING FOR THE PARTY';
+            title.textContent = 'Waiting for the party';
             const missing = lockstep.isLeader ? lockstep.missingSlots(state.tick + 1).map((s) => party[s]?.name ?? `seat ${s + 1}`) : [];
             span.textContent = lockstep.inBarrier ? 'the floor is being raised on every screen…' : missing.length ? `waiting on ${missing.join(', ')}` : 'waiting for the leader…';
           }
@@ -7197,6 +7701,67 @@ async function boot(): Promise<void> {
     let cineFocus: { x: number; y: number } | null = null;
     let cineBlend = false;
     const cineCur = vec2();
+    /**
+     * THE CONVERSATION CAMERA (it.117).
+     *
+     * A word with somebody used to happen at whatever zoom the wheel was left
+     * at, with the hero dead centre and the person talking somewhere off to one
+     * side - and, in a cutscene, with the zoom easing in and out on every line.
+     * A conversation is now ONE STEADY SHOT: when a dialogue panel opens on
+     * somebody the hero walked up to, the camera eases once to the MIDPOINT of
+     * the two of them at `TALK_ZOOM` and holds it, dead still, until the panel
+     * closes. It never re-aims while the panel is up (both of them are standing),
+     * so there is nothing left to oscillate.
+     *
+     * It defers to everything louder: a procession owns the camera outright,
+     * and so does the yard's director, so a lesson's framing is never fought
+     * over. `talkAt` is armed by `openInteractable` and cleared on close, so a
+     * dialogue that opens on its own (a cutscene's pay-off) simply gets no shot.
+     */
+    const TALK_ZOOM = 2.05;
+    let talkAt: { x: number; y: number } | null = null;
+    let talkArmed = 0;
+    let talkFramed = false;
+    const tickTalkCamera = (): void => {
+      // The arming goes stale in a second and a half: a walk-up that opened a
+      // shop window must not frame a dialogue that opens minutes later on its own.
+      if (talkAt && !talkFramed && !dialogue.isOpen && performance.now() - talkArmed > 1500) talkAt = null;
+      const want = !reclaim && !tutorFramed && !!talkAt && dialogue.isOpen;
+      if (want === talkFramed) return;
+      talkFramed = want;
+      if (want && talkAt) {
+        if (!cineFocus) {
+          cineCur.x = cameraFocus.x;
+          cineCur.y = cameraFocus.y;
+        }
+        // The midpoint, biased a little toward the speaker: the hero is who the
+        // player already knows where to find; the face is what they are reading.
+        // ...then LIFTED CLEAR OF THE PANEL. The dialogue window sits across the
+        // middle of the screen, so a shot centred on the speaker frames them
+        // exactly where the panel is about to cover them. The lift is measured
+        // off the PANEL ITSELF - which the player may have dragged, and which is
+        // a different size on a phone - so the speaker lands a little above its
+        // top edge whatever the layout, and never higher than the top fifth.
+        // In iso, +1 on both axes is straight down-screen; the pixels are
+        // converted back to tiles through the zoom and the layout bias.
+        const box = app.canvas.getBoundingClientRect();
+        const panel = document.getElementById('dialogue-panel')?.getBoundingClientRect();
+        const wantCss = panel && panel.height > 0 ? Math.max(box.height * 0.16, panel.top - box.top - 26) : box.height * 0.3;
+        const liftPx = Math.max(0, box.height / 2 - wantCss) * (box.height > 0 ? app.screen.height / box.height : 1);
+        const lift = liftPx / ((TILE_W / 4) * 2 * TALK_ZOOM * world.camera.layoutBias); // TILE_W / 4 is TILE_H / 2: the iso row height.
+        cineFocus = { x: cameraFocus.x * 0.4 + talkAt.x * 0.6 + lift, y: cameraFocus.y * 0.4 + talkAt.y * 0.6 + lift };
+        world.camera.setCineZoom(TALK_ZOOM, 0.5);
+      } else {
+        talkAt = null;
+        // Only give back what is still ours: if a procession or the yard's
+        // director took the camera while the panel was up, they own it now.
+        if (!reclaim && !tutorFramed) {
+          cineFocus = null;
+          cineFogTile = -1;
+          world.camera.setCineZoom(null, 0.5);
+        }
+      }
+    };
     const gateFx = new GateFx(() => world.ambience);
     let restGlint = 0;
     /**
@@ -7392,7 +7957,13 @@ async function boot(): Promise<void> {
         const local = inputQueue.drain();
         const commands = lockstep ? lockstep.frame(tick, local) : local;
         if (leaderNoteCooldown > 0) leaderNoteCooldown--;
-        for (const cmd of commands) if (cmd.playerId === localSlot) tutor.noteCommand(cmd.type); // THE TRAINING GROUND (it.90).
+        for (const cmd of commands) {
+          if (cmd.playerId !== localSlot) continue;
+          tutor.noteCommand(cmd.type); // THE TRAINING GROUND (it.90).
+          // ...and the yard says so when it pours (it.117): a flask drunk in the
+          // lesson comes off Lord Milk's shelf, never out of the hero's pack.
+          if (cmd.type === 'USE_QUICK' && tutor.isRunning) world.dmgText.show(player.pos.x, player.pos.y - 1.5, 'THE YARD POURS · FREE', 'crit');
+        }
         for (const cmd of commands) {
           if (cmd.type === 'AIM') {
             const seat = party[cmd.playerId];
@@ -7445,7 +8016,7 @@ async function boot(): Promise<void> {
         world.combat.applyCommands(commands);
         for (const inv of inventories) inv?.apply(commands);
         for (const inv of inventories) inv?.tick(); // A dish heals in slices (it.114).
-        for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–4 (it.32).
+        for (const sk of skillSystems) sk?.apply(commands); // Hotkeys 1–8 (it.32, eight it.117).
         town.tavernDiscount = quests.east === 'done' ? 0.25 : 0; // Coleslaw's quarter off (it.116).
         town.apply(commands); // Buy / sell / stash (it.39).
         crafting.apply(commands); // The camp forge (it.78).
@@ -7513,12 +8084,11 @@ async function boot(): Promise<void> {
             if (transitioning) break;
             goHome('spawn');
           } else if (world.coliseum) {
-            // T (it.56): the teleporter rises at the centre; a second T while it stands leaves at once.
-            if (world.coliseum.exit) leaveColiseum();
-            else {
-              openExitTeleporter();
-              world.dmgText.show(player.pos.x, player.pos.y - 1.2, 'THE WAY HOME OPENS AT THE CENTRE', 'miss');
-            }
+            // THE RITE WORKS ON THE SAND TOO (it.117): T is the way home from
+            // ANY floor, the coliseum included - it used to only raise the
+            // teleporter at the centre and make the player walk to it.
+            if (transitioning) break;
+            leaveColiseum();
           }
           else if (transitioning || pendingPortal) break;
           else if (portalCooldown > 0) world.dmgText.show(player.pos.x, player.pos.y - 1, `PORTAL IN ${Math.ceil(portalCooldown / 60)}s`, 'miss');
@@ -7669,6 +8239,7 @@ async function boot(): Promise<void> {
           if (hero === player) {
             audio.sfx('gold');
             updateProgressHud();
+            hudBeat('#status-frame .sf-purse', 'coin', 440); // THE PURSE KICKS (it.117)
           }
           fxPickupGold(world.vfx, hero.pos.x, hero.pos.y);
           world.dmgText.show(hero.pos.x, hero.pos.y - 0.4, `+${scooped} gold`, 'crit');
@@ -7691,7 +8262,10 @@ async function boot(): Promise<void> {
             fxPickupGold(world.vfx, pile.x, pile.y); // it.114
             world.ambience.sparks(pile.x, pile.y, 0, 0, 6, 0xffd870);
             world.dmgText.show(pile.x, pile.y, `+${pile.amount} gold`, 'crit');
-            if (hero === player) updateProgressHud();
+            if (hero === player) {
+              updateProgressHud();
+              hudBeat('#status-frame .sf-purse', 'coin', 440); // THE PURSE KICKS (it.117)
+            }
             break;
           }
         }
@@ -7742,6 +8316,7 @@ async function boot(): Promise<void> {
             world.arenaCleared = true;
             world.arenaSigil?.stop(); // The sigil burns out with the last foe (it.115).
             world.arenaSigil = null;
+            chat.log('quest', `Cleared ${floorName(floor)}.`); // THE LOG (it.117).
             town.markBossCleared(); // The merchants restock on a warden's fall (it.78).
             // The stair already stands (it.115); depth XX and the quarry raise their teleporter above.
             if (floor < MAX_DEPTH) {
@@ -7780,8 +8355,50 @@ async function boot(): Promise<void> {
       }
     }
 
+    /**
+     * THE WORLD SLOWS BEHIND A WINDOW (it.117).
+     * =========================================
+     * Measured on the PRODUCTION build (bundled, minified), crypt depth I, an
+     * Intel iGPU at devicePixelRatio 1.25 with the scaler already down at 0.75.
+     * Median rAF frame, milliseconds:
+     *
+     *     inventory closed                              28.2
+     *     inventory open, it.116 panel glass            41.7      <- the complaint
+     *     inventory open, glass fixed (see index.html)  27.7
+     *     inventory open, glass fixed + this            21.0
+     *
+     * Nearly all of that gap was the panel's backdrop blur, and the stylesheet
+     * deals with it. This is the remainder: while a registered window owns the
+     * screen the world behind it is scenery, so it is drawn every SECOND frame
+     * instead of every one. (Every third was measured - the 21.0 above - and
+     * every second is what ships, because a window does not always cover the
+     * whole screen and a background at thirty frames still reads as moving.)
+     *
+     * NOTHING IS LOST. A skipped frame does not touch `lastRenderTime`, so the
+     * frame that does run gets the whole elapsed `frameDt`: every animation,
+     * camera ease and particle advances by exactly what the wall clock says.
+     * The FIXED 60 Hz SIMULATION is untouched - this is `frameRender`, and
+     * `GameLoop` steps `update` from its own accumulator either way.
+     *
+     * `anyPanelOpen` walks the eighteen registered windows, so it is asked once
+     * every four frames rather than every frame; the minimap counts only when
+     * it is the full chart, which is exactly when it does cover the screen.
+     */
+    const PANEL_RENDER_EVERY = 2;
+    let panelPoll = 0;
+    let panelOwnsScreen = false;
+    let panelFrame = 0;
+
     function frameRender(alpha: number): void {
       {
+        if ((panelPoll++ & 3) === 0) {
+          const open = anyPanelOpen();
+          if (open !== panelOwnsScreen) {
+            panelOwnsScreen = open;
+            panelFrame = 0; // the first frame under a new window always draws
+          }
+        }
+        if (panelOwnsScreen && panelFrame++ % PANEL_RENDER_EVERY !== 0) return;
         const now = performance.now();
         const frameDt = Math.max(0, Math.min((now - lastRenderTime) / 1000, 0.1)); // A clock that steps back (a stubbed one, a resumed tab) never runs a frame backwards (it.92).
         lastRenderTime = now;
@@ -7791,6 +8408,7 @@ async function boot(): Promise<void> {
         // THE MENAGERIE (it.115): the display models play their clips, lit where they stand.
         for (const m of showcase) m.update(frameDt, world.lighting.getTintAt(m.x, m.y, 0.35), world.camera.currentZoom);
         lerpVec(cameraFocus, player.prevPos, player.pos, alpha);
+        tickTalkCamera(); // THE CONVERSATION CAMERA (it.117): one steady shot while a word is on the table.
         // THE RECLAIMING (it.91): the camera crosses to the gate and back on its own clock.
         if (cineFocus || cineBlend) {
           const goal = cineFocus ?? cameraFocus;
@@ -7830,6 +8448,12 @@ async function boot(): Promise<void> {
         // through a cutscene's freeze - a river that stops dead reads as a bug,
         // and it is render-only, so nothing the sim can see is touched.
         world.water?.update(frameDt);
+        // THE RIVER HAS A DISTANCE (it.117). One byte out of the layout's
+        // water-distance field says how near the bank the hero stands; the bed
+        // follows it, so the water is a river on the jetty and a rumour in the
+        // north field. `setRiverNearness` discards a move under 2%, so this is
+        // a lookup and a compare on almost every frame.
+        if (world.water) audio.setRiverNearness(riverNearnessAt(cameraFocus.x, cameraFocus.y));
         {
           // HUD occlusion (it.41): overhead bars and numbers hold screen size at any zoom.
           const z = world.camera.currentZoom;
@@ -8085,6 +8709,8 @@ async function boot(): Promise<void> {
             }
           });
           if (quests.forest === 'active') questTargets = targets;
+          trackerCounts.alive = alive;
+          trackerCounts.total = world.foesAtStart;
           const tally = tallyText('ENEMIES REMAINING', alive, world.foesAtStart);
           if (questHud.innerHTML !== tally) questHud.innerHTML = tally;
           questHud.classList.add('show');
@@ -8097,6 +8723,8 @@ async function boot(): Promise<void> {
             if (e.hp > 0 && e.action !== 'dead') targets.push({ x: e.pos.x, y: e.pos.y });
           });
           questTargets = targets;
+          trackerCounts.alive = targets.length;
+          trackerCounts.total = world.foesAtStart;
           const tally = tallyText('TROOPS REMAINING', targets.length, world.foesAtStart);
           if (questHud.innerHTML !== tally) questHud.innerHTML = tally;
           questHud.classList.add('show');
@@ -8109,7 +8737,17 @@ async function boot(): Promise<void> {
           const tally = tallyText('LOOTERS REMAINING', targets.length, LOOTER_COUNT);
           if (questHud.innerHTML !== tally) questHud.innerHTML = tally;
           questHud.classList.add('show');
+          trackerCounts.alive = targets.length;
+          trackerCounts.total = LOOTER_COUNT;
         } else if (questHud.classList.contains('show')) questHud.classList.remove('show');
+        // THE TRACKER (it.117): the same counts, carried by the objective line
+        // under the plate. It repaints only when the text actually changes.
+        if (floor === FOREST_FLOOR || floor === FARM_FLOOR) trackerCounts.total = world.foesAtStart;
+        else if (floor !== 0) {
+          trackerCounts.alive = undefined;
+          trackerCounts.total = undefined;
+        }
+        questTracker.update();
         updateFoePointers(questTargets);
         updateAllyMarks(); // THE CITY'S OWN (it.100).
         if (world.town) {
@@ -8296,6 +8934,8 @@ async function boot(): Promise<void> {
         updateSkillHud(); // Cooldown sweeps + resource bar (it.32).
         tutorial.update(cameraFocus.x, cameraFocus.y, frameDt);
         tutor.update(frameDt); // THE TRAINING GROUND (it.90).
+        // THE ARROW POINTS THE WAY YOU FACE (it.117).
+        minimap.setHeading(player.facing.x, player.facing.y);
         minimap.update(cameraFocus.x, cameraFocus.y, timeSec);
         world.camera.follow(cameraFocus, frameDt);
         // OFF-SCREEN CULLING (it.74): only what the camera sees is handed
@@ -8432,16 +9072,56 @@ async function boot(): Promise<void> {
      * the numbers, the flashes and the sounds are all show, so the dummies'
      * count of the PLAYER'S hits is never fed by hers.
      */
-    const milkLesson = (kind: 'strike' | 'skill' | 'quaff', on: { x: number; y: number }): number => {
+    const milkLesson = (kind: Lesson, on: { x: number; y: number }, rate = 1): number => {
       const v = world.town?.villagers;
       const head = v?.figureHead(MILK_SHEET);
       if (!v || !head) return 0;
       const here = world;
       const still = (): boolean => alive && world === here;
+      /**
+       * SLOW MOTION, RENDER-SIDE (it.117). `r` divides every frame rate her
+       * sprite is stepped at and multiplies every show timer, so the whole
+       * demonstration - the clip, the impact, the number, the shake - stretches
+       * together and stays in sync. It touches her sprite and `later` and
+       * nothing else: no command is issued, no tick is slowed, and the sixty
+       * hertz the simulation runs at never hears of it.
+       */
+      const r = Math.max(0.2, Math.min(1, rate));
+      const slow = 1 / r;
+      if (kind === 'move') {
+        // ACROSS THE YARD AND BACK (it.117): the first thing anyone has to do.
+        // Her walk sheet is fetched at the first card; if it has still not
+        // landed she steps it in her guard instead - `figurePerform` moves the
+        // body whatever clip it is wearing, so the LESSON is never lost.
+        const clip: AnimName = spriteLib.hasAnim('duelist_walk') ? 'duelist_walk' : 'duelist_block';
+        const secs = v.figurePerform(MILK_SHEET, clip, on, 9 * r, 1.9);
+        if (secs <= 0) return 0;
+        for (let i = 1; i <= 4; i++) {
+          later(() => {
+            if (!still()) return;
+            world.ambience.burst(head.x, head.y, 0xb0a088, 4, { lowEnergy: true }); // Dust off her heels.
+            audio.sfx('uiHover');
+          }, (secs * 1000 * i) / 5);
+        }
+        return secs;
+      }
+      if (kind === 'interact') {
+        // A HAND RAISED (it.117): what E looks like from the other side of it.
+        const secs = v.figurePerform(MILK_SHEET, 'duelist_block', on, 6 * r);
+        if (secs <= 0) return 0;
+        world.vfx.play('vfx_ring', head.x, head.y, { scale: 0.8, flat: true, fps: 16, tint: 0xffd898, alpha: 0.85 });
+        later(() => {
+          if (!still()) return;
+          world.dmgText.show(head.x, head.y - 1.3, 'E · SPEAK', 'crit');
+          world.ambience.burst(head.x, head.y, 0xffd070, 10, { lowEnergy: true });
+          audio.sfx('uiConfirm');
+        }, secs * 400 * slow);
+        return secs;
+      }
       if (kind === 'strike') {
         // Two cuts, the second a crit: what a held attack key keeps doing.
         const cut = (crit: boolean): number => {
-          const secs = v.figurePerform(MILK_SHEET, 'duelist_attack', on, 15, 1.05);
+          const secs = v.figurePerform(MILK_SHEET, 'duelist_attack', on, 15 * r, 1.05);
           if (secs <= 0) return 0;
           audio.sfx('swing');
           later(() => {
@@ -8459,15 +9139,15 @@ async function boot(): Promise<void> {
         if (secs <= 0) return 0;
         later(() => {
           if (still()) cut(true);
-        }, secs * 1000 + 120);
-        return secs * 2 + 0.12;
+        }, secs * 1000 + 120 * slow);
+        return secs * 2 + 0.12 * slow;
       }
       if (kind === 'skill') {
-        const secs = v.figurePerform(MILK_SHEET, 'duelist_cast', on, 12);
+        const secs = v.figurePerform(MILK_SHEET, 'duelist_cast', on, 12 * r);
         if (secs <= 0) return 0;
         world.vfx.play('fx_fire_cast', head.x, head.y, { scale: 0.9, lift: 30, overlay: true });
         audio.sfx('skillFire');
-        const flight = 0.4;
+        const flight = 0.4 * slow; // The ball crosses at the same pace as the clip (it.117).
         later(() => {
           if (!still()) return;
           const ball = world.vfx.play('fx_fireball_a', head.x, head.y, { loop: true, scale: 0.8, lift: 34, overlay: true });
@@ -8491,7 +9171,7 @@ async function boot(): Promise<void> {
         return secs + flight;
       }
       // THE DRAUGHT: the flask rises from her belt to her lips, and the swirl climbs her.
-      const secs = v.figurePerform(MILK_SHEET, 'duelist_block', null, 4.5);
+      const secs = v.figurePerform(MILK_SHEET, 'duelist_block', null, 4.5 * r);
       if (secs <= 0) return 0;
       // The flask's own painting; drawn empty for the moment it takes to fetch, never as a stand-in blob.
       const flask = new Sprite(spriteLib.hasSingle('item_potion_health') ? spriteLib.single('item_potion_health') : Texture.EMPTY);
@@ -8562,6 +9242,11 @@ async function boot(): Promise<void> {
         placeParty(t.mark.x + 0.5, t.mark.y + 0.5, world.scene.isWalkable);
         world.lighting.updateVisibility(Math.floor(player.pos.x), Math.floor(player.pos.y));
         minimap.markDirty();
+        // HER WALK IS NOT RESIDENT (it.117). A standing villager only ever needs
+        // her idle, so `duelist_walk` is left off the floor's sheet list - and
+        // the MOVING lesson, two cards in, silently did nothing. It is fetched
+        // here, at the first card, so it is sliced long before she needs it.
+        void spriteLib.ensure(['duelist_walk']).catch(() => {});
       },
       gate: () => {
         const g = world.town?.layout.gate ?? { x: player.pos.x, y: player.pos.y };
@@ -8596,19 +9281,22 @@ async function boot(): Promise<void> {
         }
       },
     });
+    // THE YARD POURS (it.117): the forward reference declared beside the
+    // inventory is resolved here, now that the tutorial exists.
+    tutorRunning = () => tutor.isRunning;
     /** The sign at the yard (it.90): the word, then the tutorial. */
     const offerTraining = async (): Promise<void> => {
       if (tutor.isRunning) return;
       const v = await dialogue.open({
-        speaker: 'Lord Milk',
-        role: 'trainer',
+        speaker: 'LORD MILK',
+        role: 'of the training ground',
         portrait: milkPortrait(),
         lines: [quests.tutorial === 'done'
-          ? 'Back for another round? The yard is always open - go through it as often as you like.'
-          : 'Want a quick lesson? Moving, fighting, skills, potions and your gear. A few minutes, and a hundred gold the first time you finish.'],
+          ? 'Back for another round? The yard is always open.'
+          : 'Want a lesson? Moving, fighting, skills, potions, gear. A few minutes, and a hundred gold the first time you finish.'],
         choices: [
-          { label: 'Start the lesson', sub: 'about five minutes', value: 'go' },
-          { label: 'Not now', value: 'stay' },
+          { label: 'START THE LESSON', sub: 'about five minutes', value: 'go' },
+          { label: 'NOT NOW', value: 'stay' },
         ],
       });
       if (v === 'go') tutor.start();
@@ -8617,6 +9305,38 @@ async function boot(): Promise<void> {
     // DUNGEON RECORDS (it.48): the board's tallies come straight from the run.
     // THE HALL OF RECORDS (it.54): the board opens the two-tab leaderboard.
     const statsUI = new LeaderboardUI(stats, () => ({ cls: player.archetype, playtimeTicks: playtimeBase + state.tick, gold: player.goldCollected }));
+    /**
+     * EVERY WINDOW KEEPS THE SAME CONTRACT (it.117). One registration each, in
+     * one place, rather than a copy of the same four behaviours inside each
+     * panel — and registering from HERE rather than inside the panels means
+     * the three windows other hands own this iteration (the pack, the
+     * forbidden arts, the shop family) get ESCAPE without their files moving.
+     *
+     * The shell closes exactly ONE window per press, the one opened last, and
+     * stops the event there — so ESCAPE can never both shut a panel and pause
+     * the run, which it used to do whenever a panel forgot to say so.
+     */
+    const classOpen = (id: string): boolean => !!document.getElementById(id)?.classList.contains('open');
+    const unshell = [
+      registerPanel({ id: 'inv-panel', el: 'inv-panel', isOpen: () => classOpen('inv-panel'), close: () => { if (classOpen('inv-panel')) inventoryUI.toggle(); }, fit: false }),
+      registerPanel({ id: 'cheat-menu', el: 'cheat-menu', isOpen: () => classOpen('cheat-menu'), close: () => { if (classOpen('cheat-menu')) cheatMenu.toggle(); }, fit: false }),
+      registerPanel({ id: 'shop-panel', el: 'shop-panel', isOpen: () => shopUI.isOpen, close: () => shopUI.close(), fit: false }),
+      registerPanel({ id: 'stash-panel', el: 'stash-panel', isOpen: () => stashUI.isOpen, close: () => stashUI.close(), fit: false }),
+      registerPanel({ id: 'craft-panel', el: 'craft-panel', isOpen: () => craftUI.isOpen, close: () => craftUI.close(), fit: false }),
+      registerPanel({ id: 'codex', el: 'codex', isOpen: () => codexUI.isOpen, close: () => codexUI.close(), fit: false }),
+      registerPanel({ id: 'notice-board', el: 'notice-board', isOpen: () => noticeUI.isOpen, close: () => noticeUI.close(), fit: false }),
+      registerPanel({ id: 'skill-tree', el: 'skill-tree', isOpen: () => skillTreeUI.isOpen, close: () => skillTreeUI.close(), fit: false }),
+      registerPanel({ id: 'char-sheet', el: 'char-sheet', isOpen: () => charSheetUI.isOpen, close: () => charSheetUI.close(), fit: false }),
+      registerPanel({ id: 'bestiary', el: 'bestiary', isOpen: () => bestiaryUI.isOpen, close: () => bestiaryUI.close(), fit: false }),
+      registerPanel({ id: 'leaderboard', el: 'leaderboard', isOpen: () => statsUI.isOpen, close: () => statsUI.close(), fit: false }),
+      registerPanel({ id: 'level-select', el: 'level-select', isOpen: () => classOpen('level-select'), close: () => { if (classOpen('level-select')) levelSelect.toggle(); }, fit: false }),
+      registerPanel({ id: 'menagerie', el: 'menagerie', isOpen: () => menagerieUI.isOpen, close: () => menagerieUI.close(), fit: false }),
+      registerPanel({ id: 'settings-panel', el: 'settings-panel', isOpen: () => settings.isOpen, close: () => settings.close(), fit: false }),
+      registerPanel({ id: 'save-panel', el: 'save-panel', isOpen: () => savePanel.isOpen, close: () => savePanel.close(), fit: false }),
+    ];
+    subs.push(() => {
+      for (const off of unshell) off();
+    });
     // DRAGGABLE WINDOWS (it.41): every panel by its header, remembered per panel.
     const undrag = [
       ['inv-panel', 'inventory'],
@@ -8642,6 +9362,12 @@ async function boot(): Promise<void> {
       return best;
     };
     const openInteractable = (it: Interactable): void => {
+      // WHO THE HERO IS ABOUT TO TALK TO (it.117). Armed for every walk-up; the
+      // conversation camera only takes it if a DIALOGUE panel actually opens
+      // (a shop window or a board is a window, not a conversation), and drops
+      // it again the moment the panel closes.
+      talkAt = { x: it.x, y: it.y };
+      talkArmed = performance.now();
       // THE CORNER ROOM (it.91): the keeper's until the errand is paid.
       if (it.room && quests.east !== 'done') {
         tutorial.say('The keeper\'s room - not yours yet. Ask at the bar.');
@@ -8760,7 +9486,7 @@ async function boot(): Promise<void> {
       } else if (it.kind === 'manordown') {
         // Barred while the party upstairs is still on; the merchant is the one
         // who tells you what is behind it, and by then it is open.
-        if (quests.manor !== 'done') tutorial.say('The door in the west wall is barred from this side and there is a bench across it. Whoever is holding this hall did not want it opened.');
+        if (quests.manor !== 'done') tutorial.say('The west door is barred from this side, with a bench across it. Whoever holds this hall did not want it opened.');
         else if (coop && localSlot !== leaderSlot) leaderOnlyNote();
         else goVault();
       } else if (it.kind === 'vaultup') {
@@ -9128,8 +9854,8 @@ async function boot(): Promise<void> {
         }, 2600);
       });
       chat.system(net.isHost ? `Party ${net.code} in the crypt. You are the Party Leader.` : `Party ${net.code} in the crypt. ${party[leaderSlot]?.name ?? 'The leader'} leads.${net.path === 'relay' ? ' (through the relay)' : ''}`);
-      if (coop?.history) chat.system('Catching up with the delve so far — you step in the moment the party’s present is reached.');
-      else if (coop?.snapshot) chat.system('You step into the delve as it stands — the leader’s world is yours.');
+      if (coop?.history) chat.system('Catching up with the delve so far - you step in the moment the party\'s present is reached.');
+      else if (coop?.snapshot) chat.system('You step into the delve as it stands - the leader\'s world is yours.');
       chat.system('ENTER to chat · the leader opens stairs, gates and portals · the fallen rise after 10 s.');
     }
     minimap.party = coop ? () => liveSeats().filter((s) => s.player !== player).map((s) => ({ x: s.player.pos.x, y: s.player.pos.y, color: s.colorCss, dead: s.player.action === 'dead' })) : null;
@@ -9235,6 +9961,7 @@ async function boot(): Promise<void> {
         headBuffs.remove();
         statusFrame.destroy();
         systemBar.destroy();
+        idleFade.destroy(); // The HUD goes back to full opacity with the run (it.117).
         vignetteEl?.classList.remove('hurt', 'dead');
         tpButton.remove();
         skillTreeUI.destroy();

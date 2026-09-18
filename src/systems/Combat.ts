@@ -87,6 +87,28 @@ const BUTTON_TARGET_RANGE = 1.7;
  */
 const STRIKE_REACH = 1.7;
 
+/**
+ * TARGET ACQUISITION (it.117).
+ *
+ * Melee acquisition reaches a little past the strike so a body a hair outside
+ * reach is still "what you mean"; the walk closes the rest.
+ */
+const MELEE_ACQUIRE_RANGE = 2.4;
+/** Acquisition is re-run at 10 Hz; between runs the held target is re-validated. */
+const ACQUIRE_PERIOD = 6;
+/**
+ * How strongly the aim (cursor, or facing when there is no cursor) pulls the
+ * pick: a foe dead ahead counts as if it were this fraction nearer, so aim
+ * decides between equals without ever letting a distant foe beat a close one.
+ */
+const AIM_PULL = 0.35;
+/** Line-of-fire sampling: one probe every quarter tile. */
+const SHOT_PROBE = 0.25;
+/** The first stretch out of the bow is never tested (the shooter's own tile). */
+const SHOT_NEAR_SKIP = 0.5;
+/** The last stretch into the target is never tested (the victim's own tile). */
+const SHOT_FAR_SKIP = 0.8;
+
 /** One hero's swing state (it.59: one per party seat). */
 interface SwingState {
   target: Entity | null;
@@ -96,6 +118,10 @@ interface SwingState {
   /** Timing locked in at swing start (from the weapon profile). */
   windup: number;
   recover: number;
+  /** AUTO-TARGET (it.117): the foe this seat currently has locked. */
+  acquired: Entity | null;
+  /** Ticks until the next full re-acquisition sweep. */
+  acquireTicks: number;
 }
 
 /** THE CITY'S OWN (it.101): what the fight is lent of the squad, and nothing more. */
@@ -134,6 +160,22 @@ export class CombatSystem {
    *  shots go toward the hero's aim point, never into stale-facing space. */
   aimDir: ((p: Player) => { x: number; y: number }) | null = null;
 
+  /**
+   * THE RAW AIM (it.117): the unit vector toward the hero's LIVE pointer, or
+   * null when the player is not driving one (keyboard, gamepad, a cursor
+   * parked and untouched). Acquisition leans on it — and must NOT call
+   * `aimDir`, which now consults the acquired target and would loop.
+   */
+  rawAim: ((p: Player) => { x: number; y: number } | null) | null = null;
+
+  /**
+   * Every enemy a hero may legitimately acquire within `r` of a point — the
+   * same sight gate `findNearestEnemy` uses (fog in solo, pure line of sight
+   * in co-op). Wired by main; without it acquisition falls back to the
+   * single-nearest query.
+   */
+  visibleEnemies?: (x: number, y: number, r: number) => Entity[];
+
   constructor(
     /** CO-OP (it.59): one hero per seat (null = empty seat); index = seat. */
     private readonly players: ReadonlyArray<Player | null>,
@@ -144,7 +186,8 @@ export class CombatSystem {
     seed: number,
   ) {
     this.rand = mulberry32(seed ^ 0xc0bba7e5);
-    for (let i = 0; i < players.length; i++) this.swings.push({ target: null, source: 'click', held: false, windup: 14, recover: 18 });
+    for (let i = 0; i < players.length; i++)
+      this.swings.push({ target: null, source: 'click', held: false, windup: 14, recover: 18, acquired: null, acquireTicks: 0 });
   }
 
   /** The seat a hero entity sits in, or -1 for anything that is not a party hero. */
@@ -177,6 +220,117 @@ export class CombatSystem {
     return null;
   }
 
+  /**
+   * ANY HERO STILL STANDING (it.117). `nearestPlayer` deliberately falls back
+   * to "the first hero anywhere" so the AI always has a point to think about;
+   * that fallback is exactly why a pack kept hunting a corpse for ever.
+   */
+  anyHeroAlive(): boolean {
+    for (const p of this.players) if (p && p.action !== 'dead' && p.hp > 0) return true;
+    return false;
+  }
+
+  /**
+   * A CLEAR LINE OF FIRE (it.117). True when no solid tile stands between two
+   * points. A quarter-tile walk of the segment with both ends trimmed: the
+   * shooter's own tile is never the obstruction, and neither is the victim's —
+   * a training dummy, a foe in a doorway and a body backed against a crate all
+   * stand ON blocked squares, and a shot at one of them is a fine shot.
+   */
+  clearShot(x0: number, y0: number, x1: number, y1: number): boolean {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const len = Math.hypot(dx, dy);
+    if (len <= SHOT_NEAR_SKIP + SHOT_FAR_SKIP) return true;
+    const ux = dx / len;
+    const uy = dy / len;
+    for (let d = SHOT_NEAR_SKIP; d <= len - SHOT_FAR_SKIP; d += SHOT_PROBE) {
+      if (!this.isWalkable(Math.floor(x0 + ux * d), Math.floor(y0 + uy * d))) return false;
+    }
+    return true;
+  }
+
+  /** Candidate foes in sight within `r` (the wired list, else the nearest one). */
+  private candidates(x: number, y: number, r: number): Entity[] {
+    if (this.visibleEnemies) return this.visibleEnemies(x, y, r);
+    const one = this.findNearestEnemy(x, y, r);
+    return one ? [one] : [];
+  }
+
+  /**
+   * THE TARGET A HERO MEANS (it.117).
+   *
+   * Everything aimed — a held swing, a loosed arrow, an aimed skill, the ring
+   * on the ground — asks this. The pick is:
+   *
+   *   · in sight (fog in solo, line of sight in co-op) and alive;
+   *   · inside the weapon's own reach (melee is given a little slack so the
+   *     approach can close it);
+   *   · REACHABLE for a ranged weapon — a foe with a crate between you and it
+   *     is never auto-picked, which is most of the "my arrow vanished into a
+   *     barrel" problem solved before it happens;
+   *   · nearest, with the aim pulling the choice between equals. The aim is
+   *     the live cursor when the player is driving one and the hero's facing
+   *     when they are not — which is the whole fix for "with no mouse my
+   *     spells fire at a cursor I am not touching".
+   *
+   * The previous pick is kept while it still qualifies (no flicker between two
+   * foes a hair apart), and nothing here touches the RNG or a wall clock, so a
+   * co-op party acquires identically on every peer.
+   */
+  acquire(seat: number): Entity | null {
+    const p = this.players[seat];
+    const sw = this.swings[seat];
+    if (!p || !sw || p.action === 'dead') return null;
+    const profile = p.weaponProfile;
+    const range = profile.ranged ? profile.range : Math.max(MELEE_ACQUIRE_RANGE, profile.range + 0.5);
+    const ok = (e: Entity | null): e is Entity =>
+      !!e && e.hp > 0 && e.action !== 'dead' && Math.hypot(e.pos.x - p.pos.x, e.pos.y - p.pos.y) <= range &&
+      (!profile.ranged || this.clearShot(p.pos.x, p.pos.y, e.pos.x, e.pos.y));
+
+    // The aim that breaks ties: the live pointer, else where the body faces.
+    const raw = this.rawAim?.(p) ?? null;
+    const alen = raw ? Math.hypot(raw.x, raw.y) || 1 : Math.hypot(p.facing.x, p.facing.y) || 1;
+    const ax = (raw ? raw.x : p.facing.x) / alen;
+    const ay = (raw ? raw.y : p.facing.y) / alen;
+
+    const score = (e: Entity): number => {
+      const dx = e.pos.x - p.pos.x;
+      const dy = e.pos.y - p.pos.y;
+      const d = Math.hypot(dx, dy) || 1e-3;
+      const facing = Math.max(0, (dx / d) * ax + (dy / d) * ay);
+      return d * (1 - AIM_PULL * facing);
+    };
+
+    let best: Entity | null = null;
+    let bestScore = Infinity;
+    for (const e of this.candidates(p.pos.x, p.pos.y, range)) {
+      if (!ok(e)) continue;
+      const s = score(e);
+      if (s < bestScore) {
+        bestScore = s;
+        best = e;
+      }
+    }
+    // Stickiness: the standing pick keeps the lock unless something scores a
+    // clear tenth of a tile better, so the ring does not flicker in a pack.
+    const held = sw.acquired;
+    if (ok(held) && (!best || best === held || score(held) <= bestScore + 0.1)) return held;
+    return best;
+  }
+
+  /**
+   * The seat's CACHED target (it.117). Read by main's aim provider and the
+   * skill systems — it never re-runs the sweep, so an aim provider may ask for
+   * it without looping back through `rawAim`.
+   */
+  acquiredFor(entity: Entity | null): Entity | null {
+    const seat = this.seatOf(entity);
+    const sw = seat >= 0 ? this.swings[seat] : null;
+    const t = sw?.acquired ?? null;
+    return t && t.hp > 0 && t.action !== 'dead' ? t : null;
+  }
+
   /** Consume this tick's action-button commands (shares the drained array). */
   applyCommands(commands: ReadonlyArray<InputCommand>): void {
     for (const cmd of commands) {
@@ -201,12 +355,11 @@ export class CombatSystem {
     }
     const clickTarget = mv.peekAttackTarget();
     if (clickTarget) return clickTarget;
-    if (sw.held) {
-      const profile = p.weaponProfile;
-      const range = profile.ranged ? profile.range : BUTTON_TARGET_RANGE;
-      return this.findNearestEnemy(p.pos.x, p.pos.y, range);
-    }
-    return null;
+    // IT.117: the ring now sits on the ACQUIRED foe, not only on the one being
+    // struck — the player can see what the next swing or cast will go for
+    // before they commit to it. it.116 lit it only while the button was held,
+    // which is precisely when it is too late to be told.
+    return this.acquiredFor(p);
   }
 
   /** Fixed-tick step: advances every hero's attack state machine (seat order). */
@@ -219,7 +372,21 @@ export class CombatSystem {
     const mv = this.movements[i];
     const sw = this.swings[i];
     if (!p || !mv || !sw) return;
-    if (p.action === 'dead') return;
+    if (p.action === 'dead') {
+      sw.acquired = null;
+      return;
+    }
+
+    // AUTO-TARGET (it.117): the lock is kept current every tick, whatever the
+    // hero is doing, so the ring, the aim and the next swing all agree. The
+    // full sweep runs at 10 Hz; between sweeps the held foe is re-validated
+    // (dead, out of range or newly behind cover drops it at once).
+    if (--sw.acquireTicks <= 0) {
+      sw.acquireTicks = ACQUIRE_PERIOD;
+      sw.acquired = this.acquire(i);
+    } else if (sw.acquired && (sw.acquired.hp <= 0 || sw.acquired.action === 'dead')) {
+      sw.acquired = null;
+    }
 
     if (p.action === 'hit') {
       if (--p.actionTicks <= 0) p.action = 'idle';
@@ -237,12 +404,20 @@ export class CombatSystem {
       this.beginPlayerSwing(i, clickTarget, 'click');
       return;
     }
-    // …otherwise the held action button swings at whatever is close —
+    // …otherwise the held action button swings at whatever is acquired —
     // or at the air (whiff), exactly like mashing A in Dark Alliance.
     if (sw.held) {
       const profile = p.weaponProfile;
+      // IT.117: the acquired lock IS the button's target — but only inside the
+      // range the strike can actually resolve at. Acquisition deliberately
+      // reaches further than the blade (so the ring can tell you what is next),
+      // and handing the swing a foe outside its reach is the old whiff-forever
+      // livelock in a new coat.
       const range = profile.ranged ? profile.range : Math.max(BUTTON_TARGET_RANGE, profile.range);
-      const target = this.findNearestEnemy(p.pos.x, p.pos.y, range);
+      const lock = sw.acquired;
+      const target = lock && Math.hypot(lock.pos.x - p.pos.x, lock.pos.y - p.pos.y) <= range
+        ? lock
+        : this.findNearestEnemy(p.pos.x, p.pos.y, range);
       this.beginPlayerSwing(i, target, 'button');
     }
   }
@@ -433,7 +608,15 @@ export class CombatSystem {
     dirY: number,
   ): void {
     if (enemy.hp <= 0 || enemy.action === 'dead') return;
-    if (this.rand() >= toHit) return; // Whiffed past — impact VFX still fires.
+    if (this.rand() >= toHit) {
+      // IT.117: a shaft that grazes past used to be COMPLETELY silent — no
+      // number, no word, nothing. One arrow in five vanishing without comment
+      // is indistinguishable from a bow that does not work, which is how the
+      // real dummy bug stayed hidden. It reads as a miss now, like every
+      // other whiff in the game.
+      eventBus.emit('combat:swing', { sourceId, targetId: enemy.id, result: 'miss' });
+      return;
+    }
     let amount = randInt(this.rand, minDamage, maxDamage);
     const maxRoll = amount === maxDamage; // Max-roll = critical display.
     const crit = this.rand() < PLAYER_CRIT_CHANCE;

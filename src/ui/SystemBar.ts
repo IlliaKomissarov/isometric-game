@@ -43,7 +43,7 @@ const ENTRIES: Entry[] = [
   { key: 'KeyB', label: 'Bestiary', icon: ICON_BESTIARY, cls: 'sb-bestiary' },
   { key: 'KeyH', label: 'Journal', icon: ICON_BOOK, cls: 'sb-codex' },
   { key: 'Escape', label: 'Menu', icon: ICON_COG, cls: 'sb-menu' },
-  { key: 'F1', label: 'Forbidden Arts', icon: ICON_SKULL, cls: 'sb-cheats' },
+  { key: 'F1', label: 'Developer console', icon: ICON_SKULL, cls: 'sb-cheats' },
   { key: null, label: 'Fullscreen', icon: ICON_FULLSCREEN, cls: 'sb-full' },
 ];
 

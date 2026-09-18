@@ -136,6 +136,15 @@ export interface EnemyTypeDef {
     idle?: AnimName;
     death: AnimName;
     attack?: AnimName;
+    /**
+     * A SECOND SWING (it.117). Several packs were baked with a second attack
+     * clip that nothing ever played — the defs literally carried notes saying
+     * "`apex_attack2` is atlased and unused". A body that owns one alternates
+     * its two swings, so a fight stops being the same seven frames on loop.
+     * Any clip length works: the sheet is paced across windup+recover, so the
+     * strike frame lands on exactly the tick it always did.
+     */
+    attack2?: AnimName;
     hitAnim?: AnimName;
     anchorY: number;
     /** Legacy rig scale — FALLBACK only when the atlas manifest lacks painted bounds. */
@@ -243,6 +252,7 @@ export function animsForKind(kind: EnemyKind): AnimName[] {
       out.push(sp.walk, sp.death);
       if (sp.idle) out.push(sp.idle);
       if (sp.attack) out.push(sp.attack);
+      if (sp.attack2) out.push(sp.attack2); // it.117: the alternate swing must be resident too.
       if (sp.hitAnim) out.push(sp.hitAnim);
     }
     k = ENEMY_TYPES[k].nextPhase;
@@ -1172,6 +1182,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       idle: 'spearman_idle',
       death: 'spearman_death',
       attack: 'spearman_attack',
+      attack2: 'spearman_shout', // it.117: a thrust, then a bellowing lunge.
       hitAnim: 'spearman_hit',
       anchorY: 0.95,
       scale: 0.848,
@@ -1571,12 +1582,13 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
     reach: 1.4,
     hitRecoveryTicks: 10,
     markerTexture: 'marker_zombie',
-    // `reaper_dash` and `reaper_talk` are atlased and unused.
+    // `reaper_talk` is atlased and unused; the lunge (`reaper_dash`) is the second swing (it.117).
     sprite: {
       walk: 'reaper_walk',
       idle: 'reaper_idle',
       death: 'reaper_death',
       attack: 'reaper_attack',
+      attack2: 'reaper_dash',
       hitAnim: 'reaper_hit',
       anchorY: 0.95,
       scale: 0.471,
@@ -1601,12 +1613,13 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
     reach: 1.6,
     hitRecoveryTicks: 6,
     markerTexture: 'marker_zombie',
-    // PVGames rig: three-frame idle/attack/hit, four-frame death. `apex_attack2` is atlased and unused.
+    // PVGames rig: three-frame idle/attack/hit, four-frame death.
     sprite: {
       walk: 'apex_walk',
       idle: 'apex_idle',
       death: 'apex_death',
       attack: 'apex_attack',
+      attack2: 'apex_attack2', // it.117: the second swing, baked since the drop and never played.
       hitAnim: 'apex_hit',
       anchorY: 0.95,
       scale: 0.339,
@@ -1634,6 +1647,7 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
       idle: 'apex2_idle',
       death: 'apex2_death',
       attack: 'apex2_attack',
+      attack2: 'apex2_attack2', // it.117.
       hitAnim: 'apex2_hit',
       anchorY: 0.95,
       scale: 0.339,
@@ -1685,12 +1699,13 @@ export const ENEMY_TYPES: Record<EnemyKind, EnemyTypeDef> = {
     reach: 1.4,
     hitRecoveryTicks: 12,
     markerTexture: 'marker_archer',
-    // `duelist_cast` and `duelist_block` are atlased and unused.
+    // `duelist_block` is atlased and unused; the flourish (`duelist_cast`) is the second swing (it.117).
     sprite: {
       walk: 'duelist_walk',
       idle: 'duelist_idle',
       death: 'duelist_death',
       attack: 'duelist_attack',
+      attack2: 'duelist_cast',
       hitAnim: 'duelist_hit',
       anchorY: 0.95,
       scale: 0.651,
@@ -1884,6 +1899,8 @@ export class Enemy extends Entity {
   private pathIndex = 0;
   private repathCooldown = 0;
   private losLostTicks = 0;
+  /** Which of the body's attack clips the current swing plays (it.117). */
+  private swingVariant = 0;
   private hasSummoned = false;
   /** Cornered once while fleeing → fights to the death (it.16). */
   private desperation = false;
@@ -1980,6 +1997,7 @@ export class Enemy extends Entity {
     this.pathIndex = 0;
     this.repathCooldown = 0;
     this.losLostTicks = 0;
+    this.swingVariant = 0;
     this.hasSummoned = false;
     this.desperation = false;
     this.phase = 1;
@@ -2385,6 +2403,34 @@ export class Enemy extends Entity {
     }
   }
 
+  /**
+   * THE HUNT ENDS WITH THE HUNTED (it.117).
+   *
+   * Called on every body the moment the party is down. The chase stops, the
+   * path is dropped and an unreleased swing is let go, so nothing is left
+   * mid-windup over a corpse. Coming back out of `idle` needs the ordinary
+   * sight check — inside the aggro radius AND a real line of sight — so a
+   * risen delver is re-engaged only by what can actually see them, which is
+   * the whole of "some mobs chase you indefinitely".
+   *
+   * `noted` and `desperation` are deliberately NOT reset: a beast that was
+   * cornered once stays desperate, and a body that has already growled at you
+   * does not growl again for the same sighting.
+   */
+  dropAggro(): void {
+    if (this.def.passive || this.action === 'dead') return;
+    this.aiState = 'idle';
+    this.path = [];
+    this.pathIndex = 0;
+    this.losLostTicks = 0;
+    this.lastGoalTile.x = -1;
+    this.lastGoalTile.y = -1;
+    if (this.action === 'attack') {
+      this.action = 'idle';
+      this.actionTicks = 0;
+    }
+  }
+
   /** A warden or the quarry's keeper (it.89): the tourist's blade counts four hits on these. */
   get isWarden(): boolean {
     return BOSS_KINDS.has(this.def.kind);
@@ -2584,6 +2630,7 @@ export class Enemy extends Entity {
     this.facing.y = dy / len;
     this.action = 'attack';
     this.actionTicks = 0;
+    this.swingVariant++; // it.117: bodies with two clips alternate their swings.
     this.path = [];
   }
 
@@ -2889,9 +2936,12 @@ export class Enemy extends Entity {
       if (sprite.attack) {
         // Full attack sheet (knight-based enemies): play it across the
         // windup+recover window so the visual matches the dodge timing.
-        const fc = spriteLib.anim(sprite.attack).frameCount;
+        // IT.117: a body with a second clip alternates — the pacing is still
+        // windup+recover, so the strike frame is where it always was.
+        const clip = sprite.attack2 && this.swingVariant % 2 === 1 && spriteLib.hasAnim(sprite.attack2) ? sprite.attack2 : sprite.attack;
+        const fc = spriteLib.anim(clip).frameCount;
         const frame = Math.min(fc - 1, Math.floor((this.actionTicks / total) * fc));
-        this.setFrame(sprite.attack, dir, frame);
+        this.setFrame(clip, dir, frame);
         this.body.rotation = 0;
         this.body.position.set(0, 2);
         this.body.scale.set(baseScale);

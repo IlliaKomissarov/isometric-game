@@ -208,7 +208,7 @@ export class BestiaryUI {
       detail = `
         ${preview}
         <div class="bs-title"><h4>${known ? def.name : '???'}</h4><span>${known ? `${CATEGORY(sel)} · seen ${rec.seen} · slain ${rec.killed}` : 'unseen'}</span>${known ? `<small class="bs-ref">kind <b>${sel}</b> · sheets <b>${def.sprite ? def.sprite.walk.replace(/_[a-z]+$/, '') + '_*' : def.single ?? '—'}</b></small>` : ''}${known && this.hooks.tryOut && def.sprite ? `<button class="ds-btn bs-tryout" data-tryout="${sel}">✦ SHOW ON THE SAND</button>` : ''}</div>
-        <p class="bs-lore">${known ? (LORE[sel] ?? 'No scholar survived long enough to write of this one.') : 'Something moves down there. Meet it, or switch on the Forbidden Arts, and its page fills in.'}</p>
+        <p class="bs-lore">${known ? (LORE[sel] ?? 'No scholar survived long enough to write of this one.') : 'Something moves down there. Meet it - or switch on god mode in the developer console - and its page fills in.'}</p>
         <div class="bs-stats">
           ${stat('Vitality', `${def.hp}`, `≈${scaled} at level ${level}`)}
           ${stat('Damage', `${def.minDamage}–${def.maxDamage}`, '+1 per level')}

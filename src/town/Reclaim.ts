@@ -16,6 +16,12 @@
  * Nothing here touches the simulation: the grid opens through the `open`
  * hook main hands in (a plain tile write, done the same tick on every peer),
  * and every sprite is the dresser's or this file's.
+ *
+ * THE CONVERSATION CAMERA (it.117). A scene's spoken beats now drive ONE
+ * steady shot: the frame centres on the body that is speaking (looked up live,
+ * so a speaker still walking into the room stays centred), it stays there when
+ * the page is turned, and the zoom is asked for once - the first beat that
+ * wants a closer look - and held until the bars lift. See `findSpeaker`.
  */
 
 import { Container, Sprite } from 'pixi.js';
@@ -72,9 +78,10 @@ export interface SpeechBeat {
   /** Which cast member speaks, by index; omitted, the one standing at `x`,`y`. */
   castIndex?: number;
   /**
-   * THE CAMERA LOOKS CLOSER (it.115): a zoom level (2.2 fills the frame with a
-   * face) held from the moment the line goes up until the page is turned - or,
-   * for a line that is not waited on, until its hold runs out.
+   * THE CAMERA LOOKS CLOSER (it.115, held it.117): a zoom level (2.2 fills the
+   * frame with a face). The FIRST beat of a scene that names one sets the
+   * scene's zoom, and it is held from there to the bars lifting - it is not
+   * taken back between lines any more (see `letGoZoom`).
    */
   zoom?: number;
   /** Where the zoom looks; omitted, the beat's own tile. */
@@ -258,12 +265,24 @@ export class ProcessionScene {
   private readonly walkers: Walker[] = [];
   private readonly cast: CastFigure[] = [];
   /**
-   * THE CLOSE LOOK (it.115). While a beat with `zoom` is up the camera is pinned
-   * here and the zoom is held; both let go when the page is turned (or, for a
-   * line nobody waits on, when `zoomUntil` passes on the scene's clock).
+   * WHO IS TALKING, AND WHERE THEY ARE NOW (it.115, rebuilt it.117).
+   *
+   * Up to it.116 a spoken beat pinned the camera to the beat's own TILE and
+   * took the zoom back the moment the page was turned. Both were wrong, and
+   * the manor's rescue showed it plainly: the merchant's lines name the tile
+   * he ends up on, so the frame pushed in on an empty stretch of floor while
+   * he was still walking out of the panelling - and between every line the
+   * zoom eased out and straight back in again, which is the "constantly zooms
+   * in and out" the owner reported.
+   *
+   * `speakerAt` is a LIVE getter for the body that is speaking (a cast figure,
+   * or the walker nearest the line's tile), so the frame follows the person;
+   * it survives the page turn and is only replaced when somebody else speaks.
+   * `sceneZoom` is asked for ONCE, the first time any beat wants a closer
+   * look, and held until the bars lift.
    */
-  private beatFocus: { x: number; y: number } | null = null;
-  private zoomUntil = Infinity;
+  private speakerAt: (() => { x: number; y: number }) | null = null;
+  private sceneZoom: number | null = null;
   private zoomed = false;
   /** Which lines have been said already (it.101). */
   private said = 0;
@@ -439,17 +458,62 @@ export class ProcessionScene {
     if (this.finished || !this.awaiting) return false;
     this.awaiting = false;
     this.h.sayDone?.();
-    this.letGoZoom();
+    // THE PAGE TURNS, THE CAMERA DOES NOT (it.117): the shot stays on whoever
+    // just spoke until the next speaker takes it, and the zoom is not touched.
     return true;
   }
 
-  /** The close look ends: the pin comes off and the zoom eases back (it.115). */
+  /** The scene is over: the pin comes off and the zoom eases back (it.115, once it.117). */
   private letGoZoom(): void {
-    this.beatFocus = null;
-    this.zoomUntil = Infinity;
+    this.speakerAt = null;
     if (!this.zoomed) return;
     this.zoomed = false;
     this.h.zoom?.(null);
+  }
+
+  /**
+   * WHERE THE LINE IS COMING FROM (it.117). In order: the cast member the beat
+   * names, the cast member standing on (or within a tile of) its tile, the
+   * walker nearest it - live, so a speaker who is still crossing the room stays
+   * centred the whole way - and, failing all of those, the tile itself.
+   */
+  private findSpeaker(beat: SpeechBeat): () => { x: number; y: number } {
+    const at = beat.zoomAt ?? { x: beat.x, y: beat.y };
+    const tile = { x: at.x + 0.5, y: at.y + 0.5 };
+    let fig: CastFigure | undefined = beat.castIndex !== undefined ? this.cast[beat.castIndex] : undefined;
+    if (!fig) {
+      let best = 1.25;
+      for (const c of this.cast) {
+        const d = Math.hypot(c.x + 0.5 - tile.x, c.y + 0.5 - tile.y);
+        if (d < best) {
+          best = d;
+          fig = c;
+        }
+      }
+    }
+    if (fig) {
+      const f = fig;
+      return () => (f.root.destroyed ? tile : { x: f.x + 0.5, y: f.y + 0.5 });
+    }
+    // A scene with ONE walker in it is a scene about that walker (the manor's
+    // merchant): he is the speaker wherever the line's tile happens to be.
+    let w: Walker | undefined;
+    if (this.walkers.length === 1) w = this.walkers[0];
+    else {
+      let best = 3.5;
+      for (const cand of this.walkers) {
+        const d = Math.hypot(cand.x - tile.x, cand.y - tile.y);
+        if (d < best) {
+          best = d;
+          w = cand;
+        }
+      }
+    }
+    if (w) {
+      const k = w;
+      return () => (k.root.destroyed || !k.root.visible ? tile : { x: k.x, y: k.y });
+    }
+    return () => tile;
   }
 
   /**
@@ -483,15 +547,20 @@ export class ProcessionScene {
         this.fitBody(fig, beat.anim);
       }
     }
-    if (beat.zoom !== undefined && this.h.zoom) {
-      const at = beat.zoomAt ?? beat;
-      this.beatFocus = { x: at.x + 0.5, y: at.y + 0.5 };
-      this.h.focus(this.beatFocus.x, this.beatFocus.y);
+    // THE FRAME FINDS THE SPEAKER (it.117). Every attributed line takes the
+    // camera - not only the ones that asked for a zoom - so a six-handed scene
+    // reads as a conversation instead of a wide shot with captions.
+    if (beat.speaker || beat.zoom !== undefined) {
+      this.speakerAt = this.findSpeaker(beat);
+      const p = this.speakerAt();
+      this.h.focus(p.x, p.y);
+    }
+    // ONE ZOOM FOR THE WHOLE SCENE (it.117): the first beat that wants a closer
+    // look sets it, and it is held to the end. Later beats never re-ask.
+    if (beat.zoom !== undefined && this.h.zoom && !this.zoomed) {
+      this.sceneZoom = beat.zoom;
       this.h.zoom(beat.zoom);
       this.zoomed = true;
-      // A line nobody waits on lets go when its hold runs out.
-      const waits = beat.wait ?? !!beat.speaker;
-      this.zoomUntil = waits ? Infinity : this.t + (beat.hold ?? 3.4);
     }
   }
 
@@ -528,13 +597,16 @@ export class ProcessionScene {
     this.t += dt;
     const t = this.t;
     const at = h.at;
-    // The close look on a line nobody waited for runs out on the clock (it.115).
-    if (t >= this.zoomUntil) this.letGoZoom();
-    // The bars close and the camera crosses to the place - unless a beat holds
-    // the camera on a face (it.115), which outranks both the gate and the road.
-    const pinned = this.beatFocus;
+    // The bars close and the camera crosses to the place - unless somebody is
+    // speaking (it.115, live it.117), which outranks both the gate and the road.
+    // The getter is read EVERY frame, so a speaker who is walking stays centred.
+    const pinned = this.speakerAt?.() ?? null;
     if (pinned) h.focus(pinned.x, pinned.y);
     else if (t < this.walkAt + 1.8) h.focus(at.x + 0.5, at.y + 0.5);
+    // ...and the scene HOLDS its zoom (it.117). Re-stated every frame and
+    // idempotent in the camera, so nothing can quietly take it back mid-scene
+    // and nothing re-aims the tween: one push in, one pull out, per scene.
+    if (this.zoomed && this.sceneZoom !== null) this.h.zoom?.(this.sceneZoom);
     if (h.carts.length) {
       // 1.3 - 3.4 s: the carts tremble, then fall.
       if (t >= 1.3 && !this.toppled) {

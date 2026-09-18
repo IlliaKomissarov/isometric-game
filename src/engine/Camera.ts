@@ -27,6 +27,9 @@
  * THE SCENE'S ZOOM (it.115): `setCineZoom(level)` eases the wheel target to a
  * cutscene's level over ~0.6 s and `setCineZoom(null)` eases it back to the
  * zoom the player had; the wheel keeps working on the remembered value.
+ * ONE ZOOM, HELD (it.117): the call is IDEMPOTENT while it is in flight, so a
+ * caller may re-state the level it wants every frame without the tween ever
+ * restarting. A conversation asks once, holds, and lets go at the end.
  */
 
 import { visuals } from '@/core/VisualSettings';
@@ -243,7 +246,12 @@ export class Camera {
     }
     if (this.cineLevel === null) this.ownZoom = this.cineDur > 0 ? this.cineTo : this.targetZoom;
     const to = Math.min(Math.max(ZOOM_MAX, 3.2), Math.max(ZOOM_MIN, level));
-    if (this.cineLevel === to && this.cineDur === 0) return;
+    // ASKING TWICE FOR THE SAME ZOOM CHANGES NOTHING (it.117). Up to it.116 a
+    // repeated call DURING the tween re-aimed it from wherever it had got to,
+    // over a fresh `seconds` - so a caller that re-states its level every frame
+    // (a scene holding a shot, the yard's director) tweened forever, easing in
+    // and never arriving. That is the in-and-out the owner saw in conversation.
+    if (this.cineLevel === to && (this.cineDur === 0 || this.cineTo === to)) return;
     this.cineLevel = to;
     this.startZoomTween(to, seconds);
   }
@@ -348,5 +356,15 @@ export class Camera {
   /** Current zoom factor (canvas pixels per iso-screen pixel), punch included. */
   get currentZoom(): number {
     return this.zoom * this.layoutZoom * (1 + this.punchNow);
+  }
+
+  /**
+   * THE SCREEN'S OWN BIAS (it.117), read-only. A caller that has to convert a
+   * number of SCREEN pixels into world units before the zoom tween has even
+   * started - the conversation camera, working out how far to lift a speaker
+   * clear of the dialogue panel - needs the layout factor without the wheel's.
+   */
+  get layoutBias(): number {
+    return this.layoutZoom;
   }
 }

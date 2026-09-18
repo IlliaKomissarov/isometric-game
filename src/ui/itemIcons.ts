@@ -372,6 +372,29 @@ function drawIconCanvas(def: ItemDef, scale: number): HTMLCanvasElement {
  * THE PACE: a polyy turntable (30 frames, a real 3D turn) at 12 fps is a
  * 2.5 s revolution; a flat Arsenal / ore turntable (16 squash frames) runs
  * at 6.4 fps so a coin-flip does not flicker.
+ *
+ * EVERY BACKGROUND PROPERTY IS WRITTEN HERE, INLINE (it.117) — and this is
+ * the whole of the "items split in half, top at the bottom" bug the owner
+ * reported in the shops. `.inv-spin` set `background-repeat: no-repeat` and
+ * `background-position` in a stylesheet rule of specificity (0,1,1), and the
+ * shop row's own `.town-panel .tp-row img` (0,2,1) sets the `background`
+ * SHORTHAND for its little radial vignette. A shorthand resets every
+ * longhand it does not name, so in the shop the cell was left at
+ * `background-repeat: repeat` and `background-position: 0% 0%`: the one-row
+ * strip TILED down the box, and you saw the bottom of one tile above the top
+ * of the next with the frame's transparent margin as a gap between them.
+ * (`background-position-x` survived because the keyframes animate it, and
+ * animations outrank plain rules — which is why it was only ever the
+ * VERTICAL half-and-half.) Inline declarations outrank every selector, so
+ * writing them here fixes the cell in whatever panel it lands in, now and
+ * for any panel written later.
+ *
+ * AND THE BOX IS THE BORDER BOX. `background-position` percentages resolve
+ * against the PADDING box while `clip-path` percentages resolve against the
+ * BORDER box; the shop row gives its icons 1 px of border and 2 px of
+ * padding, so the two rectangles disagreed by a few percent and a sliver of
+ * the neighbouring frame showed at each edge. `background-origin` and
+ * `background-clip: border-box` put both on the same rectangle.
  */
 function spinStyle(spin: ItemSpin): string {
   const pct = (v: number): string => `${(v * 100).toFixed(4)}%`;
@@ -388,6 +411,11 @@ function spinStyle(spin: ItemSpin): string {
   return [
     `background-image:url(${spin.url})`,
     `background-size:${pct((spin.frames * spin.cellW) / spin.origW)} ${pct(spin.cellH / spin.origH)}`,
+    // The four that a panel's `background:` shorthand used to take away (it.117).
+    'background-repeat:no-repeat',
+    'background-origin:border-box',
+    'background-clip:border-box',
+    'background-position:var(--sx0) var(--sy)',
     `clip-path:inset(${pct(top)} ${pct(right)} ${pct(bottom)} ${pct(left)})`,
     `--sx0:${pct(x0)}`,
     `--sx1:${pct(x0 + step * spin.frames)}`,

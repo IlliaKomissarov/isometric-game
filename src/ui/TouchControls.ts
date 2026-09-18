@@ -1,8 +1,9 @@
 /**
  * @module ui/TouchControls
- * THE VIRTUAL CONTROLS (it.63): a thumb stick, an attack, four skills, two
- * draughts, interact, the portal rite and fullscreen — every one an
- * independent multi-touch target.
+ * THE VIRTUAL CONTROLS (it.63): a thumb stick, an attack, EIGHT action slots
+ * (it.117; four on the arc, four on a strip above it), the two belt keys Q
+ * and R with their key caps, interact, the portal rite and fullscreen - every
+ * one an independent multi-touch target.
  *
  * ORIENTATION-AWARE: in PORTRAIT the controls sit inside the gothic pad
  * below the crypt (stick left, skill arc right) so no finger is ever over
@@ -16,7 +17,7 @@
  * stamped with the local seat, so a co-op party stays in lockstep.
  */
 
-import type { InputCommand, InputQueue } from '@/core/InputQueue';
+import { ACTION_SLOTS, type InputCommand, type InputQueue } from '@/core/InputQueue';
 import { layout } from '@/core/OrientationManager';
 import { audio } from '@/engine/AudioManager';
 import { haptics } from '@/core/Haptics';
@@ -36,6 +37,12 @@ export interface TouchSkill {
   icon: string | null;
   glyph: string;
   cost: number;
+  /**
+   * AN ITEM ON THE SLOT (it.117): ready-made markup from `ui/itemIcons`
+   * (a turning cell, not a flat URL), the way the two draught buttons
+   * already take their faces. Wins over `icon` and `glyph`.
+   */
+  iconHtml?: string;
 }
 
 /**
@@ -161,7 +168,7 @@ export class TouchControls {
     this.stick = new VirtualJoystick(this.padLeft, { radius: 60, deadzone: 0.12 });
     this.stick.onChange = (x, y) => this.steer(x, y);
 
-    // THE SKILL ARC (it.66). The four skills ride a 118 px arc around the
+    // THE SKILL ARC (it.66). The first four slots ride a 118 px arc around the
     // attack, swept from due-left to up-and-right, which is the path the
     // thumb actually travels when the hand rests at the corner. The radius
     // is not a taste: at 118 px every neighbouring pair is at least 56 px
@@ -176,11 +183,30 @@ export class TouchControls {
     const rowMain = this.row('tc-row-main', arc);
     this.rowUse = rowUse;
     this.mk(rowUse, 'tc-use tc-portal', 'TOWN PORTAL', ICON_PORTAL, () => this.tap({ type: 'TOWN_PORTAL', playerId: 0 }));
+    /**
+     * EIGHT SLOTS ON THE THUMB, FLANKED BY THE BELT (it.117). The first four
+     * keep the hand-tuned arc they have had since it.66 - the path a thumb
+     * actually travels, with 56 px targets that never share a pixel. Slots
+     * 5-8 ride a straight strip on the LEFT pad, above the stick, and THE TWO
+     * BELT KEYS SIT AT ITS ENDS: Q at the far left, R at the far right - the
+     * desktop bar's order (`[Q] [1..8] [R]`) on a thumb.
+     *
+     * WHY THIS ROW AND NOT A NEW ONE. The strip first went above the arc, and
+     * on a 915x412 landscape phone that grew the right cluster straight up
+     * into the system bar's icons (measured: the row landed at y 150-250
+     * under a bar spanning 111-255) and wrapped onto two lines besides. Moved
+     * to its own row above the stick it then pushed the left cluster up under
+     * the chat log's header (z-index 30 against the controls' 24), which
+     * would have eaten the taps. So it is the DRAUGHT ROW ITSELF, widened:
+     * the cluster keeps exactly the height it has shipped with since it.67,
+     * and nothing else on the HUD moves.
+     */
+    const rowExt = rowUse;
     // THE BELT (it.80): R rides the mana button, Q the potion button; their faces follow the belt.
-    this.draughtEls[1] = this.mk(rowUse, 'tc-use tc-mana', 'DRAUGHT R', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
-    this.draughtEls[0] = this.mk(rowUse, 'tc-use tc-potion', 'DRAUGHT Q', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
-    for (let i = 0; i < 4; i++) {
-      const el = this.mk(rowSkills, `tc-skill tc-skill-${i}`, `SKILL ${i + 1}`, String(i + 1), () => this.tap({ type: 'SKILL', playerId: 0, slot: i }));
+    this.draughtEls[0] = this.mk(rowExt, 'tc-use tc-potion', 'DRAUGHT Q', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'health' }));
+    for (let i = 0; i < ACTION_SLOTS; i++) {
+      const into = i < 4 ? rowSkills : rowExt;
+      const el = this.mk(into, `tc-skill tc-skill-${i}`, `SKILL ${i + 1}`, String(i + 1), () => this.tap({ type: 'SKILL', playerId: 0, slot: i }));
       // The face: an icon (or glyph) under a cooldown veil with a readout.
       el.innerHTML = `<span class="tc-face"><b>${i + 1}</b></span><i class="tc-cd"></i><em class="tc-cd-num"></em><small class="tc-key">${i + 1}</small>`;
       this.skillEls.push(el);
@@ -190,6 +216,7 @@ export class TouchControls {
         num: el.querySelector('.tc-cd-num') as HTMLElement,
       });
     }
+    this.draughtEls[1] = this.mk(rowExt, 'tc-use tc-mana', 'DRAUGHT R', ICON_FLASK, () => this.tap({ type: 'USE_QUICK', playerId: 0, kind: 'mana' }));
     // Any touch on the cluster wakes it; the timer then lets it fade again.
     this.root.addEventListener(
       'pointerdown',
@@ -279,10 +306,13 @@ export class TouchControls {
       const f = this.skillFaces[i];
       el.classList.toggle('empty', !def);
       el.setAttribute('aria-label', def ? def.name : `SKILL ${i + 1} (locked)`);
+      el.classList.toggle('tc-item', !!def?.iconHtml); // An item slot wears the draught face (it.117).
       f.face.innerHTML = def
-        ? def.icon
-          ? `<img src="${def.icon}" alt="" draggable="false">`
-          : `<b>${def.glyph}</b>`
+        ? def.iconHtml
+          ? def.iconHtml
+          : def.icon
+            ? `<img src="${def.icon}" alt="" draggable="false">`
+            : `<b>${def.glyph}</b>`
         : '<b class="tc-lock">\u{1F512}</b>';
       f.cd.style.setProperty('--cd', '0');
       f.num.textContent = '';
@@ -304,7 +334,11 @@ export class TouchControls {
       const key = d ? d.icon : '';
       if (el.dataset.face !== key) {
         el.dataset.face = key;
-        el.innerHTML = d ? `<span class="tc-face tc-face-draught">${d.icon}</span><i class="tc-cd"></i><em class="tc-count"></em>` : `<span>${ICON_FLASK}</span>`;
+        // THE KEY CAP RIDES THE THUMB BUTTON TOO (it.117): Q and R are named on touch.
+        const cap = i === 0 ? 'Q' : 'R';
+        el.innerHTML = d
+          ? `<span class="tc-face tc-face-draught">${d.icon}</span><i class="tc-cd"></i><em class="tc-count"></em><small class="tc-key">${cap}</small>`
+          : `<span>${ICON_FLASK}</span><small class="tc-key">${cap}</small>`;
       }
       if (!d) continue;
       const count = el.querySelector<HTMLElement>('.tc-count');
@@ -383,6 +417,7 @@ export class TouchControls {
     // now lives one level down (it.66).
     if (wantLeft && this.rowUse.parentElement !== this.padLeft) this.padLeft.insertBefore(this.rowUse, this.padLeft.firstChild);
     else if (!wantLeft && this.rowUse.parentElement !== this.padRight) this.padRight.insertBefore(this.rowUse, this.padRight.firstChild);
+
     this.refresh();
   }
 

@@ -801,282 +801,319 @@
         opacity: 1;
       }
 
-      /* ---- Cheat menu (F1 / `) — the Forbidden Arts panel ---- */
+      /* ===================================================================
+         IT.117 — THE DEVELOPER CONSOLE (F1 / `)
+         A fixed header (title, live strip, close mark) over a section strip,
+         one search row and a single scroll region. Every grid column is
+         minmax(0, 1fr) and every long word clips, so no horizontal bar can
+         ever appear; at phone width the panel goes edge to edge.
+         =================================================================== */
       #cheat-menu {
         position: fixed;
         left: 22px;
         top: 52px;
-        width: 252px;
-        max-height: calc(var(--app-h, 100vh) - 120px);
+        width: min(420px, calc(100vw - 44px));
+        max-height: calc(var(--app-h, 100vh) - 96px);
         display: none;
         flex-direction: column;
-        padding: 12px 14px 10px;
+        overflow: hidden;
         background: var(--panel-bg);
         border: 1px solid #56304a;
-        box-shadow:
-          inset 0 0 24px rgba(0, 0, 0, 0.7),
-          0 0 18px rgba(0, 0, 0, 0.7);
+        box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.7);
+        font-family: 'Crimson Pro', 'Georgia', serif;
         z-index: 30;
       }
-      #cheat-menu.open {
-        display: flex;
-      }
+      #cheat-menu.open { display: flex; }
+
+      /* ---- the header: never scrolls, so the close mark is always there ---- */
       #cheat-menu .cheat-head {
-        position: relative;
-        padding-right: 44px; /* the close mark's room (it.69) */
-        display: flex;
-        align-items: flex-end;
-        gap: 10px;
-        margin-bottom: 10px;
-        padding-bottom: 8px;
+        flex: 0 0 auto;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 6px 10px;
+        padding: 9px 12px 8px;
+        background: linear-gradient(180deg, rgba(42, 28, 50, 0.95), rgba(14, 11, 18, 0.95));
         border-bottom: 1px solid #2e2836;
+        cursor: grab;
       }
-      #cheat-portrait {
-        width: 72px;
-        height: 88px;
-        background:
-          radial-gradient(ellipse at 50% 80%, rgba(160, 60, 130, 0.16) 0%, transparent 65%),
-          #0c0a10;
-        border: 1px solid #453a52;
-        image-rendering: pixelated;
-        flex-shrink: 0;
-      }
-      #cheat-menu .cheat-head-text h3 {
-        margin: 0 0 4px;
+      /* The shared shell (it.117) locks every header with a sticky rule and an
+         ::after backing that reaches past the panel's padding. This header is a
+         flex child that never scrolls and paints its own opaque gradient, and
+         the oversized backing is the one thing that made `scrollWidth` exceed
+         `clientWidth` here — so it is switched off for this panel only. */
+      #cheat-menu .cheat-head::after { display: none; }
+      #cheat-menu .cheat-title { min-width: 0; }
+      #cheat-menu .cheat-title h3 {
+        margin: 0 0 2px;
         font-family: 'Cinzel', 'Georgia', serif;
         font-weight: 700;
         font-size: 13px;
-        letter-spacing: 0.18em;
-        color: #c05a9a;
-        text-shadow: 0 0 10px rgba(160, 60, 130, 0.5), 0 1px 3px #000;
+        letter-spacing: 0.16em;
+        color: #c98ac0;
+        text-shadow: 0 0 10px rgba(160, 60, 130, 0.45), 0 1px 3px #000;
       }
-      #cheat-menu .cheat-sub {
-        font-family: 'Crimson Pro', 'Georgia', serif;
-        font-style: italic;
-        font-size: 11px;
-        color: #6a6156;
-      }
-      #cheat-menu .cheat-powers {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 5px;
-        margin-bottom: 10px;
-      }
-      #cheat-menu button {
-        font-family: 'Crimson Pro', 'Georgia', serif;
-        font-size: 12.5px;
-        color: var(--parchment);
-        background: #100d15;
-        border: 1px solid #2e2836;
-        cursor: pointer;
-        text-shadow: 0 1px 2px #000;
-        padding: 6px 8px;
-      }
-      #cheat-menu button:hover {
-        border-color: #c05a9a;
-        filter: brightness(1.35);
-      }
-      #cheat-menu .cheat-powers button.lit {
-        color: #e8b0d8;
-        border-color: #c05a9a;
-        box-shadow: inset 0 0 10px rgba(160, 60, 130, 0.25);
-      }
-      #cheat-menu .cheat-tabs {
-        display: flex;
-        gap: 4px;
-        margin-bottom: 6px;
-      }
-      #cheat-menu .cheat-tab {
-        flex: 1;
-        font-family: 'Cinzel', 'Georgia', serif;
-        font-size: 9.5px;
-        font-weight: 600;
-        letter-spacing: 0.12em;
-        padding: 4px 2px;
-        color: #7a7060;
-      }
-      #cheat-menu .cheat-tab.active {
-        color: var(--gold);
-        border-color: var(--gold-dim);
-      }
-      /* The arsenal browser: its OWN scroll region — never clips the panel. */
-      #cheat-menu .cheat-items {
-        flex: 1;
-        min-height: 60px;
-        max-height: 220px;
-        overflow-y: auto;
-        margin-bottom: 6px;
-        scrollbar-width: thin;
-        scrollbar-color: var(--panel-border) transparent;
-        scroll-behavior: smooth;
-        overscroll-behavior: contain;
-      }
-      /* Quick teleport grid (it.33). */
-      #cheat-menu .cheat-travel-grid {
-        display: grid;
-        grid-template-columns: repeat(5, 1fr);
-        gap: 4px;
-        margin-bottom: 8px;
-      }
-      #cheat-menu .cheat-floor {
-        padding: 6px 0;
-        font-family: 'Cinzel', serif;
-        font-size: 10px;
-        color: #d8cfc0;
-        background: #17131e;
-        border: 1px solid #3c3448;
-        border-radius: 4px;
-        cursor: pointer;
-      }
-      #cheat-menu .cheat-floor:hover { border-color: var(--gold); color: var(--gold); }
-      #cheat-menu .cheat-travel-arenas { display: grid; gap: 4px; }
-      #cheat-menu .cheat-arena {
-        padding: 6px 0;
-        font-family: 'Cinzel', serif;
-        font-size: 10px;
-        letter-spacing: 0.1em;
-        color: #e0a0a0;
-        background: #1e1218;
-        border: 1px solid #5a2c34;
-        border-radius: 4px;
-        cursor: pointer;
-      }
-      #cheat-menu .cheat-arena:hover { border-color: #c05a5a; color: #ffc0c0; }
-      #cheat-menu .cheat-items::-webkit-scrollbar {
-        width: 7px;
-      }
-      #cheat-menu .cheat-items::-webkit-scrollbar-thumb {
-        background: var(--panel-border);
-      }
-      #cheat-menu .cheat-item {
-        display: flex;
+      #cheat-menu .cheat-sub { font-size: 11px; font-style: italic; color: #6a6156; }
+      #cheat-menu .cheat-live { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 3px; }
+      #cheat-menu .cheat-chip {
+        display: inline-flex;
         align-items: center;
-        gap: 8px;
-        width: 100%;
-        margin-bottom: 3px;
-        text-align: left;
-      }
-      #cheat-menu .cheat-item.given {
-        filter: brightness(0.75);
-        border-color: #4a5a3a;
-      }
-      #cheat-menu .cheat-item.rarity-magic {
-        border-left: 2px solid #5f7fdf;
-      }
-      #cheat-menu .cheat-item.rarity-rare {
-        border-left: 2px solid #d8a83c;
-      }
-      #cheat-menu .cheat-icon {
-        width: 34px;
-        image-rendering: pixelated;
-        flex-shrink: 0;
-      }
-      #cheat-menu .cheat-icon-px {
-        width: 22px;
-      }
-      #cheat-menu .cheat-item-text {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-      }
-      #cheat-menu .cheat-item-name {
+        gap: 4px;
+        max-width: 100%;
+        padding: 2px 6px;
+        font-size: 11px;
+        line-height: 1.25;
+        color: #cfc6b6;
+        background: #15111c;
+        border: 1px solid #302a3c;
+        border-radius: 3px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      #cheat-menu .cheat-item-stats {
+      #cheat-menu .cheat-chip b {
+        font-family: 'Cinzel', serif;
+        font-weight: 600;
+        font-size: 8.5px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #7f7663;
+      }
+      #cheat-menu .cheat-chip.low { color: #ff9a90; border-color: #5a2a2a; }
+      #cheat-menu .cheat-chip.on {
+        font-family: 'Cinzel', serif;
+        font-size: 9px;
+        letter-spacing: 0.14em;
+        color: #ffd070;
+        background: #221a10;
+        border-color: #7a5f28;
+      }
+
+      /* ---- the section strip: scrolls sideways on its own ---- */
+      /* The strip WRAPS rather than scrolling sideways (it.117): seven sections
+         make two tidy rows at panel width and one column on a phone, and there
+         is no hidden row of tabs off the right edge for a tester to miss. */
+      #cheat-menu .cheat-tabs {
+        flex: 0 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        padding: 6px 12px 0;
+        overflow: hidden;
+      }
+      #cheat-menu .cheat-tab {
+        flex: 0 0 auto;
+        padding: 5px 10px;
+        font-family: 'Cinzel', 'Georgia', serif;
+        font-weight: 600;
         font-size: 10px;
+        letter-spacing: 0.1em;
+        color: #7a7060;
+        background: #100d15;
+        border: 1px solid #2e2836;
+        border-bottom: none;
+        border-radius: 4px 4px 0 0;
+        cursor: pointer;
+      }
+      #cheat-menu .cheat-tab:hover { color: #d8cfc0; }
+      #cheat-menu .cheat-tab.active {
+        color: var(--frame-gold-hi, #ffd070);
+        background: #1c1626;
+        border-color: #6a552a;
+      }
+
+      /* ---- search ---- */
+      #cheat-menu .cheat-search {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 4px;
+        padding: 6px 12px;
+        border-top: 1px solid #2e2836;
+      }
+      #cheat-menu .cheat-search.off { display: none; }
+      #cheat-menu .cheat-search input,
+      #cheat-menu .cheat-set input {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 6px 8px;
+        font-family: 'Crimson Pro', 'Georgia', serif;
+        font-size: 13px;
+        color: var(--parchment, #e8dfcc);
+        background: #0c0a10;
+        border: 1px solid #3c3448;
+        border-radius: 3px;
+      }
+      #cheat-menu .cheat-search input:focus,
+      #cheat-menu .cheat-set input:focus { outline: none; border-color: var(--frame-gold, #c8a558); }
+      #cheat-menu .cheat-search button { padding: 0 10px; }
+
+      /* ---- the one scroll region ---- */
+      #cheat-menu .cheat-body {
+        flex: 1 1 auto;
+        min-height: 60px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 2px 12px 10px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--panel-border) transparent;
+        overscroll-behavior: contain;
+      }
+      #cheat-menu .cheat-body:focus { outline: none; }
+      #cheat-menu .cheat-body::-webkit-scrollbar { width: 7px; }
+      #cheat-menu .cheat-body::-webkit-scrollbar-thumb { background: var(--panel-border); }
+
+      #cheat-menu .cheat-h {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin: 11px 0 5px;
+        padding-bottom: 3px;
+        font-family: 'Cinzel', serif;
+        font-size: 9.5px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--ink-dim, #a89c86);
+        border-bottom: 1px solid rgba(200, 165, 88, 0.18);
+      }
+      #cheat-menu .cheat-h:first-child { margin-top: 4px; }
+      #cheat-menu .cheat-h i {
+        flex: 0 1 auto;
+        min-width: 0;
+        font-family: 'Crimson Pro', serif;
+        font-style: italic;
+        font-size: 11px;
+        letter-spacing: 0;
+        text-transform: none;
+        text-align: right;
+        color: #7d7466;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* ---- buttons ---- */
+      #cheat-menu button {
+        font-family: 'Crimson Pro', 'Georgia', serif;
+        font-size: 12.5px;
+        color: var(--parchment, #e8dfcc);
+        background: #100d15;
+        border: 1px solid #2e2836;
+        border-radius: 3px;
+        padding: 6px 8px;
+        cursor: pointer;
+        text-shadow: 0 1px 2px #000;
+      }
+      #cheat-menu button:hover { border-color: #c05a9a; filter: brightness(1.3); }
+      #cheat-menu button.cur { border-color: var(--frame-gold-hi, #ffd070); box-shadow: 0 0 0 1px rgba(255, 208, 112, 0.35); }
+      #cheat-menu .cheat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+      #cheat-menu .cheat-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+        min-width: 0;
+        text-align: left;
+      }
+      #cheat-menu .cheat-btn em {
+        max-width: 100%;
+        font-style: normal;
+        font-size: 10.5px;
         color: #8a8070;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      #cheat-menu .cheat-takeall {
-        font-family: 'Cinzel', 'Georgia', serif;
-        font-size: 10px;
-        font-weight: 600;
-        letter-spacing: 0.14em;
-        color: var(--gold);
-        text-align: center;
+      #cheat-menu .cheat-btn.wide { grid-column: 1 / -1; width: 100%; align-items: center; margin: 2px 0 6px; }
+      #cheat-menu .cheat-btn.toggle.on {
+        color: #ffd070;
+        background: #1e1810;
+        border-color: #7a5f28;
+        box-shadow: inset 0 0 10px rgba(200, 165, 88, 0.2);
       }
-      /* THE FORBIDDEN ARTS REWRITTEN (it.114): places, foes, quests. */
-      #cheat-menu { width: 312px; }
-      #cheat-menu .cheat-items { max-height: 300px; }
-      #cheat-menu .cheat-section {
+      #cheat-menu .cheat-btn.toggle.on em { color: #c8a558; }
+      #cheat-menu .cheat-btn.danger { color: #e8b6ae; border-color: #5a2c34; }
+      #cheat-menu .cheat-btn.danger:hover { border-color: #c05a5a; }
+      #cheat-menu .cheat-btn.done { border-color: var(--frame-gold, #c8a558); filter: brightness(0.8); }
+
+      #cheat-menu .cheat-depths { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 4px; }
+      #cheat-menu .cheat-num { padding: 6px 0; min-width: 0; font-family: 'Cinzel', serif; font-size: 10px; text-align: center; }
+      #cheat-menu .cheat-num.on { color: var(--frame-gold-hi, #ffd070); background: #221a10; border-color: #6a552a; }
+
+      #cheat-menu .cheat-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0 6px; }
+      #cheat-menu .cheat-picks > span {
+        margin-right: 2px;
         font-family: 'Cinzel', serif;
-        font-size: 9.5px;
-        letter-spacing: 0.22em;
-        color: var(--ink-dim, #a89c86);
-        margin: 8px 0 4px;
-        padding-bottom: 2px;
-        border-bottom: 1px solid rgba(200, 165, 88, 0.18);
+        font-size: 9px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #7f7663;
       }
-      #cheat-menu .cheat-place-grid,
-      #cheat-menu .cheat-foe-grid {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 4px;
-      }
-      #cheat-menu .cheat-place,
-      #cheat-menu .cheat-foe {
+      #cheat-menu .cheat-pick { padding: 4px 9px; font-size: 11.5px; }
+      #cheat-menu .cheat-pick.on { color: var(--frame-gold-hi, #ffd070); background: #221a10; border-color: #6a552a; }
+      #cheat-menu button:disabled, #cheat-menu .cheat-pick.dim { opacity: 0.35; cursor: default; }
+      #cheat-menu button:disabled:hover, #cheat-menu .cheat-pick.dim:hover { border-color: #2e2836; filter: none; }
+      #cheat-menu .cheat-set { display: flex; gap: 4px; margin: 2px 0 6px; }
+
+      #cheat-menu .cheat-read { display: flex; flex-direction: column; gap: 2px; }
+      #cheat-menu .cheat-read span { font-size: 12px; color: #a89c86; overflow-wrap: anywhere; }
+      #cheat-menu .cheat-read b { color: #d8cfc0; font-weight: 600; }
+      #cheat-menu .cheat-note { margin: 5px 0 2px; font-size: 11.5px; font-style: italic; color: #7d7466; overflow-wrap: anywhere; }
+
+      #cheat-menu .cheat-rows { display: flex; flex-direction: column; gap: 3px; }
+      #cheat-menu .cheat-item {
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1px;
-        padding: 5px 8px;
-        text-align: left;
-        color: #d8cfc0;
-        background: #17131e;
-        border: 1px solid #3c3448;
-        border-radius: 4px;
-        cursor: pointer;
-      }
-      #cheat-menu .cheat-place b,
-      #cheat-menu .cheat-foe b { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.1em; color: #e8dfcc; }
-      #cheat-menu .cheat-place small,
-      #cheat-menu .cheat-foe small { font-family: 'Crimson Pro', serif; font-size: 11px; color: #a89c86; }
-      #cheat-menu .cheat-place:hover,
-      #cheat-menu .cheat-foe:hover { border-color: var(--gold); }
-      #cheat-menu .cheat-foe.boss { border-color: #5a2a2a; }
-      #cheat-menu .cheat-foe.boss b { color: #ffb0a0; }
-      #cheat-menu .cheat-foe.given { border-color: var(--gold); box-shadow: inset 0 0 12px rgba(200, 165, 88, 0.2); }
-      #cheat-menu .cheat-spawn-bar {
-        display: flex;
-        flex-wrap: wrap;
         align-items: center;
-        gap: 4px;
-        margin-bottom: 4px;
+        gap: 8px;
+        width: 100%;
+        min-width: 0;
+        padding: 4px 6px;
+        text-align: left;
       }
-      #cheat-menu .cheat-spawn-bar span,
-      #cheat-menu .cheat-quest b { font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.16em; color: var(--frame-gold-hi, #ffd070); margin-right: 4px; }
-      #cheat-menu .cheat-pick {
-        padding: 3px 7px;
-        font-family: 'Cinzel', serif;
-        font-size: 9.5px;
-        color: #d8cfc0;
-        background: #17131e;
-        border: 1px solid #3c3448;
-        border-radius: 3px;
-        cursor: pointer;
-      }
-      #cheat-menu .cheat-pick:hover { border-color: var(--gold); color: var(--gold); }
-      #cheat-menu .cheat-pick.lit { border-color: var(--gold); color: var(--gold); background: #2a2135; }
+      #cheat-menu .cheat-item.done { filter: brightness(0.72); border-color: #4a5a3a; }
+      #cheat-menu .cheat-icon { width: 34px; flex-shrink: 0; image-rendering: pixelated; }
+      #cheat-menu .cheat-icon-px { width: 22px; }
+      #cheat-menu .cheat-item-text { display: flex; flex-direction: column; min-width: 0; }
+      #cheat-menu .cheat-item-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #cheat-menu .cheat-item-stats { font-size: 10px; color: #8a8070; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
       #cheat-menu .cheat-quest { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-      #cheat-menu .cheat-quest small { display: block; font-family: 'Crimson Pro', serif; font-size: 11px; color: #a89c86; margin: 1px 0 4px; }
-      #cheat-menu .cheat-quest-states { display: flex; flex-wrap: wrap; gap: 4px; }
+      #cheat-menu .cheat-quest b { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.12em; color: #e8dfcc; }
+      #cheat-menu .cheat-quest small { display: block; margin: 1px 0 3px; font-size: 11px; color: #7d7466; }
+      #cheat-menu .cheat-quest .cheat-picks { margin: 0; }
+
+      #cheat-menu .cheat-hint {
+        flex: 0 0 auto;
+        padding: 5px 12px 7px;
+        text-align: center;
+        font-size: 10.5px;
+        font-style: italic;
+        color: #5a5248;
+        border-top: 1px solid #2e2836;
+      }
+
+      /* A phone: edge to edge, one column, nothing to scroll sideways. */
+      @media (max-width: 560px) {
+        #cheat-menu {
+          left: 8px;
+          right: 8px;
+          top: 8px;
+          width: auto;
+          max-height: calc(var(--app-h, 100vh) - 16px);
+        }
+        #cheat-menu .cheat-grid { grid-template-columns: minmax(0, 1fr); }
+        #cheat-menu .cheat-depths { grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); }
+        #cheat-menu .cheat-head { padding: 8px 10px 7px; }
+        #cheat-menu .cheat-tabs,
+        #cheat-menu .cheat-search,
+        #cheat-menu .cheat-body,
+        #cheat-menu .cheat-hint { padding-left: 10px; padding-right: 10px; }
+      }
       /* THE BESTIARY'S REFERENCE LINE AND TRY-OUT (it.114). */
       .bs-title { flex-wrap: wrap; }
       .bs-title .bs-ref { flex-basis: 100%; font-family: 'Crimson Pro', serif; font-size: 11.5px; color: var(--ink-dim); }
       .bs-title .bs-ref b { color: #d8cfc0; font-weight: 600; }
       .bs-title .bs-tryout { flex-basis: 100%; margin-top: 6px; padding: 7px 10px; font-size: 11px; letter-spacing: 0.14em; }
-      #cheat-menu .cheat-tip {
-        margin-top: 6px;
-        text-align: center;
-        font-family: 'Crimson Pro', 'Georgia', serif;
-        font-style: italic;
-        font-size: 10.5px;
-        color: #5a5248;
-      }
 
       /* ---- Settings panel (O) — audio controls ---- */
       #settings-panel {
@@ -1230,7 +1267,7 @@
         opacity: 1;
       }
 
-      /* ===== ACTIVE SKILL BAR (it.32): hotkeys 1–4, cooldown sweeps ===== */
+      /* ===== THE ACTION BAR (it.32): hotkeys 1–8 and the belt (it.117), cooldown sweeps ===== */
       #skill-bar {
         position: fixed;
         left: 50%;
@@ -1452,6 +1489,23 @@
       body:not(.in-run) #depth-label,
       body:not(.in-run) #timer,
       body:not(.in-run) #skill-bar,
+      /* IT.117: on the smallest phones the damage/armour line grew wide enough for
+         its CENTRE to cross into the screen's protected middle (qa66's rule). The
+         words go and the icons carry it; the numbers are what a thumb reads anyway. */
+      /* IT.117: the corner's order is the plate, the hero's numbers, then the
+         objectives - the tracker joined the column last and pushed the damage
+         line down into the screen's protected middle on tall/wide displays. */
+      #hud-tl > #status-frame { order: 0; }
+      #hud-tl > #char-stats { order: 1; }
+      #hud-tl > #depth-label { order: 2; }
+      #hud-tl > #timer { order: 3; }
+      #hud-tl > #hud-buffs { order: 4; }
+      #hud-tl > #party-hud { order: 5; }
+      /* The tracker is LAST: it is the tallest tenant and the only one that may
+         reach toward the middle, so nothing proven is pushed down by it. */
+      #hud-tl > #quest-track { order: 9; }
+      body.input-touch #char-stats { font-size: 11px; letter-spacing: 0.02em; }
+      body.input-touch #char-stats span { display: none; }
       body:not(.in-run) #char-stats,
       body:not(.in-run) #minimap {
         display: none !important;
@@ -1566,8 +1620,10 @@
         display: none;
         align-items: center;
         justify-content: center;
-        background: rgba(4, 3, 6, 0.72);
-        backdrop-filter: blur(2px);
+        /* IT.117: the scrim was a FULL-SCREEN backdrop blur, re-run every frame
+           over a canvas that changes every frame, for two pixels of softness
+           behind paint that is already 72% opaque. A little more scrim instead. */
+        background: rgba(4, 3, 6, 0.82);
       }
       .modal.show {
         display: flex;
@@ -2541,7 +2597,11 @@
          =================================================================== */
       #tp-button {
         position: fixed;
-        right: calc(50% + 168px);
+        /* CLEAR OF THE BAR (it.117): the action row is ten cells wide now, and
+           its half-width is measured and published as `--bar-half` by main's
+           `buildBar`, so the portal button stands beside whatever the bar is
+           at this layout tier instead of a number that fitted four slots. */
+        right: calc(50% + var(--bar-half, 168px) + 14px);
         bottom: 22px;
         display: flex;
         align-items: center;
@@ -2712,7 +2772,7 @@
         width: 60px;
         height: 62px;
         padding: 3px 4px;
-        right: calc(50% + 172px);
+        right: calc(50% + var(--bar-half, 172px) + 14px);
         bottom: 18px;
       }
       #tp-button .tp-icon { display: block; width: 30px; height: 30px; }
@@ -2772,7 +2832,10 @@
       #inv-panel .inv-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #6a5a3a, #3b3244); border: 1px solid #000; }
             #char-stats { left: 356px; bottom: 44px; }
                   #hud-bar { left: 0; }
-      #tp-button { right: auto; left: calc(50% + 172px); }
+      /* The portal button sits to the RIGHT of the row (it.117: `--bar-half`
+         is the row's measured half-width, published by main's `buildBar`, so
+         ten cells push it out instead of it landing on top of R). */
+      #tp-button { right: auto; left: calc(50% + var(--bar-half, 172px) + 14px); }
       .stat-ico, .cs-ico { font-style: normal; color: #ffd070; margin-right: 4px; text-shadow: 0 0 6px rgba(255, 190, 80, 0.55), 0 1px 2px #000; }
       .cs-row .cs-ico { font-size: 13px; }
                               /* The command sheet: pinned to the bottom edge, collapsible by its handle. */
@@ -3035,6 +3098,14 @@
       /* Above the orbs, below the party HUD: the left column, never over the hero. */
       #chat { position: fixed; left: 14px; bottom: 226px; width: 300px; max-height: calc(var(--app-h, 100vh) - 420px); display: flex; flex-direction: column; z-index: 30; font-family: 'Crimson Pro', serif; pointer-events: auto; transition: opacity 0.4s ease; }
       #chat.idle:not(.typing):not(:hover) { opacity: 0.55; }
+      /* THE LOG'S TAB (it.117): the only way back once it is hidden. */
+      #chat-tab { position: fixed; left: 0; bottom: 226px; display: none; align-items: center; gap: 4px; padding: 6px 7px 6px 5px; background: rgba(10, 8, 14, 0.8); border: 1px solid var(--frame-iron); border-left: none; border-radius: 0 4px 4px 0; color: var(--ink-dim); font-family: 'Cinzel', serif; font-size: 8.5px; letter-spacing: 0.16em; cursor: pointer; z-index: 30; opacity: 0.6; transition: opacity 0.3s ease, color 0.2s ease; }
+      #chat-tab.show { display: flex; }
+      #chat-tab:hover { opacity: 1; color: #ffd070; border-color: var(--frame-gold); }
+      #chat-tab.unread { opacity: 1; color: #ffd070; border-color: var(--frame-gold); }
+      #chat-tab em { font-style: normal; min-width: 13px; height: 13px; padding: 0 3px; border-radius: 7px; background: #c0392b; color: #ffe8c8; font-size: 8px; line-height: 13px; text-align: center; }
+      #chat-tab:not(.unread) em { display: none; }
+      body:not(.in-run) #chat-tab { display: none !important; }
       #chat .chat-head { display: flex; align-items: center; justify-content: space-between; padding: 3px 8px; background: rgba(10, 8, 14, 0.85); border: 1px solid var(--frame-iron); border-bottom: none; font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.2em; color: var(--ink-dim); }
       #chat .chat-toggle { min-width: 18px; padding: 0 4px; font-family: 'Cinzel', serif; font-size: 10px; color: var(--ink-dim); background: none; border: 1px solid var(--frame-iron); cursor: pointer; }
       #chat.unread .chat-toggle { color: #ffd070; border-color: var(--frame-gold); }
@@ -4052,8 +4123,10 @@
          ================================================================== */
       :root {
         /* Surfaces */
-        --ds-glass: rgba(10, 12, 18, 0.88);
-        --ds-glass-hi: rgba(24, 27, 38, 0.86);
+        /* A few percent more opaque since it.117 took the backdrop blur off the
+           panels: the glass, not the blur, is what holds the world back now. */
+        --ds-glass: rgba(10, 12, 18, 0.95);
+        --ds-glass-hi: rgba(24, 27, 38, 0.94);
         --ds-void: #07080c;
         /* Aged gold, and the bronze it is beaten from */
         --ds-gold: #d4af37;
@@ -4088,10 +4161,36 @@
       #coop-panel .cp-frame, #loading-screen .ls-frame,
       body .modal .modal-panel, body #exit-modal .am-box, body #main-menu .mm-panel,
       body #endgame .endgame-panel {
+        /**
+         * IT.117 - THE GLASS KEPT ITS LOOK AND GAVE UP ITS PRICE.
+         *
+         * `backdrop-filter: blur(12px) saturate(1.05)` was the single most
+         * expensive thing in the game. Measured on the PRODUCTION build, a crypt
+         * depth, an Intel iGPU at devicePixelRatio 1.25, median rAF frame in
+         * milliseconds (two passes):
+         *
+         *     inventory closed                41.3   42.3
+         *     inventory open, blur 12px      102.7   70.4     <- the complaint
+         *     inventory open, blur  4px       75.0   62.7
+         *     inventory open, NO blur         41.4   41.8     <- free
+         *
+         * With the blur gone, opening the inventory costs NOTHING measurable at
+         * all. The browser was re-blurring the whole panel's backdrop on every
+         * frame, because the canvas under it changes on every frame and the
+         * panel's own animated cells repaint on top of it - and it was doing
+         * that behind paint that is already 88-93% opaque, so almost none of the
+         * blur was ever visible. Four pixels of it still cost twenty to thirty
+         * milliseconds a frame, so there is no cheap radius to fall back to: it
+         * goes, and the glass is made those few percent more opaque instead,
+         * which is the job the blur was doing.
+         *
+         * Nothing else about the surface changes: same gradient, same gold
+         * hairline, same inner shadows.
+         */
         background:
-          linear-gradient(180deg, var(--ds-glass-hi) 0%, var(--ds-glass) 58%, rgba(6, 7, 11, 0.93) 100%) !important;
-        -webkit-backdrop-filter: blur(12px) saturate(1.05) !important;
-        backdrop-filter: blur(12px) saturate(1.05) !important;
+          linear-gradient(180deg, var(--ds-glass-hi) 0%, var(--ds-glass) 58%, rgba(6, 7, 11, 0.97) 100%) !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
         border: 1px solid var(--ds-gold-line) !important;
         border-radius: var(--ds-r) !important;
         box-shadow:
@@ -4232,6 +4331,18 @@
         pointer-events: none;
       }
       #system-bar > .ds-icon-btn { pointer-events: auto; }
+
+      /**
+       * IT.117 — THE PC RAIL DROPS WHAT THE KEYBOARD ALREADY DOES.
+       * "I don't need the menu shortcut in the PC version because it's just ESC
+       * to press, as well as the bestiary." A button whose only job is to send a
+       * key the player already has is clutter on a desktop; on a touch device
+       * there is no ESC and no B, so both stay there. `body.input-touch` is the
+       * switch the input layer already sets, so this follows the real device
+       * rather than the window's width.
+       */
+      body:not(.input-touch) #system-bar > .sb-menu,
+      body:not(.input-touch) #system-bar > .sb-bestiary { display: none; }
 
       #hud-tl {
         position: fixed;
@@ -4845,7 +4956,7 @@
       .craft-affix .tp-name .tp-meta { white-space: normal; }
       .craft-affix .craft-actions { margin-left: auto; }
       /* The portal rite steps right of the six-slot bar (Q and R joined it). */
-      #tp-button { left: calc(50% + 254px); }
+      #tp-button { left: calc(50% + var(--bar-half, 254px) + 14px); }
       /* On a desktop the bar is a column beside the map, not under it: the inventory may rise. */
       body:not(.input-touch):not(.tiny-height):not(.has-pad) #inv-panel:not(.fit-centred) { top: calc(var(--map-h) + 22px); max-height: calc(var(--app-h) - var(--map-h) - 34px); }
       /* THE BAR IS A COLUMN (it.80, every screen it.86): the shortcuts hug the
@@ -4867,6 +4978,13 @@
       body:not(.tiny-height):not(.short-screen):not(.has-pad) #hud-tr,
       body.has-pad.tier-standard #hud-tr,
       body.has-pad.tier-tablet #hud-tr { align-items: flex-end; }
+      /* TWO ACROSS ON AN UPRIGHT PHONE (it.117). The bar took two more entries
+         this iteration — the chart and the log, the two panels a thumb could
+         not reach — and a single column of ten is 494 px, more than half the
+         height of a 915 px handset, running from the chart down past the
+         fight. Two columns of five is 250 px and still clears the pad. */
+      body.has-pad.orient-portrait.tier-standard #system-bar,
+      body.has-pad.orient-portrait.tier-tablet #system-bar { grid-template-columns: auto auto; }
 
       /* ---- 8a5. BORDERS, FILTERS, THE CODEX, GAUGE LABELS (it.81) ------- */
       /* Effect borders: a second, brighter edge on the special pieces. */
@@ -5297,19 +5415,60 @@
       @keyframes foe-over { from { transform: translateY(0); } to { transform: translateY(-7px); } }
       body:not(.in-run) #foe-over { display: none; }
       body:not(.in-run) #foe-pointers { display: none; }
-      /* ---- 8c. THE TRAINING GROUND (it.90): spotlight, arrow, card, chapter ---- */
+      /* ---- 8c. THE TRAINING GROUND (it.90): highlight, arrow, card, chapter ---- */
       #tut-layer { position: fixed; inset: 0; z-index: 46; pointer-events: none; display: none; }
       #tut-layer.show { display: block; }
-      #tut-spot { position: fixed; left: 0; top: 0; width: 0; height: 0; border-radius: 10px; opacity: 0; border: 2px solid rgba(255, 208, 112, 0.95); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.55), 0 0 26px rgba(255, 208, 112, 0.55), inset 0 0 18px rgba(255, 208, 112, 0.18); transition: left 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), top 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), width 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), height 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.3s ease; animation: tut-pulse 1.6s ease-in-out infinite; }
+      /* THE HIGHLIGHT DOES NOT DARKEN THE WORLD (it.117). This was a spotlight:
+         `box-shadow: 0 0 0 9999px rgba(4,3,6,0.55)` painted a black sheet over
+         the entire page around whatever the card was about - so the player was
+         taught to fight in a yard they could not see. It is ADDITIVE now: a
+         bright pulsing rim, a ping that swells out of it, and a glow thrown
+         outward. Nothing behind it loses a single stop of light. */
+      #tut-spot { position: fixed; left: 0; top: 0; width: 0; height: 0; border-radius: 10px; opacity: 0; border: 2px solid rgba(255, 216, 130, 0.95); box-shadow: 0 0 26px rgba(255, 208, 112, 0.75), 0 0 64px rgba(255, 190, 80, 0.35), inset 0 0 18px rgba(255, 208, 112, 0.22); transition: left 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), top 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), width 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), height 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.3s ease; animation: tut-pulse 1.6s ease-in-out infinite; }
       #tut-spot.on { opacity: 1; }
-      /* IT.116: a place in the world is lit by a square, softer than a panel's box. */
-      #tut-spot.world { border-radius: 4px; border-color: rgba(255, 208, 112, 0.7); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.35), 0 0 34px rgba(255, 208, 112, 0.45), inset 0 0 24px rgba(255, 208, 112, 0.2); }
+      /* THE PING: a second rim that swells out of the first and fades. It is
+         what replaces the black sheet as "look HERE", and it is additive. */
+      #tut-spot::after { content: ''; position: absolute; inset: -3px; border-radius: inherit; border: 2px solid rgba(255, 246, 214, 0.85); box-shadow: 0 0 18px rgba(255, 216, 130, 0.6); animation: tut-ping 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) infinite; }
+      @keyframes tut-ping { 0% { transform: scale(1); opacity: 0.95; } 70%, 100% { transform: scale(1.14); opacity: 0; } }
+      /* A place in the world rather than a panel: a softer box, a wider glow,
+         and again nothing dimmed - the gold square on the GROUND (it.116) is
+         what really says where, and it is drawn in-world. */
+      #tut-spot.world { border-radius: 4px; border-color: rgba(255, 224, 150, 0.9); box-shadow: 0 0 34px rgba(255, 208, 112, 0.7), 0 0 80px rgba(255, 190, 80, 0.3), inset 0 0 24px rgba(255, 208, 112, 0.22); }
       /* THE BARS (it.116): while Lord Milk shows a lesson and on the long shots, the yard is framed like a scene. */
       #tut-layer .tut-bar { position: fixed; left: 0; right: 0; height: 0; background: #000; pointer-events: none; transition: height 0.5s cubic-bezier(0.22, 0.9, 0.3, 1); z-index: 0; }
       #tut-layer .tut-bar-top { top: 0; }
       #tut-layer .tut-bar-bottom { bottom: 0; }
-      #tut-layer.tut-bars .tut-bar { height: 9vh; }
+      #tut-layer.tut-bars .tut-bar { height: 7vh; }
+      /* WHILE SHE IS SHOWING SOMETHING (it.117). A chip that names what is
+         happening and how to skip it, and a WHISPER of a vignette - the corners
+         only, and never past 0.28 alpha, so the yard stays fully readable. The
+         owner's note was that the tutorial made the game impossible to watch;
+         this is the most the treatment is ever allowed to take. */
+      #tut-watch { position: fixed; left: 50%; top: 11vh; transform: translate(-50%, -6px); text-align: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease, transform 0.3s ease; z-index: 3; }
+      #tut-layer.tut-watching #tut-watch { opacity: 1; transform: translate(-50%, 0); }
+      #tut-watch b { display: inline-block; padding: 5px 16px; font: 700 11px/1 'Cinzel', 'Georgia', serif; letter-spacing: 0.34em; color: #ffe6ab; background: rgba(10, 8, 13, 0.55); border: 1px solid rgba(200, 165, 88, 0.55); text-shadow: 0 0 12px rgba(255, 208, 112, 0.8), 0 1px 3px #000; animation: tut-watch-beat 1.5s ease-in-out infinite; }
+      #tut-watch i { display: block; margin-top: 5px; font: italic 11px/1 'Crimson Pro', 'Georgia', serif; letter-spacing: 0.1em; color: #b6a98c; text-shadow: 0 1px 3px #000; }
+      @keyframes tut-watch-beat { 0%, 100% { border-color: rgba(200, 165, 88, 0.55); } 50% { border-color: rgba(255, 226, 160, 0.95); } }
+      /* A SLOWED SHOWING reads a shade brighter and a shade wider - the only
+         difference between "watch" and "watch, slowly" on the glass. */
+      #tut-layer.tut-slow #tut-watch b { color: #fff4d6; letter-spacing: 0.4em; box-shadow: 0 0 22px rgba(255, 208, 112, 0.35); }
+      #tut-layer::before { content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 50%, rgba(0, 0, 0, 0) 52%, rgba(0, 0, 0, 0.28) 100%); opacity: 0; transition: opacity 0.45s ease; }
+      #tut-layer.tut-watching::before { opacity: 1; }
+      body.tier-micro #tut-watch b, body.short-screen #tut-watch b { font-size: 9.5px; letter-spacing: 0.24em; padding: 4px 11px; }
+      body.tier-micro #tut-watch i, body.short-screen #tut-watch i { font-size: 9.5px; }
+      /* A PHONE HELD SIDEWAYS: the card takes the right of the screen during a
+         showing, so the chip stops centring on the whole width and centres on
+         what is LEFT of it instead - clear of the card, over the yard. */
+      body.short-screen #tut-watch { top: 9vh; left: 27%; }
+      /* ON A PHONE the card takes the top of the screen during a showing (the
+         engine seats it there, clear of the two-shot), so the chip goes to the
+         foot instead - above the bottom bar, clear of the thumb furniture. */
+      body.orient-portrait #tut-watch, body.tier-micro #tut-watch { top: auto; bottom: 12vh; }
       body.tut-cine #hud-tl, body.tut-cine #hud-tr, body.tut-cine #skill-bar, body.tut-cine #toast-stack { opacity: 0.25; transition: opacity 0.4s ease; }
+      /* THE LOG HAS UNREAD LINES (it.117): a small count on the bar's Log button. */
+      #system-bar .sb-log.sb-unread { border-color: #c8a558; }
+      #system-bar .sb-log.sb-unread::after { content: attr(data-unread); position: absolute; top: 2px; right: 2px; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box; border-radius: 7px; background: #c0392b; color: #ffe8c8; font: 700 9px/14px 'Cinzel', 'Georgia', serif; text-align: center; pointer-events: none; }
+      #system-bar .sb-log { position: relative; }
       #shop-panel .tp-discount { color: #9fe89a; font-weight: 700; }
       #tut-card .tut-or { font: italic 13px 'Crimson Pro', 'Georgia', serif; color: #8a7e68; align-self: center; }
       #tut-card .tut-demo { flex-wrap: wrap; }
@@ -5319,7 +5478,7 @@
       #tut-card .tut-grid kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; margin: 0 1px; box-sizing: border-box; font: 700 10px 'Cinzel', 'Georgia', serif; color: #ffd070; background: #1a1520; border: 1px solid #5a4a2e; border-bottom-width: 2px; border-radius: 3px; }
       #tut-card.tut-short .tut-grid { font-size: 11.5px; gap: 2px 8px; }
       #tut-spot.jump { transition-duration: 0s, 0s, 0s, 0s, 0.3s; }
-      @keyframes tut-pulse { 0%, 100% { border-color: rgba(255, 208, 112, 0.95); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.55), 0 0 22px rgba(255, 208, 112, 0.45), inset 0 0 14px rgba(255, 208, 112, 0.14); } 50% { border-color: rgba(255, 236, 190, 1); box-shadow: 0 0 0 9999px rgba(4, 3, 6, 0.55), 0 0 40px rgba(255, 208, 112, 0.85), inset 0 0 26px rgba(255, 208, 112, 0.28); } }
+      @keyframes tut-pulse { 0%, 100% { border-color: rgba(255, 216, 130, 0.95); box-shadow: 0 0 22px rgba(255, 208, 112, 0.6), 0 0 56px rgba(255, 190, 80, 0.26), inset 0 0 14px rgba(255, 208, 112, 0.16); } 50% { border-color: rgba(255, 244, 210, 1); box-shadow: 0 0 44px rgba(255, 208, 112, 0.95), 0 0 96px rgba(255, 190, 80, 0.42), inset 0 0 26px rgba(255, 208, 112, 0.32); } }
       #tut-arrow { position: fixed; width: 40px; height: 40px; opacity: 0; transform: rotate(var(--rot, 0deg)); filter: drop-shadow(0 0 8px rgba(255, 208, 112, 0.8)); transition: left 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), top 0.42s cubic-bezier(0.22, 0.9, 0.3, 1), opacity 0.3s ease; }
       #tut-arrow.on { opacity: 1; }
       #tut-arrow svg { display: block; animation: tut-bob 0.9s ease-in-out infinite; }
@@ -5894,6 +6053,167 @@
         img.inv-spin, img.inv-turn { animation: none !important; }
       }
 
+      /* ===================================================================
+         IT.117 — THE TURNTABLES TAKE TURNS
+         ===================================================================
+         "Frame drops, especially inside the inventory. I understand this is due
+         to animations, but we cannot sacrifice them."
+
+         MEASURED, in a crypt, with a full pack (72 turntable cells on screen),
+         counting requestAnimationFrame callbacks per second:
+
+             72 turning      6.9 fps        32 turning     8.3 fps
+             16 turning     11.3 fps         0 turning    13.3 fps
+
+         Flat in the number of RUNNING animations. `background-position` is not
+         a property the compositor can animate, so every running `.inv-spin` is
+         an animation the MAIN THREAD has to advance, restyle and repaint on
+         every frame. Seventy of those is the whole frame budget, spent on a
+         panel. (Two things it is NOT, both measured and both discarded: the
+         step rate - a third of the steps per second costs exactly the same -
+         and the strips themselves - pointing all seventy-two cells at ONE image
+         changes nothing. It is the count of running animations, full stop.)
+
+         THE ROTA. Nothing is taken away: every cell still turns, and any cell
+         you rest your eye on will turn while you are looking at it. They simply
+         do not all turn AT ONCE. The cells are dealt into groups and one group
+         runs at a time, so about a dozen are moving at any moment and the turn
+         travels across the pack in a wave - which, looked at, reads better than
+         seventy things spinning in near-unison.
+
+             all turning  6.9 fps   ->   the rota  11.5 fps   (ceiling 13.3)
+
+         THE HOLD IS A CLASS ON THE CELL, not a state on the root. The first cut
+         of this switched one attribute on the root element and picked the
+         groups with `:root[data-rota='2'] :nth-child(4n+3) > img.inv-spin` -
+         which is a document-wide selector re-match every time the group changes,
+         and it ate the whole win back (7.3 fps, against 6.9 for doing nothing).
+         Toggling a class on the seventy-two elements themselves invalidates
+         seventy-two elements: 11.5 fps.
+
+         AND ONLY WHEN IT IS CROWDED. The page script below turns the rota on
+         only when more than eighteen turntables are actually on screen, and
+         picks the group count so that about a dozen run at a time. A normal
+         pack, the belt, the hotbar, a shop row - anything under that - runs
+         exactly as it did before, continuously. `.inv-turn` is a transform,
+         which the compositor owns, and is never held.
+
+         Pausing holds the animation where it stands and resuming carries on from
+         there, so no cell ever jumps a frame; a turn simply takes longer. */
+      img.inv-spin.spin-hold { animation-play-state: paused; }
+
+      /* ===================================================================
+         IT.117 — TEN KEYS ON THE BAR, AND WHAT YOU PUT ON THEM
+         ===================================================================
+         The action bar is [Q] [1..8] [R]: the two belt keys flank the eight
+         action slots, each with its key cap, its count and its cooldown veil.
+         Ten 60 px cells do not fit a small screen at the old size, so the row
+         steps down by layout tier instead of overflowing. A slot holding an
+         ITEM wears a cooler rim than a skill's gold one, so the two kinds read
+         apart at a glance. `.bar-sep` is the hairline between the belt and the
+         eight. */
+      #skill-bar { gap: 7px; align-items: center; }
+      #skill-bar .bar-sep {
+        flex: 0 0 auto; width: 1px; align-self: stretch; margin: 4px 1px;
+        background: linear-gradient(180deg, transparent, rgba(200, 165, 88, 0.45), transparent);
+      }
+      .skill-slot .belt-count { right: 4px; bottom: 2px; color: #f4ecd8; }
+      .skill-slot.item-slot { box-shadow: inset 0 0 0 1px rgba(159, 180, 232, 0.55), inset 0 0 18px rgba(0, 0, 0, 0.85), 0 0 12px rgba(0, 0, 0, 0.9); }
+      .skill-slot.item-slot .skill-key { color: #cfe0ff; }
+      .skill-slot.item-slot.poor { opacity: 0.5; }
+      #skill-bar .belt-slot .skill-key { color: #e8cf8a; }
+      /* The row shrinks rather than spilling off a narrow screen. */
+      body.tier-tablet #skill-bar { gap: 5px; padding: 6px 8px; }
+      body.tier-tablet .skill-slot { width: 52px; height: 52px; }
+      body.tier-compact #skill-bar, body.short-screen #skill-bar { gap: 4px; padding: 5px 7px; }
+      body.tier-compact .skill-slot, body.short-screen .skill-slot { width: 44px; height: 44px; }
+      body.tier-compact .skill-slot .skill-name, body.short-screen .skill-slot .skill-name { display: none; }
+      body.tier-micro #skill-bar { gap: 3px; padding: 4px 5px; }
+      body.tier-micro .skill-slot { width: 38px; height: 38px; }
+      body.tier-micro .skill-slot .skill-name { display: none; }
+
+      /* DRAG A CONSUMABLE ONTO A KEY (ui/Inventory.startQuickDrag). The ghost
+         follows the pointer under everything else; every drop target lights
+         while a drag is live, and brighter under the pointer. */
+      #item-drag {
+        position: fixed; left: 0; top: 0; z-index: 9999;
+        width: 48px; height: 48px; margin: -24px 0 0 -24px;
+        pointer-events: none; opacity: 0.92;
+        filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.85));
+      }
+      #item-drag img { width: 100%; height: 100%; object-fit: contain; }
+      body.qs-drag { cursor: grabbing; }
+      /* While a drag is live the bar comes to the front, so an item can be
+         dropped straight onto a HUD key even though the open inventory
+         overlaps that strip of the screen (`elementFromPoint` names whatever
+         is topmost, and that used to be the panel). */
+      body.qs-drag #skill-bar { z-index: 1200; }
+      body.qs-drag [data-action], body.qs-drag [data-belt] {
+        outline: 1px dashed rgba(200, 165, 88, 0.55); outline-offset: 1px;
+      }
+      [data-action].qs-over, [data-belt].qs-over {
+        outline: 2px solid var(--frame-gold-hi, #e8cf8a) !important; outline-offset: 1px;
+        box-shadow: 0 0 16px rgba(232, 207, 138, 0.55);
+      }
+      .inv-draggable { cursor: grab; touch-action: none; }
+
+      /* THE INVENTORY'S OWN TEN KEYS. Two rows: the eight action slots, then
+         the belt. Each cell is a drop target and carries a ▾ chooser, so the
+         drag is never the only way in (a phone uses the chooser or the
+         inspect stage's ASSIGN TO row). */
+      #inv-panel .inv-quickbar { margin: 8px 0 2px; padding: 6px 10px; background: rgba(0, 0, 0, 0.22); border: 1px solid rgba(200, 165, 88, 0.16); border-radius: 4px; }
+      #inv-panel .inv-quickbar > h4 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; font-family: 'Cinzel', 'Georgia', serif; font-size: 10px; letter-spacing: 0.2em; color: var(--frame-gold-hi, #e8cf8a); }
+      #inv-panel .inv-quick-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      #inv-panel .inv-quick-row + .inv-quick-row { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(200, 165, 88, 0.14); }
+      #inv-panel .inv-quick { position: relative; display: flex; align-items: center; gap: 3px; }
+      #inv-panel .inv-quick kbd { font-family: 'Cinzel', serif; font-size: 10px; font-weight: 700; color: var(--ink); background: #0b0910; border: 1px solid var(--frame-gold); padding: 3px 5px; border-radius: 3px; }
+      #inv-panel .inv-quick .inv-cell { width: 38px; height: 38px; }
+      #inv-panel .inv-quick .inv-cell .inv-cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(8, 6, 10, 0.72); pointer-events: none; transition: height 0.1s linear; }
+      #inv-panel .inv-quick .inv-cell.inv-none { opacity: 0.45; }
+      #inv-panel .inv-quick .inv-belt-pick { width: 18px; height: 38px; padding: 0; border: 1px solid var(--frame-iron); background: rgba(9, 7, 12, 0.7); color: var(--frame-gold-hi, #e8cf8a); font-size: 11px; cursor: pointer; border-radius: 3px; }
+      #inv-panel .inv-quick .inv-belt-pick.on { border-color: var(--frame-gold-hi, #e8cf8a); box-shadow: 0 0 8px rgba(200, 165, 88, 0.4); }
+      #inv-panel .inv-skill-cell { display: flex; align-items: center; justify-content: center; border: 1px solid var(--frame-iron); background: linear-gradient(180deg, #17131e, #0b0910); }
+      #inv-panel .inv-skill-cell img { width: 78%; height: 78%; object-fit: contain; opacity: 0.85; }
+      #inv-panel .inv-quickbar .inv-belt-note { font-family: 'Crimson Pro', 'Georgia', serif; font-style: italic; font-size: 11.5px; color: var(--ink-dim, #8f8677); letter-spacing: 0; margin-left: auto; }
+      body.input-touch #inv-panel .inv-quick .inv-belt-pick { width: 26px; }
+      /* The quick bar takes the doll's column in landscape and hides with the
+         gear half in portrait, exactly where the belt row used to sit. */
+      body.orient-landscape #inv-panel.open > .inv-quickbar { grid-column: 1; }
+      body.orient-portrait #inv-panel.open[data-tab='pack'] > .inv-quickbar { display: none; }
+      body.tiny-height #inv-panel .inv-quickbar, body.short-screen.orient-landscape #inv-panel .inv-quickbar { padding: 5px 8px; }
+      body.tiny-height #inv-panel .inv-quickbar .inv-belt-note, body.short-screen.orient-landscape #inv-panel .inv-quickbar .inv-belt-note { display: none; }
+
+      /* ASSIGN TO, on the inspect stage: the non-drag path a thumb takes. */
+      #inspect-panel .insp-assign { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 6px 0 2px; }
+      #inspect-panel .insp-assign > span { font-family: 'Cinzel', 'Georgia', serif; font-size: 9.5px; letter-spacing: 0.18em; color: var(--ink-dim, #8f8677); margin-right: 4px; }
+      #inspect-panel .insp-key { min-width: 28px; min-height: 28px; padding: 0 6px; font-family: 'Cinzel', 'Georgia', serif; font-size: 12px; }
+      #inspect-panel .insp-key.on { border-color: var(--ds-gold-lit, #e7cf8f) !important; color: #fff2cf !important; box-shadow: 0 0 12px rgba(212, 175, 55, 0.35) !important; }
+      body.input-touch #inspect-panel .insp-key { min-width: 36px; min-height: 36px; }
+
+      /* THE DRAUGHT ROW CARRIES THE OTHER FOUR SLOTS (it.117):
+         [portal] [Q] 5 6 7 8 [R], one line, above the stick — the idle hand's
+         side, where it.67 put the draughts for the same reason. It grows
+         SIDEWAYS, never upward: a new row would have pushed the left cluster
+         under the chat log's header, and a strip above the arc collided with
+         the system bar. Three 48 px rounds and four at 38 px with 6 px gaps
+         is ~326 px, and the left pad starts at x 6 with the right cluster not
+         until x 704. A micro handset keeps the flasks and drops the four
+         extra slots, the way it already drops skills 3 and 4. */
+      #touch-controls .tc-left .tc-row-use, #touch-controls .tc-right .tc-row-use { flex-wrap: nowrap; width: max-content; max-width: none; gap: 6px; }
+      #touch-controls .tc-row-use .tc-skill {
+        position: relative;
+        width: calc(var(--tc-s) * 0.8) !important; height: calc(var(--tc-s) * 0.8) !important;
+        min-width: calc(var(--tc-s) * 0.8) !important; min-height: calc(var(--tc-s) * 0.8) !important;
+        font-size: calc(var(--tc-s) * 0.27);
+      }
+      body.tier-micro #touch-controls .tc-row-use .tc-skill { display: none; }
+      #touch-controls .tc-use .tc-key { position: absolute; left: 6px; top: 4px; font: 700 9px/1 'Cinzel', 'Georgia', serif; color: rgba(230, 200, 138, 0.85); text-shadow: 0 1px 2px #000; pointer-events: none; }
+      /* The draught face is round because its BOX is round: a turning cell
+         carries its own inline clip-path and cannot take the circle here. */
+      #touch-controls .tc-use .tc-face-draught { border-radius: 50%; overflow: hidden; }
+      #touch-controls .tc-skill.tc-item .tc-face { border-radius: 50%; overflow: hidden; }
+      #touch-controls .tc-skill.tc-item .tc-face img { width: 84%; height: 84%; object-fit: contain; }
+
       /* THE PURSE IS NAMED: GOLD beside the coin, in the gauges' label type. */
       .sf-purse .sf-gold-label {
         font-family: 'Cinzel', 'Georgia', serif; font-weight: 700; font-size: 9px; letter-spacing: 0.16em;
@@ -5927,6 +6247,65 @@
         #cine-speak.show .cs-face canvas, #cine-speak.show .cs-line { animation: none !important; }
       }
 
+      /* ===================================================================
+         IT.117 — THE SMALL ACTIONS ARE FELT
+         ===================================================================
+         "When drinking or eating something, when restoring HP (make the health
+         bar animated), and similar details." The gauges already EASE toward
+         their value (ui/StatusFrame lerps `shown`); what they never did was
+         say that something HAPPENED — a draught landing read exactly like
+         regeneration. Each gauge gets one pseudo-element it does not otherwise
+         use, and main.ts puts a class on the bar for the length of one beat.
+
+         EVERY ONE OF THESE ANIMATES `opacity` AND `transform` AND NOTHING ELSE,
+         so the compositor owns them and the main thread pays a class toggle.
+         There is no layout, no paint of the bar itself, and nothing runs when
+         no class is set — which is almost always. */
+      #status-frame .ds-bar::after {
+        content: '';
+        position: absolute; inset: 0;
+        pointer-events: none;
+        opacity: 0;
+        border-radius: inherit;
+        background: linear-gradient(100deg, transparent 0%, var(--beat, rgba(255, 240, 210, 0.85)) 45%, var(--beat, rgba(255, 240, 210, 0.85)) 55%, transparent 100%);
+        mix-blend-mode: screen;
+        will-change: opacity, transform;
+      }
+      /* THE MEND: a soft flood of the gauge's own colour, brightest at the
+         moment it lands, gone in two thirds of a second. */
+      #status-frame .ds-bar.beat::after { animation: ds-beat 0.66s cubic-bezier(0.1, 0.8, 0.3, 1); }
+      @keyframes ds-beat {
+        0% { opacity: 0; transform: translateX(-42%) scaleX(0.7); }
+        22% { opacity: 1; }
+        100% { opacity: 0; transform: translateX(42%) scaleX(1.5); }
+      }
+      #status-frame .sf-hp.beat { --beat: rgba(120, 255, 150, 0.9); }
+      #status-frame .sf-res.beat { --beat: rgba(150, 210, 255, 0.9); }
+      #status-frame .sf-xp.beat { --beat: rgba(216, 180, 255, 0.95); }
+      /* A HURT reads the other way: a red wash that falls back across the bar. */
+      #status-frame .sf-hp.bleed::after { --beat: rgba(255, 90, 70, 0.9); animation: ds-bleed 0.5s ease-out; }
+      @keyframes ds-bleed {
+        0% { opacity: 0.95; transform: translateX(26%) scaleX(1.3); }
+        100% { opacity: 0; transform: translateX(-18%) scaleX(0.8); }
+      }
+      /* THE PLATE ANSWERS TOO, once, so the eye is pulled to the corner. */
+      #status-frame.mend { animation: sf-mend 0.7s ease-out; }
+      @keyframes sf-mend {
+        0% { box-shadow: inset 0 1px 0 rgba(231, 207, 143, 0.16), 0 0 34px rgba(120, 255, 150, 0.55), 0 26px 64px rgba(0, 0, 0, 0.74); }
+        100% { box-shadow: inset 0 1px 0 rgba(231, 207, 143, 0.16), 0 26px 64px rgba(0, 0, 0, 0.74); }
+      }
+      /* THE PURSE: the coin and the number kick when gold lands. */
+      #status-frame .sf-purse.coin b, #status-frame .sf-purse.coin .sf-coin { animation: sf-coin 0.42s cubic-bezier(0.2, 0.9, 0.3, 1); }
+      @keyframes sf-coin {
+        0% { transform: none; }
+        35% { transform: translateY(-3px) scale(1.24); filter: brightness(1.7) drop-shadow(0 0 7px rgba(255, 216, 130, 0.95)); }
+        100% { transform: none; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #status-frame .ds-bar::after, #status-frame.mend,
+        #status-frame .sf-purse.coin b, #status-frame .sf-purse.coin .sf-coin { animation: none !important; }
+      }
+
     </style>
   </head>
   <body>
@@ -5938,6 +6317,70 @@
     <div id="level-flash"></div>
     <div id="levelup-banner"></div>
 
+
+    <script>
+      // THE TURNTABLE ROTA (it.117) - the switch for the stylesheet's
+      // "the turntables take turns". That block holds the measurements and the
+      // reasoning; this is only the clock.
+      //
+      // Once a second: count the `.inv-spin` cells that are actually ON SCREEN
+      // (`checkVisibility` - a closed panel keeps its cells in the DOM and a
+      // `display:none` animation costs nothing, so counting those would rota the
+      // game for free). Under THRESHOLD, everything runs as it always has and no
+      // timer is left ticking at all. Over it, the cells are dealt into groups
+      // sized so that about AT_ONCE of them turn at a time, and the running
+      // group steps round every DWELL milliseconds.
+      //
+      // The hold is a class on each cell (see the stylesheet: a root-level
+      // selector costs more than it saves), and the tick is a timer, never a
+      // frame callback.
+      (function () {
+        var THRESHOLD = 18;
+        var AT_ONCE = 12;
+        var DWELL = 1300;
+        var MAX_GROUPS = 8;
+        var cells = [];
+        var groups = 2;
+        var phase = 0;
+        var tick = 0;
+        function visible() {
+          var all = document.querySelectorAll('img.inv-spin');
+          var out = [];
+          for (var i = 0; i < all.length; i++) if (!all[i].checkVisibility || all[i].checkVisibility()) out.push(all[i]);
+          return out;
+        }
+        function deal() {
+          for (var i = 0; i < cells.length; i++) cells[i].classList.toggle('spin-hold', i % groups !== phase);
+        }
+        function release() {
+          for (var i = 0; i < cells.length; i++) cells[i].classList.remove('spin-hold');
+          cells = [];
+        }
+        function poll() {
+          var now = visible();
+          if (now.length <= THRESHOLD) {
+            if (tick) {
+              clearInterval(tick);
+              tick = 0;
+            }
+            if (cells.length) release();
+            return;
+          }
+          release();
+          cells = now;
+          groups = Math.max(2, Math.min(MAX_GROUPS, Math.ceil(now.length / AT_ONCE)));
+          phase = phase % groups;
+          deal();
+          if (!tick) {
+            tick = setInterval(function () {
+              phase = (phase + 1) % groups;
+              deal();
+            }, DWELL);
+          }
+        }
+        setInterval(poll, 1000);
+      })();
+    </script>
 
     <div id="controls">
       <button id="controls-toggle" type="button" title="Collapse / expand the command sheet"><span>COMMANDS</span><b>▼</b></button>
@@ -5962,6 +6405,7 @@
       <div class="row active" id="row-move"><span>Move · Target</span><kbd>LMB</kbd></div>
       <div class="row" id="row-direct"><span>Direct Control</span><kbd>W A S D / ARROWS</kbd></div>
       <div class="row"><span>Strike</span><kbd>SPACE / F</kbd></div>
+      <div class="row"><span>Action Slots</span><kbd>1 … 8</kbd></div>
       <div class="row"><span>Take Loot · Interact</span><kbd>E</kbd></div>
       <div class="row"><span>Potion · Mana</span><kbd>Q · R</kbd></div>
       <div class="row"><span>Inventory</span><kbd>I</kbd></div>
@@ -5974,7 +6418,7 @@
       <div class="row"><span>Depths</span><kbd>L</kbd></div>
       <div class="row"><span>Zoom the Eye</span><kbd>WHEEL</kbd></div>
       <div class="row"><span>Settings</span><kbd>O</kbd></div>
-      <div class="row"><span>Forbidden Arts</span><kbd>F1 / `</kbd></div>
+      <div class="row"><span>Developer console</span><kbd>F1 / `</kbd></div>
     </div>
 
     <div id="interact-hint"><kbd>E</kbd> OPEN</div>

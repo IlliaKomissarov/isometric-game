@@ -19,7 +19,10 @@
 
 import type { Camera } from '@/engine/Camera';
 import { vec2 } from '@/utils/Vec2';
-import type { InputQueue } from './InputQueue';
+import { ACTION_SLOTS, type InputQueue } from './InputQueue';
+
+/** Digit1 … Digit8 (it.117): one key per action slot. */
+const ACTION_DIGITS = new Set(Array.from({ length: ACTION_SLOTS }, (_, i) => `Digit${i + 1}`));
 
 const KEY_AXES: Record<string, { sx: number; sy: number }> = {
   KeyW: { sx: 0, sy: -1 },
@@ -168,8 +171,10 @@ export class InputBindings {
           if (!e.repeat) this.inputQueue.enqueue({ type: 'USE_QUICK', playerId: this.playerId, kind: e.code === 'KeyQ' ? 'health' : 'mana' });
           return;
         }
-        // Active skills (it.32): hotkeys 1–4 cast the class skill bar.
-        if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3' || e.code === 'Digit4') {
+        // THE ACTION BAR (it.32; eight slots it.117): 1–8 fire whatever the
+        // slot holds — a learned skill or a consumable parked there from the
+        // inventory. One command; Skills and Inventory each take their own.
+        if (ACTION_DIGITS.has(e.code)) {
           e.preventDefault();
           if (!e.repeat) {
             this.inputQueue.enqueue({ type: 'SKILL', playerId: this.playerId, slot: Number(e.code.slice(-1)) - 1 });

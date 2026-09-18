@@ -46,6 +46,121 @@ const CHEST_ROOM_CHANCE = 0.45;
 const DROPS_PER_CHEST_MIN = 2;
 const DROPS_PER_CHEST_MAX = 3;
 
+/**
+ * SCATTERED, AND TUCKED (it.117)
+ * ==============================
+ * "Scatter chests around the world map, placing some hidden in corners of
+ * locations but still visible." Every hand-written spot list in the scenes has
+ * the same two failure modes: a coordinate that the map's own noise has since
+ * turned into water, a hedge or a gable, and - worse - a chest that lands in
+ * the middle of a field, which is scattered but not HIDDEN. This picks them
+ * instead, out of the finished grid, against four rules:
+ *
+ *   FREE       the tile is one the hero can stand on and nothing stands on.
+ *   REACHED    at least two of its four neighbours are walkable, so it is in
+ *              the open ground and not at the end of a one-tile pocket the
+ *              connectivity pass is about to seal.
+ *   TUCKED     at least `tuck` of its EIGHT neighbours are not walkable - it
+ *              sits in a nook: the inside of a hedge's elbow, the gap between
+ *              a barn and a wall, the back of a ruin.
+ *   SEEN       and yet nothing stands in FRONT of it. In this projection a
+ *              sprite one tile south or east of a tile is drawn OVER it, so a
+ *              nook whose open side faces away from the camera is a chest the
+ *              player will never see. Both of those two tiles must be clear.
+ *              This one rule is the whole difference between "hidden in a
+ *              corner but still visible" and "lost behind the smithy".
+ *
+ *   UNSEALING  and the open neighbours must form ONE unbroken arc, so the tile
+ *              is not the only way between two places. A chest claims its own
+ *              tile, and this runs AFTER a floor's connectivity pass, so one
+ *              set down in a doorway would wall off whatever is behind it with
+ *              nothing left to catch it.
+ *
+ * Deterministic: the order is a seeded shuffle, so every peer and every reload
+ * finds the same chests, and the caller's own hand-placed spots go in `avoid`
+ * so the two never fight. Pure - it reads the grid through the callbacks and
+ * writes nothing.
+ */
+export interface ScatterOpts {
+  width: number;
+  height: number;
+  /** A tile a chest may be set down on (walkable, off the road, unclaimed). */
+  free: (x: number, y: number) => boolean;
+  /** A tile the hero can walk through - what "a corner" is measured against. */
+  open: (x: number, y: number) => boolean;
+  /** Spots already taken (other chests, the spawn, a quest mark). */
+  avoid?: ReadonlyArray<{ x: number; y: number }>;
+  /** How many to find. Fewer come back if the floor has no room for them. */
+  count: number;
+  /** Tiles between two chests, and between a chest and anything in `avoid`. */
+  apart?: number;
+  seed: number;
+}
+
+/** The eight neighbours, walked round the tile, so an arc is a run of trues. */
+const RING: ReadonlyArray<readonly [number, number]> = [
+  [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1],
+];
+
+export function scatterChests(o: ScatterOpts): Array<{ x: number; y: number }> {
+  const ring = [false, false, false, false, false, false, false, false];
+  const { width: w, height: h } = o;
+  const apart = o.apart ?? 9;
+  const rand = mulberry32((o.seed ^ 0x9e3779b9) >>> 0);
+  const taken: Array<{ x: number; y: number }> = [...(o.avoid ?? [])];
+  const out: Array<{ x: number; y: number }> = [];
+  const far = (x: number, y: number): boolean => !taken.some((p) => Math.hypot(p.x - x, p.y - y) < apart);
+
+  // One pass over the floor scores every tile; the candidates are then walked
+  // in a seeded order, tightest nooks first.
+  const cand: Array<{ x: number; y: number; tuck: number; key: number }> = [];
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      if (!o.free(x, y)) continue;
+      if (!o.open(x + 1, y) || !o.open(x, y + 1)) continue; // SEEN: nothing may stand in front of it
+      // The eight neighbours IN RING ORDER, so the pinch test below can read them.
+      let open4 = 0;
+      let tuck = 0;
+      for (let i = 0; i < 8; i++) {
+        const ok = o.open(x + RING[i][0], y + RING[i][1]);
+        ring[i] = ok;
+        if (!ok) tuck++;
+        else if (i % 2 === 0) open4++; // the even slots are N, E, S, W
+      }
+      if (open4 < 2) continue; // REACHED
+      /**
+       * AND NOT A PINCH. A chest claims its tile, so one set down in a doorway
+       * or a one-wide passage seals whatever is behind it - and this runs after
+       * a floor's own connectivity pass, which is therefore not going to catch
+       * it. If the open neighbours form ONE unbroken arc around the tile, every
+       * one of them still touches every other without going through the middle,
+       * so taking the middle away cannot cut anything off. Two arcs or more
+       * means the tile is the only way between them: leave it alone.
+       */
+      let arcs = 0;
+      for (let i = 0; i < 8; i++) if (ring[i] && !ring[(i + 7) % 8]) arcs++;
+      if (arcs > 1) continue;
+      cand.push({ x, y, tuck, key: rand() });
+    }
+  }
+  // Tightest first, ties broken by the seeded key - so a map with a hundred
+  // equally snug corners still spreads its chests over all of them.
+  cand.sort((a, b) => b.tuck - a.tuck || a.key - b.key);
+  // Two sweeps: real nooks first, then anywhere that is far enough from the
+  // rest, so a floor with few corners still gets its count.
+  for (const min of [3, 1]) {
+    for (const c of cand) {
+      if (out.length >= o.count) break;
+      if (c.tuck < min) continue;
+      if (!far(c.x, c.y)) continue;
+      out.push({ x: c.x, y: c.y });
+      taken.push({ x: c.x, y: c.y });
+    }
+    if (out.length >= o.count) break;
+  }
+  return out;
+}
+
 export class ChestSystem {
   private readonly chests = new Map<number, ChestView>();
   private nextId = 1;

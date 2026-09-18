@@ -25,6 +25,7 @@
  */
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type DungeonMap, type Room } from '@/scenes/DungeonGenerator';
+import { scatterChests } from '@/systems/Chests';
 import { mulberry32 } from '@/utils/rng';
 
 /** THE EASTERN QUARTER (it.91): the map grew east; everything at x >= EAST_X is the burnt quarter. */
@@ -1783,6 +1784,31 @@ export function buildTownLayout(opts: { east?: EastState; farmOpen?: boolean; ri
   }
   seen = reachable();
   for (let i = 0; i < grid.length; i++) if (grid[i] === TILE_FLOOR && !seen[i]) grid[i] = TILE_BLOCKED;
+  /**
+   * THE CORNERS FOLK FORGET (it.117). The seven above are the districts' named
+   * spots, written down by hand; these are found, AFTER the belt and the lawn
+   * have grown, so they cannot be walled in by either. `scatterChests` takes
+   * reachable, off-road tiles with a wall, a gable or the wood on two or three
+   * sides and NOTHING standing in front of them - the alley behind the
+   * tavern, the gap between two cottages, the inside of the belt's elbow -
+   * which is "hidden in a corner and still visible" stated as a rule instead of
+   * as a coordinate. The town's seed is fixed, so the city is the same city on
+   * every peer and after every reload.
+   */
+  for (const c of scatterChests({
+    width: W,
+    height: H,
+    free: (x, y) => grid[idx(x, y)] === TILE_FLOOR && !!seen[idx(x, y)] && !road[idx(x, y)] && !belt[idx(x, y)],
+    open: (x, y) => inside(x, y) && !!seen[idx(x, y)],
+    avoid: [...chestSpots, ...gateways.map((g) => ({ x: g.x, y: g.y }))],
+    count: 9,
+    apart: 13,
+    seed: 0x70712,
+  })) {
+    grid[idx(c.x, c.y)] = TILE_BLOCKED;
+    props.push({ kind: 'chest', x: c.x, y: c.y });
+    chestSpots.push(c);
+  }
   // A CHEST NOBODY CAN REACH IS NOT A CHEST (it.114): a district chest is set
   // down before the belt and the lawn grow round it, and two of them (the
   // portal yard's corner, the south row) ended up walled in by the woods. A

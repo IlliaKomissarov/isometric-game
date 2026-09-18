@@ -28,14 +28,15 @@
  */
 
 import { eventBus } from '@/core/EventBus';
-import type { InputQueue } from '@/core/InputQueue';
+import { ACTION_SLOTS, type InputQueue } from '@/core/InputQueue';
 import { audio } from '@/engine/AudioManager';
 import { uiIdleFrame } from '@/render/animUtil';
 import type { Player } from '@/entities/Player';
 import { RARITY_COLOR, itemValue, kindWord, type ItemDef } from '@/items/catalog';
 import { decodeItemId, itemDef } from '@/items/instance';
-import { QUAFF_COOLDOWN, beltable, quaffCategory } from '@/systems/Inventory';
+import { QUAFF_COOLDOWN, actionItemBase, quaffCategory, slottable } from '@/systems/Inventory';
 import { MATERIAL_ORDER } from '@/items/registry';
+import { SKILL_BY_ID } from '@/systems/SkillTree';
 import type { EquipmentSlot } from '@/network/Serialization';
 
 import { fitItemIcons, itemIconHtml, itemSpin } from './itemIcons';
@@ -102,8 +103,8 @@ export class InventoryUI {
   /** Interval driving the animated paperdoll while the panel is rendered. */
   private previewTimer: number | null = null;
   private readonly abort = new AbortController();
-  /** THE BELT CHOOSER (it.80): which key is picking a draught (null = closed). */
-  private beltPick: number | null = null;
+  /** THE QUICK-SLOT CHOOSER (it.80; the eight action keys joined it.117): which key is picking (null = closed). */
+  private pick: { kind: 'action' | 'belt'; index: number } | null = null;
   /** THE PACK'S FILTER AND ORDER (it.81), remembered between runs. */
   private readonly filter: FilterState = loadFilter('inventory');
   private cdTimer: number | null = null;
@@ -115,6 +116,7 @@ export class InventoryUI {
   private readonly offChanged: () => void;
   private readonly offMaterials: () => void;
   private readonly offBelt: () => void;
+  private readonly offSkills: () => void;
   private readonly offUsed: () => void;
 
   constructor(
@@ -164,8 +166,13 @@ export class InventoryUI {
     this.offChanged = eventBus.on('inventory:changed', () => this.render());
     this.offMaterials = eventBus.on('materials:changed', () => this.render());
     this.offBelt = eventBus.on('belt:changed', () => {
-      this.beltPick = null;
+      this.pick = null;
       this.render();
+    });
+    // A key's item changed (it.117): the quick rows redraw and the chooser folds.
+    this.offSkills = eventBus.on('skills:changed', () => {
+      this.pick = null;
+      if (this.visible) this.render();
     });
     // A BITE OR A DRAUGHT WENT DOWN (it.114): the sound and the pulse on the cell.
     // (`audio.sfx('eat')` is the cue this wants; the manager has no such cue yet, so the flask's stands in.)
@@ -191,7 +198,7 @@ export class InventoryUI {
       this.cdTimer = null;
     }
     if (this.visible) this.cdTimer = window.setInterval(() => this.tickBelt(), 100);
-    else this.beltPick = null;
+    else this.pick = null;
   }
 
   /** The cross is rewired on EVERY repaint (it.82): a pickup or a belt change while the window was open used to leave a dead button. */
@@ -213,6 +220,7 @@ export class InventoryUI {
     this.offChanged();
     this.offMaterials();
     this.offBelt();
+    this.offSkills();
     this.offUsed();
     if (this.cdTimer !== null) clearInterval(this.cdTimer);
     if (this.previewTimer !== null) clearInterval(this.previewTimer);
@@ -239,35 +247,49 @@ export class InventoryUI {
         : `<div class="inv-cell inv-cell-empty inv-cell-framed" data-slot="${slot}" style="background-image:url(${uiAssetUrl(`slots/${slot}.png`)})"></div>`;
       return `<div class="inv-slot-wrap" style="grid-area:${area}"><span class="inv-slot-label">${label}</span>${cell}</div>`;
     }).join('');
-    // THE BELT (it.42, assignable it.80): Q and R hold whichever draught - or dish (it.114) - the
-    // hero chose; the chooser lists every draught and dish in the pack.
+    /**
+     * THE QUICK SLOTS (it.42, assignable it.80, TEN OF THEM it.117). Eight
+     * action keys and the two belt keys, each showing what rides it, each a
+     * DROP TARGET for a pack cell dragged onto it, and each with a ▾ that
+     * opens the same list without a drag - the two paths the owner asked for,
+     * both working with a mouse and with a thumb. A cell holding a SKILL says
+     * so and sends the player to the tree (K); skills are learned there.
+     */
     const packBase = (id: string): string | null => decodeItemId(id)?.base ?? null;
-    const belt = [0, 1]
-      .map((i) => {
-        const base = this.player.belt[i];
-        const def = base ? itemDef(base) : undefined;
-        const count = base ? this.player.backpack.filter((x) => packBase(x) === base).length : 0;
-        const firstIndex = base ? this.player.backpack.findIndex((x) => packBase(x) === base) : -1;
-        const cat = def?.use ? quaffCategory(def.use) : null;
-        const cell = def
-          ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use${def.slot === 'food' ? ' inv-food' : ''}${count ? '' : ' inv-none'}" ${count ? `data-use="${firstIndex}"` : ''} data-item="${def.id}">${iconHtml(def)}${forkMark(def)}<span class="inv-qty">${count}</span><i class="inv-cd" data-cd="${cat ?? ''}"></i></button>`
-          : `<div class="inv-cell inv-cell-empty"><span class="inv-slot-ghost">${i === 0 ? '♥' : '◈'}</span></div>`;
-        return `<div class="inv-belt-slot${count ? '' : ' empty'}"><kbd>${i === 0 ? 'Q' : 'R'}</kbd>${cell}<button class="inv-belt-pick${this.beltPick === i ? ' on' : ''}" data-beltpick="${i}" title="Choose the draught or dish for ${i === 0 ? 'Q' : 'R'}">▾</button></div>`;
-      })
-      .join('');
-    let beltMenu = '';
-    if (this.beltPick !== null) {
+    const countOf = (base: string): number => this.player.backpack.filter((x) => packBase(x) === base).length;
+    const quickCell = (kind: 'action' | 'belt', i: number): string => {
+      const cap = kind === 'belt' ? (i === 0 ? 'Q' : 'R') : String(i + 1);
+      const entry = kind === 'belt' ? this.player.belt[i] : this.player.loadout[i];
+      const base = kind === 'belt' ? entry : actionItemBase(entry);
+      const def = base ? itemDef(base) : undefined;
+      const skill = kind === 'action' && entry && !base ? SKILL_BY_ID[entry] : undefined;
+      const count = base ? countOf(base) : 0;
+      const firstIndex = base ? this.player.backpack.findIndex((x) => packBase(x) === base) : -1;
+      const cat = def?.use ? quaffCategory(def.use) : null;
+      const on = this.pick?.kind === kind && this.pick.index === i;
+      const cell = def
+        ? `<button class="inv-cell inv-item rarity-${def.rarity} inv-use${def.slot === 'food' ? ' inv-food' : ''}${count ? '' : ' inv-none'}" ${count ? `data-use="${firstIndex}"` : ''} data-item="${def.id}">${iconHtml(def)}${forkMark(def)}<span class="inv-qty">${count}</span><i class="inv-cd" data-cd="${cat ?? ''}"></i></button>`
+        : skill
+          ? `<div class="inv-cell inv-skill-cell" title="${skill.name} — change it in the skill tree (K)">${skill.icon ? `<img src="${uiAssetUrl(`skills/${skill.icon}.png`)}" alt="${skill.name}">` : `<span class="inv-slot-ghost">${skill.glyph}</span>`}</div>`
+          : `<div class="inv-cell inv-cell-empty"><span class="inv-slot-ghost">${kind === 'belt' ? (i === 0 ? '♥' : '◈') : '◇'}</span></div>`;
+      return `<div class="inv-quick${count || skill ? '' : ' empty'}" data-${kind}="${i}"><kbd>${cap}</kbd>${cell}<button class="inv-belt-pick${on ? ' on' : ''}" data-pick="${kind}:${i}" title="Put a draught, dish, elixir or scroll on ${cap}">▾</button></div>`;
+    };
+    const actions = Array.from({ length: ACTION_SLOTS }, (_, i) => quickCell('action', i)).join('');
+    const belt = [0, 1].map((i) => quickCell('belt', i)).join('');
+    let pickMenu = '';
+    if (this.pick) {
       const seen = new Map<string, ItemDef>();
       for (const id of this.player.backpack) {
         const def = itemDef(id);
-        const base = packBase(id);
-        if (!def || !base || !beltable(def)) continue;
-        if (!seen.has(base)) seen.set(base, def);
+        const b = packBase(id);
+        if (!def || !b || !slottable(def)) continue;
+        if (!seen.has(b)) seen.set(b, def);
       }
+      const cap = this.pick.kind === 'belt' ? (this.pick.index === 0 ? 'Q' : 'R') : String(this.pick.index + 1);
       const rows = [...seen.entries()]
-        .map(([base, def]) => `<button class="inv-belt-opt rarity-${def.rarity}${def.slot === 'food' ? ' inv-food' : ''}" data-beltset="${base}">${iconHtml(def)}<span>${def.name}${def.slot === 'food' ? ' <small>dish</small>' : ''}</span><b>×${this.player.backpack.filter((x) => packBase(x) === base).length}</b></button>`)
+        .map(([b, def]) => `<button class="inv-belt-opt rarity-${def.rarity}${def.slot === 'food' ? ' inv-food' : ''}" data-setitem="${b}">${iconHtml(def)}<span>${def.name}${def.slot === 'food' ? ' <small>dish</small>' : ''}</span><b>×${countOf(b)}</b></button>`)
         .join('');
-      beltMenu = `<div class="inv-belt-menu"><span class="inv-belt-menu-title">${this.beltPick === 0 ? 'Q' : 'R'} · A DRAUGHT OR A DISH</span>${rows || '<span class="tp-empty">No draughts or dishes in the pack</span>'}<button class="inv-belt-opt inv-belt-clear" data-beltset="">Leave the key empty</button></div>`;
+      pickMenu = `<div class="inv-belt-menu"><span class="inv-belt-menu-title">${cap} · WHAT RIDES THIS KEY</span>${rows || '<span class="tp-empty">Nothing in the pack to drink, eat or read</span>'}<button class="inv-belt-opt inv-belt-clear" data-setitem="">Leave the key empty</button></div>`;
     }
 
     // Backpack: duplicates STACK into one cell with a quantity badge;
@@ -314,7 +336,9 @@ export class InventoryUI {
       </div>
       <div class="inv-preview"></div>
       <div class="inv-equip-grid">${equipmentCells}</div>
-      <div class="inv-belt">${belt}<span class="inv-belt-note">quick draughts &amp; dishes · ▾ to assign</span></div>${beltMenu}
+      <div class="inv-quickbar"><h4>ACTION SLOTS<span class="inv-belt-note">drag an item onto a key, or press ▾</span></h4>
+        <div class="inv-quick-row inv-quick-actions">${actions}</div>
+        <div class="inv-quick-row inv-belt">${belt}</div></div>${pickMenu}
       <div class="inv-pouch">${pouch}</div>
       <div class="inv-divider"></div>
       <div class="inv-pack-col"><h4>BACKPACK &nbsp;<span class="inv-count">${stacks.size} / ${PACK_SLOTS}${hidden ? ` · ${hidden} hidden` : ''}</span>
@@ -383,11 +407,20 @@ export class InventoryUI {
     this.panel.querySelectorAll<HTMLButtonElement>('button.inv-item').forEach((btn) => {
       const ctx = this.contextOf(btn);
       btn.addEventListener('click', () => {
+        if (justDragged()) return; // The pointer-up that ended a drag is not a click (it.117).
         this.act(ctx, btn);
         this.hideTooltip(true);
       });
       const def = btn.dataset.item ? itemDef(btn.dataset.item) : undefined;
       if (!def) return;
+      // DRAG IT ONTO A KEY (it.117): mouse or finger, pack cell or quick cell.
+      if (slottable(def)) {
+        btn.classList.add('inv-draggable');
+        btn.addEventListener('pointerdown', (e) => {
+          if (e.button !== undefined && e.button !== 0) return;
+          startQuickDrag(def, e, () => this.hideTooltip(true), (kind, index) => this.assign(kind, index, def.id));
+        });
+      }
       // INSPECT (it.114): the right button opens the turntable view.
       btn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -421,21 +454,31 @@ export class InventoryUI {
       audio.sfx('uiConfirm');
       this.queue.enqueue({ type: 'SORT_PACK', playerId: this.playerId });
     });
-    this.panel.querySelectorAll<HTMLButtonElement>('[data-beltpick]').forEach((b) => {
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-pick]').forEach((b) => {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
-        const i = Number(b.dataset.beltpick);
-        this.beltPick = this.beltPick === i ? null : i;
+        const [kind, n] = (b.dataset.pick ?? '').split(':');
+        const want = { kind: kind === 'belt' ? ('belt' as const) : ('action' as const), index: Number(n) };
+        this.pick = this.pick && this.pick.kind === want.kind && this.pick.index === want.index ? null : want;
         audio.sfx('uiClick');
         this.render();
       });
     });
-    this.panel.querySelectorAll<HTMLButtonElement>('[data-beltset]').forEach((b) => {
+    this.panel.querySelectorAll<HTMLButtonElement>('[data-setitem]').forEach((b) => {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (this.beltPick === null) return;
-        this.queue.enqueue({ type: 'SET_BELT', playerId: this.playerId, slot: this.beltPick, item: b.dataset.beltset || null });
-        audio.sfx('uiConfirm');
+        if (!this.pick) return;
+        this.assign(this.pick.kind, this.pick.index, b.dataset.setitem || null);
+      });
+    });
+    // THE DROP TARGETS (it.117): the ten cells here take a dragged pack item,
+    // exactly as the HUD bar's ten do - `startQuickDrag` finds either by
+    // `data-action` / `data-belt`, so neither side knows about the other.
+    this.panel.querySelectorAll<HTMLElement>('.inv-quick[data-action], .inv-quick[data-belt]').forEach((cell) => {
+      cell.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        const kind = cell.dataset.belt !== undefined ? ('belt' as const) : ('action' as const);
+        this.assign(kind, Number(cell.dataset.belt ?? cell.dataset.action), null); // A double click empties a key.
       });
     });
     this.tickBelt();
@@ -466,6 +509,18 @@ export class InventoryUI {
       this.queue.enqueue({ type: 'UNEQUIP', playerId: this.playerId, slot: ctx.unequip });
       audio.sfx('uiClick');
     }
+  }
+
+  /**
+   * PUT AN ITEM ON A KEY (it.117), or take it off (`base` null). Both the
+   * chooser and the drag land here; both go out as commands, so the quick
+   * slots stay inside the tick pipeline like everything else the panel does.
+   */
+  private assign(kind: 'action' | 'belt', index: number, base: string | null): void {
+    if (kind === 'belt') this.queue.enqueue({ type: 'SET_BELT', playerId: this.playerId, slot: index, item: base });
+    else this.queue.enqueue({ type: 'SET_ACTION', playerId: this.playerId, slot: index, item: base });
+    audio.sfx(base ? 'uiConfirm' : 'uiBack');
+    this.pick = null;
   }
 
   /** THE PULSE (it.114): every cell showing the item flares once. Survives a repaint because it runs after the sim's own re-render. */
@@ -563,6 +618,21 @@ export class InventoryUI {
     const goldLine = `worth ${itemValue(def)} gold`;
     const card = self ? itemCardHtml(def, { goldLine, self: true }) : itemCardHtml(def, { goldLine, worn: usable(def) ? undefined : wornFor(this.player, def) });
     const tier = def.use?.food ? ` · ${cap(def.use.food.tier)}` : '';
+    /**
+     * ASSIGN TO A KEY, WITHOUT A DRAG (it.117). The owner asked for both
+     * paths; this is the one a thumb takes - a long press opens this stage,
+     * and the ten keys are here as buttons. The lit one is where the item
+     * already rides.
+     */
+    const here = (kind: 'action' | 'belt', i: number): boolean => {
+      const entry = kind === 'belt' ? this.player.belt[i] : actionItemBase(this.player.loadout[i]);
+      return !!entry && entry === decodeItemId(def.id)?.base;
+    };
+    const assign = slottable(def)
+      ? `<div class="insp-assign"><span>ASSIGN TO</span>${Array.from({ length: ACTION_SLOTS }, (_, i) => `<button class="ds-btn insp-key${here('action', i) ? ' on' : ''}" type="button" data-assign="action:${i}">${i + 1}</button>`).join('')}${[0, 1]
+          .map((i) => `<button class="ds-btn insp-key${here('belt', i) ? ' on' : ''}" type="button" data-assign="belt:${i}">${i === 0 ? 'Q' : 'R'}</button>`)
+          .join('')}</div>`
+      : '';
     this.inspect.innerHTML = `
       <div class="insp-frame rarity-${def.rarity} ${effectClass(def)}">
         <i class="insp-rune tl">✦</i><i class="insp-rune tr">✦</i><i class="insp-rune bl">✦</i><i class="insp-rune br">✦</i>
@@ -572,6 +642,7 @@ export class InventoryUI {
         <div class="insp-meta">${cap(def.rarity)} · ${slotLabel(def.slot)}${def.ilvl ? ` · iLvl ${def.ilvl}` : ''}${tier}${self ? ' · <b>worn</b>' : ''}</div>
         <div class="insp-card">${card}</div>
         ${def.desc && (def.slot === 'mainHand' || def.ilvl) && !card.includes(def.desc) ? `<div class="insp-flavour">${def.desc}</div>` : ''}
+        ${assign}
         <div class="insp-actions">${verb ? `<button class="ds-btn insp-act" type="button" data-act>${verb}</button>` : ''}<button class="ds-btn" type="button" data-close>CLOSE</button></div>
         <div class="insp-foot">${touch ? 'tap outside to close' : 'ESC or click outside to close'}</div>
       </div>`;
@@ -585,6 +656,14 @@ export class InventoryUI {
         this.closeInspect();
       });
     }
+    this.inspect.querySelectorAll<HTMLButtonElement>('[data-assign]').forEach((b) => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const [kind, n] = (b.dataset.assign ?? '').split(':');
+        this.assign(kind === 'belt' ? 'belt' : 'action', Number(n), decodeItemId(def.id)?.base ?? def.id);
+        this.closeInspect();
+      });
+    });
     this.inspect.querySelector<HTMLButtonElement>('[data-act]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.act(ctx);
@@ -619,4 +698,96 @@ export class InventoryUI {
       this.inspectTimer = null;
     }
   }
+}
+
+/**
+ * DRAG A CONSUMABLE ONTO A KEY (it.117) - ONE CODE PATH FOR MOUSE AND FINGER.
+ *
+ * HTML5 drag-and-drop does not exist on touch, so this is a plain pointer
+ * drag: the source cell captures the pointer, a ghost of the item follows it,
+ * and `elementFromPoint` names whatever sits under the release. ANY element in
+ * the document carrying `data-action="<n>"` or `data-belt="<n>"` is a target -
+ * the HUD's own ten cells (built in main) and the inventory's ten both do - so
+ * neither side needs to know the other exists, and a panel written later joins
+ * the scheme by adding one attribute.
+ *
+ * A pack cell is `touch-action: none` (the CSS), which is what lets a finger
+ * drag it at all; the pack still scrolls from its empty slots and its own
+ * scrollbar. The drag only begins after eight pixels of travel, so a tap is
+ * still a tap - and `justDragged()` swallows the click that ends a real drag,
+ * which would otherwise drink the potion the player was trying to file.
+ */
+let dragGhost: HTMLElement | null = null;
+let draggedAt = -1e9;
+
+/** True right after a drag ended: the cell's click must be ignored. */
+export function justDragged(): boolean {
+  return performance.now() - draggedAt < 350;
+}
+
+export function startQuickDrag(
+  def: ItemDef,
+  ev: PointerEvent,
+  onStart: () => void,
+  drop: (kind: 'action' | 'belt', index: number) => void,
+): void {
+  const src = ev.currentTarget as HTMLElement;
+  const startX = ev.clientX;
+  const startY = ev.clientY;
+  const { pointerId } = ev;
+  let dragging = false;
+  let target: HTMLElement | null = null;
+  const place = (x: number, y: number): void => {
+    if (dragGhost) dragGhost.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  };
+  const move = (e: PointerEvent): void => {
+    if (!dragging) {
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) < 8) return;
+      dragging = true;
+      onStart();
+      document.body.classList.add('qs-drag');
+      dragGhost = document.createElement('div');
+      dragGhost.id = 'item-drag';
+      dragGhost.innerHTML = itemIconHtml(def);
+      document.body.appendChild(dragGhost);
+    }
+    e.preventDefault();
+    place(e.clientX, e.clientY);
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = under?.closest<HTMLElement>('[data-action],[data-belt]') ?? null;
+    if (cell !== target) {
+      target?.classList.remove('qs-over');
+      target = cell;
+      target?.classList.add('qs-over');
+    }
+  };
+  const end = (): void => {
+    src.removeEventListener('pointermove', move);
+    src.removeEventListener('pointerup', end);
+    src.removeEventListener('pointercancel', end);
+    try {
+      src.releasePointerCapture(pointerId);
+    } catch {
+      /* the pointer was already released */
+    }
+    document.body.classList.remove('qs-drag');
+    target?.classList.remove('qs-over');
+    dragGhost?.remove();
+    dragGhost = null;
+    if (!dragging) return;
+    draggedAt = performance.now();
+    if (!target) return;
+    const a = target.dataset.action;
+    const b = target.dataset.belt;
+    if (b !== undefined) drop('belt', Number(b));
+    else if (a !== undefined) drop('action', Number(a));
+  };
+  try {
+    src.setPointerCapture(pointerId);
+  } catch {
+    /* a synthetic pointer cannot be captured; the drag still works off the document */
+  }
+  src.addEventListener('pointermove', move);
+  src.addEventListener('pointerup', end);
+  src.addEventListener('pointercancel', end);
 }

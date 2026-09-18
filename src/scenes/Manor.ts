@@ -33,6 +33,7 @@
 
 import { TILE_BLOCKED, TILE_FLOOR, TILE_WALL, type Room } from '@/scenes/DungeonGenerator';
 import { CLUTTER_KINDS, KIND_CELLAR_DIRT, KIND_CELLAR_FLAG, KIND_INN_BOARDS, KIND_INN_STONE, type ManorLayout, type TownLayout, type TownMap, type TownProp, type VaultLayout } from '@/town/TownMap';
+import { scatterChests } from '@/systems/Chests';
 import { bareLayout } from './Forest';
 
 export const MANOR_W = 36;
@@ -304,6 +305,28 @@ export function buildManorLayout(seed: number, cleared = false): { layout: TownL
   const layout = bareLayout(map, props, 'THE MANOR');
   layout.wander = hall;
   layout.houses = [];
+  /**
+   * WHAT THE HOUSE STILL HAS (it.117). The manor had no chests at all - the one
+   * building on the field worth searching, and there was nothing in it. Six,
+   * found rather than written down: `scatterChests` takes the tiles with walls
+   * or furniture on two or three sides and nothing standing in front of them,
+   * which in a house is exactly the alcoves, the ends of the side rooms and the
+   * corners behind the long table.
+   */
+  layout.chests = [];
+  for (const c of scatterChests({
+    width: W,
+    height: H,
+    free: (x, y) => grid[idx(x, y)] === TILE_FLOOR && Math.hypot(x - spawn.x, y - spawn.y) > 4,
+    open: (x, y) => x >= 0 && y >= 0 && x < W && y < H && grid[idx(x, y)] === TILE_FLOOR,
+    avoid: [spawn, out, chief, closet, merchant, basement],
+    count: 6,
+    apart: 6,
+    seed,
+  })) {
+    grid[idx(c.x, c.y)] = TILE_BLOCKED;
+    layout.chests.push(c);
+  }
   const manor: ManorLayout = { out, chief, bandits, closet, merchant, basement, hall, cleared };
   layout.manor = manor;
   return { layout, manor };
@@ -423,6 +446,17 @@ export function buildVaultLayout(seed: number): { layout: TownLayout; vault: Vau
   // ---- THE STRONGBOXES ---------------------------------------------------
   // Four of them, all in the deep chambers, so the whole cellar has to be walked.
   const chestSpots = [{ x: 27, y: 20 }, { x: 3, y: 20 }, { x: 13, y: 15 }, { x: 24, y: 13 }];
+  /** AND THE CORNERS OF THE VAULT (it.117): behind the pillars and the arches. */
+  for (const c of scatterChests({
+    width: W,
+    height: H,
+    free: (x, y) => grid[idx(x, y)] === TILE_FLOOR && Math.hypot(x - STAIR.x, y - STAIR.y) > 4,
+    open: (x, y) => x >= 0 && y >= 0 && x < W && y < H && grid[idx(x, y)] === TILE_FLOOR,
+    avoid: [...chestSpots, STAIR, spawn],
+    count: 4,
+    apart: 6,
+    seed,
+  })) chestSpots.push(c);
 
   // ---- nothing may be walled into a pocket -------------------------------
   {

@@ -30,8 +30,8 @@ const FILTERS: Array<[FilterKey, string, string]> = [
   ['armor', 'ARMOR', 'Head, body, legs, shields, cloaks'],
   ['jewelry', 'JEWELS', 'Rings and amulets'],
   ['draught', 'DRAUGHTS', 'Potions and brews'],
-  ['food', 'FOOD', 'Bread, stews, roasts: eaten for a slow heal and a full belly'],
-  ['scroll', 'SCROLLS', 'Recipes and portal scrolls'],
+  ['food', 'FOOD', 'Bread, stews, roasts: eaten for a slow heal and a brew'],
+  ['scroll', 'SCROLLS', 'Rites, recipes and portal scrolls'],
   ['effect', 'SPECIAL', 'Pieces with an effect: procs, traits, enchantments, uniques'],
 ];
 
@@ -57,11 +57,12 @@ export function matchesFilter(def: ItemDef, f: FilterKey): boolean {
     case 'jewelry':
       return def.slot === 'ring';
     case 'draught':
-      return def.slot === 'consumable' && !def.use?.recipe && !def.use?.portal && !isScroll(def);
+      return def.slot === 'consumable' && !def.use?.recipe && !def.use?.portal && !def.use?.cast && !isScroll(def);
     case 'food':
       return def.slot === 'food';
     case 'scroll':
-      return def.slot === 'consumable' && (!!def.use?.recipe || !!def.use?.portal || isScroll(def));
+      // A RITE files here too (it.117), whatever the paper looks like.
+      return def.slot === 'consumable' && (!!def.use?.recipe || !!def.use?.portal || !!def.use?.cast || isScroll(def));
     case 'effect':
       return !!effectClass(def);
   }

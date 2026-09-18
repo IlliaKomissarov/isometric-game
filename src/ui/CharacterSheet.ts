@@ -10,6 +10,8 @@ import { eventBus } from '@/core/EventBus';
 import { audio } from '@/engine/AudioManager';
 import type { Player } from '@/entities/Player';
 import { PASSIVE_BY_ID, SKILL_BY_ID } from '@/systems/SkillTree';
+import { actionItemBase } from '@/systems/Inventory';
+import { itemDef } from '@/items/instance';
 import { keepScroll } from './keepScroll';
 
 export class CharacterSheetUI {
@@ -87,7 +89,12 @@ export class CharacterSheetUI {
     if (p.hasteTicks > 0) buffs.push(`haste · ${Math.ceil(p.hasteTicks / 60)}s`);
     if (p.stealthTicks > 0) buffs.push(`vanished · ${Math.ceil(p.stealthTicks / 60)}s`);
     if (p.poisonBladeTicks > 0) buffs.push(`envenomed blades · ${Math.ceil(p.poisonBladeTicks / 60)}s`);
-    const loadout = p.loadout.map((id, i) => `<span class="cs-skill">${i + 1} · ${id ? SKILL_BY_ID[id]?.name ?? id : '—'}</span>`).join('');
+    // THE EIGHT KEYS (it.117): a slot may hold a consumable (`item:<base>`) as well as a skill.
+    const slotName = (id: string): string => {
+      const base = actionItemBase(id);
+      return base ? itemDef(base)?.name ?? base : SKILL_BY_ID[id]?.name ?? id;
+    };
+    const loadout = p.loadout.map((id, i) => `<span class="cs-skill">${i + 1} · ${id ? slotName(id) : '—'}</span>`).join('');
     this.panel.innerHTML = `
       <div class="cs-head drag-handle"><h3>CHARACTER</h3><span class="cs-class">${p.archetype.toUpperCase()} · LEVEL ${p.level}</span><button class="tp-close" data-close title="Close (ESC)"><i></i></button></div>
       <div class="cs-grid">

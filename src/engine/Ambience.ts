@@ -293,17 +293,35 @@ export class Ambience {
     p.sprite.visible = true;
   }
 
-  /** Pooled burst particle (grows the pool on demand). */
+  /**
+   * Pooled burst particle (grows the pool on demand).
+   *
+   * IT.117 - A ROUND-ROBIN, NOT A SCAN. This was `bursts.find(b => !b.active)`,
+   * and so were the two `burst`/`bloodSpray` loops: a linear walk of the whole
+   * pool PER PARTICLE. A blood spray is twenty particles and a fight leaves the
+   * pool several hundred long, so spawning one spray was tens of thousands of
+   * array reads - quadratic in the pool, at exactly the moment (the landed blow)
+   * when the frame has the least room. The cursor remembers where the last free
+   * slot was, which makes the common case one test; the walk is still there as
+   * the fallback, and it now runs at most once round the pool before growing it.
+   */
+  private cursor = 0;
   private acquireBurst(): BurstParticle {
-    let p = this.bursts.find((b) => !b.active);
-    if (!p) {
-      const sprite = new Sprite(assets.get('mote'));
-      sprite.anchor.set(0.5);
-      sprite.visible = false;
-      this.viewport.ambienceLayer.addChild(sprite);
-      p = { active: false, sprite, wx: 0, wy: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0, baseAlpha: 1 };
-      this.bursts.push(p);
+    const pool = this.bursts;
+    for (let i = 0; i < pool.length; i++) {
+      const p = pool[(this.cursor + i) % pool.length];
+      if (!p.active) {
+        this.cursor = (this.cursor + i + 1) % pool.length;
+        return p;
+      }
     }
+    const sprite = new Sprite(assets.get('mote'));
+    sprite.anchor.set(0.5);
+    sprite.visible = false;
+    this.viewport.ambienceLayer.addChild(sprite);
+    const p: BurstParticle = { active: false, sprite, wx: 0, wy: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0, baseAlpha: 1 };
+    pool.push(p);
+    this.cursor = 0;
     return p;
   }
 
@@ -435,15 +453,7 @@ export class Ambience {
     const baseAngle = hasDir ? Math.atan2(dirY!, dirX!) : 0;
     const REDS = [0x8e1f14, 0x6a150c, 0xa8281a, 0x4d0e08];
     for (let i = 0; i < count; i++) {
-      let p = this.bursts.find((b) => !b.active);
-      if (!p) {
-        const sprite = new Sprite(assets.get('mote'));
-        sprite.anchor.set(0.5);
-        sprite.visible = false;
-        this.viewport.ambienceLayer.addChild(sprite);
-        p = { active: false, sprite, wx: 0, wy: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0, baseAlpha: 1 };
-        this.bursts.push(p);
-      }
+      const p = this.acquireBurst(); // it.117: the round-robin, not a scan per droplet
       // 70% of droplets follow the blow through, the rest splash back.
       const along = Math.random() < 0.7 ? 1 : -0.5;
       const angle = hasDir ? baseAngle + (Math.random() - 0.5) * 1.5 : Math.random() * Math.PI * 2;
@@ -472,15 +482,7 @@ export class Ambience {
   burst(x: number, y: number, color: number, count: number, opts?: { lowEnergy?: boolean }): void {
     const low = opts?.lowEnergy === true;
     for (let i = 0; i < count; i++) {
-      let p = this.bursts.find((b) => !b.active);
-      if (!p) {
-        const sprite = new Sprite(assets.get('mote'));
-        sprite.anchor.set(0.5);
-        sprite.visible = false;
-        this.viewport.ambienceLayer.addChild(sprite);
-        p = { active: false, sprite, wx: 0, wy: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 0, baseAlpha: 1 };
-        this.bursts.push(p);
-      }
+      const p = this.acquireBurst(); // it.117: the round-robin, not a scan per droplet
       const angle = Math.random() * Math.PI * 2;
       const speed = low ? 0.3 + Math.random() * 0.5 : 1.2 + Math.random() * 2.2;
       p.active = true;
@@ -689,9 +691,21 @@ export class Ambience {
     patch.sprite.scale.set(1.1 + Math.random() * 1.6, 0.9 + Math.random() * 0.9);
   }
 
+  /** Reused by `respawn` so a mote's rebirth allocates nothing (it.117). */
+  private readonly nearHotspots: Array<{ x: number; y: number }> = [];
+
   private respawn(mote: Mote, px: number, py: number): void {
     // Bias a share of motes toward nearby braziers — embers rise off coals.
-    const nearHotspots = this.hotspots.filter((h) => Math.hypot(h.x - px, h.y - py) < SPAWN_RADIUS + 2);
+    // IT.117: this was `hotspots.filter(...)`, i.e. a fresh array every time a
+    // mote died - sixty-four of them a second over a field of braziers, all of
+    // it garbage. The same scratch list is refilled in place instead.
+    const nearHotspots = this.nearHotspots;
+    nearHotspots.length = 0;
+    for (const h of this.hotspots) {
+      const dx = h.x - px;
+      const dy = h.y - py;
+      if (dx * dx + dy * dy < (SPAWN_RADIUS + 2) * (SPAWN_RADIUS + 2)) nearHotspots.push(h);
+    }
     if (this.smoke) {
       // An ember, not a dust mote: hotter colour, and it climbs quicker.
       mote.sprite.tint = EMBER_TINTS[Math.floor(Math.random() * EMBER_TINTS.length)];

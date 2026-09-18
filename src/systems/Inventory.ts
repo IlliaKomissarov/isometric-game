@@ -43,10 +43,27 @@ export interface UseHooks {
   eat?: (def: ItemDef, tier: FoodTier) => void;
   /** An ore went into the pouch (it.115): the notice. */
   smelted?: (def: ItemDef, material: string, count: number) => void;
+  /**
+   * THE YARD POURS (it.117). True while the training ground's lesson is
+   * running: a draught or a dish is drunk or eaten WHOLE - the healing, the
+   * brews, the cooldown, the cue, all of it - but it is NOT taken off the
+   * hero. Learning to drink a potion must not cost the run its potions. Keys,
+   * portal scrolls, rites, recipes and ore are never free: those are not
+   * lessons, they are the thing itself.
+   */
+  free?: () => boolean;
+  /**
+   * A RITE WAS READ (it.117): main hands this to `SkillSystem.castRite`,
+   * which runs the named skill's own `execute` at `power` times its numbers
+   * and stretches every buff and zone it lays by `stretch`. False means the
+   * rite could not be worked (the hero is dead, or the skill is unknown) and
+   * the scroll is NOT spent.
+   */
+  rite?: (skill: string, power: number, stretch: number) => boolean;
 }
 
-/** Draught cooldowns by category (ticks): healing 5 s, resource 2 s, brews 1 s, food 1.5 s. */
-export const QUAFF_COOLDOWN: Record<'heal' | 'resource' | 'buff' | 'food', number> = { heal: 300, resource: 120, buff: 60, food: 90 };
+/** Draught cooldowns by category (ticks): healing 5 s, resource 2 s, brews 1 s, food 1.5 s, a rite 2 s (it.117). */
+export const QUAFF_COOLDOWN: Record<'heal' | 'resource' | 'buff' | 'food' | 'rite', number> = { heal: 300, resource: 120, buff: 60, food: 90, rite: 120 };
 
 export type QuaffCategory = keyof typeof QUAFF_COOLDOWN;
 
@@ -55,6 +72,8 @@ export function quaffCategory(use: NonNullable<ItemDef['use']>): QuaffCategory |
   if (use.portal || use.recipe || use.smelt) return null;
   if (use.food) return 'food';
   if (use.heal) return 'heal';
+  // A RITE (it.117): its own two seconds, so a double keypress never burns two scrolls.
+  if (use.cast) return 'rite';
   if (use.resource) return 'resource';
   return 'buff';
 }
@@ -123,8 +142,17 @@ export class InventorySystem {
         this.hooks.refuse?.(`${(left / 60).toFixed(1)} s`);
         return false;
       }
-      this.player.quaffCd.set(cat, QUAFF_COOLDOWN[cat]);
     }
+    // A RITE (it.117) is worked BEFORE the scroll is spent: a rite that cannot
+    // be worked leaves the paper in the pack and starts no cooldown.
+    if (def.use.cast) {
+      const { skill, power, stretch } = def.use.cast;
+      if (!this.hooks.rite?.(skill, power, stretch)) {
+        this.hooks.refuse?.('the rite will not take');
+        return false;
+      }
+    }
+    if (cat) this.player.quaffCd.set(cat, QUAFF_COOLDOWN[cat]);
     if (def.use.smelt) {
       // AN ORE (it.115): into the pouch, no cooldown.
       this.player.addMaterial(def.use.smelt.material, def.use.smelt.count);
@@ -139,7 +167,10 @@ export class InventorySystem {
     if (def.use.heal) this.hooks.heal(def.use.heal);
     if (def.use.resource) this.hooks.restore(def.use.resource);
     this.applyBrews(def.use);
-    this.player.backpack.splice(index, 1);
+    // THE YARD POURS (it.117): in the lesson the flask is drunk but not spent.
+    // Everything above this line has already happened - the teaching is whole.
+    const free = (this.hooks.free?.() ?? false) && !def.use.smelt && !def.use.recipe && !def.use.key && !def.use.portal && !def.use.cast;
+    if (!free) this.player.backpack.splice(index, 1);
     eventBus.emit('inventory:changed', {});
     eventBus.emit('item:used', { itemId: def.id });
     return true;
@@ -210,6 +241,35 @@ export class InventorySystem {
         case 'USE_ITEM':
           this.useIndex(cmd.backpackIndex);
           break;
+        case 'SKILL': {
+          // AN ACTION SLOT MAY HOLD AN ITEM (it.117). `SkillSystem` ignores a
+          // slot whose entry is `item:<base>`; this drinks/eats/reads the
+          // first one of that base in the pack. One command, two consumers.
+          const base = actionItemBase(this.player.loadout[cmd.slot]);
+          if (!base) break;
+          const i = this.player.backpack.findIndex((id) => decodeItemId(id)?.base === base);
+          if (i >= 0) this.useIndex(i);
+          else this.hooks.refuse?.('none left');
+          break;
+        }
+        case 'SET_ACTION': {
+          // THE QUICK SLOTS (it.117): drag-and-drop and the assign menus land here.
+          const p = this.player;
+          const slot = Math.max(0, Math.min(p.loadout.length - 1, cmd.slot));
+          if (!cmd.item) {
+            if (actionItemBase(p.loadout[slot])) p.loadout[slot] = null;
+          } else {
+            const base = decodeItemId(cmd.item)?.base ?? null;
+            const def = base ? itemDef(base) : undefined;
+            if (!base || !def || !slottable(def)) break;
+            const entry = actionItem(base);
+            for (let i = 0; i < p.loadout.length; i++) if (p.loadout[i] === entry) p.loadout[i] = null; // One item, one slot.
+            p.loadout[slot] = entry;
+          }
+          eventBus.emit('skills:changed', {});
+          eventBus.emit('inventory:changed', {});
+          break;
+        }
         case 'USE_QUICK': {
           // THE BELT (it.80): Q is slot 0, R is slot 1; whatever base rides there - a draught or a dish (it.114).
           const want = this.player.belt[cmd.kind === 'health' ? 0 : 1];
@@ -258,8 +318,30 @@ export class InventorySystem {
   }
 }
 
-/** What may ride the belt: any draught but a portal or a recipe, and any dish (it.114). */
-export function beltable(def: ItemDef): boolean {
+/**
+ * WHAT MAY RIDE A QUICK SLOT (it.117). Any dish, any draught, any scroll or
+ * elixir - everything that is DRUNK, EATEN or READ on the spot. The three
+ * things that may not are the ones that are not used where you stand: a
+ * quarry key (carried to its gate), an ore (smelted into the pouch, no
+ * cooldown, nothing to see) and a recipe (learned once, forever). The town
+ * portal scroll joined the list this iteration: a rift home belongs on a
+ * key as much as a bandage does.
+ */
+export function slottable(def: ItemDef): boolean {
   if (def.slot === 'food') return !!def.use?.food;
-  return def.slot === 'consumable' && !def.use?.portal && !def.use?.recipe && !def.use?.key && !def.use?.smelt;
+  if (def.slot !== 'consumable' || !def.use) return false;
+  return !def.use.key && !def.use.smelt && !def.use.recipe;
+}
+
+/** The belt (Q and R) takes exactly what an action slot takes (it.117). */
+export function beltable(def: ItemDef): boolean {
+  return slottable(def);
+}
+
+/** An item parked on an action slot is stored in `Player.loadout` as `item:<base>` (it.117). */
+const ITEM_SLOT_PREFIX = 'item:';
+export const actionItem = (base: string): string => `${ITEM_SLOT_PREFIX}${base}`;
+/** The base id behind an action-slot entry, or null when the slot holds a skill (or nothing). */
+export function actionItemBase(entry: string | null | undefined): string | null {
+  return entry && entry.startsWith(ITEM_SLOT_PREFIX) ? entry.slice(ITEM_SLOT_PREFIX.length) : null;
 }

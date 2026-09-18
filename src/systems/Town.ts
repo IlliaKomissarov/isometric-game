@@ -15,6 +15,14 @@
  *              item level, so the armorer keeps pace with the crypt.
  * Gold stays scarce: piles scale by half the power curve, prices by all of
  * it, and the forge's reinforcement costs grow with the square of the level.
+ *
+ * WHAT A FLOOR EARNS AGAINST WHAT A COUNTER ASKS (it.117; the full rules are
+ * the economy block in `items/catalog`). At depth V (iLvl 9) a floor of ~25
+ * foes leaves ~90 coins and ~13 finds, and the gear among them sells for ~40
+ * apiece: 350-450 gold. The armorer's rare at that depth is 216, the scribe's
+ * rite 155, a healing potion 30. One cleared floor buys one good piece, or a
+ * rite and a full belt. Income and prices both scale with the item level, so
+ * the ratio holds from depth I to depth XX.
  */
 
 import { eventBus } from '@/core/EventBus';
@@ -149,6 +157,8 @@ export class TownSystem {
     // THE CURIO SHELF (it.115): three of the bake's other flasks, and an ore or two for the forge.
     const any = (family: ItemDef[]): string => family[Math.floor(rand() * family.length)].id;
     alch.push(any(CURIO_POTIONS), any(CURIO_POTIONS), any(CURIO_POTIONS), any(CURIO_ORES));
+    // A RITE ON THE ALCHEMIST'S SHELF TOO (it.117), once the delver is past the first depths.
+    if (deepestFloor >= 4) alch.push(any(CURIO_SCROLLS));
     if (deepestFloor >= 3) alch.push('hunters_antidote', 'potion_focus', any(CURIO_ORES));
     if (deepestFloor >= 6) alch.push('potion_frostward', 'potion_void');
     this.stockAlch = alch.filter((id) => id in ITEMS);
@@ -177,8 +187,13 @@ export class TownSystem {
     for (let i = 0; i < 5; i++) jewel.push(rollGear(rand, ilvl, { slot: 'ring', floor: 'uncommon', weights: { uncommon: 45, rare: 40, epic: 13, legendary: 2 } }));
     this.stockJewel = [...new Set(jewel.filter((id) => !!itemDef(id)))];
     const scribe: string[] = ['potion_might', 'greater_mana', 'rejuvenation'];
-    // THE SCRIBE'S SHELF (it.115): three scrolls or tomes of the bake.
-    for (let i = 0; i < 3; i++) scribe.push(CURIO_SCROLLS[Math.floor(rand() * CURIO_SCROLLS.length)].id);
+    // THE SCRIBE'S SHELF (it.115; SIX RITES it.117). A scroll is a real skill
+    // any class may read, at twice its force and four times its length, so the
+    // scribe is now a counter worth walking to: six of them, and the shelf
+    // deepens as the crypt does.
+    for (let i = 0; i < 4; i++) scribe.push(CURIO_SCROLLS[Math.floor(rand() * CURIO_SCROLLS.length)].id);
+    if (deepestFloor >= 4) scribe.push(CURIO_SCROLLS[Math.floor(rand() * CURIO_SCROLLS.length)].id);
+    if (deepestFloor >= 8) scribe.push(CURIO_SCROLLS[Math.floor(rand() * CURIO_SCROLLS.length)].id);
     const allowed = Object.values(ENCHANTS).filter((r) => r.depth <= Math.max(2, deepestFloor)).map((r) => r.key);
     for (let i = 0; i < 3 && allowed.length; i++) scribe.push(`recipe_${allowed.splice(Math.floor(rand() * allowed.length), 1)[0]}`);
     this.stockScribe = scribe.filter((id) => !!itemDef(id));

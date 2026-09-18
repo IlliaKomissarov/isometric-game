@@ -1,10 +1,25 @@
 /**
  * @module tutorial/TutorialSystem
  * THE TRAINING GROUND (it.90): an interactive, visual onboarding that runs
- * over the live game - a spotlight that cuts the screen down to one thing,
- * an arrow that points at it, a card that says what it is in a line or two,
- * a demo that moves, and a condition the player meets by DOING it (walk,
- * strike, cast, quaff). Panels open themselves when a step is about them.
+ * over the live game - a highlight that picks one thing out, an arrow that
+ * points at it, a card that says what it is in a line or two, a demo that
+ * moves, and a condition the player meets by DOING it (walk, strike, cast,
+ * quaff). Panels open themselves when a step is about them.
+ *
+ * NOTHING IS DARKENED (it.117). Up to it.116 the highlight was a spotlight -
+ * a 9999 px box-shadow that blacked out the whole page around the one thing
+ * being taught - and the owner could not see what was going on in the yard
+ * while being taught to fight in it. The highlight is now ADDITIVE: a bright
+ * animated rim and a glow on the target, the gold square on the ground
+ * in-world, and at most a whisper of a vignette while Lord Milk demonstrates.
+ * The world is legible at every moment of the lesson.
+ *
+ * SHE SHOWS MORE, AND SLOWER (it.117). Six of the steps now open with a
+ * demonstration - the walk, the greeting, the cut, the cut again, the spell,
+ * the draught - and the first showing of each runs at the step's `slow` rate.
+ * That rate is RENDER-SIDE ONLY: it reaches her sprite's frame clock and the
+ * show's own timers, never the simulation's fixed 60 Hz tick. Every showing
+ * is cut short by ENTER.
  *
  * MODULAR BY DESIGN: the steps are data (`tutorialSteps`), the engine knows
  * nothing about the game beyond `TutorialHooks`, and `shouldAutoStart()` is
@@ -59,14 +74,18 @@ export interface TutorialHooks {
   /** A ring on the ground under what the card is about (it.116); null clears it. */
   mark?: (at: { x: number; y: number } | null) => void;
   /**
-   * LORD MILK SHOWS HOW (it.116): she performs the lesson on the dummy at
-   * `on` - a swing, a spell, a draught - and the call answers how long it
-   * takes, in seconds (0: she could not).
+   * LORD MILK SHOWS HOW (it.116, slowed it.117): she performs the lesson on the
+   * dummy (or the hero) at `on` - a step, a swing, a spell, a draught, a hand
+   * raised in greeting - and the call answers how long it takes, in seconds
+   * (0: she could not). `rate` is a RENDER-SIDE speed: 0.5 plays her clip at
+   * half pace so the player can read what her body is doing. It reaches her
+   * sprite's frame clock and the show's own timers and NOTHING else - the
+   * simulation's fixed 60 Hz tick never hears about it.
    */
-  lesson?: (kind: Lesson, on: { x: number; y: number }) => number;
+  lesson?: (kind: Lesson, on: { x: number; y: number }, rate: number) => number;
 }
 
-export type Lesson = 'strike' | 'skill' | 'quaff';
+export type Lesson = 'move' | 'strike' | 'skill' | 'quaff' | 'interact';
 
 /** A step's framing: the points to keep in view, the zoom, and whether the bars come down. */
 export interface Shot {
@@ -108,6 +127,13 @@ export interface TutorialStep {
   mark?: (c: StepCtx) => { x: number; y: number } | null;
   /** Lord Milk demonstrates first (it.116). */
   lesson?: Lesson;
+  /**
+   * ...and the first showing runs at this fraction of speed (it.117): 0.4 is
+   * a demonstration slow enough to read. The reminder, eight seconds later,
+   * always plays at full pace - by then the player knows what they are looking
+   * at and only needs the shape of it again.
+   */
+  slow?: number;
 }
 
 export const TUTORIAL_DONE_KEY = 'iso-arpg-tutorial-done';
@@ -162,6 +188,18 @@ function controlsGrid(touch: boolean): string {
   return `<div class="tut-grid">${rows.map(([a, b]) => `<b>${a}</b><span>${b}</span>`).join('')}</div>`;
 }
 
+/**
+ * ONE ZOOM FOR THE WHOLE YARD (it.117). Every step of the lesson used to name
+ * its own level - 2.1, then 1.7, then 1.85, then 1.75 - so the view breathed in
+ * and out on every card for no reason anyone could see. There are two levels
+ * now and only two: the yard's, held from the first card to the last, and a
+ * hair closer while Lord Milk is actually demonstrating something. The gate at
+ * the end is the one exception: it is on the other side of the quarter.
+ */
+const YARD_ZOOM = 1.9;
+const WATCH_ZOOM = 2.2;
+const GATE_ZOOM = 1.3;
+
 /** The steps: three chapters, seventeen beats, each a sentence or two. */
 export const tutorialSteps: TutorialStep[] = [
   {
@@ -170,59 +208,66 @@ export const tutorialSteps: TutorialStep[] = [
     title: 'The training ground',
     text: (c) => `A few minutes here and you will know how to move, fight, heal and find your way around, ${c.hooks.className().toLowerCase()}. Do what each card asks and it moves on by itself.`,
     demo: () => '<div class="tut-hero" data-hero></div>',
-    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: 2.1, bars: true }),
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: YARD_ZOOM, bars: true }),
     mark: (c) => milkAt(c),
+    lesson: 'interact', // She turns and salutes the hero (it.117): the lesson opens on a person, not a card.
   },
   {
     id: 'move',
     title: 'Moving',
-    text: (c) => (c.touch ? 'Drag on the left side of the screen to bring up the stick, or tap the ground to walk there. Walk a few steps.' : 'Click the ground to walk there, or steer with W A S D or the arrow keys. You walk around anything in the way. Walk a few steps.'),
+    text: (c) => (c.touch ? 'Watch me cross the yard. Then drag on the left side of the screen to bring up the stick, or tap the ground to walk there. Walk a few steps.' : 'Watch me cross the yard. Then click the ground to walk there, or steer with W A S D or the arrow keys - you walk around anything in the way. Walk a few steps.'),
     demo: (c) => (c.touch ? `${stick()}${or}${tap('tap')}` : `${mouse()}${or}${keys('W', 'A', 'S', 'D')}${or}${keys('↑', '←', '↓', '→')}`),
-    shot: (c) => ({ at: [c.hooks.hero()], zoom: 1.7 }),
+    lesson: 'move', // SHE WALKS IT FIRST (it.117).
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: YARD_ZOOM }),
     done: (c) => c.moved >= 4,
     progress: (c) => `walked ${Math.min(4, Math.floor(c.moved))} / 4 tiles`,
   },
   {
     id: 'strike',
     title: 'Attacking',
-    text: (c) => (c.touch ? 'Watch the swing first. Then walk up to a dummy and hold the swords button - you attack whatever is nearest.' : 'Watch the swing first. Then click a dummy, or stand next to it and hold Space or F - you keep attacking the nearest enemy while the key is down.'),
+    text: (c) => (c.touch ? 'Watch the swing - slowly, so you can see where the weight goes. Then walk up to a dummy and hold the swords button: you attack whatever is nearest.' : 'Watch the swing - slowly, so you can see where the weight goes. Then click a dummy, or stand next to it and hold Space or F: you keep attacking the nearest enemy while the key is down.'),
     target: (c) => nearestDummy(c),
     mark: (c) => nearestDummy(c)?.world ?? null,
     demo: (c) => (c.touch ? tap('⚔') : `${mouse()}${or}${keys('Space')}${or}${keys('F')}`),
     lesson: 'strike',
-    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: 1.85 }),
+    slow: 0.45, // HALF PACE AND A LITTLE (it.117): the lunge, the cut, the recovery.
+    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: YARD_ZOOM }),
     done: (c) => c.hits >= 3,
     progress: (c) => `landed ${Math.min(3, c.hits)} / 3 hits`,
   },
   {
     id: 'damage',
     title: 'Damage',
-    text: () => 'The number over the target is the damage that landed. Gold numbers are critical hits. Armor soaks part of every hit, so tough enemies show smaller numbers.',
+    text: () => 'Here it is again, slower still. The number over the target is the damage that landed; gold numbers are critical hits. Armor soaks part of every blow, so tough enemies show smaller numbers.',
     target: (c) => nearestDummy(c),
     mark: (c) => nearestDummy(c)?.world ?? null,
-    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: 1.85 }),
+    lesson: 'strike',
+    slow: 0.3, // THE NUMBER IS THE POINT (it.117): slow enough to read it as it rises.
+    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: YARD_ZOOM }),
     progress: (c) => (c.lastHit > 0 ? `last hit ${c.lastHit} · best ${c.bestHit}` : ''),
   },
   {
     id: 'skill',
     title: 'Skills',
-    text: (c) => (c.touch ? 'Watch the spell, then tap the first skill button on the right. Skills cost mana or stamina, and the button darkens until the skill is ready again.' : 'Watch the spell, then press 1 (or click the first slot) with the cursor on the dummy. Skills sit on 1 to 4, cost mana or stamina, and the slot darkens until they are ready again.'),
+    text: (c) => (c.touch ? 'Watch the spell leave the hand. Then tap the first skill button on the right. Skills cost mana or stamina, and the button darkens until the skill is ready again.' : 'Watch the spell leave the hand. Then press 1 (or click the first slot) with the cursor on the dummy. Skills sit on 1 to 4, cost mana or stamina, and the slot darkens until they are ready again.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-skill-0' : '#skill-bar .skill-slot:not(.belt-slot)' }),
     mark: (c) => nearestDummy(c)?.world ?? null,
     demo: (c) => (c.touch ? tap('1') : `${keys('1', '2', '3', '4')}${or}${mouse()}`),
     lesson: 'skill',
-    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: 1.75 }),
+    slow: 0.5,
+    shot: (c) => ({ at: [c.hooks.hero(), nearestDummy(c)?.world ?? c.hooks.hero()], zoom: YARD_ZOOM }),
     done: (c) => c.casts >= 1,
     progress: (c) => `cast ${Math.min(1, c.casts)} / 1`,
   },
   {
     id: 'quaff',
     title: 'Potions',
-    text: (c) => (c.touch ? 'Watch, then tap a flask above the stick: red heals, blue restores mana or stamina. Each has its own cooldown. Drink one now.' : 'Watch, then press Q for a healing potion or R for mana or stamina - or click the flask on the bar. Each has its own cooldown. Drink one now.'),
+    text: (c) => (c.touch ? 'Watch, then tap a flask above the stick: red heals, blue restores mana or stamina. Each has its own cooldown. Drink one now - in my yard the flasks are on me, so nothing you drink here comes out of your pack.' : 'Watch, then press Q for a healing potion or R for mana or stamina - or click the flask on the bar. Each has its own cooldown. Drink one now: in my yard the flasks are on me, so nothing you drink here comes out of your pack.'),
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-potion' : '#skill-bar .belt-slot' }),
     demo: (c) => (c.touch ? tap('Q') : `${keys('Q', 'R')}${or}${mouse()}`),
     lesson: 'quaff',
-    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: 1.85 }),
+    slow: 0.55,
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: YARD_ZOOM }),
     done: (c) => c.quaffs >= 1,
     progress: (c) => `drank ${Math.min(1, c.quaffs)} / 1`,
   },
@@ -292,7 +337,8 @@ export const tutorialSteps: TutorialStep[] = [
     target: (c) => ({ selector: c.touch ? '#touch-controls .tc-interact' : undefined, world: c.touch ? undefined : milkAt(c) }),
     mark: (c) => milkAt(c),
     demo: (c) => (c.touch ? tap('✋') : `${keys('E')}${or}${mouse()}`),
-    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: 1.85 }),
+    lesson: 'interact', // She raises a hand and waits for it (it.117).
+    shot: (c) => ({ at: [c.hooks.hero(), milkAt(c)], zoom: YARD_ZOOM }),
     done: (c) => c.interacts >= 1,
     progress: (c) => `used ${Math.min(1, c.interacts)} / 1`,
   },
@@ -315,7 +361,7 @@ export const tutorialSteps: TutorialStep[] = [
     text: () => 'At the top of the old quarter. Twenty levels deep, a boss on every fifth. That is everything - go.',
     target: (c) => ({ world: c.hooks.gate(), pad: 30 }),
     mark: (c) => c.hooks.gate(),
-    shot: (c) => ({ at: [c.hooks.gate()], zoom: 1.3, bars: true }),
+    shot: (c) => ({ at: [c.hooks.gate()], zoom: GATE_ZOOM, bars: true }),
   },
 ];
 
@@ -382,6 +428,10 @@ export class TutorialSystem {
   private watchBars = false;
   private lessonAgain = 0;
   private barsOn = false;
+  /** True while the showing in progress is the SLOW one (it.117): the chip says so. */
+  private watchSlow = false;
+  /** What the layer is wearing, so the class list is only touched on a change. */
+  private watchOn = false;
 
   constructor(private readonly hooks: TutorialHooks) {
     this.ctx = { touch: hooks.touch(), moved: 0, hits: 0, bestHit: 0, lastHit: 0, casts: 0, quaffs: 0, interacts: 0, hooks };
@@ -398,6 +448,7 @@ export class TutorialSystem {
         <div class="tut-foot"><span class="tut-progress"></span><span class="tut-buttons"><button class="menu-btn tut-btn" type="button" data-tut="back">Back</button><button class="menu-btn tut-btn tut-next" type="button" data-tut="next">Next</button></span></div>
       </div>
       <div id="tut-chapter"><b></b></div>
+      <div id="tut-watch"><b></b><i>press ENTER to skip</i></div>
       <div class="tut-bar tut-bar-top"></div><div class="tut-bar tut-bar-bottom"></div>`;
     document.body.appendChild(this.layer);
     this.spot = this.layer.querySelector('#tut-spot')!;
@@ -420,6 +471,15 @@ export class TutorialSystem {
         if (e.code === 'Enter' || e.code === 'NumpadEnter') {
           e.preventDefault();
           e.stopImmediatePropagation();
+          // EVERY DEMONSTRATION IS SKIPPABLE (it.117). While Lord Milk is showing
+          // something the key cuts HER short and hands the yard straight back -
+          // one more press moves the card on. A demo you have seen twice should
+          // never stand between you and the next thing.
+          if (performance.now() < this.watchUntil) {
+            this.watchUntil = 0;
+            this.lessonAgain = 0;
+            return;
+          }
           this.next();
         }
       },
@@ -465,7 +525,10 @@ export class TutorialSystem {
     this.setBars(false);
     this.hooks.mark?.(null);
     this.index = -1;
-    this.layer.classList.remove('show');
+    this.watchUntil = 0;
+    this.lessonAgain = 0;
+    this.watchOn = false;
+    this.layer.classList.remove('show', 'tut-watching', 'tut-slow');
     document.body.classList.remove('tutorial-on');
     if (finished) {
       try {
@@ -597,21 +660,35 @@ export class TutorialSystem {
     this.heroTimer = 0;
     this.watchUntil = 0;
     this.lessonAgain = 0;
+    this.watchSlow = false;
     if (step.lesson) this.showLesson(step, true);
     this.direct(step);
     this.place(step, true);
   }
 
-  /** Lord Milk performs the step's lesson on the nearest dummy (it.116). */
+  /**
+   * Lord Milk performs the step's lesson (it.116, in slow motion it.117).
+   *
+   * A lesson about a body - a step across the yard, a hand raised in greeting -
+   * is shown AT the hero; everything done to a target is shown on her own
+   * dummy, never the player's, so their count of their own hits stays honest.
+   * The first showing runs at the step's `slow` rate and wears the WATCH chip;
+   * the reminder eight seconds later runs at full speed, and quietly.
+   */
   private showLesson(step: TutorialStep, first: boolean): void {
     if (!step.lesson || !this.hooks.lesson) return;
-    const on = this.hooks.milkDummy?.() ?? dummyNear(this.ctx, milkAt(this.ctx)) ?? this.hooks.hero();
-    const secs = this.hooks.lesson(step.lesson, on);
+    const atHero = step.lesson === 'move' || step.lesson === 'interact';
+    const on = atHero ? this.hooks.hero() : this.hooks.milkDummy?.() ?? dummyNear(this.ctx, milkAt(this.ctx)) ?? this.hooks.hero();
+    const rate = first ? Math.max(0.2, Math.min(1, step.slow ?? 1)) : 1;
+    const secs = this.hooks.lesson(step.lesson, on, rate);
     if (secs <= 0) return;
     const now = performance.now();
     this.watchUntil = now + secs * 1000 + (first ? 1400 : 300); // A beat after it lands, to see what happened.
     this.watchBars = first;
+    this.watchSlow = first && rate < 1;
     this.lessonAgain = this.watchUntil + 8000;
+    const chip = this.layer.querySelector<HTMLElement>('#tut-watch b');
+    if (chip) chip.textContent = this.watchSlow ? 'WATCH · SLOW' : 'WATCH';
   }
 
   /**
@@ -624,12 +701,26 @@ export class TutorialSystem {
     const met = step.done?.(this.ctx) ?? false;
     if (step.lesson && !met && this.lessonAgain > 0 && now > this.lessonAgain) this.showLesson(step, false);
     let shot: Shot | null = step.shot?.(this.ctx) ?? null;
-    if (now < this.watchUntil) {
+    const watching = now < this.watchUntil;
+    if (watching) {
       const milk = this.hooks.milk?.();
-      const dummy = this.hooks.milkDummy?.() ?? dummyNear(this.ctx, milk ?? milkAt(this.ctx));
-      const at = [milk, step.lesson === 'quaff' ? null : dummy].filter((p): p is { x: number; y: number } => !!p);
-      if (at.length) shot = { at, zoom: 2.25, bars: this.watchBars };
+      // What the two-shot holds: her, and whatever she is doing it to. A draught
+      // is done to herself; a step and a greeting are done AT the hero (it.117).
+      const other =
+        step.lesson === 'quaff' ? null
+        : step.lesson === 'move' || step.lesson === 'interact' ? this.hooks.hero()
+        : this.hooks.milkDummy?.() ?? dummyNear(this.ctx, milk ?? milkAt(this.ctx));
+      const at = [milk, other].filter((p): p is { x: number; y: number } => !!p);
+      if (at.length) shot = { at, zoom: WATCH_ZOOM, bars: this.watchBars };
     }
+    // THE WATCH TREATMENT (it.117): a chip that names what is happening and a
+    // whisper of a vignette at the very edges. Nothing is dimmed - the owner
+    // must be able to see the yard at every moment of the lesson.
+    if (watching !== this.watchOn) {
+      this.watchOn = watching;
+      this.layer.classList.toggle('tut-watching', watching);
+    }
+    this.layer.classList.toggle('tut-slow', watching && this.watchSlow);
     if (shot && shot.at.length) {
       let x = 0;
       let y = 0;

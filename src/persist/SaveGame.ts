@@ -52,6 +52,13 @@ export interface PlayerSave {
   /** Progression (it.41, save v2). */
   skillPoints: number;
   unlocked: string[];
+  /**
+   * The action bar. FOUR entries on any save written before it.117 and EIGHT
+   * after it, and an entry may now be `item:<base>` (a consumable parked on
+   * the key) as well as a skill id — so nothing here needs a version bump:
+   * `applyHeroSave` copies as many entries as the save carries into the
+   * hero's eight and validates each one on its own terms.
+   */
   loadout: Array<string | null>;
   passives: string[];
   /** Bestiary (it.42): creatures seen / slain by kind. */

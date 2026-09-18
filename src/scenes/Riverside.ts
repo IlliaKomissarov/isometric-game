@@ -56,11 +56,41 @@
 
 import { TILE_BLOCKED, TILE_FLOOR } from '@/scenes/DungeonGenerator';
 import { claimProp, claims, footprintOf, KIND_DIRT, KIND_GRASS, KIND_SAND, KIND_WATER, type RiverLayout, type RoadCtx, type TownLayout, type TownMap, type TownProp } from '@/town/TownMap';
+import { scatterChests } from '@/systems/Chests';
 import { mulberry32 } from '@/utils/rng';
 import { bareLayout, carriageVariant, groundPainter, KIND_OW_FLOWERS, KIND_OW_FOREST, KIND_OW_GRAVEL, KIND_OW_MEADOW, KIND_OW_MOSS, KIND_OW_MUD, KIND_OW_POPPIES, mushroomVariant, rocksVariant, smallPiece, tileHash, tuftVariant } from './Forest';
 
 export const RIVER_W = 84;
 export const RIVER_H = 60;
+
+/**
+ * THE RIVER HAS A DISTANCE (it.117). How many tiles from the water the bed has
+ * faded to its floor. Fourteen is about three screens at the default zoom: on
+ * the bank it is a river, at the windmill it is a rumour, and the walk between
+ * them is the fade.
+ */
+const WATER_FALLOFF = 14;
+/** Tile distance to the nearest water, rebuilt with the layout (render-only). */
+let waterDist: Uint8Array | null = null;
+let waterDistW = 0;
+let waterDistH = 0;
+
+/**
+ * 1 on the bank, 0 a long field away - what `AudioManager.setRiverNearness`
+ * wants. Returns 0 off any floor that is not the riverside, so the render loop
+ * may call it unconditionally.
+ */
+export function riverNearnessAt(x: number, y: number): number {
+  const d = waterDist;
+  if (!d) return 0;
+  const gx = Math.floor(x);
+  const gy = Math.floor(y);
+  if (gx < 0 || gy < 0 || gx >= waterDistW || gy >= waterDistH) return 0;
+  const v = d[gy * waterDistW + gx];
+  if (v >= WATER_FALLOFF) return 0;
+  const t = 1 - v / WATER_FALLOFF;
+  return t * t; // the drop-off is steep near the bank and long in the fields
+}
 
 /**
  * THE MEADOW'S LOBES. Their union is the land; the river is cut out of it after.
@@ -225,6 +255,31 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     }
   }
 
+  /**
+   * THE LAND STOPS BEFORE THE ARRAY DOES (it.117).
+   *
+   * "The visual boundaries on the right side of this location are just a solid
+   * black void." They were, and this is why: the border wood is grown OUT of
+   * the land by a breadth-first walk over this grid, so a lobe that reaches the
+   * array's own edge has nowhere to put trees. The headland's two upper lobes
+   * ran clean off the top of the array - 160 land tiles within three of the rim,
+   * thirteen of them ON it - and the top of the array, in this projection, is
+   * the RIGHT of the screen. So the meadow ended in a ruled diagonal of lit
+   * grass with nothing behind it at all, from the windmill down to the bridge.
+   *
+   * The fix is not more trees, it is room for them: every edge keeps a margin
+   * the belt can fill. WATER IS EXEMPT - a river must run OFF the map or it
+   * reads as a pond - and the west keeps only two, because the river gate and
+   * the signpost home stand at x = 2 and the hero arrives on them.
+   */
+  const MARGIN_N = 4;
+  const MARGIN_E = 4;
+  const MARGIN_S = 3;
+  const MARGIN_W = 2;
+  /** True on a tile the belt keeps for itself: nothing is ever made land here. */
+  const inMargin = (x: number, y: number): boolean => y < MARGIN_N || x >= W - MARGIN_E || y >= H - MARGIN_S || x < MARGIN_W;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (inMargin(x, y)) grid[idx(x, y)] = 0;
+
   // ---- THE RIVER --------------------------------------------------------
   // Cut through the land: water is BLOCKED (you do not walk into a river), the
   // shore either side of it is walkable mud, and both are painted, not propped.
@@ -359,7 +414,7 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     const cy = crossing.y;
     for (let y = cy - LANDING_RY - 1; y <= cy + LANDING_RY + 1; y++) {
       for (let x = crossing.far - 1; x <= cx + LANDING_RX; x++) {
-        if (!inside(x, y) || isWater(x, y)) continue;
+        if (!inside(x, y) || isWater(x, y) || inMargin(x, y)) continue; // the belt keeps the rim (it.117)
         const dx = (x + 0.5 - cx) / LANDING_RX;
         const dy = (y + 0.5 - cy) / LANDING_RY;
         const wob = 0.08 * Math.sin(x * 0.6 + y * 0.5);
@@ -384,7 +439,7 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     const APRON = 10;
     for (let y = crossing.y - APRON; y <= crossing.y + APRON; y++) {
       for (let x = crossing.near - APRON; x <= crossing.near + 1; x++) {
-        if (!inside(x, y) || isWater(x, y) || farSide[idx(x, y)]) continue;
+        if (!inside(x, y) || isWater(x, y) || farSide[idx(x, y)] || inMargin(x, y)) continue; // the belt keeps the rim (it.117)
         if (Math.hypot(x - crossing.near, y - crossing.y) > APRON) continue;
         grid[idx(x, y)] = TILE_FLOOR;
         if (tileKind[idx(x, y)] !== KIND_SAND) tileKind[idx(x, y)] = KIND_GRASS;
@@ -415,7 +470,7 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
           if (!inside(tx, ty)) continue;
           // The track bridges nothing: it stops at the water's edge.
           if (tileKind[idx(tx, ty)] === KIND_WATER) continue;
-          if (farSide[idx(tx, ty)]) continue;
+          if (farSide[idx(tx, ty)] || inMargin(tx, ty)) continue; // the belt keeps the rim (it.117)
           grid[idx(tx, ty)] = TILE_FLOOR;
           if (tileKind[idx(tx, ty)] !== KIND_SAND) tileKind[idx(tx, ty)] = KIND_DIRT;
           onTrack[idx(tx, ty)] = 1;
@@ -801,7 +856,13 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     }
     const NEAR_SET = ['tree_a', 'tree_b', 'pine_a', 'pine_b'];
     const DEEP_SET = ['bigtree_a', 'pine_c', 'tree_c'];
-    const FILL = [0, 1, 0.75, 0.4, 0] as const;
+    /**
+     * FOUR RINGS, NOT THREE (it.117). With the rim margin above there is finally
+     * room for the belt to be a WOOD rather than a hedge: solid where the meadow
+     * touches it, thinning back into the dark. The extra ring is `bare` scenery
+     * like the rest past the first, so it costs the cutaway pass nothing.
+     */
+    const FILL = [0, 1, 0.8, 0.55, 0.3] as const;
     const timber = (x: number, y: number, d: number): void => {
       const set = d <= 1 ? NEAR_SET : DEEP_SET;
       const v = set[(x * 7 + y * 11) % set.length];
@@ -982,6 +1043,34 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     if (Math.hypot(c.x - YARD.x, c.y - YARD.y) < 5) continue;
     chestSpots.push(c);
   }
+  /**
+   * AND THE ONES NOBODY WROTE DOWN (it.117). The twelve above are the open
+   * ground of the farm - the yards and the verges a player walks past. These
+   * are the corners: `scatterChests` reads the finished grid and finds tiles
+   * that have the wood, a wall or a gable on two or three sides and yet nothing
+   * standing in FRONT of them, which is where a curious player is rewarded for
+   * looking. Seeded off the floor's own seed, so the farm is the same farm on
+   * every peer and after every reload.
+   */
+  {
+    const standing = new Uint8Array(W * H);
+    for (const p of props) {
+      if (!claims(p)) continue;
+      const f = footprintOf(p);
+      for (let yy = p.y; yy < p.y + f.h; yy++) for (let xx = p.x; xx < p.x + f.w; xx++) if (inside(xx, yy)) standing[idx(xx, yy)] = 1;
+    }
+    const walk = (x: number, y: number): boolean => isNear(x, y) && !standing[idx(x, y)];
+    for (const c of scatterChests({
+      width: W,
+      height: H,
+      free: (x, y) => walk(x, y) && !onTrack[idx(x, y)] && Math.hypot(x - YARD.x, y - YARD.y) > 5 && Math.hypot(x - BRIDGE.x, y - BRIDGE.y) > 6,
+      open: walk,
+      avoid: [...chestSpots, ENTRY, HOME, YARD, oscar, ...kin, ...bandits],
+      count: 6,
+      apart: 8,
+      seed,
+    })) chestSpots.push(c);
+  }
 
   /**
    * THE SMALL THINGS (it.115), each on the ground that calls for it: tufts on
@@ -1076,6 +1165,39 @@ export function buildRiversideLayout(seed: number, safe = false): { layout: Town
     anglers.push({ x: s2.x, y: s2.y, toX: to.x, toY: to.y });
   }
   for (const a of anglers) decal({ kind: 'angler', x: a.x, y: a.y });
+
+  /**
+   * HOW FAR THE WATER IS (it.117). The river bed used to play at one level over
+   * the whole meadow, which is most of why it was "way too loud": standing in
+   * the north field, four hedges from the bank, the water was as loud as it is
+   * on the jetty. A four-neighbour BFS out of every water tile gives the
+   * distance in tiles, once, at build; the render loop reads one byte out of it
+   * per frame and hands `AudioManager` a nearness. Nothing in the sim reads it.
+   */
+  {
+    const d = new Uint8Array(W * H).fill(255);
+    const q: number[] = [];
+    for (let i = 0; i < W * H; i++) if (tileKind[i] === KIND_WATER) {
+      d[i] = 0;
+      q.push(i);
+    }
+    for (let h = 0; h < q.length; h++) {
+      const i = q[h];
+      if (d[i] >= WATER_FALLOFF) continue;
+      const x = i % W;
+      const y = (i - x) / W;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (!inside(nx, ny) || d[idx(nx, ny)] !== 255) continue;
+        d[idx(nx, ny)] = d[i] + 1;
+        q.push(idx(nx, ny));
+      }
+    }
+    waterDist = d;
+    waterDistW = W;
+    waterDistH = H;
+  }
 
   const map: TownMap = {
     width: W,

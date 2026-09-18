@@ -16,8 +16,12 @@
  */
 
 import type { EquipmentSlot } from '@/network/Serialization';
+import { SKILL_BY_ID } from '@/systems/SkillTree';
 import type { AffixRoll } from './affixes';
 import type { Effect } from './effects';
+
+/** A rite's skill by its printed name (it.117) — `systems/SkillTree` is pure data, so this is safe here. */
+const RITE_NAME: Record<string, string> = Object.fromEntries(Object.values(SKILL_BY_ID).map((d) => [d.id, d.name]));
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
@@ -66,12 +70,20 @@ export interface FoodEffect {
  * whole resource back, and all three brews at once and stronger than any
  * draught pours them (half again the damage, half of every blow turned,
  * forty percent faster) for a minute.
+ *
+ * THE PRICES MOVED (it.117), not the effects. A meal poured twenty seconds
+ * of MIGHT for 28 gold while the Draught of Might asked 150 for ten, so the
+ * tavern was the cheapest power in the game by a factor of ten. The dishes
+ * still do exactly what it.114-it.116 designed; they are now priced at about
+ * a third of what the draught curve would ask for the same brew (see the
+ * economy block by `consumableValue`), which keeps the tavern the poor
+ * delver's counter without making flasks pointless.
  */
 export const FOOD_TIER: Record<FoodTier, FoodEffect> = {
-  snack: { heal: 0.08, value: 12, rarity: 'common', color: 0xd8a85c },
-  meal: { heal: 0.15, might: 20 * 60, value: 28, rarity: 'uncommon', color: 0xe0803a },
-  feast: { heal: 0.3, stone: 30 * 60, haste: 20 * 60, value: 70, rarity: 'rare', color: 0xffb347 },
-  banquet: { heal: 1, restore: 1, might: 60 * 60, stone: 60 * 60, haste: 60 * 60, mightMult: 1.5, stoneFrac: 0.5, hasteMult: 1.4, value: 450, rarity: 'legendary', color: 0xffd36a },
+  snack: { heal: 0.08, value: 10, rarity: 'common', color: 0xd8a85c },
+  meal: { heal: 0.15, might: 20 * 60, value: 45, rarity: 'uncommon', color: 0xe0803a },
+  feast: { heal: 0.3, stone: 30 * 60, haste: 20 * 60, value: 120, rarity: 'rare', color: 0xffb347 },
+  banquet: { heal: 1, restore: 1, might: 60 * 60, stone: 60 * 60, haste: 60 * 60, mightMult: 1.5, stoneFrac: 0.5, hasteMult: 1.4, value: 600, rarity: 'legendary', color: 0xffd36a },
 };
 
 /**
@@ -181,6 +193,25 @@ export interface ItemDef {
      * `count` of the `material` (a MATERIAL_ORDER id). No cooldown, no belt.
      */
     smelt?: { material: string; count: number };
+    /**
+     * A RITE (it.117): the scroll or the tome is READ ONCE and casts a real
+     * skill out of `systems/Skills` — the same code, the same VFX, the same
+     * sound — at `power` times its numbers, with every buff and ground zone
+     * it lays stretched `stretch` times as long. No class may be refused a
+     * rite and no resource is spent: paper pays the cost. That is what makes
+     * a scroll worth a hundred gold beside a draught's thirty.
+     */
+    cast?: { skill: string; power: number; stretch: number };
+    /**
+     * HOW STRONG THE BREW IS (it.117). `systems/Inventory.applyBrews` has
+     * always read these off the food table; a drink or a flask may now carry
+     * them too, so a tavern swig can pour HALF a draught's speed instead of
+     * the same speed for a tenth of the price. Absent = a draught's own
+     * strength (haste 1.3×, might 1.25×, stone 0.4 of every blow).
+     */
+    hasteMult?: number;
+    mightMult?: number;
+    stoneFrac?: number;
   };
   /** Weapon damage roll range (classic-ARPG-style min–max, replaces bare fists). */
   minDamage?: number;
@@ -284,6 +315,76 @@ export const WEAPON_FAMILY: Record<
   bow: { range: 6, critChance: 0.1, stuns: false },
   wand: { range: 5.5, critChance: 0.1, stuns: false },
 };
+
+/**
+ * ================= THE ECONOMY, WRITTEN DOWN (it.117) =================
+ *
+ * The owner asked for prices, balance and gold trading that are LOGICAL.
+ * Two formulas price everything in the game, and every hand-written number
+ * in the tables is an anchor one of them was fitted to.
+ *
+ * 1. GEAR (it.78, unchanged):
+ *        value = iLvl × 15 × rarityMult × (1 + 0.15 × upgrade)
+ *    Merchants buy at 100% and pay 25% (`Town.SELL_RATIO`). Reinforcement
+ *    and enchanting are priced off the same value (Crafting: 35% + 12n² to
+ *    reinforce, 30% to enchant, 20% to refine), so a richer piece always
+ *    costs more to improve than a poor one.
+ *
+ * 2. WHAT YOU DRINK, EAT OR READ (`consumableValue`, new this iteration):
+ *        gold = round5(( 60·life + 50·resource + 9·brewSeconds·weight
+ *                        + 28·power·√stretch ) × rarityMult)
+ *    - life / resource are fractions of the pool, so a whole life is 60 gold
+ *      and a whole pool 50 at common rarity.
+ *    - brewSeconds is haste / might / stone-skin time; `weight` is the brew's
+ *      strength against a draught's (1 = the Draught of Haste's 1.3× speed,
+ *      the Draught of Might's 1.25× damage, the Draught of Stone's 0.4
+ *      absorption). A tavern swig pours half a draught and pays half.
+ *    - power · √stretch is a RITE: the scroll's multiple of a real skill's
+ *      numbers and the root of its multiple of the skill's length.
+ *    THE ANCHORS it reproduces: Healing Potion (common, half a life) = 30;
+ *    Mana Potion (common, six tenths of a pool) = 30; Violet Elixir
+ *    (uncommon, 0.35 + 0.5) = 60 against its hand-written 65; Draught of
+ *    Haste (uncommon, 8 s) = 90 against its hand-written 120. The named
+ *    draughts keep their hand-written prices — they are the staples the
+ *    curve was drawn through — and every one of the 400+ curios is priced
+ *    BY the curve, which is what fixes the old table: a 45-gold curio tonic
+ *    that healed 30% used to sit beside a 30-gold potion that healed 50%.
+ *
+ * THE LADDER THIS PRODUCES, and it is monotone in both power and price:
+ *        swig (common tin)  <  curio flask  <  named draught  <  SCROLL
+ *        ~10–25 g              ~25–70 g        30–150 g          ~155 g
+ *        half a brew           a full brew     the staples       a RITE
+ *                                                                tome ~330 g
+ *
+ * FOOD is the world's cheap, slow power and is priced under the curve on
+ * purpose (`FOOD_TIER`): its healing arrives over three seconds, it is
+ * bought at a counter rather than pulled off a belt mid-swing, and the
+ * tavern is meant to be somewhere a poor delver can afford. it.117 closed
+ * the worst of the gap — a meal was 28 gold for twenty seconds of Might
+ * while the Draught of Might asked 150 for ten — without touching the
+ * it.114–it.116 effects.
+ *
+ * DOES THE GOLD ADD UP? At depth V (iLvl 9) a foe leaves 10 coins about a
+ * third of the time and drops something about half the time; a floor of ~25
+ * foes is therefore ~90 coins plus ~13 finds, of which the gear sells for
+ * ~40 each: call it 350–450 gold a floor. The armorer's rare at that depth
+ * is 216, a scroll 155, a healing potion 30. One floor buys one good piece,
+ * or a rite and a belt full of flasks. At depth XX (iLvl 39) income scales
+ * with iLvl and so do the prices, so the ratio holds the whole way down.
+ */
+
+/** A drink, dish, flask or scroll's worth (it.117) — see the block above. */
+export function consumableValue(
+  use: NonNullable<ItemDef['use']>,
+  rarity: Rarity,
+  opts: { brewWeight?: number } = {},
+): number {
+  const w = opts.brewWeight ?? 1;
+  const secs = ((use.haste ?? 0) + (use.might ?? 0) + (use.stone ?? 0)) / 60;
+  const rite = use.cast ? 28 * use.cast.power * Math.sqrt(use.cast.stretch) : 0;
+  const raw = 60 * (use.heal ?? 0) + 50 * (use.resource ?? 0) + 9 * secs * w + rite;
+  return Math.max(6, Math.round((raw * RARITY_MULT[rarity]) / 5) * 5);
+}
 
 /**
  * Gold worth of an item (it.78): an explicit value, else the economy formula
@@ -409,6 +510,7 @@ export function statLine(def: ItemDef): string {
   if (def.use?.haste) parts.push(`Haste for ${Math.round(def.use.haste / 60)} s`);
   if (def.use?.stone) parts.push(`Stone skin for ${Math.round(def.use.stone / 60)} s`);
   if (def.use?.might) parts.push(`Might for ${Math.round(def.use.might / 60)} s`);
+  if (def.use?.cast) parts.push(`Casts ${RITE_NAME[def.use.cast.skill] ?? def.use.cast.skill} at ${Math.round(def.use.cast.power * 100)}% power${def.use.cast.stretch > 1 ? ` · ${def.use.cast.stretch}× as long` : ''}`);
   if (def.use?.recipe) parts.push('Read to learn the enchantment');
   if (def.use?.smelt) parts.push(`Smelts into ${def.use.smelt.count} ${SMELT_NAME[def.use.smelt.material] ?? def.use.smelt.material}`);
   if (def.desc && def.slot !== 'mainHand' && !def.ilvl) parts.push(def.desc);

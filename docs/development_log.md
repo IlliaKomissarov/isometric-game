@@ -1,5 +1,92 @@
 # Development Log
 
+## 2026-09-18 (iteration 117) - the MVP pass: eight slots, a real console, a game log, and the blur that ate the frame
+
+Six tracks over one tree, on the owner's MVP list.
+
+### Items, hotkeys, economy
+- EIGHT action slots (keys 1-8) with the belt flanking them: `[Q] 1..8 [R]`.
+  Old four-slot saves load untouched. A slot holds a skill OR a consumable.
+- THE RITES: all 109 curio scrolls and tomes were inert. Each now runs a real
+  skill's own `execute()` for any class, free, with the buff clocks stretched
+  (scroll 2.2x/4x, tome 3x/6x; a burst gets 3.5x/5x force). A qa75 check
+  asserts NOTHING in the tables is inert: 758 items, 0 inert.
+- Quick slots assign by drag-and-drop (mouse and finger), a chooser and an
+  assign row on the inspect stage.
+- The split/cropped icons: a shop `background` SHORTHAND outranked the cell's
+  rule and re-tiled the strip down the box. `spinStyle` writes repeat/position/
+  origin/clip inline now, so a cell is right in any panel written later.
+- One pricing curve for every consumable, fitted through the hand-written
+  staples; swigs pour half a draught and are priced for it.
+
+### The shell
+- `ui/panelShell`: one capture-phase ESCAPE, sticky headers, no horizontal
+  scrollbars, phone widths - applied to every window, registered from main for
+  the panels other hands own.
+- M toggles the whole chart; marks are shapes, drawn at a constant screen size,
+  with labels and a legend; the hero is an arrow that points where he faces.
+- `ui/QuestTracker` under the plate; pop-ups 520px/14s -> 380px/5.5s, skippable.
+- `ui/idleFade`: on touch, the rail and the chart fall to a third after 4.5 s
+  and come back on any input or any blow.
+- The chat is a GAME LOG in every run (deaths, loot, use, quests, trade, craft,
+  notes). It lives on the left at rest opacity, hides by its own mark and comes
+  back by the tab on the edge - no key, no bar button (it.117, the owner's word).
+
+### The console
+- `ui/CheatMenu` rebuilt: a fixed header with live state and fps, seven sections,
+  one search over 758 items / every creature / every place, keyboard drive, and a
+  log of what was fired. 57 controls pressed and read back against game state.
+- Text: 18 shouted cutscene beats to sentence case, the wordiest trees cut,
+  apostrophes normalised, "Forbidden Arts" -> "Developer console".
+
+### Combat
+- BOWS: `Projectiles.update` tested the wall BEFORE the flesh, and every dummy
+  stands on a blocked tile - so the arrow died half a tile short. Sub-stepped
+  flight, flesh -> range -> scenery, and a last look within 0.85 tiles of a
+  solid stop. A dummy took 5x10 where it had taken 0.
+- `Combat.acquire`: the nearest foe in sight, in reach, with a clear line of
+  fire; the cursor only counts as an aim while it is LIVE, so a hand on WASD no
+  longer casts at a parked pointer. The ring shows what the next blow will take.
+- A blocked hand-aimed shot paints BLOCKED on the stone once per 900 ms; a
+  failed to-hit roll finally says `miss` instead of vanishing.
+- Attack variety: three knight clips, three slash beats, and `sprite.attack2`
+  alternating on the packs that own a second clip.
+- VFX to one language: a SYMBOL over the head at ~26 px (the haste clock 76 ->
+  28, the alert mark 15 -> 10, lifted by the body's own height), an AURA on the
+  body at ~50 px.
+- The ward 5 s -> 8 s; `risePoint` rises near where you fell but 5.5 tiles clear
+  of anything living; a fallen hero is UNSEEABLE, so the pack drops the chase
+  and must sight him again.
+
+### World, audio, and the frame
+- `backdrop-filter: blur(12px)` on the panels was the most expensive thing in
+  the game - re-blurred every frame behind glass already 90% opaque. Gone, with
+  the modal scrim's blur; the world draws every 2nd frame while a window owns
+  the screen; the turntables run in a rota of ~12; `Lighting` skips unchanged
+  tint writes (updateRender 2.47 ms -> 0.37) and stops allocating per tile;
+  `Ambience` loses an O(n^2) at the moment a blow lands.
+  PRODUCTION, crypt I: inventory open 34.7 ms -> 27.7 ms (28.8 -> 36.1 fps),
+  which is the same as closed. Town closed 34.8 -> 27.9 ms.
+- The river was mixed 2 dB under the whole score and looped a 0.5 s buffer (a
+  2 Hz chuff). Own 4 s buffer, rolled off, and a DISTANCE: -7 dB at the water,
+  -20 dB in the fields.
+- The river's right edge was a void because the border wood is grown outward
+  from the land and ran off the array: 160 land tiles on the rim, now 0.
+- `Chests.scatterChests`: free, reachable, tucked, SEEN (nothing drawn in front)
+  and unsealing. Town 9 -> 18, riverside 12 -> 15, manor hall 0 -> 6.
+- A beat on every everyday action: quaff, bite, restore, hurt, gold, level - and
+  the life gauge sweeps green as it fills.
+
+### The yard and the word
+- No darkening: the highlight is a gold rim and a ping, never a black sheet.
+- Arriving in town no longer opens her conversation; she speaks on E.
+- Six lessons are demonstrated, some at 30-45% speed with a WATCH chip.
+- Heals are FREE while the lesson runs (measured: hp 60 -> 135, pack unchanged).
+- The dialogue camera pinned to the beat's TILE and released the zoom on every
+  page turn - the merchant stood elsewhere while it framed the floor. It now
+  follows the live speaker and holds one zoom for the whole conversation
+  (44 samples across five beats: 2.20 every time).
+
 ## 2026-09-17 (iteration 116) - Lord Milk teaches, Coleslaw pours, Cakepancakes
 
 ### The training ground

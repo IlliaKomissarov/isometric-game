@@ -94,7 +94,7 @@ export class SettingsUI {
       ['Move · Target', 'LMB'],
       ['Direct control', 'W A S D / Arrows'],
       ['Strike', 'SPACE / F'],
-      ['Skills', '1 · 2 · 3 · 4'],
+      ['Action slots', '1 … 8'],
       ['Take loot · Open', 'E'],
       ['Potion · Mana', 'Q · R'],
       ['Town portal', 'T'],
@@ -102,13 +102,18 @@ export class SettingsUI {
       ['Skill tree', 'K'],
       ['Character', 'C'],
       ['Bestiary', 'B'],
-      ['Map', 'M'],
+      ['Journal', 'H'],
+      // THE CHART AND THE LOG (it.117): M is the full chart, both ways;
+      // SHIFT+M folds the corner one away; G is the log; ENTER writes a note.
+      ['The chart', 'M'],
+      ['Hide the corner chart', 'SHIFT + M'],
       ['Depths', 'L'],
-      ['Party chat', 'Enter'],
+      ['The log', 'G'],
+      ['Write a note · chat', 'ENTER'],
       ['Zoom', 'Wheel'],
-      ['Pause', 'ESC'],
+      ['Close a window · pause', 'ESC'],
       ['Settings', 'O'],
-      ['Forbidden Arts', 'F1 / `'],
+      ['Developer console', 'F1 / `'],
     ];
     this.panel.innerHTML = `
       <div class="set-corner tl"></div><div class="set-corner tr"></div><div class="set-corner bl"></div><div class="set-corner br"></div>

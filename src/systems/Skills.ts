@@ -21,7 +21,7 @@
  */
 
 import { eventBus } from '@/core/EventBus';
-import type { InputCommand } from '@/core/InputQueue';
+import { ACTION_SLOTS, type InputCommand } from '@/core/InputQueue';
 import type { Enemy } from '@/entities/Enemy';
 import type { Player } from '@/entities/Player';
 import type { VfxAnim, VfxHandle, VfxOpts } from '@/render/Vfx';
@@ -136,8 +136,8 @@ export class SkillSystem {
   /** Vanish casts, counted: only the latest cast's reveal fires. */
   private stealthCast = 0;
   private readonly offImpact: () => void;
-  /** Remaining cooldown ticks per slot (UI reads this). */
-  readonly cooldowns = [0, 0, 0, 0];
+  /** Remaining cooldown ticks per slot (UI reads this). Eight slots since it.117. */
+  readonly cooldowns: number[] = Array.from({ length: ACTION_SLOTS }, () => 0);
   private zones: Zone[] = [];
   /** Blade Flurry: staged follow-up cuts. */
   private flurry: { targetId: number; hitsLeft: number; nextHit: number; syn: Synergy } | null = null;
@@ -321,7 +321,8 @@ export class SkillSystem {
     if (refund === 0) return;
     p.unlockedSkills.clear();
     p.passives.clear();
-    for (let i = 0; i < p.loadout.length; i++) p.loadout[i] = null;
+    // A RESPEC REFUNDS SKILLS, NOT THE BELT (it.117): a consumable parked on a key stays there.
+    for (let i = 0; i < p.loadout.length; i++) if (!(p.loadout[i] ?? '').startsWith('item:')) p.loadout[i] = null;
     for (let i = 0; i < this.cooldowns.length; i++) this.cooldowns[i] = 0;
     p.skillPoints += refund;
     p.hpMax = p.baseHpMax();
@@ -370,7 +371,7 @@ export class SkillSystem {
 
   private equip(slot: number, id: string | null): void {
     const p = this.deps.player;
-    if (slot < 0 || slot > 3) return;
+    if (slot < 0 || slot >= ACTION_SLOTS) return;
     if (id !== null && !p.unlockedSkills.has(id)) return;
     // One skill lives in one slot.
     if (id !== null) {
@@ -385,6 +386,9 @@ export class SkillSystem {
 
   private cast(slot: number): void {
     const p = this.deps.player;
+    // AN ITEM SLOT IS NOT OURS (it.117): `systems/Inventory` drinks or reads it
+    // off the same command. Say nothing, refuse nothing.
+    if ((p.loadout[slot] ?? '').startsWith('item:')) return;
     const def = this.skills[slot];
     if (p.action === 'dead') return;
     if (!def) {
@@ -410,9 +414,60 @@ export class SkillSystem {
     this.syn = NO_SYNERGY;
   }
 
+  /**
+   * A RITE OFF A SCROLL (it.117). `systems/Inventory` calls this when paper is
+   * read: the named skill runs its OWN `execute` — the same strips, the same
+   * sound, the same damage channel — at `power` times its numbers and with
+   * the hero's own class status, whatever class the reader is. No resource is
+   * spent, no hotbar cooldown is started: the scroll was the cost.
+   *
+   * THE LENGTH. Every buff a skill lays is a plain tick counter on the Player
+   * and every zone it plants is a ticking object in this system, so instead of
+   * threading a multiplier through sixteen cases we take a reading of both
+   * before the cast and stretch whatever the cast raised. That way a rite of
+   * War Cry is forty seconds without War Cry knowing scrolls exist, and a new
+   * skill inherits the behaviour for free.
+   *
+   * Returns false when the rite cannot be worked — the scroll is then not spent.
+   */
+  castRite(id: string, power: number, stretch: number): boolean {
+    const def = SKILL_BY_ID[id];
+    const p = this.deps.player;
+    if (!def || p.action === 'dead') return false;
+    const before = { dmg: p.dmgBuffTicks, dr: p.drTicks, haste: p.hasteTicks, stealth: p.stealthTicks, poison: p.poisonBladeTicks };
+    const zonesBefore = this.zones.length;
+    this.deps.interruptMove();
+    // THE READING (it.117): the page takes light before the skill's own strip lands.
+    this.deps.sfx('ward');
+    this.deps.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.0, flat: true, fps: 22, tint: 0xe8d8a0 });
+    this.deps.vfx('fx_sparkle_c', p.pos.x, p.pos.y, { scale: 1.1, lift: 30, overlay: true, tint: 0xffe8b0 });
+    this.deps.text(p.pos.x, p.pos.y - 1.4, `${def.name.toUpperCase()} · RITE`, 'crit');
+    this.syn = { scale: power, status: this.deps.player.archetype };
+    this.execute(def);
+    this.syn = NO_SYNERGY;
+    // Stretch every clock the cast started (and only those it raised).
+    const grow = (was: number, now: number): number => (now > was ? Math.round(now * stretch) : now);
+    p.dmgBuffTicks = grow(before.dmg, p.dmgBuffTicks);
+    p.drTicks = grow(before.dr, p.drTicks);
+    p.hasteTicks = grow(before.haste, p.hasteTicks);
+    p.stealthTicks = grow(before.stealth, p.stealthTicks);
+    p.poisonBladeTicks = grow(before.poison, p.poisonBladeTicks);
+    p.buffMax.dmg = Math.max(p.buffMax.dmg, p.dmgBuffTicks);
+    p.buffMax.dr = Math.max(p.buffMax.dr, p.drTicks);
+    p.buffMax.haste = Math.max(p.buffMax.haste, p.hasteTicks);
+    p.buffMax.stealth = Math.max(p.buffMax.stealth, p.stealthTicks);
+    p.buffMax.poison = Math.max(p.buffMax.poison, p.poisonBladeTicks);
+    for (let i = zonesBefore; i < this.zones.length; i++) {
+      const z = this.zones[i];
+      if (z.kind === 'rain') z.wavesLeft = Math.round(z.wavesLeft * stretch);
+      else z.ticksLeft = Math.round(z.ticksLeft * stretch);
+    }
+    return true;
+  }
+
   /** One tick of skill machinery: cooldowns, zones, DoTs, staged hits. */
   update(): void {
-    for (let i = 0; i < 4; i++) if (this.cooldowns[i] > 0) this.cooldowns[i]--;
+    for (let i = 0; i < this.cooldowns.length; i++) if (this.cooldowns[i] > 0) this.cooldowns[i]--;
 
     // OWNED STRIPS (it.115): auras ride the hero; each ends with its clock.
     if (this.fx.length) {
@@ -672,12 +727,13 @@ export class SkillSystem {
         p.dmgBuffMult = syn.status ? 1.45 : 1.35;
         d.text(p.pos.x, p.pos.y - 1.2, 'WAR CRY!', 'crit');
         // CAST (it.115): the paladin shout bursts off the hero over a ground ring.
-        d.vfx('fx_paladin_2', p.pos.x, p.pos.y, { scale: 0.9, lift: 24, tint: 0xffc890, overlay: true });
+        d.vfx('fx_paladin_2', p.pos.x, p.pos.y, { scale: 0.62, lift: 24, tint: 0xffc890, overlay: true }); // it.117: 120 px sheet → ~74 px shout, not a 108 px wall.
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.5, flat: true, fps: 22, tint: 0xffb060 });
         // The buff rides the hero while it lasts.
-        this.buffAura('dmg', 'fx_attack_up', { scale: 0.6, lift: 20, alpha: 0.5, overlay: true, fps: 12 }, () => p.dmgBuffTicks);
-        // IMPACT: every foe in earshot startles.
-        for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 5)) d.vfx('fx_alert', foe.pos.x, foe.pos.y, { scale: 0.65, lift: 52, overlay: true });
+        this.buffAura('dmg', 'fx_attack_up', { scale: 0.4, lift: 22, alpha: 0.5, overlay: true, fps: 12 }, () => p.dmgBuffTicks); // it.117: 128 px sheet on a 53 px body.
+        // IMPACT: every foe in earshot startles — the same small "!" the foes'
+        // own sighting uses (it.117), not a banner over each head.
+        for (const foe of d.enemiesNear(p.pos.x, p.pos.y, 5)) d.vfx('fx_alert', foe.pos.x, foe.pos.y, { scale: 0.26, lift: 66, overlay: true });
         break;
       }
       case 'stoneskin': {
@@ -687,9 +743,9 @@ export class SkillSystem {
         p.drFrac = syn.status ? 0.65 : 0.55;
         d.text(p.pos.x, p.pos.y - 1.2, 'STONE SKIN', 'miss');
         // CAST (it.115): a shield flash, then the guard aura rides the hero while the skin holds.
-        d.vfx('fx_paladin_4', p.pos.x, p.pos.y, { scale: 0.8, lift: 22, tint: 0xc8c0b0, overlay: true });
-        d.vfx('fx_defense_up', p.pos.x, p.pos.y, { scale: 0.8, lift: 20, overlay: true, tint: 0xd0c8b8 });
-        this.buffAura('dr', 'fx_defense_up', { scale: 0.6, lift: 20, alpha: 0.45, overlay: true, fps: 12, tint: 0xd0c8b8 }, () => p.drTicks);
+        d.vfx('fx_paladin_4', p.pos.x, p.pos.y, { scale: 0.55, lift: 22, tint: 0xc8c0b0, overlay: true }); // it.117: 106 px sheet, sized to the body.
+        d.vfx('fx_defense_up', p.pos.x, p.pos.y, { scale: 0.5, lift: 22, overlay: true, tint: 0xd0c8b8 });
+        this.buffAura('dr', 'fx_defense_up', { scale: 0.4, lift: 22, alpha: 0.45, overlay: true, fps: 12, tint: 0xd0c8b8 }, () => p.drTicks);
         d.burst(p.pos.x, p.pos.y, 0xb0a898, 10);
         break;
       }
@@ -818,7 +874,16 @@ export class SkillSystem {
         d.vfx('fx_light_cast', p.pos.x, p.pos.y, { scale: 0.9, depthBias: -20, tint: 0xc0b0ff });
         d.vfx('fx_sparkle_c', p.pos.x, p.pos.y, { scale: 1.1, lift: 34, overlay: true, tint: 0xd0c0ff });
         d.vfx('vfx_ring', p.pos.x, p.pos.y, { scale: 1.0, flat: true, fps: 22, tint: 0x9f8fe8 });
-        this.buffAura('dmg', 'fx_magic_barrier', { scale: 1.4, lift: 20, alpha: 0.6, overlay: true, tint: 0xc8b8ff }, () => p.dmgBuffTicks);
+        /**
+         * SENSE (it.117): Arcane Might raises the mage's DAMAGE, and it.115
+         * dressed it in `fx_magic_barrier` — a shield, orbiting the body, which
+         * reads as protection and is what Stone Skin is for. The barrier stays
+         * as the cast's flash (the power gathering), and the aura that lasts is
+         * the same "power up" column War Cry wears, tinted arcane: one visual
+         * language for "you now hit harder", whichever class said it.
+         */
+        d.vfx('fx_magic_barrier', p.pos.x, p.pos.y, { scale: 1.15, lift: 22, overlay: true, tint: 0xc8b8ff });
+        this.buffAura('dmg', 'fx_attack_up', { scale: 0.4, lift: 22, alpha: 0.5, overlay: true, fps: 12, tint: 0xc8b8ff }, () => p.dmgBuffTicks);
         d.text(p.pos.x, p.pos.y - 1.2, 'ARCANE MIGHT', 'crit');
         break;
       }
@@ -866,7 +931,15 @@ export class SkillSystem {
         // ARRIVAL: the rift opens again, then the haste aura rides the hero.
         d.vfx('fx_warp_b', p.pos.x, p.pos.y, { scale: 0.8, lift: 20, tint: 0xb0a0e0, overlay: true });
         d.vfx('fx_smoke_dir', p.pos.x, p.pos.y, { scale: 1.0, lift: 16, rotation: SkillSystem.screenAngle(aim) + Math.PI, alpha: 0.8, tint: 0x9088b0 });
-        this.buffAura('haste', 'fx_haste', { scale: 0.6, lift: 20, alpha: 0.5, overlay: true, fps: 15, tint: 0xb0ffc0 }, () => p.hasteTicks);
+        /**
+         * THE CLOCK (it.117). `fx_haste` is a 126×119 px clock face; drawn at
+         * 0.6 on a 53 px hero it painted a 76 px dial across the archer's
+         * chest — the "gigantic clock face" on a speed buff. The strip stays,
+         * because a clock is exactly the right idea for haste; it is simply
+         * the size a symbol should be (28 px) and it hangs ABOVE the head,
+         * where a clock over someone means what it always has.
+         */
+        this.buffAura('haste', 'fx_haste', { scale: 0.22, lift: 58, alpha: 0.8, overlay: true, fps: 14, tint: 0xb0ffc0 }, () => p.hasteTicks);
         d.burst(p.pos.x, p.pos.y, 0x8a86a0, 8);
         break;
       }

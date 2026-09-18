@@ -24,7 +24,6 @@
  * other one to the game.
  */
 
-import { layout } from '@/core/OrientationManager';
 
 const MAX_LINES = 300;
 const SEND_WINDOW_MS = 5000;
@@ -173,11 +172,13 @@ export class ChatUI {
     // panel that is useful AFTER the fact, so it waits behind its button until
     // the player asks for it. A pointer screen has the room and starts open.
     // Either way the choice is remembered from then on.
-    if (layout.state.touch && layout.state.orientation === 'portrait') this.root.classList.add('shut');
+    // IT.117c: THE LOG IS ALWAYS THERE. It starts OPEN on every screen and the
+    // old remembered "hidden" flag is thrown away - a stale one from a single
+    // press of the cross made the log look deleted on the next run, which is
+    // exactly what it looked like to the owner. Hiding is still a click on the
+    // cross; it just never survives the run.
     try {
-      const stored = localStorage.getItem('iso-arpg-chat-shut');
-      if (stored === '1') this.root.classList.add('shut');
-      else if (stored === '0') this.root.classList.remove('shut');
+      localStorage.removeItem('iso-arpg-chat-shut');
       for (const k of JSON.parse(localStorage.getItem('iso-arpg-chat-hidden') ?? '[]') as string[]) {
         if (FILTERABLE.includes(k as LogKind)) {
           this.hidden.add(k);
@@ -278,7 +279,7 @@ export class ChatUI {
       this.wake();
     }
     try {
-      localStorage.setItem('iso-arpg-chat-shut', shut ? '1' : '0');
+      // it.117c: not remembered - the log is open again next run.
     } catch {
       /* ignore */
     }

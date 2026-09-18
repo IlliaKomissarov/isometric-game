@@ -20,7 +20,7 @@
  * `textContent`, so no markup ever reaches the DOM whatever a peer sends.
  * While the line is focused a capture-phase key filter swallows the game
  * hotkeys so typing never moves the hero or opens a panel; while it is NOT
- * focused this module takes exactly two keys, G and ENTER, and leaves every
+ * focused this module takes NO key at all (it.117b) and leaves every
  * other one to the game.
  */
 
@@ -155,7 +155,7 @@ export class ChatUI {
     this.root.innerHTML = `
       <div class="chat-head"><b class="chat-title">LOG</b><div class="chat-filters">${chips}</div><button type="button" class="chat-x" title="Hide the log">✕</button></div>
       <div class="chat-log" role="log" aria-label="Game log"></div>
-      <div class="chat-line"><input type="text" maxlength="200" placeholder="ENTER — write a note…" spellcheck="false" autocomplete="off" /></div>`;
+      <div class="chat-line"><input type="text" maxlength="200" placeholder="Write a note…" spellcheck="false" autocomplete="off" /></div>`;
     document.body.appendChild(this.root);
     // THE TAB (it.117): a small mark on the left edge, shown only while the log
     // is hidden. It is how the log comes back - there is no key and no bar button.
@@ -226,17 +226,10 @@ export class ChatUI {
           return;
         }
         if (isTypingElsewhere()) return; // Another field owns the keys entirely.
-        // NO KEY OF ITS OWN (it.117, the owner's word): the log sits on the left
-        // and is hidden and shown by its own mark - ENTER to write is the only
-        // key this module claims.
-        const ae = document.activeElement;
-        const onButton = !!ae && (ae.tagName === 'BUTTON' || ae.tagName === 'A');
-        if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat && !onButton) {
-          // Don't steal ENTER from a modal button or another field.
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          this.open();
-        }
+        // IT.117b: ENTER IS THE GAME'S, NOT THE LOG'S. It turns a page of
+        // dialogue; the log used to grab it and open its line instead. The log
+        // is opened by CLICKING it - its own line, its own tab - and claims no
+        // key at all while the caret is elsewhere.
       },
       { signal, capture: true },
     );
@@ -292,7 +285,7 @@ export class ChatUI {
     document.dispatchEvent(new CustomEvent('chat:shown', { detail: { shown: !shut } }));
   }
 
-  /** Open and take the line (ENTER, or the bar's button). */
+  /** Open and take the line (a click on the log, or its tab). */
   open(): void {
     this.wake();
     if (this.root.classList.contains('shut')) this.setShut(false);

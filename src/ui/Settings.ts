@@ -104,12 +104,12 @@ export class SettingsUI {
       ['Bestiary', 'B'],
       ['Journal', 'H'],
       // THE CHART AND THE LOG (it.117): M is the full chart, both ways;
-      // SHIFT+M folds the corner one away; G is the log; ENTER writes a note.
+      // SHIFT+M folds the corner one away. The log has no key (it.117b): click it.
       ['The chart', 'M'],
       ['Hide the corner chart', 'SHIFT + M'],
       ['Depths', 'L'],
-      ['The log', 'G'],
-      ['Write a note · chat', 'ENTER'],
+      ['The log', 'click it · its tab'],
+      ['Write a note · the log', 'click the log'],
       ['Zoom', 'Wheel'],
       ['Close a window · pause', 'ESC'],
       ['Settings', 'O'],
